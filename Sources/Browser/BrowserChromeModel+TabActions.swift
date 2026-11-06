@@ -23,6 +23,20 @@ extension BrowserChromeModel {
         return newID
     }
 
+    /// Command-click on the icon of a pinned tab away from its page: the
+    /// page moves to the top of the temporary tabs and the pinned tab goes back
+    /// to its pinned page, staying selected. The moved page loads anew.
+    @discardableResult func separateFromPinnedTab(id: String) -> String? {
+        guard canCreateTab, let tab = tabs.first(where: { $0.id == id }), tab.canResetToPinnedURL,
+              tab.spaceID == selectedSpaceID, let url = URL(string: tab.urlString)
+        else { return nil }
+        openURLInNewTab(url)
+        guard let newID = selectedTabID, newID != id else { return nil }
+        moveTab(withID: newID, toPlacement: .temporary, atSectionIndex: 0)
+        guard resetPinnedTabToPinnedURL(id: id) else { return nil }
+        return newID
+    }
+
     private var selectedTabValue: Tab? { selectedTabID.flatMap { id in tabs.first { $0.id == id } } }
 
     /// Pin/Unpin Tab for the selected tab of the selected Space.

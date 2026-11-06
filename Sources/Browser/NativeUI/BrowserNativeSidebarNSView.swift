@@ -1214,6 +1214,7 @@ final class BrowserNativeSidebarNSView: NSView {
         }
         row.onCancelRename = { [weak state] in state?.renamingTabID = nil }
         row.onBackToPinnedURL = { _ = model.resetPinnedTabToPinnedURL(id: tab.id) }
+        row.onSeparateFromPinnedTab = { _ = model.separateFromPinnedTab(id: tab.id) }
         row.onClose = { [weak state] in
             guard let state else { return }
             if let renaming = state.renamingTabID, renaming != tab.id {

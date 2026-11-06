@@ -10,9 +10,10 @@ import QuartzCore
 final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFieldDelegate {
     enum Kind { case tab, appTab, folder, space, newTab, split }
 
-    /// Where the icon's and the title's hover pills meet.
-    private static let pinnedSlashCenterX = BrowserChromeLayout.sidebarPinnedURLIconButtonSize
-        - BrowserChromeLayout.sidebarPinnedURLTextHoverOverlap / 2
+    /// From the icon's trailing edge: the slash's middle
+    /// 5 pt after it, the title 11.5 pt after it.
+    private static let pinnedSlashOffset: CGFloat = 5
+    private static let pinnedSlashTitleOffset: CGFloat = 11.5
 
     // MARK: Internal
 
@@ -33,6 +34,7 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
     var onCommitRename: (String) -> Void = { _ in }
     var onCancelRename: () -> Void = {}
     var onBackToPinnedURL: () -> Void = {}
+    var onSeparateFromPinnedTab: () -> Void = {}
     var onToggle: () -> Void = {}
     var onClose: () -> Void = {}
     var onToggleMute: () -> Void = {}
@@ -104,7 +106,10 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
     private var indent: CGFloat = 0
     private var pinnedURLRow = false
     private var splitPinnedControls = false
-    private var pinnedIconHovered = false
+    private var pinnedIconHovered = false { didSet { if pinnedIconHovered != oldValue { watchSeparateKey() } } }
+    /// Command held over the icon: a click then separates the page instead.
+    private var separateKeyHeld = false
+    private var separateKeyMonitor: Any?
     /// Change Icon: a symbol in place of the favicon.
     private var tabIcon: String?
     private var accessoryHovered = false
@@ -217,6 +222,12 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
 
     @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
+    isolated deinit {
+        if let separateKeyMonitor {
+            NSEvent.removeMonitor(separateKeyMonitor)
+        }
+    }
+
     override func pointerMoved(_ event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         for chip in splitChips {
@@ -284,7 +295,7 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
         let badgeSize = BrowserChromeLayout.sidebarPinnedFolderBadgeIconSize
         let slashSize = BrowserNativeSidebarPinnedSlashView.size
         pinnedSlash.frame = NSRect(
-            x: indent + Self.pinnedSlashCenterX - slashSize.width / 2,
+            x: iconFrame.maxX + Self.pinnedSlashOffset - slashSize.width / 2,
             y: (height - slashSize.height) / 2,
             width: slashSize.width,
             height: slashSize.height,
@@ -301,7 +312,7 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
             titleX = BrowserChromeLayout.sidebarSpaceTitleXWithoutIcon
         }
         if showsPinnedSlash {
-            titleX = indent + Self.pinnedSlashCenterX + BrowserNativeSidebarPinnedSlashView.size.width / 2 + 3
+            titleX = iconFrame.maxX + Self.pinnedSlashTitleOffset
         }
         if !recordingDot.isHidden {
             // The recording dot leads the title, before the speaker.
@@ -668,6 +679,26 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
         }
     }
 
+    /// Follows Command while the pointer is on the pinned icon, for its caption.
+    private func watchSeparateKey() {
+        if pinnedIconHovered, separateKeyMonitor == nil {
+            separateKeyHeld = NSEvent.modifierFlags.contains(.command)
+            separateKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
+                guard let self else { return event }
+                let held = event.modifierFlags.contains(.command)
+                if held != separateKeyHeld {
+                    separateKeyHeld = held
+                    refreshAppearance()
+                }
+                return event
+            }
+        } else if !pinnedIconHovered, let monitor = separateKeyMonitor {
+            NSEvent.removeMonitor(monitor)
+            separateKeyMonitor = nil
+            separateKeyHeld = false
+        }
+    }
+
     private func updateSurface() {
         let selectedFill = enclosingSpaceThemePalette?.selection ?? BrowserChromeColors.rowSelected
         selectionSurface.alphaScale = selected || !multiSelected ? 1 : 0.82
@@ -755,6 +786,15 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
         guard !isRenaming else { return }
         switch kind {
         case .tab:
+            if splitPinnedControls, let event, event.modifierFlags.contains(.command),
+               !event.modifierFlags.contains(.shift)
+            {
+                let point = convert(event.locationInWindow, from: nil)
+                if point.x >= indent, point.x < indent + BrowserChromeLayout.sidebarPinnedURLIconButtonSize {
+                    onSeparateFromPinnedTab()
+                    return
+                }
+            }
             if let event, !event.modifierFlags.intersection([.command, .shift]).isEmpty {
                 onModifiedSelect(event.modifierFlags.intersection(.deviceIndependentFlagsMask))
                 return
@@ -854,7 +894,11 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
                 } completion: { [weak self] in self?.captionLabel.isHidden = !showCaption }
             }
         }
-        captionLabel.stringValue = pinnedIconHovered ? BrowserStrings.pinnedTabBackToPinnedURL : developerHost ?? ""
+        captionLabel.stringValue = pinnedIconHovered
+            ? separateKeyHeld
+                ? BrowserStrings.pinnedTabSeparate
+                : BrowserStrings.pinnedTabBackToPinnedURL
+            : developerHost ?? ""
         closeButton.isHidden = !(kind == .space || kind == .tab) || !isHovered || isRenaming || isResizing
         muteButton.isHidden = kind != .tab || !(isMuted || isAudible) || isRenaming || isResizing
         let showsRecording = (kind == .tab || kind == .appTab) && isRecording && !isRenaming
@@ -884,11 +928,12 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
 // MARK: - BrowserNativeSidebarPinnedSlashView
 
 /// A line corner to corner, 1 pt in from each,
-/// 2 pt wide with round caps, leaning forward.
+/// 2 pt wide with round caps, leaning forward; 15 pt tall and 3 pt across in
+/// the sidebar.
 final class BrowserNativeSidebarPinnedSlashView: NSView {
     // MARK: Internal
 
-    static let size = NSSize(width: 6, height: 14)
+    static let size = NSSize(width: 5, height: 15)
 
     override var isFlipped: Bool { true }
 

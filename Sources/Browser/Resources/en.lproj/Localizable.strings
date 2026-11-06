@@ -920,3 +920,4 @@
 "browser.color.black" = "Black";
 "browser.color.light" = "Light %@";
 "browser.color.dark" = "Dark %@";
+"browser.pinned_tab.separate" = "Separate From Pinned Tab";

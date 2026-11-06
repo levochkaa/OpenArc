@@ -114,10 +114,13 @@ import Testing
         row.onModifiedSelect = { modifiers.append($0) }
         row.onBeginRename = { renames += 1 }
         row.onBackToPinnedURL = { resets += 1 }
-        for flag in [NSEvent.ModifierFlags.command, .shift] {
+        var separations = 0
+        row.onSeparateFromPinnedTab = { separations += 1 }
+        // On the icon Command separates the page; on the title it selects.
+        for (flag, x) in [(NSEvent.ModifierFlags.command, 120.0), (.shift, 10), (.command, 10)] {
             let event = try #require(NSEvent.mouseEvent(
                 with: .leftMouseUp,
-                location: CGPoint(x: 10, y: 18),
+                location: CGPoint(x: x, y: 18),
                 modifierFlags: flag,
                 timestamp: 1,
                 windowNumber: 0,
@@ -130,6 +133,7 @@ import Testing
             row.onDoubleClick?(event)
         }
         #expect(modifiers == [.command, .command, .shift, .shift])
+        #expect(separations == 2, "Command on the icon, click and double click")
         #expect(renames == 0)
         #expect(resets == 0)
     }

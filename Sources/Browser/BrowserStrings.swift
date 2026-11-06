@@ -225,6 +225,11 @@ enum BrowserStrings {
         comment: "Context menu action deleting a pinned folder and its current contents.",
     )
 
+    static let pinnedTabSeparate = NSLocalizedString(
+        "browser.pinned_tab.separate",
+        comment: "Secondary sidebar label on a pinned tab's favicon while Command is held: a click moves the page to its own tab.",
+    )
+
     static let pinnedTabBackToPinnedURL = NSLocalizedString(
         "browser.pinned_tab.back_to_pinned_url",
         comment: "Secondary sidebar label shown while hovering the pinned-tab favicon reset button.",

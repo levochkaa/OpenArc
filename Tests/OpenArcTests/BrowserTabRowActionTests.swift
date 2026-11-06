@@ -447,6 +447,21 @@ import Testing
 // MARK: - BrowserResetSpaceTabsTests
 
 @MainActor struct BrowserResetSpaceTabsTests {
+    @Test func commandClickOnAnAwayPinnedIconSeparatesThePage() throws {
+        let f = SidebarDragFixture(pinned: [("a", nil)], temporary: ["x"])
+        let a = f.id("a")
+        f.model.selectTab(id: a)
+        #expect(f.model.separateFromPinnedTab(id: a) == nil, "A pinned tab on its page has nothing to separate")
+        f.driver.emitUpdate(id: a, urlString: "https://a.example/deep")
+        let newID = try #require(f.model.separateFromPinnedTab(id: a))
+        #expect(f.model.temporaryTabs.first?.id == newID, "The page goes to the top of the temporary tabs")
+        #expect(f.model.tabs.first { $0.id == newID }?.urlString == "https://a.example/deep")
+        #expect(f.model.selectedTabID == a, "The pinned tab stays selected")
+        #expect(f.driver.targetedNavigationRequests.last?.id == a)
+        #expect(f.driver.targetedNavigationRequests.last?.urlString.hasPrefix("https://a.example") == true)
+        #expect(f.driver.targetedNavigationRequests.last?.urlString != "https://a.example/deep", "and goes back home")
+    }
+
     @Test func resetAllTabsInThisSpaceReturnsPinnedTabsToTheirPages() {
         let f = SidebarDragFixture(pinned: [("a", nil), ("b", nil)], temporary: ["x"])
         #expect(!f.model.canResetSpaceTabs(), "Nothing has left its pinned page")
