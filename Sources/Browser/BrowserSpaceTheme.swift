@@ -676,3 +676,32 @@ extension NSView {
         return nil
     }
 }
+
+// MARK: - BrowserSpaceTheme.Color + spoken name
+
+extension BrowserSpaceTheme.Color {
+    /// A plain name for VoiceOver, such as "Light Blue", from the color's hue,
+    /// saturation and lightness.
+    var spokenName: String {
+        let (hue, saturation, lightness) = hsl
+        if saturation < 0.12 || lightness > 0.97 || lightness < 0.06 {
+            return lightness > 0.9
+                ? BrowserStrings.colorWhite
+                : lightness < 0.12 ? BrowserStrings.colorBlack : BrowserStrings.colorGray
+        }
+        let base =
+            switch hue {
+            case 15..<40: BrowserStrings.colorOrange
+            case 40..<65: BrowserStrings.colorYellow
+            case 65..<150: BrowserStrings.colorGreen
+            case 150..<190: BrowserStrings.colorTeal
+            case 190..<255: BrowserStrings.colorBlue
+            case 255..<290: BrowserStrings.colorPurple
+            case 290..<345: BrowserStrings.colorPink
+            default: BrowserStrings.colorRed
+            }
+        if lightness > 0.8 { return BrowserStrings.colorLight(base) }
+        if lightness < 0.3 { return BrowserStrings.colorDark(base) }
+        return base
+    }
+}

@@ -420,7 +420,13 @@ private final class BrowserSpaceThemeSwatchButton: NSView {
         wantsLayer = true
         setAccessibilityElement(true)
         setAccessibilityRole(.button)
-        setAccessibilityLabel(BrowserStrings.spaceThemeSetColor)
+        // Named after its colors, so the swatches differ when heard.
+        var names = [String]()
+        for name in swatch.colors.map(\.spokenName) where !names.contains(name) {
+            names.append(name)
+        }
+        setAccessibilityLabel(ListFormatter.localizedString(byJoining: names))
+        setAccessibilityHelp(BrowserStrings.spaceThemeSetColor)
     }
 
     @available(*, unavailable) required init?(coder _: NSCoder) { fatalError() }

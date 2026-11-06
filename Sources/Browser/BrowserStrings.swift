@@ -1868,6 +1868,18 @@ enum BrowserStrings {
         comment: "Theme editor dial tooltip.",
     )
 
+    // Spoken color names for the theme editor's swatches.
+    static let colorRed = NSLocalizedString("browser.color.red", comment: "Spoken name of a theme color.")
+    static let colorOrange = NSLocalizedString("browser.color.orange", comment: "Spoken name of a theme color.")
+    static let colorYellow = NSLocalizedString("browser.color.yellow", comment: "Spoken name of a theme color.")
+    static let colorGreen = NSLocalizedString("browser.color.green", comment: "Spoken name of a theme color.")
+    static let colorTeal = NSLocalizedString("browser.color.teal", comment: "Spoken name of a theme color.")
+    static let colorBlue = NSLocalizedString("browser.color.blue", comment: "Spoken name of a theme color.")
+    static let colorPurple = NSLocalizedString("browser.color.purple", comment: "Spoken name of a theme color.")
+    static let colorPink = NSLocalizedString("browser.color.pink", comment: "Spoken name of a theme color.")
+    static let colorGray = NSLocalizedString("browser.color.gray", comment: "Spoken name of a theme color.")
+    static let colorWhite = NSLocalizedString("browser.color.white", comment: "Spoken name of a theme color.")
+    static let colorBlack = NSLocalizedString("browser.color.black", comment: "Spoken name of a theme color.")
     static let spaceThemeSetColor = NSLocalizedString(
         "browser.space.theme.set_color",
         comment: "Theme editor swatch button label.",
@@ -3488,6 +3500,14 @@ enum BrowserStrings {
         "browser.menu.bring_all_to_front",
         comment: "Window menu item that brings every app window to the front.",
     )
+
+    static func colorLight(_ name: String) -> String {
+        String(format: NSLocalizedString("browser.color.light", comment: "A light shade of a spoken color name."), name)
+    }
+
+    static func colorDark(_ name: String) -> String {
+        String(format: NSLocalizedString("browser.color.dark", comment: "A dark shade of a spoken color name."), name)
+    }
 
     static func onboardingImportResult(_ parts: [String]) -> String {
         parts.isEmpty

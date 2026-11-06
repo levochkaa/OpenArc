@@ -514,4 +514,24 @@ import Testing
             #expect(NSImage(systemSymbolName: section.symbol, accessibilityDescription: nil) != nil)
         }
     }
+
+    @Test func swatchesHaveSpokenColorNames() {
+        let single = BrowserSpaceThemePresets.pages[0].map(\.key.spokenName)
+        #expect(Array(single[3...7]) == [
+            BrowserStrings.colorRed, BrowserStrings.colorOrange, BrowserStrings.colorYellow,
+            BrowserStrings.colorGreen, BrowserStrings.colorBlue,
+        ])
+        let grey = BrowserSpaceThemePresets.pages[4].map(\.key.spokenName)
+        #expect(grey.first == BrowserStrings.colorWhite)
+        #expect(grey.last == BrowserStrings.colorBlack)
+        #expect(grey.contains(BrowserStrings.colorGray))
+        let lightNames = Set([
+            BrowserStrings.colorRed, BrowserStrings.colorOrange, BrowserStrings.colorYellow, BrowserStrings.colorGreen,
+            BrowserStrings.colorTeal, BrowserStrings.colorBlue, BrowserStrings.colorPurple, BrowserStrings.colorPink,
+        ].map(BrowserStrings.colorLight)).union([BrowserStrings.colorWhite])
+        #expect(
+            BrowserSpaceThemePresets.pages[2].allSatisfy { lightNames.contains($0.key.spokenName) },
+            "Pastels are light",
+        )
+    }
 }

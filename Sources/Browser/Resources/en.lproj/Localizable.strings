@@ -907,3 +907,16 @@
 "browser.auth.password" = "Password";
 "browser.auth.sign_in" = "Sign in";
 "browser.window.full_screen_button" = "Full Screen";
+"browser.color.red" = "Red";
+"browser.color.orange" = "Orange";
+"browser.color.yellow" = "Yellow";
+"browser.color.green" = "Green";
+"browser.color.teal" = "Teal";
+"browser.color.blue" = "Blue";
+"browser.color.purple" = "Purple";
+"browser.color.pink" = "Pink";
+"browser.color.gray" = "Gray";
+"browser.color.white" = "White";
+"browser.color.black" = "Black";
+"browser.color.light" = "Light %@";
+"browser.color.dark" = "Dark %@";
