@@ -47,10 +47,12 @@ enum BrowserCommandBarOverlayStyle: Equatable {
         }
     }
 
+    /// A borderless field draws its line from the top, so it moves down until
+    /// the middle of capital letters meets the icon's middle.
     var textFieldVerticalOffset: CGFloat {
         switch self {
         case .standard:
-            0
+            BrowserChromeLayout.commandBarTextFieldVerticalOffset
         case .compact:
             BrowserChromeLayout.compactCommandBarTextFieldVerticalOffset
         }

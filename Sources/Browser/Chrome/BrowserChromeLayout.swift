@@ -156,6 +156,7 @@ enum BrowserChromeLayout {
     static let commandBarTopInsetFraction: CGFloat = 0.22
     static let commandBarOuterPadding: CGFloat = 4
     static let commandBarFieldHeight: CGFloat = 60
+    static let commandBarTextFieldVerticalOffset: CGFloat = 4
     static let commandBarFieldCornerRadius: CGFloat = 14
     static let commandBarRowHorizontalPadding: CGFloat = 13
     static let commandBarRowContentSpacing: CGFloat = 12
