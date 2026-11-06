@@ -91,4 +91,28 @@ import Testing
         )
         #expect(f.model.selectedTabID == f.model.tabs.first { $0.syncID == mail.syncID }?.id)
     }
+
+    @Test func everyArcSpaceIconMapsToASymbolThatExists() throws {
+        // Every icon name Arc's sidebar can store.
+        let arcIcons = """
+        star bookmark heart flag flash triangle medical notifications bulb shapes grid apps layers server albums copy
+        folder fileTrayFull calendar mail checkbox document book chatBubbleEllipses people terminal construction square
+        egg ellipse moon sunny planet leaf cloud paw bag gift bed restaurant barbell airplane musicalNote colorPallete
+        video bandage code baseball cloudOutline map bonfire pizza skull receipt thumbsUp train rss github linear figma
+        search
+        """.split(whereSeparator: \.isWhitespace).map(String.init)
+        #expect(arcIcons.count == 61)
+        let unmapped = Set(arcIcons).subtracting(BrowserArcSidebar.arcIconSymbols.keys)
+        #expect(unmapped == ["skull", "github", "linear", "figma"], "Only those have no symbol")
+        for (name, symbol) in BrowserArcSidebar.arcIconSymbols {
+            #expect(NSImage(systemSymbolName: symbol, accessibilityDescription: nil) != nil, "\(name) → \(symbol)")
+        }
+        let sidebar = try BrowserArcSidebar(data: Data("""
+        {"sidebar": {"containers": [{"spaces": [
+          "A", {"title": "A", "customInfo": {"iconType": {"icon": "bulb"}}},
+          "B", {"title": "B", "customInfo": {"iconType": {"icon": "github"}}}
+        ], "items": []}]}}
+        """.utf8))
+        #expect(sidebar.spaces.map(\.icon) == ["lightbulb.fill", nil], "Unknown names get the default icon")
+    }
 }

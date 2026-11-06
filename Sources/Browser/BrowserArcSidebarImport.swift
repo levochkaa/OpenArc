@@ -1,6 +1,6 @@
 // BrowserArcSidebarImport.swift
 
-import Foundation
+import AppKit
 
 // MARK: - BrowserArcSidebar
 
@@ -75,35 +75,67 @@ struct BrowserArcSidebar: Equatable {
         }
     }
 
-    private static let arcIconSymbols = [
-        "planet": "globe.americas.fill",
-        "barbell": "dumbbell.fill",
-        "flash": "bolt.fill",
+    /// The icon names Arc's sidebar file stores, as the closest symbols.
+    /// Arc's skull and its GitHub, Linear and Figma logos have no symbol and
+    /// fall back to the default icon.
+    static let arcIconSymbols = [
         "star": "star.fill",
+        "bookmark": "bookmark.fill",
         "heart": "heart.fill",
         "flag": "flag.fill",
-        "bookmark": "bookmark.fill",
-        "bell": "bell.fill",
-        "lightbulb": "lightbulb.fill",
+        "flash": "bolt.fill",
+        "triangle": "triangle.fill",
+        "medical": "cross.case.fill",
+        "notifications": "bell.fill",
+        "bulb": "lightbulb.fill",
+        "shapes": "square.on.circle.fill",
+        "grid": "square.grid.2x2.fill",
+        "apps": "square.grid.3x3.fill",
+        "layers": "square.3.layers.3d",
+        "server": "server.rack",
+        "albums": "rectangle.stack.fill",
+        "copy": "doc.on.doc.fill",
         "folder": "folder.fill",
+        "fileTrayFull": "tray.full.fill",
         "calendar": "calendar",
-        "envelope": "envelope.fill",
+        "mail": "envelope.fill",
+        "checkbox": "checkmark.square.fill",
+        "document": "doc.fill",
         "book": "book.fill",
+        "chatBubbleEllipses": "ellipsis.bubble.fill",
+        "people": "person.2.fill",
         "terminal": "terminal.fill",
+        "construction": "hammer.fill",
+        "square": "square.fill",
+        "egg": "oval.portrait.fill",
+        "ellipse": "circle.fill",
         "moon": "moon.fill",
-        "sun": "sun.max.fill",
+        "sunny": "sun.max.fill",
+        "planet": "globe.americas.fill",
         "leaf": "leaf.fill",
         "cloud": "cloud.fill",
         "paw": "pawprint.fill",
+        "bag": "bag.fill",
         "gift": "gift.fill",
         "bed": "bed.double.fill",
+        "restaurant": "fork.knife",
+        "barbell": "dumbbell.fill",
         "airplane": "airplane",
-        "music": "music.note",
-        "palette": "paintpalette.fill",
+        "musicalNote": "music.note",
+        "colorPallete": "paintpalette.fill",
         "video": "video.fill",
+        "bandage": "bandage.fill",
         "code": "chevron.left.forwardslash.chevron.right",
+        "baseball": "baseball.fill",
+        "cloudOutline": "cloud",
         "map": "map.fill",
-        "flame": "flame.fill",
+        "bonfire": "flame.fill",
+        "pizza": "takeoutbag.and.cup.and.straw.fill",
+        "receipt": "receipt.fill",
+        "thumbsUp": "hand.thumbsup.fill",
+        "train": "tram.fill",
+        "rss": "dot.radiowaves.up.forward",
+        "search": "magnifyingglass",
     ]
 
     /// Arc keeps the file in its Application Support folder.
@@ -171,7 +203,9 @@ struct BrowserArcSidebar: Equatable {
         let iconType = (customInfo as? [String: Any])?["iconType"] as? [String: Any]
         if let emoji = iconType?["emoji_v2"] as? String { return BrowserIconImage.name(emoji: emoji) }
         guard let name = iconType?["icon"] as? String else { return nil }
-        return arcIconSymbols[name] ?? name
+        if let symbol = arcIconSymbols[name] { return symbol }
+        // A name that is already a symbol comes over; anything else gets the default icon.
+        return NSImage(systemSymbolName: name, accessibilityDescription: nil) == nil ? nil : name
     }
 
     /// A Space's colors, intensity and texture, for themes in either stored form.
