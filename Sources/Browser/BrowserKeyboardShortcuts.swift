@@ -612,7 +612,7 @@ enum BrowserCommands {
 
     /// View Library is Command-Shift-L.
     static let viewLibrary = BrowserCommandDescriptor(
-        menuTitle: BrowserStrings.menuViewLibrary,
+        menuTitle: BrowserStrings.menuOpenLibrary,
         helpTitle: BrowserStrings.menuViewLibrary,
         shortcut: BrowserKeyboardShortcut("l", modifiers: [.command, .shift]),
     )

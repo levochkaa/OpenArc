@@ -1938,6 +1938,18 @@ enum BrowserStrings {
         comment: "Menu item that opens the Library.",
     )
 
+    /// The Window menu says Open Library…; Settings say View Library.
+    static let menuOpenLibrary = NSLocalizedString(
+        "browser.menu.open_library",
+        comment: "Window menu item that opens the Library.",
+    )
+
+    /// The Spaces menu says Edit Theme…; a Space's own menu says Edit Theme Color….
+    static let menuEditTheme = NSLocalizedString(
+        "browser.menu.edit_theme",
+        comment: "Spaces menu item that edits the shown Space's theme.",
+    )
+
     static let libraryMedia = NSLocalizedString(
         "browser.library.media",
         comment: "Library section with pictures.",
@@ -2176,6 +2188,11 @@ enum BrowserStrings {
     static let menuSpeech = NSLocalizedString("browser.menu.speech", comment: "Edit submenu.")
     static let menuStartSpeaking = NSLocalizedString("browser.menu.start_speaking", comment: "Speech menu item.")
     static let menuStopSpeaking = NSLocalizedString("browser.menu.stop_speaking", comment: "Speech menu item.")
+    static let menuFormat = NSLocalizedString("browser.menu.format", comment: "Edit submenu.")
+    static let menuFont = NSLocalizedString("browser.menu.font", comment: "Format submenu.")
+    static let menuBold = NSLocalizedString("browser.menu.bold", comment: "Font menu item.")
+    static let menuItalic = NSLocalizedString("browser.menu.italic", comment: "Font menu item.")
+    static let menuUnderline = NSLocalizedString("browser.menu.underline", comment: "Font menu item.")
     static let menuAppearance = NSLocalizedString("browser.menu.appearance", comment: "View submenu.")
     static let menuCollapsePinnedTabs = NSLocalizedString("browser.menu.collapse_pinned", comment: "View menu item.")
     static let menuExpandPinnedTabs = NSLocalizedString("browser.menu.expand_pinned", comment: "View menu item.")

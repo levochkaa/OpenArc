@@ -766,6 +766,18 @@ NSMenuDelegate, NSUserInterfaceValidations {
         activeChromeModel?.jumpToSelection()
     }
 
+    public func formatBold(_: Any?) {
+        activeChromeModel?.applyTextStyle(.bold)
+    }
+
+    public func formatItalic(_: Any?) {
+        activeChromeModel?.applyTextStyle(.italic)
+    }
+
+    public func formatUnderline(_: Any?) {
+        activeChromeModel?.applyTextStyle(.underline)
+    }
+
     public func clearTemporaryTabs(_: Any?) {
         activeChromeModel?.clearTemporaryTabs()
     }
@@ -895,6 +907,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
             return activeChromeModel?.canFindInPage ?? false
         case #selector(useSelectionToFind(_:)):
             return activeChromeModel?.canPresentFindInPage ?? false
+        case #selector(formatBold(_:)),
+             #selector(formatItalic(_:)),
+             #selector(formatUnderline(_:)):
+            return activeChromeModel?.canFindInPage ?? false
         case #selector(clearTemporaryTabs(_:)):
             return activeChromeModel?.canClearTemporaryTabs ?? false
         case #selector(installCurrentSiteAsApp(_:)):
@@ -1013,7 +1029,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         case #selector(viewLibrary(_:)):
             if let menuItem = item as? NSMenuItem {
                 menuItem.title = activeChromeModel?.librarySection == nil
-                    ? BrowserStrings.menuViewLibrary
+                    ? BrowserStrings.menuOpenLibrary
                     : BrowserStrings.menuCloseLibrary
             }
             return activeChromeModel?.supportsSpaces ?? false
@@ -1695,8 +1711,12 @@ NSMenuDelegate, NSUserInterfaceValidations {
         ))
         viewMenuItem.submenu = viewMenu
 
-        // Tabs menu with OpenArc's tab actions.
+        // Tabs menu with the tab actions, led by New Tab with ⌘T.
         let tabsMenu = NSMenu(title: BrowserStrings.menuTabs)
+        tabsMenu.addItem(makeMenuItem(
+            descriptor: shortcutStore.descriptor(for: .newTab),
+            action: #selector(createNewTab(_:)),
+        ))
         for (commandID, action) in [
             (BrowserCommandID.togglePinTab, #selector(togglePinTab(_:))),
             (.duplicateTab, #selector(duplicateTab(_:))),
@@ -1768,6 +1788,11 @@ NSMenuDelegate, NSUserInterfaceValidations {
             descriptor: shortcutStore.descriptor(for: .clearTemporaryTabs),
             action: #selector(clearTemporaryTabs(_:)),
         ))
+        // Reset all tabs in this Space belongs to the Tabs menu.
+        tabsMenu.addItem(makeMenuItem(
+            descriptor: shortcutStore.descriptor(for: .resetSpaceTabs),
+            action: #selector(resetSpaceTabs(_:)),
+        ))
         tabsMenuItem.submenu = tabsMenu
 
         // Spaces menu: next/previous, then one item per Space, filled
@@ -1780,7 +1805,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
             action: #selector(createNewSpace(_:)),
         ))
         for (title, action) in [
-            (BrowserStrings.spaceEditThemeAction, #selector(editSpaceTheme(_:))),
+            (BrowserStrings.menuEditTheme, #selector(editSpaceTheme(_:))),
             (BrowserStrings.menuRenameSpace, #selector(renameSpace(_:))),
         ] {
             let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
@@ -1803,10 +1828,6 @@ NSMenuDelegate, NSUserInterfaceValidations {
         spacesMenu.addItem(makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .manageSpaces),
             action: #selector(manageSpaces(_:)),
-        ))
-        spacesMenu.addItem(makeMenuItem(
-            descriptor: shortcutStore.descriptor(for: .resetSpaceTabs),
-            action: #selector(resetSpaceTabs(_:)),
         ))
         spacesMenuItem.submenu = spacesMenu
     }
@@ -2083,6 +2104,23 @@ NSMenuDelegate, NSUserInterfaceValidations {
             (BrowserStrings.menuStartSpeaking, #selector(NSTextView.startSpeaking(_:)), "", []),
             (BrowserStrings.menuStopSpeaking, #selector(NSTextView.stopSpeaking(_:)), "", []),
         ])
+        // Format › Font. The page gets ⌘B, ⌘I and ⌘U first, so these run
+        // only for a click or a key the page left alone.
+        let font = NSMenu(title: BrowserStrings.menuFont)
+        for (title, action, key) in [
+            (BrowserStrings.menuBold, #selector(formatBold(_:)), "b"),
+            (BrowserStrings.menuItalic, #selector(formatItalic(_:)), "i"),
+            (BrowserStrings.menuUnderline, #selector(formatUnderline(_:)), "u"),
+        ] {
+            font.addItem(makeStandardMenuItem(title: title, action: action, keyEquivalent: key, target: self))
+        }
+        let fontItem = NSMenuItem(title: BrowserStrings.menuFont, action: nil, keyEquivalent: "")
+        fontItem.submenu = font
+        let format = NSMenu(title: BrowserStrings.menuFormat)
+        format.addItem(fontItem)
+        let formatItem = NSMenuItem(title: BrowserStrings.menuFormat, action: nil, keyEquivalent: "")
+        formatItem.submenu = format
+        editMenu.addItem(formatItem)
     }
 
     /// Automatic, Light or Dark, for the whole app and the pages in it.

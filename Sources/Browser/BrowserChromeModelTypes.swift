@@ -163,3 +163,12 @@ extension BrowserChromeModel {
         case chromiumWebUI
     }
 }
+
+// MARK: - BrowserTextStyle
+
+/// Format › Font commands, named as `document.execCommand` takes them.
+enum BrowserTextStyle: String {
+    case bold
+    case italic
+    case underline
+}

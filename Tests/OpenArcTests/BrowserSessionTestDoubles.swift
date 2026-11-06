@@ -72,6 +72,7 @@ import Foundation
     var onPeekSitePermissionAnswered: ((Int, Bool?) -> Void)?
     var onMediaStateChanged: ((String, BrowserTabMediaState?) -> Void)?
     var onCaptureChanged: ((String, Bool) -> Void)?
+    private(set) var evaluatedScripts = [(tabID: String, code: String)]()
     var onRenderProcessTerminated: ((String, Int) -> Void)?
     private(set) var mediaControls = [(tabID: String, action: BrowserMediaAction)]()
     private(set) var sitePermissionResolutions = [(id: Int, allowed: Bool?)]()
@@ -374,10 +375,11 @@ import Foundation
     }
 
     func evaluateJavaScript(
-        _: String,
-        inTabWithID _: String,
+        _ code: String,
+        inTabWithID tabID: String,
         completion: @escaping @MainActor (String?) -> Void,
     ) {
+        evaluatedScripts.append((tabID, code))
         completion(nil)
     }
 

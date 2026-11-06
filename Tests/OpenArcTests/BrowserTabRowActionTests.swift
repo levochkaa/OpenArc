@@ -101,6 +101,17 @@ import Testing
         #expect(row.muteButton.isHidden)
     }
 
+    @Test func formatFontRunsThePagesEditingCommandInTheShownTab() {
+        let f = SidebarDragFixture(temporary: ["x"])
+        let x = f.id("x")
+        f.model.selectTab(id: x)
+        for style in [BrowserTextStyle.bold, .italic, .underline] {
+            f.model.applyTextStyle(style)
+            #expect(f.driver.evaluatedScripts.last?.tabID == x)
+            #expect(f.driver.evaluatedScripts.last?.code == "document.execCommand('\(style.rawValue)'); undefined")
+        }
+    }
+
     @Test func aTabUsingTheCameraOrMicrophoneShowsARecordingDot() throws {
         let f = SidebarDragFixture(temporary: ["x", "y"])
         let x = f.id("x")

@@ -1186,6 +1186,16 @@ enum BrowserWindowMode: Equatable {
         return true
     }
 
+    /// Format › Font: the page's own editing command on its selection.
+    func applyTextStyle(_ style: BrowserTextStyle) {
+        guard canFindInPage, let tabID = selectedTabID else { return }
+        tabDriver.evaluateJavaScript(
+            "document.execCommand('\(style.rawValue)'); undefined",
+            inTabWithID: tabID,
+            completion: { _ in },
+        )
+    }
+
     /// Scrolls the page's selection into view, even with focus in the find field.
     @discardableResult func jumpToSelection() -> Bool {
         guard canFindInPage else { return false }
