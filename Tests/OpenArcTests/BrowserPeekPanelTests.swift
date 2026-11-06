@@ -169,7 +169,7 @@ import Testing
     }
 
     @Test func optionCommandClicksIntoTheSmallWindowAreOptIn() throws {
-        let defaults = try #require(UserDefaults(suiteName: "BrowserPeekPanelTests.\(UUID().uuidString)"))
+        let defaults = try #require(UserDefaults(suiteName: BrowserTestDefaults.suiteName("BrowserPeekPanelTests")))
         let store = BrowserUserPreferencesStore(userDefaults: defaults)
         #expect(!store.opensOptionCommandClicksInLittleWindow)
         store.opensOptionCommandClicksInLittleWindow = true

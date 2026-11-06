@@ -200,7 +200,7 @@ import Testing
     let store: BrowserSQLiteSessionStore
     let profiles: BrowserProfileStore
     let preferences: UserDefaults
-    let suite = "NativeAutomaticArchive." + UUID().uuidString
+    let suite = BrowserTestDefaults.suiteName("NativeAutomaticArchive")
     let owner = BrowserSyncOwner(baseURL: URL(string: "https://native-automatic-archive.example")!, userID: "owner")
     let driver = FakeBrowserTabDriver()
     private(set) var model: BrowserChromeModel!

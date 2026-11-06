@@ -246,7 +246,7 @@ import Testing
     init() throws {
         self.directory = FileManager.default.temporaryDirectory.appendingPathComponent("DesktopExpiry-\(UUID())")
         self.databaseURL = directory.appendingPathComponent("Profile.sqlite")
-        self.suite = "DesktopExpiry.\(UUID())"
+        self.suite = BrowserTestDefaults.suiteName("DesktopExpiry")
         self.defaults = UserDefaults(suiteName: suite)!
         self.store = try BrowserSQLiteSessionStore(databaseURL: databaseURL)
         let snapshot = BrowserTabSessionSnapshot(

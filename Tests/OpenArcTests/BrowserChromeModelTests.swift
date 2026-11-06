@@ -135,7 +135,7 @@ import Testing
 
 @Test
 @MainActor func restoreSessionPreferenceOffSkipsSavedTabs() throws {
-    let suiteName = "OpenArcTests.\(UUID().uuidString)"
+    let suiteName = BrowserTestDefaults.suiteName("OpenArcTests")
     let userDefaults = try #require(UserDefaults(suiteName: suiteName))
     defer { userDefaults.removePersistentDomain(forName: suiteName) }
 
@@ -3011,7 +3011,7 @@ import Testing
 }
 
 private func isolatedUserDefaults() -> UserDefaults {
-    let suiteName = "OpenArcTests.\(UUID().uuidString)"
+    let suiteName = BrowserTestDefaults.suiteName("OpenArcTests")
     let userDefaults = UserDefaults(suiteName: suiteName)!
     userDefaults.removePersistentDomain(forName: suiteName)
     return userDefaults

@@ -15,7 +15,7 @@ import Testing
     let model: BrowserChromeModel
 
     init(extensions: [BrowserExtension] = [], mode: BrowserWindowMode = .normal) throws {
-        let suite = "BrowserSiteControlCenterTests.\(UUID().uuidString)"
+        let suite = BrowserTestDefaults.suiteName("BrowserSiteControlCenterTests")
         let defaults = try #require(UserDefaults(suiteName: suite))
         let driver = FakeBrowserTabDriver()
         self.suite = suite

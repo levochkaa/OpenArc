@@ -324,7 +324,7 @@ import Testing
     init(tabIDs: [String] = ["a", "b"], ready: Bool = true) throws {
         self.directory = FileManager.default.temporaryDirectory.appendingPathComponent("ConfirmedClose-\(UUID())")
         self.databaseURL = directory.appendingPathComponent("Profile.sqlite")
-        self.suite = "ConfirmedClose.\(UUID())"
+        self.suite = BrowserTestDefaults.suiteName("ConfirmedClose")
         self.defaults = UserDefaults(suiteName: suite)!
         self.store = try BrowserSQLiteSessionStore(databaseURL: databaseURL)
         self.recording = ConfirmedCloseRecordingStore(store)

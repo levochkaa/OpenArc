@@ -132,7 +132,7 @@ private let gitLab = BrowserSiteSearch(
 }
 
 @Test func siteSearchesStartWithTheDefaultSetAndPersist() throws {
-    let suite = "BrowserSiteSearchTests.\(UUID().uuidString)"
+    let suite = BrowserTestDefaults.suiteName("BrowserSiteSearchTests")
     let defaults = try #require(UserDefaults(suiteName: suite))
     defer { defaults.removePersistentDomain(forName: suite) }
     let preferences = BrowserUserPreferencesStore(userDefaults: defaults)

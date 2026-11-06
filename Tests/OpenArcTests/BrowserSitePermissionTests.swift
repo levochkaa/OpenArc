@@ -24,7 +24,7 @@ import Testing
         defaults existing: UserDefaults? = nil,
         store: BrowserUserPreferencesStore? = nil,
     ) throws {
-        let suite = "BrowserSitePermissionTests.\(UUID().uuidString)"
+        let suite = BrowserTestDefaults.suiteName("BrowserSitePermissionTests")
         self.suite = suite
         let defaults = try existing ?? #require(UserDefaults(suiteName: suite))
         let driver = FakeBrowserTabDriver()

@@ -104,7 +104,7 @@ import Testing
 
     @Test func archiveMenuUsesCustomizedShortcutsForLatinDispatchAndPhysicalLayoutBridge() throws {
         _ = NSApplication.shared
-        let suite = "ArchiveCommandShortcuts." + UUID().uuidString
+        let suite = BrowserTestDefaults.suiteName("ArchiveCommandShortcuts")
         let preferences = try #require(UserDefaults(suiteName: suite))
         defer { preferences.removePersistentDomain(forName: suite) }
         let shortcuts = BrowserShortcutStore(userDefaults: preferences)
@@ -192,7 +192,7 @@ import Testing
     // MARK: Internal
 
     let store: BrowserSQLiteSessionStore
-    let suite = "ArchiveCommandRouting." + UUID().uuidString
+    let suite = BrowserTestDefaults.suiteName("ArchiveCommandRouting")
     let preferences: UserDefaults
     private(set) var model: BrowserChromeModel!
     private(set) var models = [BrowserChromeModel]()

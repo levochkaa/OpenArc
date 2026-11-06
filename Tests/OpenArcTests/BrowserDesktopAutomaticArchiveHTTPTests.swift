@@ -202,7 +202,7 @@ extension BrowserSyncHTTPIntegrationTests {
 
     private let profile: SyncHTTPProfile
     private let defaults: UserDefaults
-    private let suite = "DesktopAutomaticHTTPModel.\(UUID())"
+    private let suite = BrowserTestDefaults.suiteName("DesktopAutomaticHTTPModel")
     private var closed = false
 
     init(profile: SyncHTTPProfile, now: Date) throws {

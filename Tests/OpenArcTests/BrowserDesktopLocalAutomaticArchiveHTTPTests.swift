@@ -152,7 +152,7 @@ extension BrowserSyncHTTPIntegrationTests {
 
     // MARK: Private
 
-    private let suite = "LocalAutomaticArchiveHTTP.\(UUID())"
+    private let suite = BrowserTestDefaults.suiteName("LocalAutomaticArchiveHTTP")
     private let defaults: UserDefaults
     private let urlSession: URLSession
     private var closed = false

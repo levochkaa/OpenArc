@@ -138,7 +138,7 @@ import Testing
             .appendingPathComponent("NativeBookmarks-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
-        let suite = "OpenArcNativeBookmarksTests.\(UUID().uuidString)"
+        let suite = BrowserTestDefaults.suiteName("OpenArcNativeBookmarksTests")
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
         let driver = FakeBrowserTabDriver()

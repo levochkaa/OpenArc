@@ -62,7 +62,7 @@ import Testing
 
     private func makeWindow() -> (BrowserChromeModel, FakeBrowserTabDriver, BrowserScriptWindow) {
         let driver = FakeBrowserTabDriver()
-        let defaults = UserDefaults(suiteName: "OpenArcScriptingTests.\(UUID().uuidString)")!
+        let defaults = UserDefaults(suiteName: BrowserTestDefaults.suiteName("OpenArcScriptingTests"))!
         let model = BrowserChromeModel(
             tabDriver: driver,
             sessionSnapshotStore: InMemorySessionSnapshotStore(),
@@ -107,7 +107,7 @@ import Testing
 
 @Test @MainActor func tabVolumeIsRememberedForTheMiniPlayer() throws {
     let driver = FakeBrowserTabDriver()
-    let defaults = try #require(UserDefaults(suiteName: "OpenArcVolumeTests.\(UUID().uuidString)"))
+    let defaults = try #require(UserDefaults(suiteName: BrowserTestDefaults.suiteName("OpenArcVolumeTests")))
     let model = BrowserChromeModel(
         tabDriver: driver,
         sessionSnapshotStore: InMemorySessionSnapshotStore(),
@@ -125,7 +125,7 @@ import Testing
 
 @Test @MainActor func onlyPinnedSiteTabsOfferARecentPagesPreview() throws {
     let driver = FakeBrowserTabDriver()
-    let defaults = try #require(UserDefaults(suiteName: "OpenArcPreviewTests.\(UUID().uuidString)"))
+    let defaults = try #require(UserDefaults(suiteName: BrowserTestDefaults.suiteName("OpenArcPreviewTests")))
     let model = BrowserChromeModel(
         tabDriver: driver,
         sessionSnapshotStore: InMemorySessionSnapshotStore(
@@ -150,7 +150,7 @@ import Testing
 
 @Test @MainActor func aLiveFolderFollowsItsPages() throws {
     let driver = FakeBrowserTabDriver()
-    let defaults = try #require(UserDefaults(suiteName: "OpenArcLiveFolderTests.\(UUID().uuidString)"))
+    let defaults = try #require(UserDefaults(suiteName: BrowserTestDefaults.suiteName("OpenArcLiveFolderTests")))
     let model = BrowserChromeModel(
         tabDriver: driver,
         sessionSnapshotStore: InMemorySessionSnapshotStore(),
@@ -191,7 +191,7 @@ import Testing
 
 @Test @MainActor func aSitesOwnSettingsReadAndWriteThroughTheirRows() throws {
     let driver = FakeBrowserTabDriver()
-    let defaults = try #require(UserDefaults(suiteName: "OpenArcOwnSettingTests.\(UUID().uuidString)"))
+    let defaults = try #require(UserDefaults(suiteName: BrowserTestDefaults.suiteName("OpenArcOwnSettingTests")))
     let model = BrowserChromeModel(
         tabDriver: driver,
         sessionSnapshotStore: InMemorySessionSnapshotStore(),
@@ -217,7 +217,7 @@ import Testing
 
 @Test @MainActor func aPendingSplitKeepsItsOrientationOnce() throws {
     let driver = FakeBrowserTabDriver()
-    let defaults = try #require(UserDefaults(suiteName: "OpenArcSplitPendingTests.\(UUID().uuidString)"))
+    let defaults = try #require(UserDefaults(suiteName: BrowserTestDefaults.suiteName("OpenArcSplitPendingTests")))
     let model = BrowserChromeModel(
         tabDriver: driver,
         sessionSnapshotStore: InMemorySessionSnapshotStore(
@@ -261,7 +261,7 @@ private final class InMemoryPasswordStore: BrowserPasswordStoring {
     -> (BrowserChromeModel, FakeBrowserTabDriver, InMemoryPasswordStore)
 {
     let driver = FakeBrowserTabDriver()
-    let defaults = UserDefaults(suiteName: "OpenArcPasswordTests.\(UUID().uuidString)")!
+    let defaults = UserDefaults(suiteName: BrowserTestDefaults.suiteName("OpenArcPasswordTests"))!
     let model = BrowserChromeModel(
         tabDriver: driver,
         sessionSnapshotStore: InMemorySessionSnapshotStore(),

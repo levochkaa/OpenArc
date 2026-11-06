@@ -353,7 +353,7 @@ import Testing
         let second = try SyncHTTPProfile(fixture: fixture, device: account.devices[1], directory: directory)
         await second.activate()
 
-        let suite = "BrowserSyncHTTPPendingParent.\(UUID().uuidString)"
+        let suite = BrowserTestDefaults.suiteName("BrowserSyncHTTPPendingParent")
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let driver = FakeBrowserTabDriver()
@@ -469,7 +469,7 @@ import Testing
         await first.saveAndSend(snapshot(url: nil))
         await second.activate()
 
-        let suite = "BrowserSyncHTTPPendingNavigation.\(UUID())"
+        let suite = BrowserTestDefaults.suiteName("BrowserSyncHTTPPendingNavigation")
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let preferences = BrowserUserPreferencesStore(userDefaults: defaults)
@@ -607,7 +607,7 @@ import Testing
         await second.activate()
         await second.suspend()
 
-        let suite = "BrowserSyncHTTPPersistence.\(UUID().uuidString)"
+        let suite = BrowserTestDefaults.suiteName("BrowserSyncHTTPPersistence")
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let driver = FakeBrowserTabDriver()
@@ -1486,7 +1486,7 @@ private func syncHTTPSemanticMutation(_ queued: BrowserSyncQueuedMutation) throw
 @MainActor private func syncHTTPCaptureActualModelDrop(
     profile: SyncHTTPProfile, movedID: String, beforeID: String,
 ) throws {
-    let suite = "BrowserSyncHTTPModel.\(UUID().uuidString)"
+    let suite = BrowserTestDefaults.suiteName("BrowserSyncHTTPModel")
     let defaults = try #require(UserDefaults(suiteName: suite))
     defer { defaults.removePersistentDomain(forName: suite) }
     let driver = FakeBrowserTabDriver()
@@ -1711,7 +1711,7 @@ private func syncHTTPFolderSeed(folder: Bool = false) -> BrowserTabSessionSnapsh
     _ profile: SyncHTTPProfile,
     body: (BrowserChromeModel) throws -> Void,
 ) throws {
-    let suite = "BrowserSyncHTTPFolderModel.\(UUID().uuidString)"
+    let suite = BrowserTestDefaults.suiteName("BrowserSyncHTTPFolderModel")
     let defaults = try #require(UserDefaults(suiteName: suite))
     defer { defaults.removePersistentDomain(forName: suite) }
     let driver = FakeBrowserTabDriver()
@@ -2128,7 +2128,7 @@ private func syncHTTPActivityDate(_ timestamp: TimeInterval) -> String {
     // MARK: Private
 
     private let defaults: UserDefaults
-    private let suite = "BrowserSyncHTTPModelHarness.\(UUID())"
+    private let suite = BrowserTestDefaults.suiteName("BrowserSyncHTTPModelHarness")
     private var closed = false
 
     init(profile: SyncHTTPProfile) throws {

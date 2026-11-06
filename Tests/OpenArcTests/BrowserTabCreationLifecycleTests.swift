@@ -193,7 +193,7 @@ import Testing
     // MARK: Internal
 
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent("tab-creation-\(UUID())")
-    let suiteName = "BrowserTabCreationLifecycleTests.\(UUID())"
+    let suiteName = BrowserTestDefaults.suiteName("BrowserTabCreationLifecycleTests")
     let owner = BrowserSyncOwner(baseURL: URL(string: "https://tab-creation.example")!, userID: "owner")
     let defaults: UserDefaults
     let store: BrowserSQLiteSessionStore

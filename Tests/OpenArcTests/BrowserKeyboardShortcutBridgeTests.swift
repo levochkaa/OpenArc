@@ -227,7 +227,7 @@ import Testing
         charactersIgnoringModifiers: "ц",
     ) == .archiveTab, "Command-W still archives the tab")
 
-    let suiteName = "OpenArcTests.\(UUID().uuidString)"
+    let suiteName = BrowserTestDefaults.suiteName("OpenArcTests")
     let userDefaults = try #require(UserDefaults(suiteName: suiteName))
     defer { userDefaults.removePersistentDomain(forName: suiteName) }
     let store = BrowserShortcutStore(userDefaults: userDefaults)
@@ -236,7 +236,7 @@ import Testing
 }
 
 @Test func aKeyTheUserGaveACommandBeatsALaterReservedWindowKey() throws {
-    let suiteName = "OpenArcTests.\(UUID().uuidString)"
+    let suiteName = BrowserTestDefaults.suiteName("OpenArcTests")
     let userDefaults = try #require(UserDefaults(suiteName: suiteName))
     defer { userDefaults.removePersistentDomain(forName: suiteName) }
     // Saved before Command-M became Minimize.

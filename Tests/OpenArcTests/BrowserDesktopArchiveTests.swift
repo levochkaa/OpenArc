@@ -256,7 +256,7 @@ import Testing
     init(archivedIDs: [String] = ["a"], removeSource: Bool = false, windowMode: BrowserWindowMode = .normal) throws {
         self.directory = FileManager.default.temporaryDirectory.appendingPathComponent("DesktopArchive-\(UUID())")
         self.databaseURL = directory.appendingPathComponent("Profile.sqlite")
-        self.suite = "DesktopArchive.\(UUID())"
+        self.suite = BrowserTestDefaults.suiteName("DesktopArchive")
         self.defaults = UserDefaults(suiteName: suite)!
         self.store = try BrowserSQLiteSessionStore(databaseURL: databaseURL)
         try store.bindSyncOwner(owner)

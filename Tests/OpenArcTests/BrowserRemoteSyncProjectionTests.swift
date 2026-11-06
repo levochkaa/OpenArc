@@ -361,7 +361,7 @@ import Testing
     let model: BrowserChromeModel
 
     init(snapshot: BrowserTabSessionSnapshot) {
-        self.suiteName = "BrowserRemoteSyncProjectionTests.\(UUID().uuidString)"
+        self.suiteName = BrowserTestDefaults.suiteName("BrowserRemoteSyncProjectionTests")
         self.defaults = UserDefaults(suiteName: suiteName)!
         self.driver = FakeBrowserTabDriver()
         self.store = InMemorySessionSnapshotStore(loadedSnapshot: snapshot)

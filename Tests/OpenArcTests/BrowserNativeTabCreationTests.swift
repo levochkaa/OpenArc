@@ -75,7 +75,7 @@ import Testing
     }
 
     @Test func productionBindingRetriesOnlyTheSelectedFailedTab() throws {
-        let suiteName = "BrowserNativeTabCreationTests.\(UUID())"
+        let suiteName = BrowserTestDefaults.suiteName("BrowserNativeTabCreationTests")
         let defaults = try #require(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let preferences = BrowserUserPreferencesStore(userDefaults: defaults)

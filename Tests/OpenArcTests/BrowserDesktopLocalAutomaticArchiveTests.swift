@@ -260,7 +260,7 @@ enum LocalAutomaticInvalidation: CaseIterable {
             .temporaryDirectory
             .appendingPathComponent("LocalAutomaticArchive-\(UUID())")
         self.databaseURL = directory.appendingPathComponent("Profile.sqlite")
-        self.suite = "LocalAutomaticArchive.\(UUID())"
+        self.suite = BrowserTestDefaults.suiteName("LocalAutomaticArchive")
         self.defaults = try #require(UserDefaults(suiteName: suite))
         self.store = try BrowserSQLiteSessionStore(databaseURL: databaseURL)
         self.recording = ConfirmedCloseRecordingStore(store)

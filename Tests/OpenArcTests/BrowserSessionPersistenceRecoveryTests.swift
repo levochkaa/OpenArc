@@ -334,7 +334,7 @@ private enum SessionRecoveryTestError: Error { case unavailable }
 
     init(snapshot: BrowserTabSessionSnapshot = recoverySnapshot(ids: ["a", "b"])) {
         self.store = InMemorySessionSnapshotStore(loadedSnapshot: snapshot)
-        let defaults = UserDefaults(suiteName: "SessionRecoveryFixture.\(UUID().uuidString)")!
+        let defaults = UserDefaults(suiteName: BrowserTestDefaults.suiteName("SessionRecoveryFixture"))!
         self.model = BrowserChromeModel(
             tabDriver: driver, sessionSnapshotStore: store, sessionPreferencesStore: preferences,
             commandBarSuggestionProvider: FakeSuggestionProvider(),

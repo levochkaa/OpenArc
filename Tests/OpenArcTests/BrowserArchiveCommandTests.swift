@@ -235,7 +235,7 @@ import Testing
 
     let directory: URL
     let databaseURL: URL
-    let suite = "ArchiveCommand.\(UUID())"
+    let suite = BrowserTestDefaults.suiteName("ArchiveCommand")
     let defaults: UserDefaults
     let owner: BrowserSyncOwner
     let store: BrowserSQLiteSessionStore

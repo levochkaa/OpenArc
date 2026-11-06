@@ -17,7 +17,7 @@ import Testing
         let model: BrowserChromeModel
 
         init() throws {
-            self.suite = "OpenArcNativeSettingsTests.\(UUID().uuidString)"
+            self.suite = BrowserTestDefaults.suiteName("OpenArcNativeSettingsTests")
             self.defaults = try #require(UserDefaults(suiteName: suite))
             self.root = FileManager.default.temporaryDirectory.appendingPathComponent(suite)
             try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

@@ -206,7 +206,7 @@ extension BrowserSyncHTTPIntegrationTests {
 
     private let profile: SyncHTTPProfile
     private let defaults: UserDefaults
-    private let suite = "PersistentCloseHTTPModel.\(UUID())"
+    private let suite = BrowserTestDefaults.suiteName("PersistentCloseHTTPModel")
     private var closed = false
 
     init(profile: SyncHTTPProfile, now: Date) throws {

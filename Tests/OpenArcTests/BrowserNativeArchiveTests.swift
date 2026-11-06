@@ -355,7 +355,7 @@ private enum NativeArchiveTestError: Error { case timeout }
     let store: BrowserSQLiteSessionStore
     let model: BrowserChromeModel
     let driver = FakeBrowserTabDriver()
-    let suite = "NativeArchive." + UUID().uuidString
+    let suite = BrowserTestDefaults.suiteName("NativeArchive")
     let preferences: UserDefaults
     let entries: [BrowserTabArchiveEntry]
 

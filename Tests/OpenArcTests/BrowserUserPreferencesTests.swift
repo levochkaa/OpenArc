@@ -5,7 +5,7 @@ import Foundation
 import Testing
 
 @Test func settingsDefaultsAndPersistenceUseUserDefaults() throws {
-    let suiteName = "OpenArcTests.\(UUID().uuidString)"
+    let suiteName = BrowserTestDefaults.suiteName("OpenArcTests")
     let userDefaults = try #require(UserDefaults(suiteName: suiteName))
     defer { userDefaults.removePersistentDomain(forName: suiteName) }
 
@@ -76,7 +76,7 @@ import Testing
 }
 
 @Test func legacyPerplexitySearchEnginePreferenceMigratesToAIProvider() throws {
-    let suiteName = "OpenArcTests.\(UUID().uuidString)"
+    let suiteName = BrowserTestDefaults.suiteName("OpenArcTests")
     let userDefaults = try #require(UserDefaults(suiteName: suiteName))
     defer { userDefaults.removePersistentDomain(forName: suiteName) }
 
@@ -88,7 +88,7 @@ import Testing
 }
 
 @Test func shortcutOverridesPersistBlockConflictsAndReset() throws {
-    let suiteName = "OpenArcTests.\(UUID().uuidString)"
+    let suiteName = BrowserTestDefaults.suiteName("OpenArcTests")
     let userDefaults = try #require(UserDefaults(suiteName: suiteName))
     defer { userDefaults.removePersistentDomain(forName: suiteName) }
 
@@ -117,7 +117,7 @@ import Testing
 }
 
 @Test func aNewDefaultYieldsToAKeyTheUserAlreadyAssigned() throws {
-    let suiteName = "OpenArcTests.\(UUID().uuidString)"
+    let suiteName = BrowserTestDefaults.suiteName("OpenArcTests")
     let userDefaults = try #require(UserDefaults(suiteName: suiteName))
     defer { userDefaults.removePersistentDomain(forName: suiteName) }
     // Saved before Open Extensions took Command-E as its default.
@@ -138,7 +138,7 @@ import Testing
 }
 
 @Test func unassignedCommandShortcutsDoNotConflict() throws {
-    let suiteName = "OpenArcTests.\(UUID().uuidString)"
+    let suiteName = BrowserTestDefaults.suiteName("OpenArcTests")
     let userDefaults = try #require(UserDefaults(suiteName: suiteName))
     defer { userDefaults.removePersistentDomain(forName: suiteName) }
 
@@ -156,7 +156,7 @@ import Testing
 }
 
 @Test func layoutIndependentBridgeUsesShortcutOverrides() throws {
-    let suiteName = "OpenArcTests.\(UUID().uuidString)"
+    let suiteName = BrowserTestDefaults.suiteName("OpenArcTests")
     let userDefaults = try #require(UserDefaults(suiteName: suiteName))
     defer { userDefaults.removePersistentDomain(forName: suiteName) }
 

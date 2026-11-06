@@ -6,7 +6,7 @@ import Testing
 @Test(arguments: [0, 1])
 @MainActor func committedRemoteProjectionRestoresAfterInterruptedModelCallbacks(deliveredCallbacks: Int) throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent("ProjectionRestart-\(UUID())")
-    let suiteName = "ProjectionRestart.\(UUID())"
+    let suiteName = BrowserTestDefaults.suiteName("ProjectionRestart")
     let defaults = try #require(UserDefaults(suiteName: suiteName))
     defer {
         defaults.removePersistentDomain(forName: suiteName)

@@ -167,7 +167,7 @@ private let automaticArchivalTabIDs = ["favorite", "pinned", "expired", "selecte
 
 @MainActor private func withAutomaticArchivalProfile(_ body: (AutomaticArchivalProfile) throws -> Void) throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent("AutomaticArchival-\(UUID())")
-    let suite = "AutomaticArchivalTests.\(UUID())"
+    let suite = BrowserTestDefaults.suiteName("AutomaticArchivalTests")
     let defaults = try #require(UserDefaults(suiteName: suite))
     defer {
         defaults.removePersistentDomain(forName: suite)

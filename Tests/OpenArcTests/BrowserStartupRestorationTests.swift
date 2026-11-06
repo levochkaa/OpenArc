@@ -183,7 +183,7 @@ private enum StartupRestorationError: Error { case unavailable }
     let model: BrowserChromeModel
 
     init(snapshot: BrowserTabSessionSnapshot) {
-        self.suiteName = "BrowserStartupRestorationTests.\(UUID().uuidString)"
+        self.suiteName = BrowserTestDefaults.suiteName("BrowserStartupRestorationTests")
         self.defaults = UserDefaults(suiteName: suiteName)!
         self.store = InMemorySessionSnapshotStore(loadedSnapshot: snapshot)
         self.model = BrowserChromeModel(

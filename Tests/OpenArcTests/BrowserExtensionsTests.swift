@@ -297,7 +297,7 @@ import Testing
 
 @Test
 @MainActor func pinnedExtensionsPersistAndAreRemovedWithExtension() throws {
-    let suiteName = "OpenArcTests.\(UUID().uuidString)"
+    let suiteName = BrowserTestDefaults.suiteName("OpenArcTests")
     let userDefaults = try #require(UserDefaults(suiteName: suiteName))
     defer { userDefaults.removePersistentDomain(forName: suiteName) }
     let preferencesStore = BrowserUserPreferencesStore(userDefaults: userDefaults)

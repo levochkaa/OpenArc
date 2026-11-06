@@ -69,7 +69,7 @@ private nonisolated(unsafe) let page: [String: Any] = ["nodes": [
 
 @MainActor private func makeModel(store: BrowserPasswordStoring?) -> (BrowserChromeModel, FakeBrowserTabDriver) {
     let driver = FakeBrowserTabDriver()
-    let defaults = UserDefaults(suiteName: "OpenArcAgentTests.\(UUID().uuidString)")!
+    let defaults = UserDefaults(suiteName: BrowserTestDefaults.suiteName("OpenArcAgentTests"))!
     let model = BrowserChromeModel(
         tabDriver: driver,
         sessionSnapshotStore: InMemorySessionSnapshotStore(loadedSnapshot: BrowserTabSessionSnapshot(tabs: [

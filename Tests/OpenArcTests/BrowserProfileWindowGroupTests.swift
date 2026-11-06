@@ -14,7 +14,7 @@ import Testing
 
         init(pinned: [(String, String?)] = [("a", nil)], temporary: [String] = ["x", "y"]) {
             self.first = SidebarDragFixture(pinned: pinned, temporary: temporary)
-            let defaults = UserDefaults(suiteName: "BrowserProfileWindowGroupTests.\(UUID().uuidString)")!
+            let defaults = UserDefaults(suiteName: BrowserTestDefaults.suiteName("BrowserProfileWindowGroupTests"))!
             self.second = BrowserChromeModel(
                 tabDriver: secondDriver,
                 sessionSnapshotStore: first.store,
@@ -50,7 +50,8 @@ import Testing
     @Test func itSeesTheSessionEvenWhenLaunchRestoreIsOff() throws {
         let pair = Pair()
         pair.first.model.userPreferencesStore.restoreWindowsOnLaunch = false
-        let defaults = try #require(UserDefaults(suiteName: "BrowserProfileWindowGroupTests.\(UUID().uuidString)"))
+        let defaults =
+            try #require(UserDefaults(suiteName: BrowserTestDefaults.suiteName("BrowserProfileWindowGroupTests")))
         let prefs = BrowserUserPreferencesStore(userDefaults: defaults)
         prefs.restoreWindowsOnLaunch = false
         let driver = FakeBrowserTabDriver()
@@ -146,7 +147,7 @@ import Testing
     }
 
     @Test func extraWindowsAreRememberedForTheNextLaunch() throws {
-        let suite = "BrowserProfileWindowGroupTests.\(UUID().uuidString)"
+        let suite = BrowserTestDefaults.suiteName("BrowserProfileWindowGroupTests")
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         #expect(BrowserAdditionalWindowRecord.load(from: defaults).isEmpty)

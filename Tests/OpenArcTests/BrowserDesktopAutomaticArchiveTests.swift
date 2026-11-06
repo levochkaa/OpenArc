@@ -291,7 +291,7 @@ enum DesktopAutomaticBinding: CaseIterable { case bound, paused, signedOut, unre
     init(bound: Bool = true) throws {
         self.directory = FileManager.default.temporaryDirectory.appendingPathComponent("DesktopAutomatic-\(UUID())")
         self.databaseURL = directory.appendingPathComponent("Profile.sqlite")
-        self.suite = "DesktopAutomatic.\(UUID())"
+        self.suite = BrowserTestDefaults.suiteName("DesktopAutomatic")
         self.defaults = UserDefaults(suiteName: suite)!
         self.store = try BrowserSQLiteSessionStore(databaseURL: databaseURL)
         let snapshot = BrowserTabSessionSnapshot(

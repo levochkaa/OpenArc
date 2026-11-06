@@ -134,7 +134,7 @@ import Testing
     // MARK: Internal
 
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent("pending-remote-\(UUID())")
-    let suiteName = "BrowserPendingRemoteSpaceDeletionTests.\(UUID())"
+    let suiteName = BrowserTestDefaults.suiteName("BrowserPendingRemoteSpaceDeletionTests")
     let owner = BrowserSyncOwner(baseURL: URL(string: "https://pending-remote.example")!, userID: "owner")
     let defaults: UserDefaults
     let store: BrowserSQLiteSessionStore

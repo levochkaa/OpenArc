@@ -151,7 +151,7 @@ import Testing
 
     private func makeModel(extensions: [BrowserExtension] = []) -> BrowserChromeModel {
         let driver = FakeBrowserTabDriver()
-        let defaults = UserDefaults(suiteName: "OpenArcNativeSiteTests.\(UUID().uuidString)")!
+        let defaults = UserDefaults(suiteName: BrowserTestDefaults.suiteName("OpenArcNativeSiteTests"))!
         let model = BrowserChromeModel(
             tabDriver: driver,
             sessionSnapshotStore: InMemorySessionSnapshotStore(

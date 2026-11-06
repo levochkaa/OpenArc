@@ -187,7 +187,7 @@ import Testing
     // MARK: Internal
 
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent("pending-navigation-\(UUID())")
-    let suiteName = "BrowserPendingNavigationTests.\(UUID())"
+    let suiteName = BrowserTestDefaults.suiteName("BrowserPendingNavigationTests")
     let owner = BrowserSyncOwner(baseURL: URL(string: "https://pending-navigation.example")!, userID: "owner")
     let defaults: UserDefaults
     let store: BrowserSQLiteSessionStore

@@ -452,7 +452,7 @@ import Testing
 
     private func makeModel() -> (BrowserChromeModel, FakeBrowserTabDriver) {
         let driver = FakeBrowserTabDriver()
-        let defaults = UserDefaults(suiteName: "OpenArcNativeSidebarTests.\(UUID().uuidString)")!
+        let defaults = UserDefaults(suiteName: BrowserTestDefaults.suiteName("OpenArcNativeSidebarTests"))!
         let model = BrowserChromeModel(
             tabDriver: driver,
             sessionSnapshotStore: InMemorySessionSnapshotStore(loadedSnapshot: BrowserTabSessionSnapshot(tabs: [

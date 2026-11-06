@@ -288,7 +288,7 @@ private struct PersistenceHarness {
         self.snapshotURL = temporaryDirectory
             .appendingPathComponent(BrowserTabSessionSnapshotStore.snapshotFileName, isDirectory: false)
 
-        self.userDefaultsSuiteName = "OpenArcTests.\(UUID().uuidString)"
+        self.userDefaultsSuiteName = BrowserTestDefaults.suiteName("OpenArcTests")
         guard let userDefaults = UserDefaults(suiteName: userDefaultsSuiteName) else {
             throw PersistenceHarnessError.missingUserDefaultsSuite
         }

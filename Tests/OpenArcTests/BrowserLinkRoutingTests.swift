@@ -43,7 +43,7 @@ import Testing
     }
 
     @Test func rulesPersistInTheirOrder() throws {
-        let defaults = try #require(UserDefaults(suiteName: "BrowserLinkRoutingTests.\(UUID().uuidString)"))
+        let defaults = try #require(UserDefaults(suiteName: BrowserTestDefaults.suiteName("BrowserLinkRoutingTests")))
         let routes = [
             BrowserLinkRoute(
                 pattern: "figma.com",

@@ -16,7 +16,7 @@ import Testing
         apps: [String] = [],
         folders: [BrowserPinnedTabFolderSessionSnapshot] = [],
     ) {
-        let defaults = UserDefaults(suiteName: "SidebarDragFixture.\(UUID().uuidString)")!
+        let defaults = UserDefaults(suiteName: BrowserTestDefaults.suiteName("SidebarDragFixture"))!
         let prefs = BrowserUserPreferencesStore(userDefaults: defaults)
         prefs.hapticFeedbackEnabled = false
         let tabs = apps.map { BrowserTabSessionSnapshotTab(

@@ -184,7 +184,7 @@ import Testing
     // MARK: Internal
 
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent("PendingFolder-\(UUID())")
-    let suite = "PendingFolder.\(UUID())"
+    let suite = BrowserTestDefaults.suiteName("PendingFolder")
     let owner = BrowserSyncOwner(baseURL: URL(string: "https://sync.example")!, userID: "owner")
     let store: BrowserSQLiteSessionStore
     let driver = FakeBrowserTabDriver()

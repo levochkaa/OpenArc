@@ -23,7 +23,7 @@ import Testing
     }
 
     @Test func choicesAreKept() throws {
-        let suite = "BrowserNewDocumentsTests.\(UUID().uuidString)"
+        let suite = BrowserTestDefaults.suiteName("BrowserNewDocumentsTests")
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let first = BrowserUserPreferencesStore(userDefaults: defaults)
@@ -64,7 +64,7 @@ import Testing
 
     @Test func aWindowCanStartOnAGivenPage() throws {
         let driver = FakeBrowserTabDriver()
-        let defaults = try #require(UserDefaults(suiteName: "BrowserNewDocumentsTests.\(UUID().uuidString)"))
+        let defaults = try #require(UserDefaults(suiteName: BrowserTestDefaults.suiteName("BrowserNewDocumentsTests")))
         let model = BrowserChromeModel(
             tabDriver: driver,
             sessionSnapshotStore: InMemorySessionSnapshotStore(loadedSnapshot: nil),

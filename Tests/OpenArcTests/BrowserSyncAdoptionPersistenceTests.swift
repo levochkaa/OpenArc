@@ -122,7 +122,7 @@ import Testing
 
     // MARK: Private
 
-    private let suite = "SyncAdoption.\(UUID())"
+    private let suite = BrowserTestDefaults.suiteName("SyncAdoption")
     private let defaults: UserDefaults
 
     init() throws {
