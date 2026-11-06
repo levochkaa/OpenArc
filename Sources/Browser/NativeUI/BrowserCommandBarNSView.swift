@@ -25,6 +25,8 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
     private let panel = BrowserNativeMaterialPanel()
     private let symbol = NSImageView()
     private let siteChip = BrowserNativeSurface()
+    /// The site whose chip already flashed, so a refresh doesn't flash it again.
+    private var flashedSiteSearchID: BrowserSiteSearch.ID?
     private let siteChipLabel = NSTextField(labelWithString: "")
     private let siteHint = NSTextField(labelWithString: "")
     private let siteHintKey = BrowserNativeSurface()
@@ -359,6 +361,10 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
     /// The chip of the searched site, or the offer to search one with Tab.
     private func refreshSiteSearch() {
         let site = model.activeSiteSearch
+        if let site, flashedSiteSearchID != site.id {
+            panel.flash(color: site.chipColor)
+        }
+        flashedSiteSearchID = site?.id
         siteChip.isHidden = site == nil
         if let site {
             siteChipLabel.stringValue = site.displayName
