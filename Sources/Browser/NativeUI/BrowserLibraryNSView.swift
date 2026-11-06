@@ -248,6 +248,8 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
             shownSection = section
             searchField.stringValue = ""
             searchField.placeholderString = BrowserStrings.librarySearch(section.title)
+            // VoiceOver names the field; the placeholder goes once text is typed.
+            searchField.setAccessibilityLabel(BrowserStrings.librarySearch(section.title))
             filter = nil
             reloadFilterMenu()
         }
