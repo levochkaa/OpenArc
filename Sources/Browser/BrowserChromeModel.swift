@@ -348,6 +348,8 @@ enum BrowserWindowMode: Equatable {
     /// Tabs whose pages play media, by runtime ID, with the order they began
     /// and the mini players closed since. Only `BrowserTabMedia.swift` writes them.
     @Published var tabMediaStates = [String: BrowserTabMediaState]()
+    /// Tabs using the camera, the microphone or screen capture.
+    @Published var capturingTabIDs = Set<String>()
     var tabMediaStartOrder = [String: Int]()
     var nextTabMediaStartOrder = 0
     @Published var dismissedMiniPlayerTabIDs = Set<String>()
@@ -1052,6 +1054,9 @@ enum BrowserWindowMode: Equatable {
         }
         tabDriver.onMediaStateChanged = { [weak self] tabID, state in
             self?.handleMediaStateChange(tabID: tabID, state: state)
+        }
+        tabDriver.onCaptureChanged = { [weak self] tabID, capturing in
+            self?.handleCaptureChange(tabID: tabID, capturing: capturing)
         }
         tabDriver.onRenderProcessTerminated = { [weak self] tabID, errorCode in
             self?.handleRenderProcessTerminated(tabID: tabID, errorCode: errorCode)

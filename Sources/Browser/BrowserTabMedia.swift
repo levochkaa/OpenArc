@@ -114,6 +114,20 @@ extension BrowserChromeModel {
         tabMediaStates[tabID] = state
     }
 
+    /// The recording dot follows the page's capture streams.
+    func handleCaptureChange(tabID: String, capturing: Bool) {
+        if capturing {
+            capturingTabIDs.insert(tabID)
+        } else {
+            capturingTabIDs.remove(tabID)
+        }
+    }
+
+    /// Tabs that still exist and capture.
+    var recordingTabIDs: Set<String> {
+        capturingTabIDs.filter { id in tabs.contains { $0.id == id } }
+    }
+
     func controlMedia(_ action: BrowserMediaAction, tabID: String) {
         guard tabMediaStates[tabID] != nil || action == .play else { return }
         controlMediaInEngine(action, tabID: tabID)

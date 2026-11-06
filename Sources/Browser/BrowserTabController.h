@@ -171,6 +171,12 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
                        hasNextTrack:(BOOL)hasNextTrack
                    pictureInPicture:(BOOL)pictureInPicture
                               title:(NSString *)title;
+// The tab's pages started or stopped using the camera, the microphone or
+// screen capture (reported as video).
+- (void)browserTabController:(BrowserTabController *)controller
+    didChangeCaptureForTabWithID:(NSString *)tabID
+                           video:(BOOL)video
+                           audio:(BOOL)audio;
 
 @end
 

@@ -111,6 +111,8 @@ enum BrowserPageTranslationState: Int {
     var onRenderProcessTerminated: ((String, Int) -> Void)? { get set }
     /// A tab's pages started playing media or changed it; nil when they stop.
     var onMediaStateChanged: ((String, BrowserTabMediaState?) -> Void)? { get set }
+    /// A tab's pages started or stopped using the camera, microphone or screen capture.
+    var onCaptureChanged: ((String, Bool) -> Void)? { get set }
     /// Tab, frame and the frame's address: the page has an address form.
     var onAddressFormFound: ((String, String, String) -> Void)? { get set }
     /// Tab, frame and the frame's address: the page has a card form.

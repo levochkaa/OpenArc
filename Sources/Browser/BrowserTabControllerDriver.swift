@@ -32,6 +32,7 @@ import Foundation
     var onSitePermissionRequestDismissed: ((Int) -> Void)?
     var onPeekSitePermissionAnswered: ((Int, Bool?) -> Void)?
     var onMediaStateChanged: ((String, BrowserTabMediaState?) -> Void)?
+    var onCaptureChanged: ((String, Bool) -> Void)?
     var onAddressFormFound: ((String, String, String) -> Void)?
     var onCardFormFound: ((String, String, String) -> Void)?
     var onAddressSubmitted: ((String, String, String) -> Void)?
@@ -587,6 +588,15 @@ extension BrowserTabControllerDriver: BrowserTabControllerDelegate {
             )
             : nil
         MainActor.assumeIsolated { onMediaStateChanged?(tabID, state) }
+    }
+
+    nonisolated func browserTabController(
+        _: BrowserTabController,
+        didChangeCaptureForTabWithID tabID: String,
+        video: Bool,
+        audio: Bool,
+    ) {
+        MainActor.assumeIsolated { onCaptureChanged?(tabID, video || audio) }
     }
 
     nonisolated func browserTabController(

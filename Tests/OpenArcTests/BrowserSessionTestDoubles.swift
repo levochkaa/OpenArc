@@ -71,6 +71,7 @@ import Foundation
     var onSitePermissionRequestDismissed: ((Int) -> Void)?
     var onPeekSitePermissionAnswered: ((Int, Bool?) -> Void)?
     var onMediaStateChanged: ((String, BrowserTabMediaState?) -> Void)?
+    var onCaptureChanged: ((String, Bool) -> Void)?
     var onRenderProcessTerminated: ((String, Int) -> Void)?
     private(set) var mediaControls = [(tabID: String, action: BrowserMediaAction)]()
     private(set) var sitePermissionResolutions = [(id: Int, allowed: Bool?)]()

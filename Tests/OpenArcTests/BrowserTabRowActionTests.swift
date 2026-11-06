@@ -101,6 +101,59 @@ import Testing
         #expect(row.muteButton.isHidden)
     }
 
+    @Test func aTabUsingTheCameraOrMicrophoneShowsARecordingDot() throws {
+        let f = SidebarDragFixture(temporary: ["x", "y"])
+        let x = f.id("x")
+        f.driver.onCaptureChanged?(x, true)
+        f.driver.onCaptureChanged?("gone", true)
+        #expect(f.model.sidebarSnapshot.recordingTabIDs == [x], "Only tabs that still exist")
+
+        let tab = try #require(f.model.tabs.first { $0.id == x })
+        let row = BrowserNativeSidebarRowNSView(frame: NSRect(x: 0, y: 0, width: 240, height: 40))
+        row.update(
+            tab: tab,
+            selected: false,
+            isResizing: false,
+            closeDescriptor: BrowserCommands.archiveTab,
+            audible: true,
+            recording: true,
+        )
+        row.layoutSubtreeIfNeeded()
+        #expect(!row.recordingDot.isHidden)
+        #expect(row.recordingDot.frame.minX >= BrowserChromeLayout.sidebarRowLeadingColumnWidth - 2)
+        #expect(row.recordingDot.frame.maxX <= row.muteButton.frame.minX, "The dot leads the speaker")
+        #expect(row.muteButton.frame.maxX <= row.titleLabel.frame.minX)
+
+        let tile = BrowserNativeSidebarRowNSView(frame: NSRect(x: 0, y: 0, width: 60, height: 48))
+        tile.update(
+            tab: tab,
+            appTile: true,
+            selected: false,
+            isResizing: false,
+            closeDescriptor: BrowserCommands.archiveTab,
+            recording: true,
+        )
+        tile.layoutSubtreeIfNeeded()
+        #expect(!tile.recordingDot.isHidden)
+        #expect(tile.recordingDot.frame.minX < 10 && tile.recordingDot.frame.minY < 10, "Favorites lead with it")
+
+        let y = try #require(f.model.tabs.first { $0.id == f.id("y") })
+        let chip = BrowserNativeSidebarSplitChipView(frame: NSRect(x: 0, y: 0, width: 120, height: 28))
+        chip.update(tab: y, focused: false, recording: true)
+        chip.layoutSubtreeIfNeeded()
+        #expect(!chip.recordingDot.isHidden)
+        chip.update(tab: y, focused: false)
+        #expect(chip.recordingDot.isHidden)
+
+        f.driver.onCaptureChanged?(x, false)
+        #expect(f.model.sidebarSnapshot.recordingTabIDs.isEmpty)
+        f.driver.onCaptureChanged?(x, true)
+        f.driver.onRenderProcessTerminated?(x, 1)
+        #expect(f.model.sidebarSnapshot.recordingTabIDs.isEmpty, "A crashed page captures nothing")
+        row.update(tab: tab, selected: false, isResizing: false, closeDescriptor: BrowserCommands.archiveTab)
+        #expect(row.recordingDot.isHidden)
+    }
+
     @Test func aPinnedTabAwayFromItsPageShowsASlashBetweenIconAndTitle() throws {
         let f = SidebarDragFixture(temporary: ["x"])
         var pinned = try #require(f.model.tabs.first { $0.placement == .spacePinned })

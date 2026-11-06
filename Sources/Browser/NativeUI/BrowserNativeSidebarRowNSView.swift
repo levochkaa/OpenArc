@@ -72,6 +72,7 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
 
     private(set) var isMuted = false
     private(set) var isAudible = false
+    private(set) var isRecording = false
     /// Tab IDs of the split shown by this row, in pane order.
     private(set) var splitMemberIDs = [String]()
 
@@ -84,6 +85,7 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
     /// between its icon, which goes back, and its title.
     let pinnedSlash = BrowserNativeSidebarPinnedSlashView()
     let folderIcon = BrowserFolderIconView()
+    let recordingDot = BrowserRecordingDotView()
 
     private let unreadDot = NSView()
 
@@ -161,6 +163,7 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
             developerBorder,
             renameField,
             muteButton,
+            recordingDot,
             closeButton,
         ] {
             addSubview(view)
@@ -254,6 +257,9 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
             let size = BrowserChromeLayout.appTabIconSize
             favicon.frame = NSRect(x: (bounds.width - size) / 2, y: (height - size) / 2, width: size, height: size)
             symbol.frame = favicon.frame
+            // Favorites lead with the dot.
+            let dot = BrowserRecordingDotView.diameter
+            recordingDot.frame = NSRect(x: 7, y: 7, width: dot, height: dot)
             return
         }
         if kind == .split {
@@ -296,6 +302,12 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
         }
         if showsPinnedSlash {
             titleX = indent + Self.pinnedSlashCenterX + BrowserNativeSidebarPinnedSlashView.size.width / 2 + 3
+        }
+        if !recordingDot.isHidden {
+            // The recording dot leads the title, before the speaker.
+            let dot = BrowserRecordingDotView.diameter
+            recordingDot.frame = NSRect(x: titleX + 1, y: (height - dot) / 2, width: dot, height: dot)
+            titleX = recordingDot.frame.maxX + 7
         }
         if !muteButton.isHidden {
             // The speaker sits between the icon and the title.
@@ -438,6 +450,7 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
         closeDescriptor: BrowserCommandDescriptor,
         muted: Bool = false,
         audible: Bool = false,
+        recording: Bool = false,
         icon: String? = nil,
         developerHost: String? = nil,
     ) {
@@ -453,6 +466,7 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
         }
         isMuted = muted && !appTile
         isAudible = audible && !appTile
+        isRecording = recording
         muteButton.configureSymbol(
             isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill",
             title: isMuted ? BrowserStrings.tabUnmuteAction : BrowserStrings.tabMuteAction,
@@ -550,6 +564,7 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
         indentLevel: Int = 0,
         name: BrowserSidebarSplitName? = nil,
         icons: [String: String] = [:],
+        recordingTabIDs: Set<String> = [],
         isResizing: Bool,
         resetID: Int = 0,
     ) {
@@ -585,7 +600,12 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
             splitChips.removeLast().removeFromSuperview()
         }
         for (chip, tab) in zip(splitChips, members) {
-            chip.update(tab: tab, focused: selected && tab.id == focusedTabID, icon: icons[tab.id])
+            chip.update(
+                tab: tab,
+                focused: selected && tab.id == focusedTabID,
+                icon: icons[tab.id],
+                recording: recordingTabIDs.contains(tab.id),
+            )
             chip.isCompact = name != nil
         }
         setAccessibilityIdentifier("browser.sidebar.split.\(members.first?.id ?? "")")
@@ -835,6 +855,11 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
         captionLabel.stringValue = pinnedIconHovered ? BrowserStrings.pinnedTabBackToPinnedURL : developerHost ?? ""
         closeButton.isHidden = !(kind == .space || kind == .tab) || !isHovered || isRenaming || isResizing
         muteButton.isHidden = kind != .tab || !(isMuted || isAudible) || isRenaming || isResizing
+        let showsRecording = (kind == .tab || kind == .appTab) && isRecording && !isRenaming
+        if recordingDot.isHidden == showsRecording {
+            recordingDot.isHidden = !showsRecording
+            needsLayout = true
+        }
         if kind == .space {
             let disclosure = hasPinnedTabs && isHovered && !isRenaming
             symbol.image = Self.symbol(
@@ -953,6 +978,9 @@ final class BrowserNativeSidebarSplitChipView: NSView {
         }
     }
 
+    /// Split cells lead with the recording dot.
+    let recordingDot = BrowserRecordingDotView()
+
     // MARK: Private
 
     private let selectionSurface = BrowserNativeSidebarSelectionSurface()
@@ -962,7 +990,7 @@ final class BrowserNativeSidebarSplitChipView: NSView {
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
-        for view in [favicon, symbol, titleLabel, closeButton] {
+        for view in [favicon, symbol, recordingDot, titleLabel, closeButton] {
             addSubview(view)
         }
         symbol.isHidden = true
@@ -987,10 +1015,18 @@ final class BrowserNativeSidebarSplitChipView: NSView {
                 height: icon,
             )
             symbol.frame = favicon.frame
+            let dot = BrowserRecordingDotView.diameter
+            recordingDot.frame = NSRect(x: 3, y: 3, width: dot, height: dot)
             return
         }
         let padding: CGFloat = 7
-        favicon.frame = NSRect(x: padding, y: (bounds.height - icon) / 2, width: icon, height: icon)
+        var iconX = padding
+        if !recordingDot.isHidden {
+            let dot = BrowserRecordingDotView.diameter
+            recordingDot.frame = NSRect(x: padding, y: (bounds.height - dot) / 2, width: dot, height: dot)
+            iconX = recordingDot.frame.maxX + 5
+        }
+        favicon.frame = NSRect(x: iconX, y: (bounds.height - icon) / 2, width: icon, height: icon)
         symbol.frame = favicon.frame
         let closeSize: CGFloat = 20
         closeButton.frame = NSRect(
@@ -1019,8 +1055,12 @@ final class BrowserNativeSidebarSplitChipView: NSView {
     }
 
     /// `icon` is the tab's chosen symbol, shown instead of its favicon.
-    func update(tab: BrowserChromeModel.Tab, focused: Bool, icon: String? = nil) {
+    func update(tab: BrowserChromeModel.Tab, focused: Bool, icon: String? = nil, recording: Bool = false) {
         tabID = tab.id
+        if recordingDot.isHidden == recording {
+            recordingDot.isHidden = !recording
+            needsLayout = true
+        }
         if isFocused != focused {
             isFocused = focused
             needsDisplay = true

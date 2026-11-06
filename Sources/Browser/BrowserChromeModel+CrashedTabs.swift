@@ -9,6 +9,7 @@ import Foundation
 /// went away in the background reloads when it is shown instead.
 extension BrowserChromeModel {
     func handleRenderProcessTerminated(tabID: String, errorCode: Int) {
+        capturingTabIDs.remove(tabID)
         guard tabs.contains(where: { $0.id == tabID }) else { return }
         if visibleTabIDs.contains(tabID) {
             crashedTabErrorCodes[tabID] = errorCode

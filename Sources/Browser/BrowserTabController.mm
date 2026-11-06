@@ -3183,6 +3183,10 @@ class BrowserTabClient final : public CefClient,
   void OnStatusMessage(CefRefPtr<CefBrowser> browser,
                        const CefString &value) override;
 
+  void OnMediaAccessChange(CefRefPtr<CefBrowser> browser,
+                           bool has_video_access,
+                           bool has_audio_access) override;
+
   void OnFaviconURLChange(CefRefPtr<CefBrowser> browser,
                           const std::vector<CefString> &icon_urls) override;
   bool OnBeforeDownload(
@@ -6313,6 +6317,22 @@ void BrowserTabClient::OnStatusMessage(CefRefPtr<CefBrowser>,
     [delegate browserTabController:controller
                    didChangeStatus:ToNSString(value.ToString())
                       forTabWithID:ToNSString(tab_id_)];
+  }
+}
+
+// Camera, microphone or screen capture started or stopped; screen and
+// window capture count as video.
+void BrowserTabClient::OnMediaAccessChange(CefRefPtr<CefBrowser>,
+                                           bool has_video_access,
+                                           bool has_audio_access) {
+  CEF_REQUIRE_UI_THREAD();
+  BrowserTabController *controller = controller_;
+  id<BrowserTabControllerDelegate> delegate = controller.delegate;
+  if ([delegate respondsToSelector:@selector(browserTabController:didChangeCaptureForTabWithID:video:audio:)]) {
+    [delegate browserTabController:controller
+        didChangeCaptureForTabWithID:ToNSString(tab_id_)
+                               video:has_video_access
+                               audio:has_audio_access];
   }
 }
 

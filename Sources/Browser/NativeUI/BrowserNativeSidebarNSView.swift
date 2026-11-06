@@ -1169,6 +1169,7 @@ final class BrowserNativeSidebarNSView: NSView {
             closeDescriptor: model.shortcutStore.descriptor(for: .archiveTab),
             muted: state.snapshot.mutedTabIDs.contains(tab.id),
             audible: state.snapshot.audibleTabIDs.contains(tab.id),
+            recording: state.snapshot.recordingTabIDs.contains(tab.id),
             icon: state.snapshot.tabIcons[tab.id],
             developerHost: model.developerModeHost(forTabURLString: tab.urlString),
         )
@@ -1264,6 +1265,7 @@ final class BrowserNativeSidebarNSView: NSView {
             indentLevel: indent,
             name: state.snapshot.splitNames[memberIDs],
             icons: state.snapshot.tabIcons,
+            recordingTabIDs: state.snapshot.recordingTabIDs,
             isResizing: state.isSidebarResizing,
             resetID: state.tabRowInteractionResetID,
         )

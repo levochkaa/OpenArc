@@ -32,6 +32,8 @@ struct BrowserSidebarSnapshot: Equatable {
     var mutedTabIDs = Set<String>()
     /// Runtime IDs of tabs with sound; their rows show a speaker that mutes.
     var audibleTabIDs = Set<String>()
+    /// Tabs using the camera, the microphone or screen capture.
+    var recordingTabIDs = Set<String>()
     /// Mini players for media in tabs off screen, newest first.
     var miniPlayers = [BrowserMiniPlayerItem]()
     /// Symbols chosen in place of favicons, by runtime tab ID.

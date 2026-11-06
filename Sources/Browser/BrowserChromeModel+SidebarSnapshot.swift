@@ -29,6 +29,7 @@ extension BrowserChromeModel {
             mutedTabIDs: Set(tabs.filter { mutedTabSyncIDs.contains($0.syncID) }.map(\.id)),
         )
         snapshot.audibleTabIDs = audibleTabIDs
+        snapshot.recordingTabIDs = recordingTabIDs
         snapshot.miniPlayers = miniPlayerItems
         snapshot.tabIcons = Dictionary(
             tabs.compactMap { tab in tabIconsBySyncID[tab.syncID].map { (tab.id, $0) } },
