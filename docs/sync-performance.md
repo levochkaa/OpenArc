@@ -73,3 +73,5 @@ Same probe, Xcode 27.1, Debug. A sample of the 100-row drain put most of each AC
 | drain | 1,000 | 100 | 6,702.2 | 5,188.5 |
 
 The drain is still quadratic: every ACK replays the rest of the queue. An incremental projection remains the next step. A per-call index of container members, built from `values` at the start of `apply`, was tried and measured slower (drain 6,114 ms, pull with 100 rows at 1,000 tabs 99.8 ms): hashing every key costs more than the plain scan once the scan builds no keys.
+
+An incremental projection cannot reuse the previous ACK's result as it stands: `BrowserSyncOutboxProjection.effectiveChanges` starts from the baseline's tombstones minus every delete still in the queue (`pendingDeletes`), so replaying the whole queue is not replaying its head and then its tail. Reusing work across ACKs first needs that tombstone rule restated per operation, with deletion dominance (S01, S02, S12) proved again.
