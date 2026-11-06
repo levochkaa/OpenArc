@@ -3479,6 +3479,11 @@ enum BrowserStrings {
         comment: "Window menu item that zooms the front window.",
     )
 
+    static let windowFullScreenButton = NSLocalizedString(
+        "browser.window.full_screen_button",
+        comment: "Accessibility name of the green window button, which enters or leaves full screen.",
+    )
+
     static let menuBringAllToFront = NSLocalizedString(
         "browser.menu.bring_all_to_front",
         comment: "Window menu item that brings every app window to the front.",

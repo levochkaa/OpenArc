@@ -906,3 +906,4 @@
 "browser.auth.username" = "Username";
 "browser.auth.password" = "Password";
 "browser.auth.sign_in" = "Sign in";
+"browser.window.full_screen_button" = "Full Screen";

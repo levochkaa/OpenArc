@@ -292,8 +292,17 @@ final class BrowserWindowControlsHostView: NSView {
             button.setAccessibilityElement(true)
             button.setAccessibilityRole(.button)
             button.setAccessibilityIdentifier("browser.window.control.\(buttonType.rawValue)")
-            if buttonType == .closeButton {
+            // Named and subroled like the system's buttons they replace.
+            switch buttonType {
+            case .closeButton:
                 button.setAccessibilityLabel(BrowserStrings.webAppCloseWindowAction)
+                button.setAccessibilitySubrole(.closeButton)
+            case .miniaturizeButton:
+                button.setAccessibilityLabel(BrowserStrings.menuMinimize)
+                button.setAccessibilitySubrole(.minimizeButton)
+            default:
+                button.setAccessibilityLabel(BrowserStrings.windowFullScreenButton)
+                button.setAccessibilitySubrole(.fullScreenButton)
             }
             addSubview(button)
             customButtons[buttonType] = button
@@ -596,6 +605,13 @@ final class BrowserTrafficLightButton: NSButton {
 
     @available(*, unavailable) required init?(coder _: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    /// Setting the role by hand drops NSButton's own press action.
+    override func accessibilityPerformPress() -> Bool {
+        guard isEnabled else { return false }
+        performClick(nil)
+        return true
     }
 
     override func draw(_: NSRect) {

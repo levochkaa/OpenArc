@@ -26,4 +26,40 @@ import Testing
             }
         }
     }
+
+    @Test func assistiveAppsCanPressTheWindowButtons() {
+        final class Target: NSObject {
+            var presses = 0
+            @objc func press(_: Any?) { presses += 1 }
+        }
+        let target = Target()
+        let button = BrowserTrafficLightButton(buttonType: .miniaturizeButton)
+        button.target = target
+        button.action = #selector(Target.press(_:))
+        #expect(button.accessibilityPerformPress())
+        #expect(target.presses == 1)
+        button.isEnabled = false
+        #expect(!button.accessibilityPerformPress(), "A disabled button does nothing")
+        #expect(target.presses == 1)
+    }
+
+    @Test func windowButtonsAreNamedLikeTheSystemOnes() {
+        let window = NSWindow(
+            contentRect: NSRect(x: -4000, y: -4000, width: 300, height: 200),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered,
+            defer: true,
+        )
+        let host = BrowserWindowControlsHostView(frame: NSRect(x: 0, y: 0, width: 80, height: 20))
+        window.contentView?.addSubview(host)
+        host.layoutSubtreeIfNeeded()
+        let buttons = host.subviews.compactMap { $0 as? BrowserTrafficLightButton }
+        #expect(buttons.count == 3)
+        #expect(Set(buttons.compactMap { $0.accessibilitySubrole() }) == [
+            .closeButton,
+            .minimizeButton,
+            .fullScreenButton,
+        ])
+        #expect(buttons.allSatisfy { !($0.accessibilityLabel() ?? "").isEmpty })
+    }
 }
