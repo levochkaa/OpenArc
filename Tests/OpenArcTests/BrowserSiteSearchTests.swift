@@ -176,6 +176,39 @@ private let gitLab = BrowserSiteSearch(
     #expect(model.activeSiteSearch == nil)
 }
 
+@MainActor @Test func aSiteChipWithNothingTypedListsTheSitesEarlierResults() {
+    var asked = [(String?, Int)]()
+    let earlier = BrowserCommandSuggestion(
+        kind: .history,
+        displayText: "Code search results",
+        resolvedURLString: "https://github.com/search?q=repo%3Aa+x&type=code",
+    )
+    let model = BrowserCommandBarModel(
+        suggestionProvider: FakeSuggestionProvider(),
+        suggestionDebounceNanoseconds: 0,
+        remoteSuggestionsEnabledProvider: { false },
+        siteSearchesProvider: { [gitHub, youTube] },
+        siteRecentPagesProvider: { site, count in
+            asked.append((site.resultsURLPrefix, count))
+            return site == gitHub ? [earlier] : []
+        },
+        submitHandler: { _ in },
+    )
+    model.present()
+    model.query = "git"
+    #expect(model.beginSiteSearch())
+    #expect(model.suggestions.map(\.displayText) == ["Code search results"], "Lists the site's earlier results")
+    #expect(model.suggestions.first?.resolvedURLString == earlier.resolvedURLString)
+    #expect(model.suggestions.first?.kind == .search, "Shown as a search, without its address")
+    #expect(model.selectedSuggestionIndex == 0)
+    #expect(asked.last?.0 == "https://github.com/search?q=")
+    model.query = "x"
+    #expect(model.suggestions.map(\.displayText) == ["x"], "Typing lists only the query")
+    model.query = ""
+    #expect(model.suggestions.map(\.resolvedURLString) == [earlier.resolvedURLString])
+    #expect(BrowserSiteSearch(name: "Bad", keyword: "b", urlTemplate: "%s").resultsURLPrefix == nil)
+}
+
 @MainActor @Test func commandBarLeavesASiteSearchWithDeleteOrEscape() {
     var submitted = [String]()
     let model = BrowserCommandBarModel(

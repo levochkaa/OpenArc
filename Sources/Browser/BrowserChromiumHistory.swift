@@ -9,6 +9,9 @@ protocol BrowserHistorySearching {
     func suggestions(for query: String, maximumCount: Int) -> [BrowserCommandSuggestion]
     /// The pages to offer before anything is typed, latest first.
     func recentSuggestions(maximumCount: Int) -> [BrowserCommandSuggestion]
+    /// Recent pages whose address starts with `prefix`, latest first, one per title:
+    /// a site search's earlier results, listed under its chip.
+    func recentSuggestions(withURLPrefix prefix: String, maximumCount: Int) -> [BrowserCommandSuggestion]
     /// Reads the history into memory, so typing doesn't wait for the disk.
     func prepareSearchIndex()
     /// Keeps pages from another browser searchable beside this one's history.
@@ -17,6 +20,7 @@ protocol BrowserHistorySearching {
 
 extension BrowserHistorySearching {
     func recentSuggestions(maximumCount _: Int) -> [BrowserCommandSuggestion] { [] }
+    func recentSuggestions(withURLPrefix _: String, maximumCount _: Int) -> [BrowserCommandSuggestion] { [] }
     func prepareSearchIndex() {}
     func importDocuments(_: [BrowserSearchDocument]) {}
 }
@@ -177,6 +181,51 @@ final class BrowserChromiumHistoryStore: BrowserHistorySearching, @unchecked Sen
                     resolvedURLString: urlString,
                 )
             })
+        } catch {
+            return []
+        }
+    }
+
+    func recentSuggestions(withURLPrefix prefix: String, maximumCount: Int) -> [BrowserCommandSuggestion] {
+        guard maximumCount > 0, !prefix.isEmpty, let historyURL = existingHistoryURL else { return [] }
+        let pattern = prefix
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "%", with: "\\%")
+            .replacingOccurrences(of: "_", with: "\\_") + "%"
+        do {
+            var configuration = Configuration()
+            configuration.readonly = true
+            configuration.busyMode = .timeout(0.1)
+            let dbQueue = try DatabaseQueue(path: historyURL.path, configuration: configuration)
+            defer { try? dbQueue.close() }
+            let rows = try dbQueue.read { db in
+                try Row.fetchAll(
+                    db,
+                    sql: """
+                    SELECT url, title
+                    FROM urls
+                    WHERE hidden = 0 AND url LIKE ? ESCAPE '\\'
+                    ORDER BY last_visit_time DESC
+                    LIMIT ?
+                    """,
+                    arguments: [pattern, maximumCount * 4],
+                )
+            }
+            var titles = Set<String>()
+            let unique = rows.compactMap { row -> BrowserCommandSuggestion? in
+                let urlString: String = row["url"]
+                // LIKE ignores case; a site's own address does not.
+                guard urlString.hasPrefix(prefix) else { return nil }
+                let title = Self.displayTitle(title: row["title"], urlString: urlString)
+                guard titles.insert(title).inserted else { return nil }
+                return BrowserCommandSuggestion(
+                    kind: .history,
+                    displayText: title,
+                    detailText: BrowserURLDisplayFormatter.displayString(for: urlString),
+                    resolvedURLString: urlString,
+                )
+            }
+            return withIcons(Array(unique.prefix(maximumCount)))
         } catch {
             return []
         }

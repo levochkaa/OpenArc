@@ -210,6 +210,7 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
     private let recentPagesProvider: (Int) -> [BrowserCommandSuggestion]
     private let aiSearchProviderProvider: () -> BrowserAISearchProvider
     private let siteSearchesProvider: () -> [BrowserSiteSearch]
+    private let siteRecentPagesProvider: (BrowserSiteSearch, Int) -> [BrowserCommandSuggestion]
 
     private var suggestionLoadTask: Task<Void, Never>?
     private var siteSearchTriggerQuery: String?
@@ -269,6 +270,7 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
         aiSearchEnabledProvider: @escaping () -> Bool = { true },
         recentPagesProvider: @escaping (Int) -> [BrowserCommandSuggestion] = { _ in [] },
         siteSearchesProvider: @escaping () -> [BrowserSiteSearch] = { [] },
+        siteRecentPagesProvider: @escaping (BrowserSiteSearch, Int) -> [BrowserCommandSuggestion] = { _, _ in [] },
         submitHandler: @escaping (String) -> Void,
         openTabHandler: @escaping ([String]) -> Void = { _ in },
         commandHandler: @escaping (BrowserCommandID) -> Void = { _ in },
@@ -283,6 +285,7 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
         self.remoteSuggestionsEnabledProvider = remoteSuggestionsEnabledProvider
         self.aiSearchProviderProvider = aiSearchProviderProvider
         self.aiSearchEnabledProvider = aiSearchEnabledProvider
+        self.siteRecentPagesProvider = siteRecentPagesProvider
         self.recentPagesProvider = recentPagesProvider
         self.siteSearchesProvider = siteSearchesProvider
     }
@@ -404,7 +407,20 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
 
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         if let site = activeSiteSearch {
-            // Lists only the query, which opens the site's results.
+            // Lists only the query, which opens the site's results. Before
+            // anything is typed, it lists the site's earlier results pages.
+            if trimmedQuery.isEmpty {
+                // Shown as searches: a magnifier, the page's title, no address.
+                suggestions = siteRecentPagesProvider(site, Self.maximumRecentPages).map {
+                    BrowserCommandSuggestion(
+                        kind: .search,
+                        displayText: $0.displayText,
+                        resolvedURLString: $0.resolvedURLString,
+                    )
+                }
+                selectedSuggestionIndex = suggestions.isEmpty ? nil : 0
+                return
+            }
             suggestions = site.searchURLString(for: trimmedQuery).flatMap { urlString in
                 trimmedQuery.isEmpty
                     ? nil

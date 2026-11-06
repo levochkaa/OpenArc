@@ -32,6 +32,34 @@ import Testing
     #expect(suggestion.resolvedURLString == "https://docs.example.com/start")
 }
 
+@Test func chromiumHistoryListsASitesEarlierResultsOnePerTitle() throws {
+    let harness = try ChromiumHistoryHarness()
+    defer { harness.cleanup() }
+    for (url, title, time) in [
+        ("https://github.com/search?q=repo%3Aa+x&type=code", "Code search results", 5),
+        ("https://github.com/search?q=repo%3Ab+y&type=code", "Code search results", 4),
+        ("https://github.com/search?q=openarc&type=repositories", "Repository search results", 3),
+        ("https://github.com/levochkaa", "levochkaa", 6),
+        ("https://GITHUB.com/search?q=upper", "Upper", 7),
+        ("https://example.com/search?q=1", "Elsewhere", 8),
+    ] {
+        try harness.insertHistory(urlString: url, title: title, visitCount: 1, typedCount: 0, lastVisitTime: time)
+    }
+    let store = BrowserChromiumHistoryStore(profileDirectoryCandidates: [harness.profileDirectoryURL])
+    let pages = store.recentSuggestions(withURLPrefix: "https://github.com/search?q=", maximumCount: 5)
+    #expect(pages.map(\.displayText) == ["Code search results", "Repository search results"])
+    #expect(
+        pages.first?.resolvedURLString == "https://github.com/search?q=repo%3Aa+x&type=code",
+        "The latest of a title",
+    )
+    #expect(pages.allSatisfy { $0.kind == .history })
+    #expect(store.recentSuggestions(withURLPrefix: "https://github.com/search?q=", maximumCount: 1).count == 1)
+    #expect(
+        store.recentSuggestions(withURLPrefix: "https://github.com/search_q", maximumCount: 5).isEmpty,
+        "_ is literal",
+    )
+}
+
 // MARK: - ChromiumHistoryHarness
 
 private struct ChromiumHistoryHarness {

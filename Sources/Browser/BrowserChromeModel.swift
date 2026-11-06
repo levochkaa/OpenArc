@@ -273,6 +273,11 @@ enum BrowserWindowMode: Equatable {
         siteSearchesProvider: { [weak self] in
             self?.userPreferencesStore.siteSearches ?? []
         },
+        siteRecentPagesProvider: { [weak self] site, maximumCount in
+            site.resultsURLPrefix.map {
+                self?.historyStore.recentSuggestions(withURLPrefix: $0, maximumCount: maximumCount) ?? []
+            } ?? []
+        },
         submitHandler: { [weak self] resolvedURLString in
             self?.openResolvedSelectionInNewTab(resolvedURLString)
         },
@@ -304,6 +309,11 @@ enum BrowserWindowMode: Equatable {
         },
         siteSearchesProvider: { [weak self] in
             self?.userPreferencesStore.siteSearches ?? []
+        },
+        siteRecentPagesProvider: { [weak self] site, maximumCount in
+            site.resultsURLPrefix.map {
+                self?.historyStore.recentSuggestions(withURLPrefix: $0, maximumCount: maximumCount) ?? []
+            } ?? []
         },
         submitHandler: { [weak self] resolvedURLString in
             self?.navigateSelectedTab(toURLString: resolvedURLString)

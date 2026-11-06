@@ -145,6 +145,15 @@ struct BrowserSiteSearch: Codable, Equatable, Identifiable {
             && searchURLString(for: "test") != nil
     }
 
+    /// The address before the query, which every results page of the site starts with.
+    var resultsURLPrefix: String? {
+        let template = urlTemplate.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let range = template.range(of: Self.queryPlaceholder), range.lowerBound > template.startIndex else {
+            return nil
+        }
+        return String(template[..<range.lowerBound])
+    }
+
     init(id: UUID = UUID(), name: String, keyword: String, urlTemplate: String, colorHex: String? = nil) {
         self.id = id
         self.name = name
