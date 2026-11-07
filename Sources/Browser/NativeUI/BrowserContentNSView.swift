@@ -137,7 +137,7 @@ final class BrowserContentNSView: NSView {
         super.layout()
         cancelAreaCaptureIfStale()
         updatePageShadow()
-        viewport.frame = bounds
+        viewport.frame = splitPaneBars.pageAsideFrame(in: bounds) ?? bounds
         splitPaneBars.frame = bounds
         splitPaneBars.refresh()
         loading.frame = bounds
@@ -180,6 +180,7 @@ final class BrowserContentNSView: NSView {
     func bindTabCreation(to model: BrowserChromeModel) {
         onRetryTabCreation = { [weak model] in model?.retrySelectedTabCreation() }
         splitPaneBars.model = model
+        splitPaneBars.onPageDropPreviewChange = { [weak self] in self?.movePageAsideForDrop() }
         model.onSplitPaneLayoutChange = { [weak self] in
             self?.splitPaneBars.refresh()
             self?.cancelAreaCaptureIfStale()
@@ -320,6 +321,23 @@ final class BrowserContentNSView: NSView {
         permissionPrompt.update(request: request)
         permissionPrompt.isHidden = false
         needsLayout = true
+    }
+
+    /// A tab dragged from the sidebar over a page not yet split: the page
+    /// slides to the other half and the window shows through where the tab will go.
+    private func movePageAsideForDrop() {
+        let target = splitPaneBars.pageAsideFrame(in: bounds) ?? bounds
+        guard viewport.frame != target else { return }
+        guard window != nil, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
+            viewport.frame = target
+            return
+        }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.2
+            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.9, 0.3, 1)
+            context.allowsImplicitAnimation = true
+            viewport.animator().frame = target
+        }
     }
 
     private func updatePageShadow() {

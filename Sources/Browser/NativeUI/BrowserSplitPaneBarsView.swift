@@ -40,9 +40,18 @@ final class BrowserSplitPaneBarsView: NSView {
         didSet {
             if oldValue != pageDropPreview {
                 needsDisplay = true
+                onPageDropPreviewChange?()
             }
         }
     }
+
+    /// A page not yet split moves aside for a tab dragged from the sidebar
+    /// instead of being outlined; this is the side the tab takes.
+    private(set) var pageAsideEdge: BrowserSplitPaneLayout.PageDropEdge?
+    var onPageDropPreviewChange: (() -> Void)?
+
+    /// The page's frame before it moved aside, so the drop zones hold still.
+    private var restingPageFrame: CGRect?
 
     // MARK: Private
 
@@ -60,7 +69,9 @@ final class BrowserSplitPaneBarsView: NSView {
     /// The landing pane is outlined while a pane is dragged by its grip, and
     /// the new pane's place while a sidebar tab is dragged over the page.
     override func draw(_: NSRect) {
-        guard let target = pageDropPreview ?? paneDropTargetTabID.flatMap({ paneRects[$0] }) else { return }
+        guard pageAsideEdge == nil,
+              let target = pageDropPreview ?? paneDropTargetTabID.flatMap({ paneRects[$0] })
+        else { return }
         let radius = BrowserSplitPaneLayout.paneCornerRadius
         let ring = BrowserSplitPaneLayout.focusRingWidth
         let path = NSBezierPath(
@@ -73,6 +84,20 @@ final class BrowserSplitPaneBarsView: NSView {
         path.lineWidth = ring
         BrowserSplitPaneLayout.focusRingColor.setStroke()
         path.stroke()
+    }
+
+    /// Where the page sits while it is aside, in `bounds`: the other half, a pane gap away.
+    func pageAsideFrame(in bounds: CGRect) -> CGRect? {
+        guard let edge = pageAsideEdge else { return nil }
+        let gap = BrowserSplitPaneLayout.paneGap
+        let halfWidth = (bounds.width - gap) / 2
+        let halfHeight = (bounds.height - gap) / 2
+        return switch edge {
+        case .leading: CGRect(x: bounds.maxX - halfWidth, y: bounds.minY, width: halfWidth, height: bounds.height)
+        case .trailing: CGRect(x: bounds.minX, y: bounds.minY, width: halfWidth, height: bounds.height)
+        case .top: CGRect(x: bounds.minX, y: bounds.maxY - halfHeight, width: bounds.width, height: halfHeight)
+        case .bottom: CGRect(x: bounds.minX, y: bounds.minY, width: bounds.width, height: halfHeight)
+        }
     }
 
     func bar(forTabID tabID: String) -> BrowserSplitPaneBarView? { bars[tabID] }
@@ -139,17 +164,19 @@ final class BrowserSplitPaneBarsView: NSView {
         draggedTabID: String,
     ) -> BrowserSidebarDragState.PageSplitDropTarget? {
         guard let point, let model, let hostView, !isHidden, window != nil else {
-            pageDropPreview = nil
+            setPageDropPreview(nil, aside: nil)
             return nil
         }
         let local = convert(point, from: nil)
         let group = model.selectedSplitGroup
         var panes = model.splitPaneLayoutTabIDs.compactMap { id in paneRects[id].map { (id: id, frame: $0) } }
         if panes.isEmpty, let selectedTabID = model.selectedTabID {
-            panes = [(selectedTabID, convert(hostView.bounds, from: hostView))]
+            let frame = pageAsideEdge == nil ? convert(hostView.bounds, from: hostView) : restingPageFrame
+            restingPageFrame = frame
+            panes = frame.map { [(selectedTabID, $0)] } ?? []
         }
         guard let pane = panes.first(where: { $0.frame.contains(local) }) else {
-            pageDropPreview = nil
+            setPageDropPreview(nil, aside: nil)
             return nil
         }
         // A page not yet split takes a tab from the sidebar on the half nearer the pointer.
@@ -158,19 +185,22 @@ final class BrowserSplitPaneBarsView: NSView {
             : nil
         guard let edge = BrowserSplitPaneLayout.pageDropEdge(at: local, in: pane.frame) ?? nearerHalf else {
             guard group != nil, model.canReplaceSplitPane(anchorTabID: pane.id, with: draggedTabID) else {
-                pageDropPreview = nil
+                setPageDropPreview(nil, aside: nil)
                 return nil
             }
-            pageDropPreview = pane.frame
+            setPageDropPreview(pane.frame, aside: nil)
             return .init(anchorTabID: pane.id, replacesAnchor: true)
         }
         guard group.map({ $0.orientation == edge.orientation }) ?? true,
               model.canOpenInSplitView(tabID: draggedTabID, anchorTabID: pane.id)
         else {
-            pageDropPreview = nil
+            setPageDropPreview(nil, aside: nil)
             return nil
         }
-        pageDropPreview = BrowserSplitPaneLayout.pageDropPreview(for: edge, in: pane.frame)
+        setPageDropPreview(
+            BrowserSplitPaneLayout.pageDropPreview(for: edge, in: pane.frame),
+            aside: group == nil ? edge : nil,
+        )
         return .init(anchorTabID: pane.id, insertion: edge.isBefore ? .before : .after, orientation: edge.orientation)
     }
 
@@ -181,6 +211,19 @@ final class BrowserSplitPaneBarsView: NSView {
               let index = model.splitPaneTabIDs(forTabID: tabID).firstIndex(of: target)
         else { return }
         model.moveSplitPane(tabID: tabID, to: index)
+    }
+
+    private func setPageDropPreview(_ preview: CGRect?, aside edge: BrowserSplitPaneLayout.PageDropEdge?) {
+        let asideChanged = pageAsideEdge != edge
+        pageAsideEdge = edge
+        if preview == nil {
+            restingPageFrame = nil
+        }
+        if pageDropPreview != preview {
+            pageDropPreview = preview
+        } else if asideChanged {
+            onPageDropPreviewChange?()
+        }
     }
 
     private func makeBar() -> BrowserSplitPaneBarView {

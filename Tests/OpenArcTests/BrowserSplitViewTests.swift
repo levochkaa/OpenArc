@@ -484,12 +484,22 @@ import Testing
         let leading = try #require(drop(page.minX + 20, page.midY))
         #expect(leading.anchorTabID == f.id("x") && leading.insertion == .before && leading.orientation == .horizontal)
         #expect(bars.pageDropPreview?.width == page.width / 2)
-        let nearerHalf = try #require(drop(host.bounds.midX + 10, host.bounds.midY))
+        let nearerHalf = try #require(bars.pageSplitDrop(
+            atWindowPoint: bars.convert(CGPoint(x: page.midX + 10, y: page.midY), to: nil),
+            draggedTabID: f.id("y"),
+        ))
         #expect(
             nearerHalf.anchorTabID == f.id("x") && nearerHalf.insertion == .after,
             "A page not yet split takes the tab on the half nearer the pointer",
         )
         #expect(bars.pageDropPreview?.width == page.width / 2)
+        let aside = try #require(bars.pageAsideFrame(in: content.bounds))
+        #expect(
+            aside.minX == content.bounds.minX && aside.width < content.bounds.width / 2,
+            "The tab takes the right half, so the page moves left",
+        )
+        _ = bars.pageSplitDrop(atWindowPoint: nil, draggedTabID: f.id("y"))
+        #expect(bars.pageAsideFrame(in: content.bounds) == nil, "and comes back when the drag leaves")
 
         #expect(f.model.openInSplitView(tabID: f.id("z")))
         f.driver.simulateSplitPaneLayout([f.id("x"), f.id("z")], frames: [
