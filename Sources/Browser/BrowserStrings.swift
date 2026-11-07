@@ -2577,6 +2577,10 @@ enum BrowserStrings {
         comment: "Tooltip shown for clearing temporary tabs.",
     )
 
+    static let tabMoveToNewWindowAction = NSLocalizedString(
+        "browser.tab.move_to_new_window_action",
+        comment: "Undo name after tabs were dragged out of the window into a new one.",
+    )
     static let tabArchiveAction = NSLocalizedString(
         "browser.tab.archive_action",
         comment: "Context menu title for archiving a tab.",

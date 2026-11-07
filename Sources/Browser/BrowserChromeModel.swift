@@ -430,6 +430,10 @@ enum BrowserWindowMode: Equatable {
     /// UI-only: shows the share sheet in the window.
     var onShareURL: ((URL) -> Void)?
     var onOpenLinkInIncognito: ((URL) -> Void)?
+    /// Opens pages in a new window of their own, its top left corner near a screen point.
+    var onMoveTabsToNewWindow: (([URL], CGPoint) -> Void)?
+    /// Pages a new window opens after its first one, in the background.
+    var additionalTabURLStrings = [String]()
     /// UI-only: opens the window's theme editor for a Space.
     var onEditSpaceTheme: ((String) -> Void)?
     /// UI-only: opens the theme editor for the Space being created, beside this view.
@@ -4961,6 +4965,14 @@ enum BrowserWindowMode: Equatable {
         // A blank window starts with no page and asks where to go.
         guard windowMode != .blank || firstTabURLString != nil else { return }
         createTab(withURLString: firstTabURLString ?? newTabURLString, registersUndo: false)
+        let first = selectedTabID
+        for urlString in additionalTabURLStrings {
+            createTab(withURLString: urlString, registersUndo: false, makeActive: false)
+        }
+        additionalTabURLStrings.removeAll()
+        if let first, selectedTabID != first {
+            selectTab(id: first)
+        }
     }
 
     private func restoreSessionIfAvailable() -> Bool {

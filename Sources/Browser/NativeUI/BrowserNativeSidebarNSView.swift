@@ -547,6 +547,16 @@ final class BrowserNativeSidebarNSView: NSView {
 
     func finishDragging(atWindowPoint point: CGPoint) {
         guard state.drag.isDragging else { return }
+        if let payload = state.drag.payload, case .tab = payload.primary,
+           let screenPoint = screenPointOutsideEveryWindow(atWindowPoint: point)
+        {
+            // Dropped outside every window: the tabs go to a new window of their own.
+            endDragging(at: state.drag.pointer, cancelled: true)
+            completeDragPresentation()
+            dragPreview.isHidden = true
+            state.model.moveTabsToNewWindow(ids: payload.tabIDs, at: screenPoint)
+            return
+        }
         state.drag.updateDockTarget(spaceDock?.spaceID(atWindowPoint: point))
         state.drag.updatePageDrop(atWindowPoint: point)
         endDragging(at: content.convert(point, from: nil), cancelled: false)
@@ -670,6 +680,17 @@ final class BrowserNativeSidebarNSView: NSView {
         let delay = state.hasSpacePagerReleaseVelocity ? Self.swipeReleaseDelay : Self.spaceSelectionDelay
         setFrame(rect, of: pagesContainer, animated: true, delay: delay)
         return delay
+    }
+
+    /// The screen point of a window point when no window of this app lies under it.
+    private func screenPointOutsideEveryWindow(atWindowPoint point: CGPoint) -> CGPoint? {
+        guard let window else { return nil }
+        let screenPoint = window.convertPoint(toScreen: point)
+        guard !window.frame.contains(screenPoint),
+              NSScreen.screens.contains(where: { $0.frame.contains(screenPoint) })
+        else { return nil }
+        let number = NSWindow.windowNumber(at: screenPoint, belowWindowWithWindowNumber: 0)
+        return NSApp.window(withWindowNumber: number) == nil ? screenPoint : nil
     }
 
     /// A single dragged tab activates when the gesture starts; the tab stays

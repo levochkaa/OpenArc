@@ -3083,6 +3083,18 @@ NSMenuDelegate, NSUserInterfaceValidations {
             guard let self else { return }
             createIncognitoWindow(copyingFullscreenFrom: activeBrowserWindow, firstURL: url)
         }
+        model.onMoveTabsToNewWindow = { [weak self] urls, screenPoint in
+            guard let self, let first = urls.first else { return }
+            let source = activeBrowserWindow
+            createIncognitoWindow(
+                copyingFullscreenFrom: nil,
+                firstURL: first,
+                blank: true,
+                additionalURLs: Array(urls.dropFirst()),
+                droppedAt: screenPoint,
+                sizedLike: source,
+            )
+        }
     }
 
     /// Pages cannot keep these keys anyway, and asking the page first costs a few frames
@@ -3689,6 +3701,9 @@ NSMenuDelegate, NSUserInterfaceValidations {
         copyingFullscreenFrom sourceWindow: NSWindow?,
         firstURL: URL? = nil,
         blank: Bool = false,
+        additionalURLs: [URL] = [],
+        droppedAt dropPoint: CGPoint? = nil,
+        sizedLike sizeSource: NSWindow? = nil,
     ) {
         configureUpdateControllerIfNeeded()
         guard let updateController else {
@@ -3736,6 +3751,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
             allTabsClosedHandler: {},
         )
         chromeModel.firstTabURLString = firstURL?.absoluteString
+        chromeModel.additionalTabURLStrings = additionalURLs.map(\.absoluteString)
         if blank, let sourceProfile {
             chromeModel.passwordStore = BrowserKeychainPasswordStore(profileID: sourceProfile.id)
             chromeModel.addressStore = BrowserKeychainAddressStore(profileID: sourceProfile.id)
@@ -3759,7 +3775,20 @@ NSMenuDelegate, NSUserInterfaceValidations {
         window.isReleasedWhenClosed = false
         window.configureBrowserChrome()
 
-        if let sourceWindow, !sourceWindow.styleMask.contains(.fullScreen) {
+        if let dropPoint {
+            let screen = NSScreen.screens.first { NSMouseInRect(dropPoint, $0.frame, false) } ?? NSScreen.main
+            let visible = screen?.visibleFrame ?? window.frame
+            let size = sizeSource.map { $0.styleMask.contains(.fullScreen) ? visible.size : $0.frame.size }
+            window.setFrame(
+                BrowserWindowGeometry.frame(
+                    droppedAt: dropPoint,
+                    size: size,
+                    minSize: window.minSize,
+                    visible: visible,
+                ),
+                display: false,
+            )
+        } else if let sourceWindow, !sourceWindow.styleMask.contains(.fullScreen) {
             let sourceFrame = sourceWindow.frame
             window.setFrameOrigin(NSPoint(x: sourceFrame.minX + 28, y: sourceFrame.minY - 28))
         } else {
@@ -3785,7 +3814,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
 
         if hasReceivedBrowserContext {
             chromeModel.handleContextReady()
-            if blank {
+            if blank, firstURL == nil {
                 chromeModel.presentCommandBar()
             }
         }
