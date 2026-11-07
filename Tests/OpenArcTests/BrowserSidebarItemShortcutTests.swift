@@ -71,7 +71,10 @@ import Testing
 
     @Test func arrowShortcutsSwitchSpacesAndTabs() {
         #expect(BrowserCommands.selectNextSpace.shortcut.displayText == "\u{2325}\u{2318}\u{2192}")
-        #expect(BrowserCommands.selectPreviousTabAlternate.shortcut.displayText == "\u{2325}\u{2318}\u{2191}")
+        #expect(
+            BrowserCommands.selectPreviousTab.shortcut.displayText == "\u{2325}\u{2318}\u{2191}",
+            "The menu shows the arrow",
+        )
         #expect(BrowserCommandID.selectNextTabAlternate.layoutIndependentCommand == .selectNextTab)
         let f = SidebarDragFixture(temporary: ["x"])
         func commands(_ query: String) -> [BrowserCommandID] {
@@ -209,7 +212,10 @@ import Testing
         #expect(BrowserCommandID.goToSidebarItem1.defaultDescriptor.shortcut == BrowserKeyboardShortcut("1"))
         #expect(BrowserCommandID.goToSidebarItem8.defaultDescriptor.shortcut == BrowserKeyboardShortcut("8"))
         #expect(BrowserCommandID.goToLastSidebarItem.defaultDescriptor.shortcut == BrowserKeyboardShortcut("9"))
-        #expect(BrowserCommands.selectNextTab.shortcut == BrowserKeyboardShortcut("]", modifiers: [.command, .shift]))
+        #expect(BrowserCommands.selectNextTabAlternate.shortcut == BrowserKeyboardShortcut(
+            "]",
+            modifiers: [.command, .shift],
+        ))
         #expect(BrowserCommands.toggleSiteToolbar.shortcut == BrowserKeyboardShortcut(
             "d",
             modifiers: [.command, .shift],

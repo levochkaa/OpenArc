@@ -579,7 +579,7 @@ enum BrowserCommands {
     /// New Folder…; folders hold at least one tab, so the new folder takes the
     /// selected tab.
     static let newFolder = BrowserCommandDescriptor(
-        menuTitle: BrowserStrings.pinnedTabFolderNewAction,
+        menuTitle: BrowserStrings.menuNewFolderEllipsis,
         helpTitle: BrowserStrings.pinnedTabFolderNewAction,
         shortcut: .unassigned,
     )
@@ -598,14 +598,14 @@ enum BrowserCommands {
     )
 
     static let newSpace = BrowserCommandDescriptor(
-        menuTitle: BrowserStrings.spaceNewAction,
+        menuTitle: BrowserStrings.menuNewSpaceEllipsis,
         helpTitle: BrowserStrings.spaceNewAction,
         shortcut: .unassigned,
     )
 
     /// View Downloads is Command-Shift-J.
     static let viewDownloads = BrowserCommandDescriptor(
-        menuTitle: BrowserStrings.menuViewDownloads,
+        menuTitle: BrowserStrings.menuViewDownloadsEllipsis,
         helpTitle: BrowserStrings.menuViewDownloads,
         shortcut: BrowserKeyboardShortcut("j", modifiers: [.command, .shift]),
     )
@@ -617,30 +617,30 @@ enum BrowserCommands {
         shortcut: BrowserKeyboardShortcut("l", modifiers: [.command, .shift]),
     )
 
-    /// Next/Previous Tab are Command-}/{.
+    /// Next/Previous Tab are Option-Command-Down/Up, the sidebar's direction.
     static let selectNextTab = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuSelectNextTab,
         helpTitle: BrowserStrings.menuSelectNextTab,
-        shortcut: BrowserKeyboardShortcut("]", modifiers: [.command, .shift]),
+        shortcut: BrowserKeyboardShortcut(BrowserKeyboardShortcut.downArrow, modifiers: [.command, .option]),
     )
 
     static let selectPreviousTab = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuSelectPreviousTab,
         helpTitle: BrowserStrings.menuSelectPreviousTab,
-        shortcut: BrowserKeyboardShortcut("[", modifiers: [.command, .shift]),
+        shortcut: BrowserKeyboardShortcut(BrowserKeyboardShortcut.upArrow, modifiers: [.command, .option]),
     )
 
-    /// Next/Previous Tab (Alternate) are Option-Command-Down/Up.
+    /// Next/Previous Tab (Alternate) are Command-}/{, as in other browsers.
     static let selectNextTabAlternate = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuSelectNextTabAlternate,
         helpTitle: BrowserStrings.menuSelectNextTabAlternate,
-        shortcut: BrowserKeyboardShortcut(BrowserKeyboardShortcut.downArrow, modifiers: [.command, .option]),
+        shortcut: BrowserKeyboardShortcut("]", modifiers: [.command, .shift]),
     )
 
     static let selectPreviousTabAlternate = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuSelectPreviousTabAlternate,
         helpTitle: BrowserStrings.menuSelectPreviousTabAlternate,
-        shortcut: BrowserKeyboardShortcut(BrowserKeyboardShortcut.upArrow, modifiers: [.command, .option]),
+        shortcut: BrowserKeyboardShortcut("[", modifiers: [.command, .shift]),
     )
 
     /// Next/Previous Space are Option-Command-Right/Left.

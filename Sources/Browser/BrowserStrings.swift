@@ -2292,6 +2292,18 @@ enum BrowserStrings {
         comment: "Detail of the empty Media section of the Library.",
     )
 
+    static let menuNewSpaceEllipsis = NSLocalizedString(
+        "browser.menu.new_space_ellipsis",
+        comment: "Spaces menu item; it opens the new Space's page.",
+    )
+    static let menuNewFolderEllipsis = NSLocalizedString(
+        "browser.menu.new_folder_ellipsis",
+        comment: "Tabs menu item; it creates a folder and starts naming it.",
+    )
+    static let menuViewDownloadsEllipsis = NSLocalizedString(
+        "browser.menu.view_downloads_ellipsis",
+        comment: "Window menu item; it opens the downloads list.",
+    )
     static let menuViewDownloads = NSLocalizedString(
         "browser.menu.view_downloads",
         comment: "View menu and command title that opens the downloads list.",

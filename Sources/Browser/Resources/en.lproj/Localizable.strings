@@ -333,6 +333,9 @@
 "browser.menu.view_source" = "View Source";
 "browser.split.pane_grip" = "Move Split Pane";
 "browser.menu.view_downloads" = "View Downloads";
+"browser.menu.view_downloads_ellipsis" = "View Downloads…";
+"browser.menu.new_space_ellipsis" = "New Space…";
+"browser.menu.new_folder_ellipsis" = "New Folder…";
 "browser.menu.tabs" = "Tabs";
 "browser.menu.spaces" = "Spaces";
 "browser.menu.pin_tab" = "Pin Tab";
