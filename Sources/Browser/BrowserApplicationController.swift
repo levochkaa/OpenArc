@@ -3102,6 +3102,21 @@ NSMenuDelegate, NSUserInterfaceValidations {
             guard let self else { return }
             createIncognitoWindow(copyingFullscreenFrom: activeBrowserWindow, firstURL: url)
         }
+        model.onOpenLinkInNewWindow = { [weak self, weak model] url in
+            guard let self, let model,
+                  let source = profileWindowSessions.first(where: { $0.chromeModel === model }),
+                  !isTerminationRequested,
+                  let runtimeConfiguration = BrowserRuntimeConfiguration.currentConfiguration()
+            else { return false }
+            createProfileWindow(
+                for: source.profile,
+                runtimeConfiguration: runtimeConfiguration,
+                copyingFullscreenFrom: source.window,
+                besides: source,
+                firstURL: url,
+            )
+            return true
+        }
         model.onMoveTabsToWindow = { [weak self, weak model] ids, window in
             guard let self, let model,
                   let target = profileWindowSessions.first(where: { $0.window === window })?.chromeModel
@@ -3447,6 +3462,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         copyingFullscreenFrom sourceWindow: NSWindow?,
         besides source: BrowserProfileWindowSession? = nil,
         restoring record: BrowserAdditionalWindowRecord? = nil,
+        firstURL: URL? = nil,
     ) {
         configureUpdateControllerIfNeeded()
         guard let updateController else {
@@ -3642,6 +3658,9 @@ NSMenuDelegate, NSUserInterfaceValidations {
             openPendingNavigationURLsIfPossible()
             if let syncID = record?.selectedTabSyncID {
                 chromeModel.selectTab(syncID: syncID)
+            } else if let firstURL {
+                // Open Link in New Window: the link is a new tab there.
+                chromeModel.openURLInNewTab(firstURL)
             } else if source != nil, record == nil {
                 chromeModel.presentCommandBar()
             }

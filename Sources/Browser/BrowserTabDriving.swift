@@ -33,6 +33,9 @@ struct BrowserTabVisibleLayout: Equatable {
 enum BrowserPageContextCommand: String {
     case openInSplitView
     case openInIncognito
+    case openInNewWindow
+    case cast
+    case translatePage
     case copyLinkToHighlight
     case searchForSelection
     case savePage
@@ -71,6 +74,8 @@ enum BrowserPageTranslationState: Int {
     var onPageContextCommand: ((BrowserPageContextCommand, String) -> Void)? { get set }
     /// Where the next page keeps its data, nil for the window's own profile.
     var profileCachePathForNewTabs: String? { get set }
+    /// The search engine a page's context menu names for a selection.
+    var searchEngineName: (() -> String?)? { get set }
     var hostView: NSView { get }
     var onTabCreated: ((String, String, String, Bool) -> Void)? { get set }
     var onTabCreationStateChanged: ((String, BrowserTabCreationState) -> Void)? { get set }

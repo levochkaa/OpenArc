@@ -383,6 +383,9 @@ enum BrowserWindowMode: Equatable {
     var onPresentLittleWindowLauncher: (() -> Bool)?
     /// Opens pages in a new window of their own, its top left corner near a screen point.
     var onMoveTabsToNewWindow: (([URL], [BrowserTabPageHandoff?], CGPoint) -> Void)?
+    /// Opens a link in a new window of this profile, as a new tab there; false when
+    /// there is no such window.
+    var onOpenLinkInNewWindow: ((URL) -> Bool)?
     /// UI-only: Copy URL from the menu or its shortcut copied this address.
     var onCopiedCurrentURL: ((URL) -> Void)?
     /// Hands tabs dropped on another window of this app to that window; false when it takes none.
@@ -996,6 +999,7 @@ enum BrowserWindowMode: Equatable {
         tabDriver.onTabClosed = { [weak self] tabID in
             self?.handleClosedTab(id: tabID)
         }
+        tabDriver.searchEngineName = { [weak self] in self?.userPreferencesStore.searchEngine.title }
         tabDriver.onPageFullscreenChanged = { [weak self] tabID, fullscreen in
             guard let self else { return }
             if fullscreen {
@@ -1368,6 +1372,15 @@ enum BrowserWindowMode: Equatable {
             openURLInNewTab(url)
         case .openInIncognito:
             if let url = URL(string: argument) { onOpenLinkInIncognito?(url) }
+        case .openInNewWindow:
+            guard let url = URL(string: argument) else { return }
+            if onOpenLinkInNewWindow?(url) != true {
+                openURLInNewTab(url)
+            }
+        case .cast:
+            castCurrentPage()
+        case .translatePage:
+            _ = translateCurrentPage()
         case .copyLinkToHighlight:
             Task { [weak self] in _ = await self?.copySelectedTextAsQuoteLink() }
         case .searchForSelection:

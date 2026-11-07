@@ -42,6 +42,13 @@ import Foundation
     var onPasswordSubmitted: ((String, String, String, String) -> Void)?
     var onRenderProcessTerminated: ((String, Int) -> Void)?
 
+    var searchEngineName: (() -> String?)? {
+        didSet {
+            let provider = searchEngineName
+            controller.searchEngineNameProvider = provider.map { provider in { provider() } }
+        }
+    }
+
     // MARK: Private
 
     private let browserHostView: BrowserTabHostView

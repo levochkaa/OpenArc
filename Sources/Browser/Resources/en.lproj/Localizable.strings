@@ -701,6 +701,13 @@
 "browser.settings.export_data" = "Export Data";
 "browser.settings.export_data.detail" = "Save a copy of your tabs and Spaces";
 "browser.context.open_link_new_tab" = "Open Link in New Tab";
+"browser.context.open_link_new_window" = "Open Link in New Window";
+"browser.context.search_engine_for_selection" = "Search %1$@ for “%2$@”";
+"browser.context.cast" = "Cast…";
+"browser.context.translate_to" = "Translate to %@";
+"browser.context.speech" = "Speech";
+"browser.context.start_speaking" = "Start Speaking";
+"browser.context.stop_speaking" = "Stop Speaking";
 "browser.context.open_link_split_view" = "Open Link in Split View";
 "browser.context.open_link_little_window" = "Open Link in Small Window";
 "browser.context.open_link_incognito" = "Open Link in Incognito Window";

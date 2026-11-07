@@ -1,5 +1,6 @@
 #import "Browser/BrowserTabController.h"
 
+#import <AVFoundation/AVFoundation.h>
 #import <AuthenticationServices/AuthenticationServices.h>
 #import <QuartzCore/QuartzCore.h>
 #import <Sparkle/Sparkle.h>
@@ -2919,7 +2920,26 @@ enum PageContextMenuCommand {
   kContextPrint,
   kContextViewSource,
   kContextInspect,
+  kContextOpenLinkInNewWindow,
+  kContextCast,
+  kContextTranslate,
+  kContextStartSpeaking,
+  kContextStopSpeaking,
 };
+
+/// Speech › Start Speaking reads the selection aloud, as macOS apps do.
+AVSpeechSynthesizer *SharedSpeechSynthesizer() {
+  static AVSpeechSynthesizer *synthesizer = [[AVSpeechSynthesizer alloc] init];
+  return synthesizer;
+}
+
+/// The menu's "Translate to …" names the person's first language in that language.
+NSString *TranslateMenuTitle() {
+  NSString *identifier = NSLocale.preferredLanguages.firstObject ?: @"en";
+  NSString *code = [NSLocale localeWithLocaleIdentifier:identifier].languageCode ?: @"en";
+  NSString *name = [[NSLocale localeWithLocaleIdentifier:code] localizedStringForLanguageCode:code] ?: code;
+  return [NSString stringWithFormat:NSLocalizedString(@"browser.context.translate_to", nil), name];
+}
 
 CefString LocalizedMenuTitle(NSString *key) {
   return CefString(NSLocalizedString(key, nil).UTF8String);
@@ -2951,7 +2971,8 @@ class CopyImageCallback final : public CefDownloadImageCallback {
 
 /// Builds the menu from what lies under the pointer: a link, an image or video,
 /// selected text, an editable field, or the page itself.
-void BuildPageContextMenu(CefRefPtr<CefContextMenuParams> params, CefRefPtr<CefMenuModel> model, bool allowsLinkTargets) {
+void BuildPageContextMenu(CefRefPtr<CefContextMenuParams> params, CefRefPtr<CefMenuModel> model, bool allowsLinkTargets,
+                          NSString *searchEngineName = nil) {
   model->Clear();
   const auto flags = params->GetTypeFlags();
   const bool hasLink = (flags & CM_TYPEFLAG_LINK) != 0;
@@ -2968,6 +2989,7 @@ void BuildPageContextMenu(CefRefPtr<CefContextMenuParams> params, CefRefPtr<CefM
   if (hasLink) {
     model->AddItem(kContextOpenLinkInNewTab, LocalizedMenuTitle(@"browser.context.open_link_new_tab"));
     if (allowsLinkTargets) {
+      model->AddItem(kContextOpenLinkInNewWindow, LocalizedMenuTitle(@"browser.context.open_link_new_window"));
       model->AddItem(kContextOpenLinkInSplitView, LocalizedMenuTitle(@"browser.context.open_link_split_view"));
       model->AddItem(kContextOpenLinkInLittleWindow, LocalizedMenuTitle(@"browser.context.open_link_little_window"));
       model->AddItem(kContextOpenLinkInIncognito, LocalizedMenuTitle(@"browser.context.open_link_incognito"));
@@ -3030,8 +3052,11 @@ void BuildPageContextMenu(CefRefPtr<CefContextMenuParams> params, CefRefPtr<CefM
     if (selection.length > 40) {
       selection = [[selection substringToIndex:40] stringByAppendingString:@"…"];
     }
-    NSString *format = NSLocalizedString(@"browser.context.search_for_selection", nil);
-    model->AddItem(kContextSearchForSelection, CefString([NSString stringWithFormat:format, selection].UTF8String));
+    NSString *title = searchEngineName.length > 0
+        ? [NSString stringWithFormat:NSLocalizedString(@"browser.context.search_engine_for_selection", nil),
+                                     searchEngineName, selection]
+        : [NSString stringWithFormat:NSLocalizedString(@"browser.context.search_for_selection", nil), selection];
+    model->AddItem(kContextSearchForSelection, CefString(title.UTF8String));
   }
   if (!hasLink && !hasImage && !hasPlayer && !hasSelection && !isEditable) {
     model->AddItem(MENU_ID_BACK, LocalizedMenuTitle(@"browser.context.back"));
@@ -3042,15 +3067,30 @@ void BuildPageContextMenu(CefRefPtr<CefContextMenuParams> params, CefRefPtr<CefM
       model->AddItem(kContextSavePage, LocalizedMenuTitle(@"browser.context.save_page"));
     }
     model->AddItem(kContextPrint, LocalizedMenuTitle(@"browser.context.print"));
+    if (allowsLinkTargets) {
+      model->AddItem(kContextCast, LocalizedMenuTitle(@"browser.context.cast"));
+      model->AddItem(kContextTranslate, CefString(TranslateMenuTitle().UTF8String));
+    }
     model->AddSeparator();
     if (allowsLinkTargets) {
+      // Page Source and Inspect sit together.
       model->AddItem(kContextViewSource, LocalizedMenuTitle(@"browser.context.view_source"));
+      model->AddItem(kContextInspect, LocalizedMenuTitle(@"browser.context.inspect"));
+      return;
     }
-  } else if (hasSelection && !isEditable && !hasLink) {
+  } else if (hasSelection && !isEditable) {
     model->AddItem(kContextPrint, LocalizedMenuTitle(@"browser.context.print"));
   }
   separate();
   model->AddItem(kContextInspect, LocalizedMenuTitle(@"browser.context.inspect"));
+  if (hasSelection) {
+    model->AddSeparator();
+    CefRefPtr<CefMenuModel> speech =
+        model->AddSubMenu(kContextStartSpeaking + 1000, LocalizedMenuTitle(@"browser.context.speech"));
+    speech->AddItem(kContextStartSpeaking, LocalizedMenuTitle(@"browser.context.start_speaking"));
+    speech->AddItem(kContextStopSpeaking, LocalizedMenuTitle(@"browser.context.stop_speaking"));
+    speech->SetEnabled(kContextStopSpeaking, SharedSpeechSynthesizer().isSpeaking);
+  }
 }
 
 /// Runs a command that does not need the window; false hands it to the caller.
@@ -3087,6 +3127,17 @@ bool RunBasicPageContextCommand(CefRefPtr<CefBrowser> browser,
       return true;
     case kContextPrint:
       host->Print();
+      return true;
+    case kContextStartSpeaking: {
+      NSString *text = ToNSString(params->GetSelectionText().ToString());
+      if (text.length > 0) {
+        [SharedSpeechSynthesizer() stopSpeakingAtBoundary:AVSpeechBoundaryImmediate];
+        [SharedSpeechSynthesizer() speakUtterance:[AVSpeechUtterance speechUtteranceWithString:text]];
+      }
+      return true;
+    }
+    case kContextStopSpeaking:
+      [SharedSpeechSynthesizer() stopSpeakingAtBoundary:AVSpeechBoundaryImmediate];
       return true;
     case kContextInspect: {
       CefWindowInfo windowInfo;
@@ -3216,7 +3267,9 @@ class BrowserTabClient final : public CefClient,
                            CefRefPtr<CefFrame>,
                            CefRefPtr<CefContextMenuParams> params,
                            CefRefPtr<CefMenuModel> model) override {
-    BuildPageContextMenu(params, model, true);
+    BrowserTabController *controller = controller_;
+    NSString *engine = controller.searchEngineNameProvider != nil ? controller.searchEngineNameProvider() : nil;
+    BuildPageContextMenu(params, model, true, engine);
   }
   bool OnContextMenuCommand(CefRefPtr<CefBrowser> browser,
                             CefRefPtr<CefFrame> frame,
@@ -6814,6 +6867,15 @@ bool BrowserTabClient::OnContextMenuCommand(CefRefPtr<CefBrowser> browser,
       return true;
     case kContextOpenLinkInIncognito:
       [delegate browserTabController:controller performPageContextCommand:@"openInIncognito" argument:link];
+      return true;
+    case kContextOpenLinkInNewWindow:
+      [delegate browserTabController:controller performPageContextCommand:@"openInNewWindow" argument:link];
+      return true;
+    case kContextCast:
+      [delegate browserTabController:controller performPageContextCommand:@"cast" argument:@""];
+      return true;
+    case kContextTranslate:
+      [delegate browserTabController:controller performPageContextCommand:@"translatePage" argument:@""];
       return true;
     case kContextOpenMediaInNewTab:
       [controller createTabWithURLString:ToNSString(params->GetSourceUrl().ToString()) makeActive:NO];

@@ -217,6 +217,8 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
 @property(nonatomic) BOOL autoResizesPages;
 @property(nonatomic, copy, nullable) void (^onPageContentSizeChange)(NSSize size);
 @property(nonatomic, weak, nullable) id<BrowserTabControllerDelegate> delegate;
+/// The search engine a page's "Search … for" item names.
+@property(nonatomic, copy, nullable) NSString *_Nullable (^searchEngineNameProvider)(void);
 
 - (instancetype)initWithHostView:(BrowserTabHostView *)hostView;
 - (instancetype)initWithHostView:(BrowserTabHostView *)hostView

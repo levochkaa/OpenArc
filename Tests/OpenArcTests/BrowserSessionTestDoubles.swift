@@ -163,6 +163,7 @@ import Foundation
     var mainFrameFills = [(username: String, password: String)]()
 
     var onPageFullscreenChanged: ((String, Bool) -> Void)?
+    var searchEngineName: (() -> String?)?
     private(set) var exitPageFullscreenCount = 0
 
     /// Pages this window can give to another window, by tab ID; others close instead.
