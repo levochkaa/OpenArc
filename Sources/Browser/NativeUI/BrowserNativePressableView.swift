@@ -213,6 +213,16 @@ class BrowserNativePressableView: BrowserNativeSurface {
         }
     }
 
+    /// Hover follows a still pointer as the view scrolls under it: tracking areas report
+    /// nothing until the pointer moves.
+    func syncHoverWithPointer() {
+        guard NSEvent.pressedMouseButtons == 0, let window, window.isKeyWindow, !isHiddenOrHasHiddenAncestor else {
+            return
+        }
+        let point = convert(window.mouseLocationOutsideOfEventStream, from: nil)
+        setHovered(bounds.contains(point) && visibleRect.contains(point))
+    }
+
     /// Tracking reports nothing when the view moves away from a still pointer.
     func endHoverIfPointerLeft() {
         guard isHovered, NSEvent.pressedMouseButtons == 0, let window else { return }

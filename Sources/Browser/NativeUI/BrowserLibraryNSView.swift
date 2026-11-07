@@ -96,6 +96,7 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
     private var filter: String?
     private var rows = [Row]()
     private var rowViews = [NSView]()
+    private var listScrollObservation: NSObjectProtocol?
     private var spaceCards = [String: BrowserLibrarySpaceCard]()
     private let newSpaceButton = BrowserLibraryNewSpaceButton()
     private var archiveEntries = [BrowserTabArchiveEntry]()
@@ -160,6 +161,17 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
         scroll.automaticallyAdjustsContentInsets = false
         scroll.documentView = document
         addSubview(scroll)
+        // Rows scrolled under a still pointer take and drop its hover.
+        scroll.contentView.postsBoundsChangedNotifications = true
+        self.listScrollObservation = NotificationCenter.default.addObserver(
+            forName: NSView.boundsDidChangeNotification,
+            object: scroll.contentView,
+            queue: .main,
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.rowViews.forEach { ($0 as? BrowserNativePressableView)?.syncHoverWithPointer() }
+            }
+        }
         spacesScroll.drawsBackground = false
         spacesScroll.hasHorizontalScroller = true
         spacesScroll.autohidesScrollers = true
@@ -176,6 +188,12 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
     }
 
     @available(*, unavailable) required init?(coder _: NSCoder) { fatalError() }
+
+    isolated deinit {
+        if let listScrollObservation {
+            NotificationCenter.default.removeObserver(listScrollObservation)
+        }
+    }
 
     override func layout() {
         super.layout()
