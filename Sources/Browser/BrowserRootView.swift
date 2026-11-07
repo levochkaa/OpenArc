@@ -1058,11 +1058,12 @@ final class BrowserRootView: NSView {
         content.update(
             hostView: model.hostView,
             isContextReady: model.isContextReady,
-            hasSelectedTab: model.selectedTabID != nil,
+            hasSelectedTab: model.selectedTabID != nil && !model.showsMovedPage,
             isSidebarVisible: model.isSidebarVisible,
             usesWindowContentInsets: usesWindowContentInsets,
             sidebarPosition: preferences.sidebarPosition,
             selectedTabCreationState: model.selectedTabCreationState,
+            movedPage: model.showsMovedPage ? .some(model.movedPagePicture) : .none,
         )
         sidebar.sidebarPosition = preferences.sidebarPosition
         sidebar.showsWindowControls = showsWindowControlsInSidebarChrome

@@ -234,7 +234,27 @@ enum BrowserPageTranslationState: Int {
     /// means the engine has closed. Forced/structural closes supersede this request.
     @discardableResult func requestCloseTab(withID tabID: String, requestID: String) -> Bool
     func closeTab(withID tabID: String, forceClose: Bool)
+    /// Takes a ready page out of this window without closing it; nil when it cannot
+    /// move now, such as while it loads its first page or shows a dialog.
+    func detachPage(ofTabWithID tabID: String) -> BrowserTabPageHandoff?
+    /// Shows a page another window detached and returns its tab ID here.
+    func adoptPage(_ handoff: BrowserTabPageHandoff, makeActive: Bool) -> String?
+    /// A picture of a page on its way to another window, as PNG.
+    func capturePicture(of handoff: BrowserTabPageHandoff, completion: @escaping @MainActor (Data?) -> Void)
     func prepareForCefShutdown()
+}
+
+// MARK: - BrowserTabPageHandoff
+
+/// A live page on its way from one window to another window of the same profile.
+struct BrowserTabPageHandoff {
+    /// The engine's page. Dropped without being adopted, the page closes.
+    let page: AnyObject
+    let canGoBack: Bool
+    let canGoForward: Bool
+    let isLoading: Bool
+    /// The data store the page was created with, nil for the profile's own.
+    var profileCachePath: String?
 }
 
 // MARK: - BrowserNavigationEntry

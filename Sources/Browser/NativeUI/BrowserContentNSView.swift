@@ -47,6 +47,7 @@ final class BrowserContentNSView: NSView {
     let permissionPrompt = BrowserSitePermissionPromptView()
 
     private(set) var crashPages = [String: BrowserSadTabView]()
+    let movedPage = BrowserMovedPageView()
 
     // MARK: Private
 
@@ -124,6 +125,8 @@ final class BrowserContentNSView: NSView {
         failureTitle.setAccessibilityIdentifier("browser.content.creation-failure.title")
         failureMessage.setAccessibilityIdentifier("browser.content.creation-failure.message")
         retry.setAccessibilityIdentifier("browser.content.creation-failure.retry")
+        movedPage.isHidden = true
+        addSubview(movedPage)
         permissionPrompt.isHidden = true
         addSubview(permissionPrompt)
         setAccessibilityElement(true)
@@ -142,6 +145,7 @@ final class BrowserContentNSView: NSView {
         splitPaneBars.refresh()
         loading.frame = bounds
         failure.frame = bounds
+        movedPage.frame = bounds
 
         let width = min(max(bounds.width - 48, 0), 360)
         let x = (bounds.width - width) / 2
@@ -179,6 +183,7 @@ final class BrowserContentNSView: NSView {
 
     func bindTabCreation(to model: BrowserChromeModel) {
         onRetryTabCreation = { [weak model] in model?.retrySelectedTabCreation() }
+        movedPage.onClick = { [weak model] in model?.showMovedPageHere() }
         splitPaneBars.model = model
         splitPaneBars.onPageDropPreviewChange = { [weak self] in self?.movePageAsideForDrop() }
         model.onSplitPaneLayoutChange = { [weak self] in
@@ -249,6 +254,7 @@ final class BrowserContentNSView: NSView {
         usesWindowContentInsets: Bool,
         sidebarPosition: BrowserSidebarPosition = .left,
         selectedTabCreationState: BrowserTabCreationState? = nil,
+        movedPage movedPagePicture: NSImage?? = nil,
     ) {
         cancelAreaCaptureIfStale()
         viewport.update(hostView: hostView)
@@ -267,10 +273,12 @@ final class BrowserContentNSView: NSView {
         viewport.updateClipping(cornerRadius: clipping.radius, maskedCorners: clipping.corners)
         pageShadowRadius = clipping.radius
         updatePageShadow()
-        for overlay in [loading, failure] {
+        for overlay in [loading, failure, movedPage] {
             overlay.layer?.cornerRadius = clipping.radius
             overlay.layer?.maskedCorners = clipping.corners
         }
+        movedPage.isHidden = !isContextReady || movedPagePicture == nil
+        movedPage.picture = movedPagePicture ?? nil
         loadingLabel.stringValue = isContextReady
             ? BrowserStrings.loadingOpeningTab
             : BrowserStrings.loadingLaunchingBrowser
@@ -367,5 +375,53 @@ final class BrowserContentNSView: NSView {
                 attributes: [.font: label.font ?? NSFont.systemFont(ofSize: 13)],
             )
             .height)
+    }
+}
+
+// MARK: - BrowserMovedPageView
+
+/// The selected tab's page is in another window: a faded picture of it, which brings
+/// the page back here on a click.
+final class BrowserMovedPageView: NSView {
+    // MARK: Internal
+
+    /// The window's background shows through the picture.
+    static let pictureOpacity: CGFloat = 0.6
+
+    override var isFlipped: Bool { true }
+
+    var onClick: () -> Void = {}
+
+    var picture: NSImage? {
+        didSet {
+            guard picture !== oldValue else { return }
+            layer?.contents = picture
+        }
+    }
+
+    init() {
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.masksToBounds = true
+        layer?.cornerCurve = .continuous
+        layer?.contentsGravity = .resizeAspectFill
+        layer?.opacity = Float(Self.pictureOpacity)
+        setAccessibilityElement(true)
+        setAccessibilityRole(.button)
+        setAccessibilityLabel(BrowserStrings.movedPageShowHere)
+        setAccessibilityIdentifier("browser.content.moved-page")
+    }
+
+    @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func acceptsFirstMouse(for _: NSEvent?) -> Bool { true }
+
+    override func mouseDown(with _: NSEvent) {
+        onClick()
+    }
+
+    override func accessibilityPerformPress() -> Bool {
+        onClick()
+        return true
     }
 }

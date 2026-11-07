@@ -407,6 +407,7 @@
 "browser.sidebar.clear_temporary_tabs_tooltip" = "Clear unselected Today tabs";
 "browser.tab.archive_action" = "Archive Tab";
 "browser.tab.move_to_new_window_action" = "Move to New Window";
+"browser.content.moved_page_show_here" = "Shown in Another Window";
 "browser.tab.archive_tabs_below_action" = "Archive Tabs Below";
 "browser.tab.duplicate_action" = "Duplicate";
 "browser.tab.mute_action" = "Mute Tab";

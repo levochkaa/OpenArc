@@ -105,6 +105,65 @@ import Testing
         #expect(pair.second.tabs.first { $0.id == pair.second.selectedTabID }?.syncID == syncID)
     }
 
+    @Test func openingATabBringsItsLivePageAcross() throws {
+        let pair = Pair()
+        let source = pair.first.model
+        let syncID = try #require(source.tabs.first { $0.userTitleOverride == "x" }?.syncID)
+        let idThere = try #require(source.tabs.first { $0.syncID == syncID }?.id)
+        source.selectTab(id: idThere)
+        pair.first.driver.detachablePageTabIDs = [idThere]
+        let bitmap = try #require(NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: 4, pixelsHigh: 4, bitsPerSample: 8, samplesPerPixel: 4,
+            hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0,
+        ))
+        pair.first.driver.movedPagePicture = bitmap.representation(using: .png, properties: [:])
+
+        let idHere = try #require(pair.second.tabs.first { $0.syncID == syncID }?.id)
+        pair.second.selectTab(id: idHere)
+
+        // The first window keeps the tab selected and shows a picture of its page.
+        let selectedThere = try #require(source.tabs.first { $0.id == source.selectedTabID })
+        #expect(selectedThere.syncID == syncID)
+        #expect(source.showsMovedPage)
+        #expect(source.movedPagePicture != nil)
+
+        #expect(pair.secondDriver.createdTabRequests.isEmpty, "The page does not load again")
+        #expect(pair.first.driver.detachedPageTabIDs == [idThere])
+        #expect(!pair.first.driver.closedTabRequests.map(\.id).contains(idThere))
+        let adopted = try #require(pair.secondDriver.adoptedPages.first)
+        #expect(adopted.page == idThere && adopted.makeActive)
+        let shown = try #require(pair.second.tabs.first { $0.id == pair.second.selectedTabID })
+        #expect(shown.syncID == syncID && shown.id == adopted.id)
+        #expect(shown.creationState == .ready && shown.canGoBack)
+        #expect(pair.second.hasPage(forSyncID: syncID))
+        #expect(!source.hasPage(forSyncID: syncID))
+        #expect(source.tabs.contains { $0.syncID == syncID }, "The row stays")
+
+        // A click on the picture brings the same page back.
+        pair.secondDriver.detachablePageTabIDs = [adopted.id]
+        source.showMovedPageHere()
+        #expect(pair.first.driver.adoptedPages.first?.page == adopted.id)
+        #expect(source.hasPage(forSyncID: syncID))
+        #expect(!source.showsMovedPage && source.movedPageTabIDs.isEmpty)
+        #expect(!pair.second.hasPage(forSyncID: syncID))
+        #expect(pair.second.showsMovedPage, "Now the second window shows the picture")
+    }
+
+    @Test func aPageThatCannotMoveLoadsAgain() throws {
+        let pair = Pair()
+        let source = pair.first.model
+        let syncID = try #require(source.tabs.first { $0.userTitleOverride == "x" }?.syncID)
+        let idThere = try #require(source.tabs.first { $0.syncID == syncID }?.id)
+        source.selectTab(id: idThere)
+
+        let idHere = try #require(pair.second.tabs.first { $0.syncID == syncID }?.id)
+        pair.second.selectTab(id: idHere)
+
+        #expect(pair.secondDriver.adoptedPages.isEmpty)
+        #expect(pair.secondDriver.createdTabRequests.count == 1)
+        #expect(pair.first.driver.closedTabRequests.map(\.id).contains(idThere))
+    }
+
     @Test func closingATabRemovesItEverywhere() throws {
         let pair = Pair()
         let id = pair.first.id("y")

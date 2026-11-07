@@ -162,6 +162,14 @@ import Foundation
     var devToolsResults = [String: String]()
     var mainFrameFills = [(username: String, password: String)]()
 
+    /// Pages this window can give to another window, by tab ID; others close instead.
+    var detachablePageTabIDs = Set<String>()
+    private(set) var detachedPageTabIDs = [String]()
+    private(set) var adoptedPages = [(id: String, page: String, makeActive: Bool)]()
+
+    /// What a picture of a moving page comes back as.
+    var movedPagePicture: Data?
+
     private var pendingCreateRequests = [CreatedTabRequest]()
     private var nextTabNumber = 0
     private var activeTabID: String?
@@ -483,6 +491,22 @@ import Foundation
 
     func closeTab(withID tabID: String, forceClose: Bool) {
         closedTabRequests.append(CloseTabRequest(id: tabID, forceClose: forceClose))
+    }
+
+    func detachPage(ofTabWithID tabID: String) -> BrowserTabPageHandoff? {
+        guard detachablePageTabIDs.contains(tabID) else { return nil }
+        detachedPageTabIDs.append(tabID)
+        return BrowserTabPageHandoff(page: tabID as NSString, canGoBack: true, canGoForward: false, isLoading: false)
+    }
+
+    func capturePicture(of _: BrowserTabPageHandoff, completion: @escaping @MainActor (Data?) -> Void) {
+        completion(movedPagePicture)
+    }
+
+    func adoptPage(_ handoff: BrowserTabPageHandoff, makeActive: Bool) -> String? {
+        let id = UUID().uuidString
+        adoptedPages.append((id, String(describing: handoff.page), makeActive))
+        return id
     }
 
     func requestCloseTab(withID tabID: String, requestID: String) -> Bool {

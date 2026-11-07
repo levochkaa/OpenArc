@@ -437,6 +437,29 @@ import Foundation
         controller.closeTab(withID: tabID, forceClose: forceClose)
     }
 
+    func detachPage(ofTabWithID tabID: String) -> BrowserTabPageHandoff? {
+        controller.detachTab(withID: tabID).map {
+            BrowserTabPageHandoff(
+                page: $0, canGoBack: $0.canGoBack, canGoForward: $0.canGoForward, isLoading: $0.isLoading,
+            )
+        }
+    }
+
+    func adoptPage(_ handoff: BrowserTabPageHandoff, makeActive: Bool) -> String? {
+        guard let page = handoff.page as? BrowserTabPageTransfer else { return nil }
+        return controller.adoptTabPage(page, makeActive: makeActive)
+    }
+
+    func capturePicture(of handoff: BrowserTabPageHandoff, completion: @escaping @MainActor (Data?) -> Void) {
+        guard let page = handoff.page as? BrowserTabPageTransfer else {
+            completion(nil)
+            return
+        }
+        page.capturePicture { data in
+            MainActor.assumeIsolated { completion(data) }
+        }
+    }
+
     func prepareForCefShutdown() {
         onTabCreated = nil
         onTabCreationStateChanged = nil

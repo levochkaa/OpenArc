@@ -3156,6 +3156,14 @@ class BrowserTabClient final : public CefClient,
   BrowserTabClient(BrowserTabController *controller, const std::string &tabID)
       : controller_(controller), tab_id_(tabID) {}
 
+  // The page moved to another window: its events go there, under a new tab ID.
+  void Retarget(BrowserTabController *controller, const std::string &tabID) {
+    controller_ = controller;
+    tab_id_ = tabID;
+  }
+  // Tells the window the page is in whether it captures, after a move.
+  void ReportCapture();
+
   CefRefPtr<CefContextMenuHandler> GetContextMenuHandler() override { return this; }
   CefRefPtr<CefDisplayHandler> GetDisplayHandler() override { return this; }
   CefRefPtr<CefDownloadHandler> GetDownloadHandler() override { return this; }
@@ -3307,8 +3315,10 @@ class BrowserTabClient final : public CefClient,
 
  private:
   __weak BrowserTabController *controller_;
-  const std::string tab_id_;
+  std::string tab_id_;
   bool allow_next_chromium_internal_navigation_ = false;
+  bool captures_video_ = false;
+  bool captures_audio_ = false;
 
   IMPLEMENT_REFCOUNTING(BrowserTabClient);
 };
@@ -3485,6 +3495,8 @@ struct TabRecord {
   // Failed by the watchdog rather than refused: a late page still attaches.
   bool creationTimedOut = false;
   std::string latestURL;
+  // The page's icon, told again to a window the page moves to.
+  std::string faviconURL;
   bool navigationPending = false;
   bool navigationDrainScheduled = false;
   bool initialNavigationEnabled = false;
@@ -3506,6 +3518,59 @@ struct TabRecord {
 };
 
 }  // namespace
+
+@interface BrowserTabPageTransfer () {
+ @public
+  TabRecord _record;
+  NSNumber *_mediaVolume;
+  BOOL _adopted;
+}
+@end
+
+@implementation BrowserTabPageTransfer
+
+- (instancetype)initWithRecord:(const TabRecord &)record mediaVolume:(NSNumber *)mediaVolume {
+  self = [super init];
+  if (self != nil) {
+    _record = record;
+    _mediaVolume = mediaVolume;
+  }
+  return self;
+}
+
+- (BOOL)canGoBack {
+  return _record.browser && _record.browser->CanGoBack();
+}
+
+- (BOOL)canGoForward {
+  return _record.browser && _record.browser->CanGoForward();
+}
+
+- (BOOL)isLoading {
+  return _record.browser && _record.browser->IsLoading();
+}
+
+- (void)capturePictureWithCompletion:(void (^)(NSData *))completion {
+  if (!_record.browser || !_record.browser->IsValid()) {
+    completion(nil);
+    return;
+  }
+  CefRefPtr<RegionScreenshotObserver> observer = new RegionScreenshotObserver(CGRectMake(0, 0, 1, 1));
+  observer->completion_ = [completion copy];
+  observer->Start(_record.browser->GetHost());
+}
+
+- (void)dealloc {
+  // No window took the page; nothing else holds it, so it closes.
+  if (!_adopted && _record.browser && _record.browser->IsValid()) {
+    NSView *browserView = CAST_CEF_WINDOW_HANDLE_TO_NSVIEW(_record.browser->GetHost()->GetWindowHandle());
+    if (browserView.superview == nil) {
+      _record.browser->GetHost()->CloseBrowser(true);
+    }
+  }
+}
+
+@end
 
 @interface BrowserTabHostView ()
 
@@ -5985,6 +6050,105 @@ std::string BrowserMediaVolumeScript(double volume) {
   [self updateBrowserVisibilityFocusingActiveTab:wasActive];
 }
 
+- (BrowserTabPageTransfer *)detachTabWithID:(NSString *)tabID {
+  std::string tabKey = ToStdString(tabID);
+  auto it = _tabRecords.find(tabKey);
+  if (it == _tabRecords.end()) return nil;
+  TabRecord &record = it->second;
+  if (record.creationState != BrowserTabEngineCreationStateReady || record.isClosing ||
+      !record.browser || !record.browser->IsValid() || !record.closeRequestID.empty() ||
+      record.closeDialogCallback || record.closeConfirmation != nil || _pageDialogs[tabID] != nil ||
+      _authDialogs[tabID] != nil || _screenSharePickers[tabID] != nil) {
+    return nil;
+  }
+  NSView *browserView = BrowserViewForBrowser(record.browser);
+  if (browserView == nil) return nil;
+
+  [self cancelSitePermissionsForTabID:tabID];
+  [self closePeekSessionsOwnedByTabID:tabID];
+  // This window stops showing the page's sound and capture under the old ID.
+  const MediaFrameState media = record.reportedMedia;
+  [self reportMedia:MediaFrameState() forTabID:tabID record:record];
+  record.reportedMedia = media;
+  id<BrowserTabControllerDelegate> delegate = self.delegate;
+  if ([delegate respondsToSelector:@selector(browserTabController:didChangeCaptureForTabWithID:video:audio:)]) {
+    [delegate browserTabController:self didChangeCaptureForTabWithID:tabID video:NO audio:NO];
+  }
+
+  record.keptVisibleForPictureInPicture = false;
+  BrowserTabPageTransfer *transfer = [[BrowserTabPageTransfer alloc] initWithRecord:record
+                                                                       mediaVolume:_mediaVolumes[tabID]];
+  [_mediaVolumes removeObjectForKey:tabID];
+  _tabRecords.erase(it);
+  [browserView removeFromSuperview];
+  const BOOL wasActive = [_activeTabID isEqualToString:tabID];
+  if (wasActive) {
+    _activeTabID = nil;
+  }
+  if ([_visibleLayoutTabIDs containsObject:tabID]) {
+    NSMutableArray<NSString *> *remaining = [_visibleLayoutTabIDs mutableCopy];
+    [remaining removeObject:tabID];
+    _visibleLayoutTabIDs = remaining.count > 1 ? remaining : nil;
+    _visibleLayoutFractions = nil;
+  }
+  [self updateBrowserVisibilityFocusingActiveTab:NO];
+  return transfer;
+}
+
+- (NSString *)adoptTabPage:(BrowserTabPageTransfer *)transfer makeActive:(BOOL)makeActive {
+  NSString *tabID = NSUUID.UUID.UUIDString;
+  std::string tabKey = ToStdString(tabID);
+  TabRecord record = transfer->_record;
+  transfer->_adopted = YES;
+  static_cast<BrowserTabClient *>(record.client.get())->Retarget(self, tabKey);
+  const MediaFrameState media = record.reportedMedia;
+  record.reportedMedia = MediaFrameState();
+  _tabRecords[tabKey] = record;
+  if (transfer->_mediaVolume != nil) {
+    if (_mediaVolumes == nil) _mediaVolumes = [NSMutableDictionary dictionary];
+    _mediaVolumes[tabID] = transfer->_mediaVolume;
+  }
+  if (makeActive || _activeTabID == nil) {
+    _activeTabID = [tabID copy];
+  }
+
+  CefRefPtr<CefBrowser> browser = record.browser;
+  NSView *browserView = BrowserViewForBrowser(browser);
+  BrowserTabHostView *hostView = _hostView;
+  if (browserView != nil && hostView != nil) {
+    browserView.hidden = YES;
+    // Pages sit under the host's own views, such as split dividers.
+    [hostView addSubview:browserView positioned:NSWindowBelow relativeTo:nil];
+    SyncBrowserViewFrame(hostView, browser);
+  }
+  browser->GetHost()->NotifyScreenInfoChanged();
+  browser->GetHost()->WasResized();
+
+  [self updateBrowserVisibilityFocusingActiveTab:[_activeTabID isEqualToString:tabID]];
+  // The window learns the page's sound and capture once its model knows the new ID.
+  CefRefPtr<CefClient> client = record.client;
+  __weak BrowserTabController *weakSelf = self;
+  dispatch_async(dispatch_get_main_queue(), ^{
+    BrowserTabController *controller = weakSelf;
+    if (controller == nil) return;
+    auto it = controller->_tabRecords.find(tabKey);
+    if (it == controller->_tabRecords.end() || it->second.client != client) return;
+    [controller reportMedia:media forTabID:tabID record:it->second];
+    static_cast<BrowserTabClient *>(client.get())->ReportCapture();
+    // Titles and icons the page had before the move reached the other window only.
+    CefRefPtr<CefNavigationEntry> entry = browser->GetHost()->GetVisibleNavigationEntry();
+    NSString *title = entry ? ToNSString(entry->GetTitle().ToString()) : @"";
+    NSString *urlString = ToNSString(browser->GetMainFrame()->GetURL().ToString());
+    NSString *favicon = ToNSString(it->second.faviconURL);
+    [controller.delegate browserTabController:controller
+                           didUpdateTabWithID:tabID
+                                        title:title.length > 0 ? title : nil
+                                    urlString:urlString.length > 0 ? urlString : nil
+                             faviconURLString:favicon.length > 0 ? favicon : nil];
+  });
+  return tabID;
+}
+
 - (void)closeAllTabs {
   std::vector<std::string> tabIDs;
   tabIDs.reserve(_tabRecords.size());
@@ -6137,6 +6301,10 @@ std::string BrowserMediaVolumeScript(double volume) {
 
 - (void)handleFaviconURLChange:(NSString *)faviconURLString
                       forTabID:(NSString *)tabID {
+  auto it = _tabRecords.find(ToStdString(tabID));
+  if (it != _tabRecords.end()) {
+    it->second.faviconURL = ToStdString(faviconURLString ?: @"");
+  }
   [self.delegate browserTabController:self
                       didUpdateTabWithID:tabID
                                    title:nil
@@ -6399,13 +6567,19 @@ void BrowserTabClient::OnMediaAccessChange(CefRefPtr<CefBrowser>,
                                            bool has_video_access,
                                            bool has_audio_access) {
   CEF_REQUIRE_UI_THREAD();
+  captures_video_ = has_video_access;
+  captures_audio_ = has_audio_access;
+  ReportCapture();
+}
+
+void BrowserTabClient::ReportCapture() {
   BrowserTabController *controller = controller_;
   id<BrowserTabControllerDelegate> delegate = controller.delegate;
   if ([delegate respondsToSelector:@selector(browserTabController:didChangeCaptureForTabWithID:video:audio:)]) {
     [delegate browserTabController:controller
         didChangeCaptureForTabWithID:ToNSString(tab_id_)
-                               video:has_video_access
-                               audio:has_audio_access];
+                               video:captures_video_
+                               audio:captures_audio_];
   }
 }
 

@@ -251,7 +251,8 @@ final class BrowserSiteControlsNSView: NSView {
 
     func refresh() {
         let preferences = model.userPreferencesStore
-        let tab = model.currentTab
+        // A page another window took leaves the address empty, as a blank window has it.
+        let tab = model.showsMovedPage ? nil : model.currentTab
         let display: String =
             if let tab {
                 mode == .toolbar && preferences.siteToolbarShowsFullURL
@@ -316,16 +317,6 @@ final class BrowserSiteControlsNSView: NSView {
         refreshToolbarItems()
         refreshHover()
         needsLayout = true
-    }
-
-    /// Follows the toolbar, which may still be sliding into place.
-    private func positionCustomizePanel() {
-        guard let customizePanel, let window else { return }
-        let frame = window.convertToScreen(convert(bounds, to: nil))
-        customizePanel.setFrameTopLeftPoint(NSPoint(
-            x: frame.midX - customizePanel.frame.width / 2,
-            y: frame.minY - 8,
-        ))
     }
 
     func publishURLFrame() {
@@ -516,6 +507,16 @@ final class BrowserSiteControlsNSView: NSView {
             relativeTo: anchor ?? siteButton,
             preferredEdge: preferredEdge ?? (mode == .toolbar ? .minY : beside),
         )
+    }
+
+    /// Follows the toolbar, which may still be sliding into place.
+    private func positionCustomizePanel() {
+        guard let customizePanel, let window else { return }
+        let frame = window.convertToScreen(convert(bounds, to: nil))
+        customizePanel.setFrameTopLeftPoint(NSPoint(
+            x: frame.midX - customizePanel.frame.width / 2,
+            y: frame.minY - 8,
+        ))
     }
 
     /// The item's own view, for those that have one.

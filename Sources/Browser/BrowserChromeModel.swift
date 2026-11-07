@@ -310,6 +310,11 @@ enum BrowserWindowMode: Equatable {
     /// tabs whose renderer went away in the background, which reload when
     /// shown. Only `BrowserChromeModel+CrashedTabs.swift` writes them.
     @Published var crashedTabErrorCodes = [String: Int]()
+    /// Tabs this window showed when another window of the profile took their page, and
+    /// pictures of those pages once taken. The window shows the picture, faded, until
+    /// the page comes back on a click.
+    @Published private(set) var movedPageTabIDs = Set<String>()
+    @Published private(set) var movedPagePictures = [String: NSImage]()
     var tabsNeedingReloadAfterCrash = Set<String>()
     /// An incognito window's camera and microphone answers, kept until it
     /// closes. Only `sitePermissionDecisions` writes it.
@@ -687,6 +692,15 @@ enum BrowserWindowMode: Equatable {
 
     var currentTab: Tab? {
         selectedTab
+    }
+
+    /// The selected tab's page is in another window of this profile.
+    var showsMovedPage: Bool {
+        selectedTabID.map { movedPageTabIDs.contains($0) && hasNoPage($0) } ?? false
+    }
+
+    var movedPagePicture: NSImage? {
+        showsMovedPage ? selectedTabID.flatMap { movedPagePictures[$0] } : nil
     }
 
     var showsProfileIndicator: Bool {
@@ -4184,9 +4198,49 @@ enum BrowserWindowMode: Equatable {
     /// Another window opened this tab: its page closes here and the row stays, ready to
     /// reopen at the same address.
     func releasePage(forSyncID syncID: String) {
+        guard let index = indexOfTabWithPage(forSyncID: syncID) else { return }
+        let id = tabs[index].id
+        leavePage(at: index, movedLive: false)
+        tabDriver.closeTab(withID: id, forceClose: true)
+    }
+
+    /// Another window shows this tab: the live page moves there and the row stays here
+    /// without one. Nil, with nothing changed, when the page cannot move now.
+    func detachPage(forSyncID syncID: String) -> BrowserTabPageHandoff? {
+        guard let index = indexOfTabWithPage(forSyncID: syncID),
+              var handoff = tabDriver.detachPage(ofTabWithID: tabs[index].id)
+        else { return nil }
+        handoff.profileCachePath = engineProfilePathsByID.removeValue(forKey: tabs[index].id) ?? nil
+        if let id = leavePage(at: index, movedLive: true) {
+            let size = hostView.bounds.size
+            let maximumPixelSize = max(size.width, size.height) * (hostView.window?.backingScaleFactor ?? 2)
+            tabDriver.capturePicture(of: handoff) { [weak self] png in
+                guard let self, movedPageTabIDs.contains(id), let png,
+                      let picture = BrowserImageThumbnailer.image(data: png, maximumPixelSize: max(maximumPixelSize, 1))
+                else { return }
+                movedPagePictures[id] = picture
+            }
+        }
+        return handoff
+    }
+
+    /// Brings back the page of the selected tab from the window that took it.
+    func showMovedPageHere() {
+        guard showsMovedPage, let id = selectedTabID else { return }
+        selectTab(id: id)
+    }
+
+    private func indexOfTabWithPage(forSyncID syncID: String) -> Int? {
         guard !isShuttingDown, let index = tabs.firstIndex(where: { $0.syncID == syncID }),
               !hasNoPage(tabs[index].id), !closingTabIDs.contains(tabs[index].id)
-        else { return }
+        else { return nil }
+        return index
+    }
+
+    /// The row at `index` stays without a page. A selected one whose page moved live stays
+    /// selected and shows the page's picture, returning its ID; one whose page closed gives
+    /// way to another tab.
+    @discardableResult private func leavePage(at index: Int, movedLive: Bool) -> String? {
         let tab = tabs[index]
         let wasSelected = selectedTabID == tab.id
         let newID = UUID().uuidString
@@ -4194,8 +4248,14 @@ enum BrowserWindowMode: Equatable {
         tabs[index] = reidentifiedTab(from: tab, id: newID)
         markWithoutPage(newID, placement: tab.placement)
         replaceTabRuntimeReferences(oldID: tab.id, newID: newID, spaceID: tab.spaceID, selectsInSpace: false)
-        tabDriver.closeTab(withID: tab.id, forceClose: true)
-        guard wasSelected else { return }
+        guard wasSelected else { return nil }
+        if movedLive, splitPaneTabIDs(forTabID: newID).count <= 1 {
+            movedPageTabIDs.insert(newID)
+            findResultMatchCount = nil
+            tabDriver.deselectActiveTab()
+            updateWindowTitle()
+            return newID
+        }
         clearSelectedTab(newID, forSpaceID: tab.spaceID)
         // The window shows another tab of its own, not an empty page.
         let elsewhere = Set(tabs.map(\.id).filter(isPageInAnotherWindow))
@@ -4203,7 +4263,7 @@ enum BrowserWindowMode: Equatable {
         if let fallback, hasNoPage(fallback) {
             selectTab(id: fallback)
             updateWindowTitle()
-            return
+            return nil
         }
         selectedTabID = fallback
         findResultMatchCount = nil
@@ -4215,6 +4275,7 @@ enum BrowserWindowMode: Equatable {
             tabDriver.deselectActiveTab()
         }
         updateWindowTitle()
+        return nil
     }
 
     private func makeCommandBarModel(
@@ -4330,6 +4391,27 @@ enum BrowserWindowMode: Equatable {
         tree.children[.pinned(source.spaceID, folderID: copyID)] = order
         applyPinnedTree(tree)
         return copyID
+    }
+
+    /// Shows the live page another window of this profile has for the tab, with its
+    /// scroll position, form input and playing media. Nil when no window can give it.
+    private func adoptPageFromAnotherWindow(syncID: String, makeActive: Bool) -> (
+        id: String,
+        handoff: BrowserTabPageHandoff,
+    )? {
+        guard let handoff = windowGroup?.takePage(syncID: syncID, for: self),
+              let id = tabDriver.adoptPage(handoff, makeActive: makeActive)
+        else { return nil }
+        engineProfilePathsByID.updateValue(handoff.profileCachePath, forKey: id)
+        return (id, handoff)
+    }
+
+    /// An adopted page is ready at once, at the address it shows.
+    private func applyAdoptedPage(_ handoff: BrowserTabPageHandoff, toTabAt index: Int) {
+        tabs[index].creationState = .ready
+        tabs[index].canGoBack = handoff.canGoBack
+        tabs[index].canGoForward = handoff.canGoForward
+        tabs[index].isLoading = handoff.isLoading
     }
 
     private func hasNoPage(_ id: String) -> Bool {
@@ -5791,18 +5873,27 @@ enum BrowserWindowMode: Equatable {
         captureSelectedTabPreviewIfNeeded()
         dismissCommandBar()
 
-        windowGroup?.pageWillOpen(syncID: tab.syncID, in: self)
-        let newTabID = createEngineTab(
-            withURLString: resolvedBrowserURLString(tab.urlString),
-            makeActive: true,
-            spaceID: nil,
-        )
-        pendingReopenedAppTabCreations[newTabID] = .init(previousID: id, titleAtRequest: tab.title)
+        let adopted = adoptPageFromAnotherWindow(syncID: tab.syncID, makeActive: true)
+        let newTabID: String
+        if let adopted {
+            newTabID = adopted.id
+        } else {
+            windowGroup?.pageWillOpen(syncID: tab.syncID, in: self)
+            newTabID = createEngineTab(
+                withURLString: resolvedBrowserURLString(tab.urlString),
+                makeActive: true,
+                spaceID: nil,
+            )
+            pendingReopenedAppTabCreations[newTabID] = .init(previousID: id, titleAtRequest: tab.title)
+        }
         tabs[index] = reidentifiedAppTab(
             from: tab,
             id: newTabID,
             lastActivityAt: advancedActivityDate(after: tab.lastActivityAt),
         )
+        if let adopted {
+            applyAdoptedPage(adopted.handoff, toTabAt: index)
+        }
         closedAppTabIDs.remove(id)
         replaceTabRuntimeReferences(oldID: id, newID: newTabID, spaceID: tab.spaceID)
 
@@ -5831,16 +5922,24 @@ enum BrowserWindowMode: Equatable {
 
         // A tab restored unloaded keeps the page it showed last; one the user
         // unloaded opens its pinned URL.
-        let urlString = lastPageRestoreTabIDs.remove(id) != nil && !tab.urlString.isEmpty
+        let restoresLastPage = lastPageRestoreTabIDs.remove(id) != nil && !tab.urlString.isEmpty
+        // A page open in another window comes here as it is.
+        let adopted = adoptPageFromAnotherWindow(syncID: tab.syncID, makeActive: true)
+        let urlString = restoresLastPage || adopted != nil
             ? tab.urlString
             : effectivePinnedURLString(forPinnedTab: tab) ?? tab.urlString
-        windowGroup?.pageWillOpen(syncID: tab.syncID, in: self)
-        let newTabID = createEngineTab(
-            withURLString: resolvedBrowserURLString(urlString),
-            makeActive: true,
-            spaceID: tab.spaceID,
-        )
-        pendingReopenedPinnedTabCreations[newTabID] = .init(previousID: id, titleAtRequest: tab.title)
+        let newTabID: String
+        if let adopted {
+            newTabID = adopted.id
+        } else {
+            windowGroup?.pageWillOpen(syncID: tab.syncID, in: self)
+            newTabID = createEngineTab(
+                withURLString: resolvedBrowserURLString(urlString),
+                makeActive: true,
+                spaceID: tab.spaceID,
+            )
+            pendingReopenedPinnedTabCreations[newTabID] = .init(previousID: id, titleAtRequest: tab.title)
+        }
         tabs[index] = tab.placement == .spacePinned
             ? reidentifiedPinnedTab(
                 from: tab,
@@ -5849,6 +5948,9 @@ enum BrowserWindowMode: Equatable {
                 lastActivityAt: advancedActivityDate(after: tab.lastActivityAt),
             )
             : reidentifiedTab(from: tab, id: newTabID, lastActivityAt: advancedActivityDate(after: tab.lastActivityAt))
+        if let adopted {
+            applyAdoptedPage(adopted.handoff, toTabAt: index)
+        }
         closedPinnedTabIDs.remove(id)
         replaceTabRuntimeReferences(oldID: id, newID: newTabID, spaceID: tab.spaceID)
         loadSplitSiblings(ofTabWithID: newTabID)
@@ -5870,15 +5972,24 @@ enum BrowserWindowMode: Equatable {
         lastPageRestoreTabIDs.remove(id)
         closedPinnedTabIDs.remove(id)
         closedAppTabIDs.remove(id)
-        windowGroup?.pageWillOpen(syncID: tab.syncID, in: self)
         let isSelected = selectedTabID == id
-        let newTabID = createEngineTab(
-            withURLString: resolvedBrowserURLString(tab.urlString),
-            makeActive: isSelected,
-            spaceID: tab.placement == .app ? nil : tab.spaceID,
-        )
-        pendingReopenedPinnedTabCreations[newTabID] = .init(previousID: id, titleAtRequest: tab.title)
+        let adopted = adoptPageFromAnotherWindow(syncID: tab.syncID, makeActive: isSelected)
+        let newTabID: String
+        if let adopted {
+            newTabID = adopted.id
+        } else {
+            windowGroup?.pageWillOpen(syncID: tab.syncID, in: self)
+            newTabID = createEngineTab(
+                withURLString: resolvedBrowserURLString(tab.urlString),
+                makeActive: isSelected,
+                spaceID: tab.placement == .app ? nil : tab.spaceID,
+            )
+            pendingReopenedPinnedTabCreations[newTabID] = .init(previousID: id, titleAtRequest: tab.title)
+        }
         tabs[index] = reidentifiedTab(from: tab, id: newTabID)
+        if let adopted {
+            applyAdoptedPage(adopted.handoff, toTabAt: index)
+        }
         replaceTabRuntimeReferences(oldID: id, newID: newTabID, spaceID: tab.spaceID, selectsInSpace: false)
         if isSelected {
             tabDriver.selectTab(withID: newTabID)
@@ -5918,6 +6029,9 @@ enum BrowserWindowMode: Equatable {
         }
 
         recentlySelectedTabIDs = recentlySelectedTabIDs.map { $0 == oldID ? newID : $0 }
+        if movedPageTabIDs.remove(oldID) != nil {
+            movedPagePictures.removeValue(forKey: oldID)
+        }
         if let previewImage = tabPreviewImagesByID.removeValue(forKey: oldID) {
             tabPreviewImagesByID[newID] = previewImage
         }
@@ -7824,6 +7938,11 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
 
         for tabID in Array(tabPreviewImagesByID.keys) where !openTabIDs.contains(tabID) {
             tabPreviewImagesByID.removeValue(forKey: tabID)
+        }
+        let rowIDs = Set(tabs.map(\.id))
+        if !movedPageTabIDs.isSubset(of: rowIDs) {
+            movedPageTabIDs.formIntersection(rowIDs)
+            movedPagePictures = movedPagePictures.filter { rowIDs.contains($0.key) }
         }
     }
 

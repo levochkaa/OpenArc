@@ -188,6 +188,22 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
 
 @end
 
+/// A live page taken out of one window for another window of the same profile.
+/// Released without being adopted, it closes its page.
+@interface BrowserTabPageTransfer : NSObject
+
+@property(nonatomic, readonly) BOOL canGoBack;
+@property(nonatomic, readonly) BOOL canGoForward;
+@property(nonatomic, readonly) BOOL isLoading;
+
+// A picture of the page as it looks, wherever it is shown by then.
+- (void)capturePictureWithCompletion:(void (^)(NSData *_Nullable png))completion;
+
+- (instancetype)init NS_UNAVAILABLE;
++ (instancetype)new NS_UNAVAILABLE;
+
+@end
+
 @interface BrowserTabController : NSObject
 
 /// Runs in this controller's pages as they start to load.
@@ -362,6 +378,13 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
     NS_SWIFT_NAME(requestCloseTab(withID:requestID:));
 - (void)closeTabWithID:(NSString *)tabID forceClose:(BOOL)forceClose;
 - (void)closeTabWithID:(NSString *)tabID;
+// Takes a ready page out of this window without closing it. Nil while the page
+// is being created or closed, or shows a dialog of its own.
+- (nullable BrowserTabPageTransfer *)detachTabWithID:(NSString *)tabID
+    NS_SWIFT_NAME(detachTab(withID:));
+// Shows a page another window detached, under a new tab ID it returns.
+- (NSString *)adoptTabPage:(BrowserTabPageTransfer *)transfer makeActive:(BOOL)makeActive
+    NS_SWIFT_NAME(adoptTabPage(_:makeActive:));
 - (void)closeAllTabs;
 - (void)prepareForCefShutdown;
 - (void)hostViewDidLayout;

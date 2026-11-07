@@ -38,6 +38,15 @@ import Foundation
         }
     }
 
+    /// Moves the tab's live page to `sender` from the window that has it; nil when none
+    /// can give it.
+    func takePage(syncID: String, for sender: BrowserChromeModel) -> BrowserTabPageHandoff? {
+        for model in models where model !== sender {
+            if let handoff = model.detachPage(forSyncID: syncID) { return handoff }
+        }
+        return nil
+    }
+
     func hasPageElsewhere(syncID: String, than sender: BrowserChromeModel) -> Bool {
         models.contains { $0 !== sender && $0.hasPage(forSyncID: syncID) }
     }
