@@ -1104,8 +1104,22 @@ final class BrowserNativeSidebarNSView: NSView {
         ) }
         page.entries = entries
         let ids = Set(entries.map(\.id))
+        // Collapsing the Space folds its pinned rows up under the header.
+        let foldedIDs: Set<String> = collapsed
+            ? Set(pinnedRows.map { row in
+                switch row {
+                case .tab(let tabRow): "tab:\(tabRow.tab.id)"
+                case .folder(let folderRow): "folder:\(folderRow.folder.id)"
+                }
+            })
+            : []
         for id in Set(page.rows.keys).subtracting(ids) {
-            page.rows.removeValue(forKey: id)?.removeAnimated()
+            guard let row = page.rows.removeValue(forKey: id) else { continue }
+            if foldedIDs.contains(id) {
+                row.removeAnimated(rising: row.frame.maxY)
+            } else {
+                row.removeAnimated()
+            }
         }
         for entry in entries {
             switch entry {

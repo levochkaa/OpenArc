@@ -450,12 +450,26 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
         }
     }
 
-    func removeAnimated() {
+    /// Fades the row out. With `rising`, it also moves up that far, its title gone at
+    /// once, as a collapsing Space folds its pinned rows under the header.
+    func removeAnimated(rising: CGFloat = 0) {
         guard window != nil else { removeFromSuperview()
             return
         }
         isInteractionEnabled = false
         closeButton.isEnabled = false
+        if rising > 0, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            titleLabel.isHidden = true
+            captionLabel.isHidden = true
+            wantsLayer = true
+            let animation = BrowserNativeAnimation.Curve.rowFade.layerAnimation(keyPath: "position")
+            animation.isAdditive = true
+            animation.fromValue = NSValue(point: .zero)
+            animation.toValue = NSValue(point: CGPoint(x: 0, y: -rising))
+            animation.fillMode = .forwards
+            animation.isRemovedOnCompletion = false
+            layer?.add(animation, forKey: "fold")
+        }
         let from = appearanceProgress
         opacityAnimation.start(.rowFade) { [weak self] progress in
             guard let self else { return }

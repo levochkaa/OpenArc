@@ -121,7 +121,9 @@ final class BrowserSidebarChromeView: NSView, BrowserSpaceThemedChrome {
         sidebar.isCommandBarPresented = model.commandBarModel.isPresented
         sidebar.refresh(animated: previous.selectedSpaceID != snapshot.selectedSpaceID
             || previous.allTabs.map(\.id) != snapshot.allTabs.map(\.id) || previous.pinnedTabFolders != snapshot
-            .pinnedTabFolders)
+            .pinnedTabFolders
+            // A Space's pinned rows folding away or back.
+            || previous.spaces.map(\.isPinnedSectionCollapsed) != snapshot.spaces.map(\.isPinnedSectionCollapsed))
         background.isHidden = !isOverlayPresentation
         background.mode = model.userPreferencesStore.blurredChromeBackgroundEnabled ? .blurred : .black
         // The floating sidebar carries the Space's theme like the window behind it.
