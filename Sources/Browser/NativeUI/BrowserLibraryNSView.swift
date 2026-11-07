@@ -252,6 +252,26 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
         return entries
     }
 
+    /// Pictures saved to these folders, newest first, without looking into subfolders.
+    static func mediaFiles(in folders: [URL], query: String, limit: Int = 120) -> [URL] {
+        let keys: [URLResourceKey] = [.contentModificationDateKey, .contentTypeKey]
+        var seen = Set<String>()
+        let media = folders.filter { seen.insert($0.standardizedFileURL.path).inserted }.flatMap { folder in
+            let files = (try? FileManager.default.contentsOfDirectory(
+                at: folder,
+                includingPropertiesForKeys: keys,
+                options: [.skipsHiddenFiles],
+            )) ?? []
+            return files.compactMap { url -> (URL, Date)? in
+                let values = try? url.resourceValues(forKeys: Set(keys))
+                guard let type = values?.contentType, type.conforms(to: .image) else { return nil }
+                if !query.isEmpty, !url.lastPathComponent.lowercased().contains(query) { return nil }
+                return (url, values?.contentModificationDate ?? .distantPast)
+            }
+        }
+        return media.sorted { $0.1 > $1.1 }.prefix(limit).map(\.0)
+    }
+
     private static func matches(fileName: String, kind: String) -> Bool {
         let type = UTType(filenameExtension: (fileName as NSString).pathExtension)
         return switch kind {
@@ -452,22 +472,17 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
 
     /// Pictures and videos in the download folder, newest first.
     private func mediaRows() -> [Row] {
-        let directory = BrowserDownloadLocation.directory(
+        let downloads = BrowserDownloadLocation.directory(
             customPath: model.userPreferencesStore.downloadDirectoryPath,
         )
-        let keys: [URLResourceKey] = [.contentModificationDateKey, .contentTypeKey]
-        let files = (try? FileManager.default.contentsOfDirectory(
-            at: directory,
-            includingPropertiesForKeys: keys,
-            options: [.skipsHiddenFiles],
-        )) ?? []
-        let media = files.compactMap { url -> (URL, Date)? in
-            let values = try? url.resourceValues(forKeys: Set(keys))
-            guard let type = values?.contentType, type.conforms(to: .image) else { return nil }
-            if !query.isEmpty, !url.lastPathComponent.lowercased().contains(query) { return nil }
-            return (url, values?.contentModificationDate ?? .distantPast)
-        }
-        return media.sorted { $0.1 > $1.1 }.prefix(120).map { .tile($0.0) }
+        let home = FileManager.default
+        let folders = [downloads]
+            + [
+                home.urls(for: .desktopDirectory, in: .userDomainMask),
+                home.urls(for: .documentDirectory, in: .userDomainMask),
+            ]
+            .compactMap(\.first)
+        return Self.mediaFiles(in: folders, query: query).map { .tile($0) }
     }
 
     private func updateEmptyState() {
