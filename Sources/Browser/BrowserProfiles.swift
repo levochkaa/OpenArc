@@ -8,6 +8,7 @@ import Foundation
 struct BrowserProfile: Equatable, Identifiable {
     static let defaultDirectoryName = "Default"
     static let defaultName = "Default"
+    static let placeholderNames: Set = ["Your Chromium", "Your OpenArc"]
 
     static var defaultProfile: BrowserProfile {
         BrowserProfile(directoryName: defaultDirectoryName, name: defaultName)
@@ -22,8 +23,10 @@ struct BrowserProfile: Equatable, Identifiable {
 
     var displayName: String {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        // Chromium writes its own placeholder name into the default profile.
-        return trimmedName.isEmpty || (isDefault && trimmedName == "Your Chromium") ? Self.defaultName : trimmedName
+        // Chromium's placeholder name, or the one the app gives it before Chromium starts.
+        return trimmedName.isEmpty || (isDefault && Self.placeholderNames.contains(trimmedName))
+            ? Self.defaultName
+            : trimmedName
     }
 
     var isDefault: Bool {

@@ -53,6 +53,46 @@ static void BrowserWriteDefaultExtensionManifests(NSString* cache_root) {
             error:nil];
 }
 
+/// Chromium calls an unnamed profile "Your Chromium" in its settings and menus. Naming
+/// the default profile before Chromium reads Local State shows the app's name there; a name
+/// the user chose stays.
+static void BrowserNameDefaultProfile(NSString* cache_root) {
+  NSString* path = [cache_root stringByAppendingPathComponent:@"Local State"];
+  NSData* data = [NSData dataWithContentsOfFile:path];
+  NSMutableDictionary* state = [NSMutableDictionary dictionary];
+  if (data) {
+    id parsed = [NSJSONSerialization JSONObjectWithData:data
+                                                options:NSJSONReadingMutableContainers
+                                                  error:nil];
+    if (![parsed isKindOfClass:NSMutableDictionary.class]) {
+      return;
+    }
+    state = parsed;
+  }
+  NSMutableDictionary* profile = state[@"profile"];
+  if (![profile isKindOfClass:NSMutableDictionary.class]) {
+    profile = [NSMutableDictionary dictionary];
+    state[@"profile"] = profile;
+  }
+  NSMutableDictionary* info_cache = profile[@"info_cache"];
+  if (![info_cache isKindOfClass:NSMutableDictionary.class]) {
+    info_cache = [NSMutableDictionary dictionary];
+    profile[@"info_cache"] = info_cache;
+  }
+  NSMutableDictionary* entry = info_cache[@"Default"];
+  if (![entry isKindOfClass:NSMutableDictionary.class]) {
+    entry = [NSMutableDictionary dictionary];
+    info_cache[@"Default"] = entry;
+  }
+  if ([entry[@"is_using_default_name"] isEqual:@NO]) {
+    return;
+  }
+  entry[@"name"] = @"Your OpenArc";
+  entry[@"is_using_default_name"] = @NO;
+  NSData* output = [NSJSONSerialization dataWithJSONObject:state options:0 error:nil];
+  [output writeToFile:path atomically:YES];
+}
+
 int main(int argc, char* argv[]) {
   CefScopedLibraryLoader library_loader;
   if (!library_loader.LoadInMain()) {
@@ -93,6 +133,7 @@ int main(int argc, char* argv[]) {
         std::string(cache_path.UTF8String);
 
     BrowserWriteDefaultExtensionManifests(cache_root);
+    BrowserNameDefaultProfile(cache_root);
 
     if (!CefInitialize(main_args, settings, app, nullptr)) {
       return 1;
