@@ -520,6 +520,13 @@ import QuartzCore
         }
 
         if modifiers.contains(.command) {
+            // The active tab already looks selected, so the first Command-click
+            // starts the selection with it: dragging either tab moves both.
+            if selectedSidebarTabIDs.isEmpty, let activeID = snapshot.selectedTabID, activeID != tab.id,
+               visibleSidebarTabIDs.contains(activeID)
+            {
+                toggleSidebarTabSelection(activeID)
+            }
             toggleSidebarTabSelection(tab.id)
             return
         }

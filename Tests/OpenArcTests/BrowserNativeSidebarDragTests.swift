@@ -284,6 +284,20 @@ import Testing
         #expect(h.rows.filter(\.isInteractionEnabled).allSatisfy { $0.dragOpacity == 1 })
     }
 
+    @Test func commandClickingATabGroupsItWithTheActiveTab() throws {
+        let f = SidebarDragFixture(temporary: ["x", "y", "z"])
+        f.model.selectTab(id: f.id("x"))
+        let h = SidebarDragHarness(f)
+        defer { h.close() }
+        let y = try #require(f.model.tabs.first { $0.id == f.id("y") })
+        h.state.handleSidebarTabSelection(y, in: .temporary, modifiers: .command)
+        #expect(h.state.selectedSidebarTabIDs == [f.id("x"), f.id("y")])
+        try h.begin("y")
+        #expect(h.state.drag.payload?.tabIDs == Set([f.id("x"), f.id("y")]), "Both highlighted tabs move")
+        h.state.handleSidebarTabSelection(y, in: .temporary, modifiers: .command)
+        #expect(h.state.selectedSidebarTabIDs == [f.id("x")])
+    }
+
     @Test func temporaryMultiSelectionDragsAndLandsAsAStableGroup() async throws {
         let f = SidebarDragFixture(temporary: ["x", "y", "z"])
         let h = SidebarDragHarness(f)
