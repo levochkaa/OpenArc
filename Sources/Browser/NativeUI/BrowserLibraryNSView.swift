@@ -551,6 +551,21 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
                 model?.closeLibrary()
             }
             card.onEditTheme = { [weak model] in model?.onEditSpaceTheme?(space.id) }
+            // A card dragged sideways takes the place it is dropped at.
+            let restingX = x
+            card.onDragChanged = { [weak self, weak card] value in
+                guard let self, let card else { return }
+                if card !== spacesDocument.subviews.last {
+                    spacesDocument.addSubview(card, positioned: .above, relativeTo: nil)
+                }
+                card.frame.origin.x = restingX + value.translation.width
+            }
+            card.onDragEnded = { [weak self, weak model] value in
+                let step = BrowserLibraryLayout.spaceCardWidth + 20
+                let index = Int(((restingX - 20 + value.translation.width) / step).rounded())
+                model?.moveSpace(id: space.id, toIndex: index)
+                self?.layoutSpaces()
+            }
             card.menuProvider = { [weak model] in
                 guard let model else { return NSMenu() }
                 return Self.spaceMenu(space, model: model)
@@ -833,6 +848,8 @@ private final class BrowserLibrarySpaceCard: BrowserNativePressableView {
     private let moreButton = BrowserNativeChromeButton(symbol: "ellipsis", title: "", style: .chrome, action: {})
     private let background = BrowserChromeBackgroundNSView()
     private let icon = NSImageView()
+    /// Shows the card moves; the whole card can be dragged.
+    private let handle = NSImageView()
     private let title = NSTextField(labelWithString: "")
     private var rowViews = [NSView]()
     private var rows = [BrowserLibrarySpaceRow]()
@@ -859,6 +876,12 @@ private final class BrowserLibrarySpaceCard: BrowserNativePressableView {
             guard let self else { return }
             menuProvider?().popUp(positioning: nil, at: NSPoint(x: 0, y: moreButton.bounds.maxY + 4), in: moreButton)
         }
+        handle.image = NSImage(
+            systemSymbolName: "arrow.up.and.down.and.arrow.left.and.right",
+            accessibilityDescription: nil,
+        )?
+            .withSymbolConfiguration(.init(pointSize: 11, weight: .medium))
+        addSubview(handle)
         addSubview(editButton)
         addSubview(moreButton)
     }
@@ -871,6 +894,7 @@ private final class BrowserLibrarySpaceCard: BrowserNativePressableView {
         icon.frame = NSRect(x: 14, y: 15, width: 16, height: 16)
         editButton.frame = NSRect(x: bounds.width - 34, y: 9, width: 24, height: 24)
         moreButton.frame = NSRect(x: bounds.width - 34, y: bounds.height - 34, width: 24, height: 24)
+        handle.frame = NSRect(x: 14, y: bounds.height - 30, width: 16, height: 16)
         let titleX: CGFloat = icon.image == nil ? 14 : 36
         title.frame = NSRect(x: titleX, y: 14, width: max(editButton.frame.minX - 6 - titleX, 0), height: 18)
         var y: CGFloat = 44
@@ -898,6 +922,7 @@ private final class BrowserLibrarySpaceCard: BrowserNativePressableView {
         title.textColor = BrowserChromeColors.sidebarDimText
         icon.image = BrowserIconImage.image(named: space.systemImageName, pointSize: 13)
         icon.contentTintColor = BrowserChromeColors.sidebarDimText
+        handle.contentTintColor = BrowserChromeColors.sidebarDimText
         setAccessibilityLabel(space.title)
         layer?.borderColor = (isSelected ? NSColor.controlAccentColor : BrowserChromeColors.sidebarDivider).cgColor
         guard rows != self.rows else { return }
