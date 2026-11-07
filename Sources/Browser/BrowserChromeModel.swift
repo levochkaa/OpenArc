@@ -2014,6 +2014,10 @@ enum BrowserWindowMode: Equatable {
             movePinnedTabFolder(withID: folder.id, toRootSectionIndex: index, targetParentFolderID: folderID)
         }
         movePinnedTabFolder(withID: folderID, toRootSectionIndex: 0, targetSpaceID: targetSpaceID)
+        // It arrives closed, a single row at the top of the other Space.
+        if let index = pinnedTabFolders.firstIndex(where: { $0.id == folderID }) {
+            pinnedTabFolders[index].isExpanded = false
+        }
         selectSpace(id: targetSpaceID)
         return deleteSpace(id: spaceID)
     }

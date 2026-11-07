@@ -3071,6 +3071,7 @@ private enum BrowserChromeModelTestError: Error {
     #expect(model.selectedSpaceID == target)
     let folder = try #require(model.pinnedTabFolders.first { $0.spaceID == target })
     #expect(folder.title == "Work")
+    #expect(!folder.isExpanded, "The folder arrives closed")
     for id in [pinnedID, temporaryID] {
         let tab = try #require(model.tabs.first { $0.id == id })
         #expect(tab.spaceID == target)
