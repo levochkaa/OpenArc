@@ -2,6 +2,12 @@
 
 import Foundation
 
+/// The iCloud Passwords extension cannot run in OpenArc: macOS kills Apple's
+/// `PasswordManagerBrowserExtensionHelper` (SIGKILL, Code Signature Invalid)
+/// unless a browser on Apple's list starts it, and passwords go through
+/// OpenArc's own Keychain store instead. Earlier builds linked Apple's host
+/// manifest into each profile, which only made the extension start a helper
+/// that died at once. This removes that manifest and nothing else.
 struct BrowserNativeMessagingHostInstaller {
     // MARK: Internal
 
@@ -34,72 +40,33 @@ struct BrowserNativeMessagingHostInstaller {
         self.manifestCandidates = manifestCandidates
     }
 
-    static func installApplePasswordManagerHostIfAvailable(
-        in rootCacheURL: URL,
-        fileManager: FileManager = .default,
-    ) {
+    static func removeApplePasswordManagerHost(in rootCacheURL: URL, fileManager: FileManager = .default) {
         do {
             try BrowserNativeMessagingHostInstaller(fileManager: fileManager)
-                .installApplePasswordManagerHostIfAvailable(in: rootCacheURL)
+                .removeApplePasswordManagerHost(in: rootCacheURL)
         } catch {
-            NSLog("Unable to install iCloud Passwords native messaging host: \(error.localizedDescription)")
+            NSLog("Unable to remove the iCloud Passwords native messaging host: \(error.localizedDescription)")
         }
     }
 
-    func installApplePasswordManagerHostIfAvailable(in rootCacheURL: URL) throws {
-        guard let sourceManifestURL = manifestCandidates.first(where: { fileManager.fileExists(atPath: $0.path) })
-        else {
+    /// Removes the manifest earlier builds put there: a link to one of Apple's
+    /// manifests, or a copy of one.
+    func removeApplePasswordManagerHost(in rootCacheURL: URL) throws {
+        let manifestURL = rootCacheURL
+            .appendingPathComponent(Self.nativeMessagingHostsDirectoryName, isDirectory: true)
+            .appendingPathComponent(Self.applePasswordManagerManifestFileName, isDirectory: false)
+        if let destination = try? fileManager.destinationOfSymbolicLink(atPath: manifestURL.path) {
+            let resolved = URL(fileURLWithPath: destination, relativeTo: manifestURL.deletingLastPathComponent())
+                .standardizedFileURL
+                .path
+            if manifestCandidates.contains(where: { $0.standardizedFileURL.path == resolved }) {
+                try fileManager.removeItem(at: manifestURL)
+            }
             return
         }
-
-        let hostsDirectoryURL = rootCacheURL.appendingPathComponent(
-            Self.nativeMessagingHostsDirectoryName,
-            isDirectory: true,
-        )
-        let destinationManifestURL = hostsDirectoryURL.appendingPathComponent(
-            Self.applePasswordManagerManifestFileName,
-            isDirectory: false,
-        )
-
-        try fileManager.createDirectory(at: hostsDirectoryURL, withIntermediateDirectories: true)
-
-        guard destinationNeedsUpdate(destinationManifestURL, sourceManifestURL: sourceManifestURL) else {
-            return
-        }
-
-        if destinationExistsOrIsSymbolicLink(destinationManifestURL) {
-            try fileManager.removeItem(at: destinationManifestURL)
-        }
-
-        do {
-            try fileManager.createSymbolicLink(at: destinationManifestURL, withDestinationURL: sourceManifestURL)
-        } catch {
-            try fileManager.copyItem(at: sourceManifestURL, to: destinationManifestURL)
-        }
-    }
-
-    private func destinationNeedsUpdate(_ destinationURL: URL, sourceManifestURL: URL) -> Bool {
-        if let symbolicLinkDestination = try? fileManager.destinationOfSymbolicLink(atPath: destinationURL.path) {
-            let resolvedDestinationURL = URL(
-                fileURLWithPath: symbolicLinkDestination,
-                relativeTo: destinationURL.deletingLastPathComponent(),
-            )
-            .standardizedFileURL
-            return resolvedDestinationURL.path != sourceManifestURL.standardizedFileURL.path
-        }
-
-        guard fileManager.fileExists(atPath: destinationURL.path),
-              let destinationData = try? Data(contentsOf: destinationURL),
-              let sourceData = try? Data(contentsOf: sourceManifestURL)
-        else {
-            return true
-        }
-
-        return destinationData != sourceData
-    }
-
-    private func destinationExistsOrIsSymbolicLink(_ destinationURL: URL) -> Bool {
-        fileManager.fileExists(atPath: destinationURL.path)
-            || (try? fileManager.destinationOfSymbolicLink(atPath: destinationURL.path)) != nil
+        guard let data = try? Data(contentsOf: manifestURL),
+              manifestCandidates.contains(where: { (try? Data(contentsOf: $0)) == data })
+        else { return }
+        try fileManager.removeItem(at: manifestURL)
     }
 }
