@@ -8,6 +8,17 @@ import Testing
 // MARK: - BrowserDesktopArchiveTests
 
 @Suite(.serialized) @MainActor struct BrowserDesktopArchiveTests {
+    /// The SQLite archive serves at most 100 entries a page; the Library reads page by page.
+    @Test func theLibraryListsTheArchiveWithinTheStoresPageSize() async throws {
+        let f = try DesktopArchiveFixture(archivedIDs: ["a", "b", "c"])
+        defer { f.close() }
+        f.restoreModel()
+        let all = await BrowserLibraryNSView.loadArchive(model: f.model, query: "")
+        #expect(all.map(\.id) == ["archive-c", "archive-b", "archive-a"], "Newest first, none lost to the page size")
+        let two = await BrowserLibraryNSView.loadArchive(model: f.model, query: "", maximumCount: 2)
+        #expect(two.count == 2)
+    }
+
     @Test func restoreCommitsFreshIdentityBeforeEngineCreationAndPreservesTheOriginalTombstone() throws {
         let f = try DesktopArchiveFixture()
         defer { f.close() }

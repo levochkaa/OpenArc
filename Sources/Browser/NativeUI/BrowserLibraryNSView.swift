@@ -62,6 +62,10 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
         case tile(URL)
     }
 
+    /// The archive store hands out at most this many entries at a time.
+    private static let archivePageSize = 100
+    private static let archiveMaximumCount = 500
+
     // MARK: Internal
 
     override var isFlipped: Bool { true }
@@ -228,6 +232,25 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
         layoutSpaces()
     }
 
+    /// The newest archived tabs, read page by page within the store's page size.
+    static func loadArchive(
+        model: BrowserChromeModel,
+        query: String,
+        maximumCount: Int = BrowserLibraryNSView.archiveMaximumCount,
+    ) async -> [BrowserTabArchiveEntry] {
+        var entries = [BrowserTabArchiveEntry]()
+        var cursor: BrowserTabArchiveCursor?
+        while entries.count < maximumCount, !Task.isCancelled {
+            let limit = min(Self.archivePageSize, maximumCount - entries.count)
+            guard let page = try? await model.loadArchivedTabs(query: query, before: cursor, limit: limit)
+            else { break }
+            entries += page.entries
+            guard let next = page.nextCursor, !page.entries.isEmpty else { break }
+            cursor = next
+        }
+        return entries
+    }
+
     private static func matches(fileName: String, kind: String) -> Bool {
         let type = UTType(filenameExtension: (fileName as NSString).pathExtension)
         return switch kind {
@@ -314,9 +337,9 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
         archiveTask?.cancel()
         let query = query
         archiveTask = Task { [weak self, model] in
-            let page = try? await model.loadArchivedTabs(query: query, before: nil, limit: 200)
+            let entries = await Self.loadArchive(model: model, query: query)
             guard let self, !Task.isCancelled else { return }
-            archiveEntries = page?.entries ?? []
+            archiveEntries = entries
             rows = archiveRows()
             updateEmptyState()
             needsLayout = true
