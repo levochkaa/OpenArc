@@ -1,6 +1,6 @@
 ## Code Preferences
 
-- Target `Swift 6` using the Xcode 27.1 Swift 6.4 toolchain for Swift code and project settings unless a dependency or platform constraint in this repo explicitly requires otherwise.
+- Target `Swift 6` using the Xcode 27.2 Swift 6.4 toolchain for Swift code and project settings unless a dependency or platform constraint in this repo explicitly requires otherwise.
 - Write macOS UI in `AppKit` and iOS/iPadOS UI in `UIKit`, using Swift.
 - Keep business state in models/controllers. Reuse `BrowserChromeColors`, `BrowserChromeLayout`, and the shared AppKit controls in `NativeUI`; see `docs/appkit-ui.md` for the UI architecture and verification workflow.
 - Use `Objective-C` / `Objective-C++` only where interaction with the browser engine, CEF, or low-level platform APIs requires it.
@@ -11,7 +11,7 @@
 
 - Keep a separate Codex action named `Build` that runs `./build.sh build`.
 - Keep a separate Codex action named `Test` that runs `./build.sh test`.
-- Use Xcode 27.1 for build and test verification. The repo scripts export `DEVELOPER_DIR=/Applications/Xcode-27.1.0.app/Contents/Developer` by default.
+- Use Xcode 27.2 for build and test verification. The repo scripts export `DEVELOPER_DIR=/Applications/Xcode-27.2.0.app/Contents/Developer` by default. CEF and Chromium build with Xcode 26.6, since Chromium 148 supports only the macOS 26 SDK.
 - Before running the `Build` action, run SwiftFormat on every `.swift` file changed in the current task, using the repository `.swiftformat` configuration.
 - When changing CEF, Chromium, or `Chromium/chromium_src` override files, rebuild and export both `Debug` and `Release` CEF artifacts before running the `Build` action. The app build may stage `Release` CEF even for a `Debug` app build.
 - CEF/Chromium rebuilds must match the currently exported baseline from `ThirdParty/cef/export/include/cef_version.h` unless the user explicitly asks to move the CEF/Chromium base. Do not float `CEF_BRANCH` to a newer head for routine override rebuilds. Apply upstream CEF patches/project generation before applying `Chromium/chromium_src` overrides.
@@ -37,7 +37,6 @@
 - When adding an open-source project, add or update its entry in `Sources/Browser/Resources/Credits.html` in the same change.
 - When updating package versions, refresh affected credit/license text from the upstream GitHub repository if it changed. For CEF/Chromium updates, use the credits from the updated CEF bundle.
 
-## Doc Sync
+## Instructions
 
-- Any change to `AGENTS.md` must be mirrored in `CLAUDE.md` in the same change.
-- Any change to `CLAUDE.md` must be mirrored in `AGENTS.md` in the same change.
+- Keep `AGENTS.md` under 32 KB: Codex does not read a larger one.

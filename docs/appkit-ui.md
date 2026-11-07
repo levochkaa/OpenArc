@@ -46,7 +46,7 @@ The Codex **Build** and **Test** actions remain separate, console-only actions:
 ./build.sh test
 ```
 
-Both scripts select Xcode 27.1. Format changed Swift files with the repository `.swiftformat` before Build. Unit tests use Swift Testing and cover models, native text editing, IME protection, selection, drag proposals, menus, clipping, and window geometry.
+Both scripts select Xcode 27.2. Format changed Swift files with the repository `.swiftformat` before Build. Unit tests use Swift Testing and cover models, native text editing, IME protection, selection, drag proposals, menus, clipping, and window geometry.
 
 Build, Test, and offscreen control-rendering tests do not move the system pointer, inject keyboard events, or activate browser windows. Prefer them while the user works on the same desktop.
 
@@ -54,7 +54,7 @@ Live checks are explicit, opt-in actions requiring Accessibility permission. The
 
 ```sh
 ./build.sh run --skip-build --runtime-suffix appkit-ui-verification
-export DEVELOPER_DIR=/Applications/Xcode-27.1.0.app/Contents/Developer
+export DEVELOPER_DIR=/Applications/Xcode-27.2.0.app/Contents/Developer
 xcrun swift -swift-version 6 script/verify_appkit_sidebar_ui.swift .build/xcode/Build/Products/Debug/OpenArc.app
 xcrun swift -swift-version 6 script/verify_appkit_site_ui.swift .build/xcode/Build/Products/Debug/OpenArc.app
 xcrun swift -swift-version 6 script/verify_appkit_bookmarks_ui.swift .build/xcode/Build/Products/Debug/OpenArc.app
