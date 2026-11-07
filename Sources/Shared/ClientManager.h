@@ -25,6 +25,9 @@ class ClientManager {
  private:
   base::ThreadChecker thread_checker_;
   bool is_closing_;
+  // Set once quitting closes every browser; only then does the last close end the
+  // message loop. A window may close its only page and stay open.
+  bool quits_when_empty_ = false;
   std::list<CefRefPtr<CefBrowser>> browser_list_;
 };
 

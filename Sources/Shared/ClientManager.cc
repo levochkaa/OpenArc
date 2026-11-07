@@ -49,13 +49,14 @@ void ClientManager::OnBeforeClose(CefRefPtr<CefBrowser> browser) {
     }
   }
 
-  if (browser_list_.empty()) {
+  if (browser_list_.empty() && quits_when_empty_) {
     CefQuitMessageLoop();
   }
 }
 
 void ClientManager::CloseAllBrowsers(bool force_close) {
   DCHECK(thread_checker_.CalledOnValidThread());
+  quits_when_empty_ = true;
 
   for (const auto& browser : browser_list_) {
     // DevTools browsers are not tracked here; close them with their page so
