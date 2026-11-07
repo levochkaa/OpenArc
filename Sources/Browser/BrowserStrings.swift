@@ -1975,6 +1975,10 @@ enum BrowserStrings {
         comment: "Spaces menu item that edits the shown Space's theme.",
     )
 
+    static let libraryMoreActions = NSLocalizedString(
+        "browser.library.more_actions",
+        comment: "Accessibility label of the … button on a Space's card in the Library.",
+    )
     static let libraryMedia = NSLocalizedString(
         "browser.library.media",
         comment: "Library section with pictures.",

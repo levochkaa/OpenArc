@@ -263,6 +263,31 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
         }
     }
 
+    /// The Space menu, as on its sidebar header; Rename goes back to the sidebar to type.
+    private static func spaceMenu(_ space: BrowserChromeModel.Space, model: BrowserChromeModel) -> NSMenu {
+        BrowserNativeMenus.space(
+            space,
+            canDelete: model.spaces.count > 1,
+            canResetTabs: model.canResetSpaceTabs(spaceID: space.id),
+            onRename: { [weak model] in
+                model?.closeLibrary()
+                model?.selectSpace(id: space.id)
+                model?.sidebarSpaceRenameRequestID &+= 1
+            },
+            onChangeIcon: { [weak model] in model?.setIcon($0, forSpaceID: space.id) },
+            onEditTheme: { [weak model] in model?.onEditSpaceTheme?(space.id) },
+            profiles: model.profileDirectories?.profiles() ?? [],
+            selectedProfile: model.profileDirectory(forSpaceID: space.id),
+            onSetProfile: { [weak model] in model?.setProfile($0, forSpaceID: space.id) },
+            exportTargets: model.spaces.filter { $0.id != space.id },
+            onExport: { [weak model] targetID in
+                _ = model?.exportSpace(id: space.id, intoFolderInSpaceID: targetID)
+            },
+            onResetTabs: { [weak model] in model?.resetSpaceTabs(spaceID: space.id) },
+            onDelete: { [weak model] in _ = model?.deleteSpace(id: space.id) },
+        )
+    }
+
     func refresh() {
         guard let section = model.librarySection else { return }
         for (candidate, button) in sectionButtons {
@@ -524,6 +549,11 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
             card.onOpen = { [weak model] in
                 model?.selectSpace(id: space.id)
                 model?.closeLibrary()
+            }
+            card.onEditTheme = { [weak model] in model?.onEditSpaceTheme?(space.id) }
+            card.menuProvider = { [weak model] in
+                guard let model else { return NSMenu() }
+                return Self.spaceMenu(space, model: model)
             }
             card.frame = NSRect(x: x, y: 50, width: BrowserLibraryLayout.spaceCardWidth, height: max(height - 100, 0))
             x += BrowserLibraryLayout.spaceCardWidth + 20
@@ -797,7 +827,10 @@ private final class BrowserLibrarySpaceCard: BrowserNativePressableView {
     // MARK: Internal
 
     var onOpen: () -> Void = {}
+    var onEditTheme: () -> Void = {}
 
+    private let editButton = BrowserNativeChromeButton(symbol: "pencil", title: "", style: .chrome, action: {})
+    private let moreButton = BrowserNativeChromeButton(symbol: "ellipsis", title: "", style: .chrome, action: {})
     private let background = BrowserChromeBackgroundNSView()
     private let icon = NSImageView()
     private let title = NSTextField(labelWithString: "")
@@ -818,6 +851,16 @@ private final class BrowserLibrarySpaceCard: BrowserNativePressableView {
         title.lineBreakMode = .byTruncatingTail
         addSubview(icon)
         addSubview(title)
+        editButton.setAccessibilityLabel(BrowserStrings.spaceEditThemeAction)
+        editButton.toolTip = BrowserStrings.spaceEditThemeAction
+        editButton.onRelease = { [weak self] in self?.onEditTheme() }
+        moreButton.setAccessibilityLabel(BrowserStrings.libraryMoreActions)
+        moreButton.onRelease = { [weak self] in
+            guard let self else { return }
+            menuProvider?().popUp(positioning: nil, at: NSPoint(x: 0, y: moreButton.bounds.maxY + 4), in: moreButton)
+        }
+        addSubview(editButton)
+        addSubview(moreButton)
     }
 
     @available(*, unavailable) required init?(coder _: NSCoder) { fatalError() }
@@ -826,14 +869,17 @@ private final class BrowserLibrarySpaceCard: BrowserNativePressableView {
         super.layout()
         background.frame = bounds
         icon.frame = NSRect(x: 14, y: 15, width: 16, height: 16)
-        title.frame = NSRect(x: icon.image == nil ? 14 : 36, y: 14, width: bounds.width - 50, height: 18)
+        editButton.frame = NSRect(x: bounds.width - 34, y: 9, width: 24, height: 24)
+        moreButton.frame = NSRect(x: bounds.width - 34, y: bounds.height - 34, width: 24, height: 24)
+        let titleX: CGFloat = icon.image == nil ? 14 : 36
+        title.frame = NSRect(x: titleX, y: 14, width: max(editButton.frame.minX - 6 - titleX, 0), height: 18)
         var y: CGFloat = 44
         for (view, row) in zip(rowViews, rows) {
             let isDivider = row == .divider
             let height: CGFloat = isDivider ? 1 : 17
             let top = isDivider ? y + 6 : y
             view.frame = NSRect(x: 14, y: top, width: bounds.width - 28, height: height)
-            view.isHidden = top + height > bounds.height - 12
+            view.isHidden = top + height > bounds.height - 44
             y += isDivider ? 14 : Self.rowStep
         }
     }
