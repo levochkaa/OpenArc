@@ -31,7 +31,8 @@ DEFAULT_CEF_BRANCH="7778"
 # Release default. Official mode enables PGO and ThinLTO for Release, while the
 # explicit diagnostics settings prevent future default changes from restoring
 # fatal or expensive DCHECK families in the user-facing framework.
-DEFAULT_CHROMIUM_GN_DEFINES="blink_symbol_level=0 dcheck_always_on=false enable_dsyms=false enable_expensive_dchecks=false forbid_non_component_debug_builds=false is_component_build=false is_official_build=true symbol_level=0 v8_symbol_level=0"
+# Chrome's codec set (H.264, AAC, MP3 and the rest), so pages play what they do in Chrome.
+DEFAULT_CHROMIUM_GN_DEFINES="blink_symbol_level=0 dcheck_always_on=false enable_dsyms=false enable_expensive_dchecks=false ffmpeg_branding=Chrome forbid_non_component_debug_builds=false is_component_build=false is_official_build=true proprietary_codecs=true symbol_level=0 v8_symbol_level=0"
 
 export_cef_commit_hash() {
   if [[ ! -f "$EXPORT_VERSION_HEADER" ]]; then
@@ -78,6 +79,8 @@ if [[ -z "$CHROMIUM_CHECKOUT" && -z "$EXPLICIT_CEF_BRANCH" ]]; then
   CHROMIUM_CHECKOUT="$DEFAULT_CHROMIUM_CHECKOUT"
 fi
 GCLIENT_JOBS="${GCLIENT_JOBS:-4}"
+# A Release build's objects take about 30 GB; sccache keeps 10 GB by default.
+export SCCACHE_CACHE_SIZE="${SCCACHE_CACHE_SIZE:-30G}"
 
 case "$(uname -m)" in
   arm64)
@@ -506,6 +509,8 @@ validate_generated_configuration() {
   require_resolved_gn_arg "$configuration" optimize_webui true
   require_resolved_gn_arg "$configuration" enable_profiling false
   require_resolved_gn_arg "$configuration" enable_iterator_debugging false
+  require_resolved_gn_arg "$configuration" proprietary_codecs true
+  require_resolved_gn_arg "$configuration" ffmpeg_branding '"Chrome"'
 
   if [[ "$configuration" == "Release" ]]; then
     require_resolved_gn_arg "$configuration" dcheck_always_on false
@@ -537,9 +542,23 @@ validate_generated_configurations() {
   validate_generated_configuration Release
 }
 
+# Compiler cache for full rebuilds (a new CEF base, a new Xcode). Turning it on
+# for an existing out dir changes every compile command, so it rebuilds once.
+# Set OPENARC_CHROMIUM_CC_WRAPPER=none to build without it.
+chromium_cc_wrapper() {
+  local wrapper="${OPENARC_CHROMIUM_CC_WRAPPER:-$(command -v sccache || true)}"
+  [[ "$wrapper" == "none" ]] && return
+  printf '%s' "$wrapper"
+}
+
 create_projects() {
   require_source_checkout
   local gn_defines="${OPENARC_CHROMIUM_GN_DEFINES:-$DEFAULT_CHROMIUM_GN_DEFINES}"
+  local wrapper
+  wrapper="$(chromium_cc_wrapper)"
+  if [[ -n "$wrapper" ]]; then
+    gn_defines="$gn_defines cc_wrapper=$wrapper"
+  fi
   apply_cef_patch_overrides
 
   (
