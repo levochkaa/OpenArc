@@ -258,7 +258,8 @@ final class BrowserSiteControlCenterViewController: NSViewController {
         y += 26 + padding
 
         preferredContentSize = NSSize(width: width, height: y)
-        view.frame = NSRect(origin: .zero, size: preferredContentSize)
+        // The popover offsets its content past the arrow; only the size is ours.
+        view.setFrameSize(preferredContentSize)
     }
 
     private func settingRows(for rows: [BrowserSiteSettingRow], urlString: String) -> [BrowserSiteSettingRowView] {

@@ -168,3 +168,15 @@ import Testing
     }
     return nil
 }
+
+@MainActor @Test func controlCenterKeepsWherePopoverPlacesItsContent() throws {
+    let fixture = try SiteControlFixture(extensions: [])
+    defer { fixture.cleanup() }
+    try fixture.show("https://meet.example/room")
+    let controller = BrowserSiteControlCenterViewController(model: fixture.model)
+    // A popover with its arrow on the left puts the content past the arrow.
+    controller.view.setFrameOrigin(NSPoint(x: 13, y: 0))
+    controller.reloadSiteSettings()
+    #expect(controller.view.frame.origin == NSPoint(x: 13, y: 0))
+    #expect(controller.view.frame.size == controller.preferredContentSize)
+}
