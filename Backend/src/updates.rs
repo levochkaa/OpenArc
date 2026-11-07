@@ -73,8 +73,12 @@ impl UpdatesService {
         Self { http, config, api_url: api_url.trim_end_matches('/').to_string() }
     }
 
+    /// A channel without releases yet serves an empty appcast, which Sparkle
+    /// reads as up to date rather than as a failed check.
     pub async fn sparkle_appcast(&self, channel: Channel) -> ApiResult<String> {
-        let release = self.latest_release(channel).await?;
+        let Some(release) = newest_release(public_releases(self.fetch_releases().await?), channel) else {
+            return Ok(EMPTY_APPCAST.to_string());
+        };
         let name = &self.config.update_appcast_asset;
         let asset = release.assets.iter().find(|asset| &asset.name == name).cloned().ok_or_else(|| {
             ApiError::status(404, format!("Release asset '{name}' was not found in {}", release.tag_name))
@@ -144,11 +148,6 @@ impl UpdatesService {
             .map(|release| serialize_release(release, &base_url, latest_stable))
             .collect();
         Ok(json!({"releases": serialized}))
-    }
-
-    async fn latest_release(&self, channel: Channel) -> ApiResult<Release> {
-        newest_release(public_releases(self.fetch_releases().await?), channel)
-            .ok_or_else(|| ApiError::status(404, format!("No {} release was found", channel.name())))
     }
 
     async fn fetch_releases(&self) -> ApiResult<Vec<Release>> {
@@ -237,6 +236,13 @@ pub fn content_disposition(asset_name: &str) -> String {
     let name: String = asset_name.chars().filter(|character| !matches!(character, '"' | '\r' | '\n')).collect();
     format!("attachment; filename=\"{name}\"")
 }
+
+const EMPTY_APPCAST: &str = concat!(
+    r#"<?xml version="1.0" encoding="utf-8"?>"#,
+    "\n",
+    r#"<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">"#,
+    "<channel><title>OpenArc</title></channel></rss>\n",
+);
 
 fn release_channel(release: &Release) -> Channel {
     if release.prerelease { Channel::Beta } else { Channel::Stable }

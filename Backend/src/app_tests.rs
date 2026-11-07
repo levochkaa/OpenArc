@@ -231,6 +231,11 @@ async fn fake_github() -> (String, Arc<Mutex<Vec<(String, String)>>>) {
                 axum::Json(json!({"id": 12345, "name": "OpenArc-1.0.0.dmg", "url": download_url,
                     "content_type": "application/x-apple-diskimage", "size": 42}))
                 .into_response()
+            } else if request.uri().path() == "/repos/openarc/app/releases" {
+                // Only a pre-release so far.
+                axum::Json(json!([{"id": 1, "tag_name": "v0.1.0-1", "html_url": "https://github.com/openarc/app",
+                    "draft": false, "prerelease": true, "created_at": "2026-11-07T00:00:00Z", "assets": []}]))
+                .into_response()
             } else {
                 StatusCode::IM_A_TEAPOT.into_response()
             }
@@ -256,6 +261,16 @@ async fn rejects_mismatched_release_asset_filenames_before_fetching_the_asset_bo
         send(app_with_github(&github), Request::get("/v1/releases/assets/12x/a.dmg").body(Body::empty()).unwrap())
             .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn a_channel_without_releases_serves_an_empty_appcast() {
+    let (github, _) = fake_github().await;
+    let (status, headers, body) =
+        send(app_with_github(&github), Request::get("/appcast.xml").body(Body::empty()).unwrap()).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(headers["content-type"], "application/xml; charset=utf-8");
+    assert!(body.contains("<channel>") && !body.contains("<item>"), "{body}");
 }
 
 #[tokio::test]
