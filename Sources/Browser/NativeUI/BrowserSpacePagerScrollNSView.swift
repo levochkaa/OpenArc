@@ -37,6 +37,9 @@ final class BrowserSpacePagerScrollNSView: NSView {
     var onScrollDelta: (CGFloat) -> Void = { _ in }
     var onScrollReleased: () -> Void = {}
     var onScrollEnded: () -> Void = {}
+    /// Whether a sideways swipe with this delta is ours, or belongs to a list under it that
+    /// can still scroll that way.
+    var acceptsSwipe: (CGFloat) -> Bool = { _ in true }
 
     var isTrackingHorizontalScroll = false
     var didSendScrollRelease = false
@@ -99,9 +102,14 @@ final class BrowserSpacePagerScrollNSView: NSView {
 
         let horizontalDelta = event.scrollingDeltaX
         let verticalDelta = event.scrollingDeltaY
-        let isSideways = axisLock.isSideways(phase: event.phase, dx: horizontalDelta, dy: verticalDelta)
-        guard isTrackingHorizontalScroll || isSideways else {
-            return event
+        if !isTrackingHorizontalScroll {
+            guard axisLock.isSideways(phase: event.phase, dx: horizontalDelta, dy: verticalDelta) else {
+                return event
+            }
+            guard acceptsSwipe(horizontalDelta) else {
+                axisLock.yield()
+                return event
+            }
         }
 
         if !isTrackingHorizontalScroll {
@@ -178,17 +186,17 @@ final class BrowserSpacePagerScrollNSView: NSView {
 
 // MARK: - BrowserSwipeAxisLock
 
-/// Tells a sideways swipe from a scroll. A trackpad gesture gets its axis once, from
-/// its first few points and leaning sideways, since a swipe rarely starts level; a
-/// gesture that began scrolling a list stays a scroll, so a drift never takes it over.
-/// A mouse wheel has no gesture, so each tick decides.
+/// Tells a sideways swipe from a scroll. A trackpad gesture gets its axis once, from its
+/// first point that moves, leaning sideways since a swipe rarely starts level; a gesture
+/// that began scrolling a list stays a scroll, so a drift never takes it over. The choice
+/// is made on that first point because a list that receives a moving point starts
+/// tracking the gesture itself. A mouse wheel has no gesture, so each tick decides.
 struct BrowserSwipeAxisLock {
     // MARK: Private
 
-    private enum Axis { case sideways, vertical }
+    private enum Axis { case sideways, other }
 
     private var axis: Axis?
-    private var travel = CGSize.zero
 
     // MARK: Internal
 
@@ -198,15 +206,15 @@ struct BrowserSwipeAxisLock {
         }
         if phase.contains(.began) || phase.contains(.mayBegin) {
             axis = nil
-            travel = .zero
         }
-        if axis == nil {
-            travel.width += abs(dx)
-            travel.height += abs(dy)
-            if travel.width + travel.height >= 3 {
-                axis = travel.width >= travel.height * 0.8 ? .sideways : .vertical
-            }
+        if axis == nil, dx != 0 || dy != 0 {
+            axis = abs(dx) >= abs(dy) * 0.8 ? .sideways : .other
         }
         return axis == .sideways
+    }
+
+    /// Leaves the rest of this gesture to the views under the pointer.
+    mutating func yield() {
+        axis = .other
     }
 }

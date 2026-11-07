@@ -308,6 +308,15 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
         )
     }
 
+    /// Whether the Spaces cards can still scroll the way a sideways swipe with this delta
+    /// goes; a swipe that has nowhere to scroll them closes the Library instead.
+    func canScrollSpaces(byDelta delta: CGFloat) -> Bool {
+        guard shownSection == .spaces, !spacesScroll.isHidden else { return false }
+        let offset = spacesScroll.contentView.bounds.origin.x
+        let maxOffset = max(spacesDocument.frame.width - spacesScroll.contentView.bounds.width, 0)
+        return delta < 0 ? offset < maxOffset - 0.5 : offset > 0.5
+    }
+
     func refresh() {
         // Closed, it keeps the section it opens on, so a swipe brings that one in.
         let section = model.librarySection ?? model.lastLibrarySection

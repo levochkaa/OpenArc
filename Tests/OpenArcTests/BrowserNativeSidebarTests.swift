@@ -537,6 +537,20 @@ struct BrowserSwipeAxisLockTests {
         #expect(scroll == [false, false])
     }
 
+    @Test func theFirstMovingPointDecidesSoAListNeverSeesASwipe() {
+        var lock = BrowserSwipeAxisLock()
+        let result = answers([(.began, -1, 0), (.changed, -2, 3)], lock: &lock)
+        #expect(result == [true, true])
+    }
+
+    @Test func aYieldedSwipeStaysWithTheListUntilTheNextGesture() {
+        var lock = BrowserSwipeAxisLock()
+        #expect(answers([(.began, -3, 0)], lock: &lock) == [true])
+        lock.yield()
+        #expect(answers([(.changed, -9, 0), (.ended, 0, 0)], lock: &lock) == [false, false])
+        #expect(answers([(.began, -3, 0)], lock: &lock) == [true])
+    }
+
     @Test func aMouseWheelDecidesEachTick() {
         var lock = BrowserSwipeAxisLock()
         let result = answers([([], 5, 1), ([], 1, 5)], lock: &lock)

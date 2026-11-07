@@ -584,6 +584,9 @@ final class BrowserRootView: NSView {
             librarySwipeTranslation = min(librarySwipeTranslation + delta * 0.5, 0)
             followLibrarySwipe(progress: 1 - min(-librarySwipeTranslation / BrowserLibraryLayout.width, 1))
         }
+        libraryScrollObserver.acceptsSwipe = { [weak self] delta in
+            self?.library.canScrollSpaces(byDelta: delta) != true
+        }
         libraryScrollObserver.onScrollReleased = { [weak self] in
             guard let self, libraryFollowsSwipe else { return }
             let isQuick = CACurrentMediaTime() - librarySwipeStart < 0.5
@@ -1028,7 +1031,7 @@ final class BrowserRootView: NSView {
             width: statusWidth,
             height: BrowserLinkStatusView.height,
         )
-        libraryScrollObserver.isEnabled = libraryPresented && model.librarySection != .spaces
+        libraryScrollObserver.isEnabled = libraryPresented
         let contentAppearance = model.selectedSpaceTheme?.palette.map {
             NSAppearance(named: $0.isLightContent ? .aqua : .darkAqua)
         } ?? nil
