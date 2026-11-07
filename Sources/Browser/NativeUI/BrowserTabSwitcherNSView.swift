@@ -23,22 +23,22 @@ enum BrowserTabSwitcherKeys {
 
 // MARK: - BrowserTabSwitcherLayout
 
+/// Fixed cards side by side in a panel sized to them, scrolling when the
+/// window is too narrow: 180 x 156 pt cards, a 158 x 104 pt picture each.
 struct BrowserTabSwitcherLayout {
+    static let cardWidth: CGFloat = 180
+    static let cardHeight: CGFloat = 156
+    static let previewSize = CGSize(width: 158, height: 104)
+
     let containerSize: CGSize
     let entryCount: Int
-    let panelPadding: CGFloat = 12
-    let cardSpacing: CGFloat = 10
+    let panelPadding: CGFloat = 16
+    let cardSpacing: CGFloat = 2
 
-    var panelWidth: CGFloat { min(max(containerSize.width * 2 / 3, 280), max(containerSize.width - 32, 0)) }
-    var cardWidth: CGFloat {
-        guard entryCount > 0 else { return 0 }
-        return max(
-            floor((panelWidth - panelPadding * 2 - cardSpacing * CGFloat(entryCount - 1)) / CGFloat(entryCount)),
-            92,
-        )
-    }
-
-    var cardHeight: CGFloat { ceil(max(cardWidth - 12, 0) * 0.62 + 12 + 8 + 32) }
+    var cardWidth: CGFloat { Self.cardWidth }
+    var cardHeight: CGFloat { Self.cardHeight }
+    var contentWidth: CGFloat { max(CGFloat(entryCount) * (cardWidth + cardSpacing) - cardSpacing, 0) }
+    var panelWidth: CGFloat { min(contentWidth + panelPadding * 2, max(containerSize.width - 32, 0)) }
     var panelHeight: CGFloat { cardHeight + panelPadding * 2 }
 }
 
@@ -89,7 +89,7 @@ final class BrowserTabSwitcherNSView: NSView {
         let layout = BrowserTabSwitcherLayout(containerSize: bounds.size, entryCount: cards.count)
         panel.frame = NSRect(
             x: (bounds.width - layout.panelWidth) / 2,
-            y: bounds.height * 0.45 - layout.panelHeight / 2,
+            y: (bounds.height - layout.panelHeight) / 2,
             width: layout.panelWidth,
             height: layout.panelHeight,
         )
@@ -139,22 +139,19 @@ final class BrowserTabSwitcherCardNSView: BrowserNativeSurface {
     private(set) var isSelected = false
 
     private let title = NSTextField(labelWithString: "")
-    private let url = NSTextField(labelWithString: "")
+    private let favicon = BrowserFaviconNSView()
     private let preview = BrowserTabPreviewNSView()
 
     init(entry: BrowserChromeModel.TabSwitcherEntry) {
         self.tabID = entry.id
         super.init(frame: .zero)
         cornerRadius = 8
-        title.font = .systemFont(ofSize: 12, weight: .semibold)
+        title.font = .systemFont(ofSize: 12, weight: .medium)
         title.textColor = BrowserChromeColors.primaryText
-        url.font = .systemFont(ofSize: 11)
-        url.textColor = BrowserChromeColors.secondaryText
-        for label in [title, url] {
-            label.lineBreakMode = .byTruncatingTail
-            label.maximumNumberOfLines = 1
-            addSubview(label)
-        }
+        title.lineBreakMode = .byTruncatingTail
+        title.maximumNumberOfLines = 1
+        addSubview(title)
+        addSubview(favicon)
         preview.wantsLayer = true
         preview.layer?.cornerRadius = 7
         preview.layer?.masksToBounds = true
@@ -166,16 +163,22 @@ final class BrowserTabSwitcherCardNSView: BrowserNativeSurface {
 
     override func layout() {
         super.layout()
-        let width = max(bounds.width - 12, 0)
-        preview.frame = NSRect(x: 6, y: 6, width: width, height: width * 0.62)
-        title.frame = NSRect(x: 6, y: preview.frame.maxY + 8, width: width, height: 16)
-        url.frame = NSRect(x: 6, y: title.frame.maxY + 2, width: width, height: 14)
+        let size = BrowserTabSwitcherLayout.previewSize
+        preview.frame = NSRect(x: (bounds.width - size.width) / 2, y: 12, width: size.width, height: size.height)
+        let rowY = preview.frame.maxY + (bounds.height - preview.frame.maxY - 16) / 2
+        favicon.frame = NSRect(x: preview.frame.minX, y: rowY + 1, width: 14, height: 14)
+        title.frame = NSRect(
+            x: favicon.frame.maxX + 6,
+            y: rowY,
+            width: max(preview.frame.maxX - favicon.frame.maxX - 6, 0),
+            height: 16,
+        )
     }
 
     func update(entry: BrowserChromeModel.TabSwitcherEntry, selected: Bool) {
         isSelected = selected
         title.stringValue = entry.tab.displayTitle
-        url.stringValue = BrowserURLDisplayFormatter.displayString(for: entry.tab.urlString)
+        favicon.update(url: entry.tab.faviconURL, pageURLString: entry.tab.urlString)
         preview.image = entry.previewImage
         preview.title = entry.tab.displayTitle
         let fill = selected ? BrowserChromeColors.rowSelected : BrowserChromeColors.commandBarFieldTint
