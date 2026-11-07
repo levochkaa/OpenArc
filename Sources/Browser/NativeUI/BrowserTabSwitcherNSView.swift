@@ -143,6 +143,9 @@ final class BrowserTabSwitcherCardNSView: BrowserNativeSurface {
     private let title = NSTextField(labelWithString: "")
     private let favicon = BrowserFaviconNSView()
     private let preview = BrowserTabPreviewNSView()
+    /// A Split View's panes, side by side, each with its icon under it.
+    private var panePreviews = [BrowserTabPreviewNSView]()
+    private var paneFavicons = [BrowserFaviconNSView]()
 
     init(entry: BrowserChromeModel.TabSwitcherEntry) {
         self.tabID = entry.id
@@ -168,6 +171,16 @@ final class BrowserTabSwitcherCardNSView: BrowserNativeSurface {
         let size = BrowserTabSwitcherLayout.previewSize
         preview.frame = NSRect(x: (bounds.width - size.width) / 2, y: 12, width: size.width, height: size.height)
         let rowY = preview.frame.maxY + (bounds.height - preview.frame.maxY - 16) / 2
+        if !panePreviews.isEmpty {
+            let gap: CGFloat = 4
+            let count = CGFloat(panePreviews.count)
+            let width = (size.width - gap * (count - 1)) / count
+            for (index, (pane, icon)) in zip(panePreviews, paneFavicons).enumerated() {
+                let x = preview.frame.minX + CGFloat(index) * (width + gap)
+                pane.frame = NSRect(x: x, y: preview.frame.minY, width: width, height: size.height)
+                icon.frame = NSRect(x: x + (width - 14) / 2, y: rowY + 1, width: 14, height: 14)
+            }
+        }
         favicon.frame = NSRect(x: preview.frame.minX, y: rowY + 1, width: 14, height: 14)
         title.frame = NSRect(
             x: favicon.frame.maxX + 6,
@@ -181,6 +194,7 @@ final class BrowserTabSwitcherCardNSView: BrowserNativeSurface {
         isSelected = selected
         title.stringValue = entry.tab.displayTitle
         favicon.update(url: entry.tab.faviconURL, pageURLString: entry.tab.urlString)
+        updatePanes(entry.splitPanes)
         preview.image = entry.previewImage
         preview.title = entry.tab.displayTitle
         let fill = selected ? tint ?? BrowserChromeColors.rowSelected : .clear
@@ -192,6 +206,36 @@ final class BrowserTabSwitcherCardNSView: BrowserNativeSurface {
         setAccessibilityLabel(entry.tab.displayTitle)
         setAccessibilityValue(selected ? "selected" : "")
         setAccessibilityIdentifier("browser.tab-switcher.card.\(tabID)")
+    }
+
+    private func updatePanes(_ panes: [(tab: BrowserChromeModel.Tab, previewImage: NSImage?)]) {
+        if panePreviews.count != panes.count {
+            panePreviews.forEach { $0.removeFromSuperview() }
+            paneFavicons.forEach { $0.removeFromSuperview() }
+            panePreviews = panes.map { _ in
+                let view = BrowserTabPreviewNSView()
+                view.wantsLayer = true
+                view.layer?.cornerRadius = 7
+                view.layer?.masksToBounds = true
+                addSubview(view)
+                return view
+            }
+            paneFavicons = panes.map { _ in
+                let view = BrowserFaviconNSView()
+                addSubview(view)
+                return view
+            }
+            needsLayout = true
+        }
+        for ((pane, icon), item) in zip(zip(panePreviews, paneFavicons), panes) {
+            pane.image = item.previewImage
+            pane.title = item.tab.displayTitle
+            icon.update(url: item.tab.faviconURL, pageURLString: item.tab.urlString)
+        }
+        let isSplit = !panes.isEmpty
+        preview.isHidden = isSplit
+        title.isHidden = isSplit
+        favicon.isHidden = isSplit
     }
 }
 

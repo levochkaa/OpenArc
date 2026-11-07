@@ -7700,6 +7700,8 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
                 return
             }
 
+            // A Split View is one card: its other panes are not listed again.
+            seenTabIDs.formUnion(splitPaneTabIDs(forTabID: tabID))
             orderedTabIDs.append(tabID)
         }
 
@@ -7724,7 +7726,16 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
             }
             .prefix(Self.tabSwitcherMaximumEntries)
             .map { tab in
-                TabSwitcherEntry(tab: tab, previewImage: tabPreviewImagesByID[tab.id])
+                let panes = splitPaneTabIDs(forTabID: tab.id)
+                return TabSwitcherEntry(
+                    tab: tab,
+                    previewImage: tabPreviewImagesByID[tab.id],
+                    splitPanes: panes.count > 1
+                        ? panes.compactMap { id in
+                            tabs.first { $0.id == id }.map { ($0, tabPreviewImagesByID[id]) }
+                        }
+                        : [],
+                )
             }
     }
 

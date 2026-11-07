@@ -20,3 +20,22 @@ struct BrowserTabSwitcherLayoutTests {
         #expect(layout.contentWidth > layout.panelWidth)
     }
 }
+
+// MARK: - BrowserTabSwitcherSplitTests
+
+@Suite(.serialized)
+@MainActor struct BrowserTabSwitcherSplitTests {
+    @Test func aSplitViewIsOneCardWithEveryPane() {
+        let f = SidebarDragFixture(pinned: [], temporary: ["x", "y", "z"])
+        f.model.selectTab(id: f.id("x"))
+        #expect(f.model.openInSplitView(tabID: f.id("y")))
+        #expect(f.model.advanceTabSwitcher())
+        let entries = f.model.tabSwitcherState?.entries ?? []
+        let ids = entries.map { $0.id }
+        #expect(Set(ids).intersection([f.id("x"), f.id("y")]).count == 1, "The split is listed once")
+        #expect(ids.contains(f.id("z")))
+        let split = entries.first { !$0.splitPanes.isEmpty }
+        #expect(Set(split?.splitPanes.map { $0.tab.id } ?? []) == [f.id("x"), f.id("y")])
+        #expect(entries.first { $0.id == f.id("z") }?.splitPanes.isEmpty == true)
+    }
+}

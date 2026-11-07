@@ -142,6 +142,9 @@ extension BrowserChromeModel {
     struct TabSwitcherEntry: Identifiable {
         let tab: Tab
         let previewImage: NSImage?
+        /// Every pane of a Split View, in pane order, when the tab is in one;
+        /// the switcher shows them as one card.
+        var splitPanes = [(tab: Tab, previewImage: NSImage?)]()
 
         var id: String {
             tab.id
