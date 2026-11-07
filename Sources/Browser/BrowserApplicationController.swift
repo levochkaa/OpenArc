@@ -3674,9 +3674,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
         guard enabled, webAppConfiguration == nil else { return }
         littleWindowHotKey = BrowserGlobalHotKey
             .make(for: shortcutStore.shortcut(for: .newLittleWindow)) { [weak self] in
-                guard let self, !isTerminationRequested,
-                      littleWindowModel?.openNewLittleWindow() == true else { return }
-                NSApp.activate(ignoringOtherApps: true)
+                // The bar takes typing over the app in front; the small window it opens
+                // brings OpenArc forward then, so its other windows stay where they are.
+                guard let self, !isTerminationRequested else { return }
+                littleWindowModel?.openNewLittleWindow()
             }
     }
 
