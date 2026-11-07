@@ -11,7 +11,7 @@ import Testing
         let f = SidebarDragFixture()
         var opened = [[URL]]()
         var points = [CGPoint]()
-        f.model.onMoveTabsToNewWindow = { urls, point in
+        f.model.onMoveTabsToNewWindow = { urls, _, point in
             opened.append(urls)
             points.append(point)
         }
@@ -26,6 +26,30 @@ import Testing
         #expect(!f.model.tabs.contains { $0.id == x }, "A Today tab moves to the new window")
         #expect(f.model.tabs.contains { $0.id == a }, "A pinned tab stays")
         #expect(f.model.archiveRevision == revision, "Moving is not archiving")
+    }
+
+    @Test func aTodayTabTakesItsLivePageToTheNewWindow() throws {
+        let f = SidebarDragFixture()
+        let x = f.id("x"), a = f.id("a")
+        f.driver.detachablePageTabIDs = [x, a]
+        var pages = [BrowserTabPageHandoff?]()
+        f.model.onMoveTabsToNewWindow = { _, handed, _ in pages = handed }
+        #expect(f.model.moveTabsToNewWindow(ids: [x, a], at: .zero))
+        #expect(pages.count == 2)
+        #expect(pages[0] == nil, "A pinned tab's page stays")
+        let moved = try #require(pages[1])
+        #expect(moved.urlString == "https://x.example")
+        #expect(f.driver.detachedPageTabIDs == [x])
+        #expect(!f.driver.closedTabRequests.map(\.id).contains(x), "The page does not close")
+        #expect(!f.model.tabs.contains { $0.id == x })
+
+        let target = SidebarDragFixture(pinned: [], temporary: [])
+        let created = target.driver.createdTabRequests.count
+        let id = try #require(target.model.adoptPageAsNewTab(moved, makeActive: true))
+        #expect(target.driver.createdTabRequests.count == created, "Nothing loads")
+        let tab = try #require(target.model.tabs.first { $0.id == id })
+        #expect(tab.urlString == "https://x.example" && tab.creationState == .ready && tab.placement == .temporary)
+        #expect(target.model.selectedTabID == id)
     }
 
     @Test func anotherWindowTakesDroppedTabsAndTodayTabsLeaveThisOne() {

@@ -379,7 +379,7 @@ enum BrowserWindowMode: Equatable {
     /// Shows the bar for a new small window; false when no window can show it.
     var onPresentLittleWindowLauncher: (() -> Bool)?
     /// Opens pages in a new window of their own, its top left corner near a screen point.
-    var onMoveTabsToNewWindow: (([URL], CGPoint) -> Void)?
+    var onMoveTabsToNewWindow: (([URL], [BrowserTabPageHandoff?], CGPoint) -> Void)?
     /// Hands tabs dropped on another window of this app to that window; false when it takes none.
     var onMoveTabsToWindow: ((Set<String>, NSWindow) -> Bool)?
     /// Pages a new window opens after its first one, in the background.
@@ -466,6 +466,8 @@ enum BrowserWindowMode: Equatable {
 
     /// The page a window with nothing to restore opens first, instead of the new tab page.
     var firstTabURLString: String?
+    /// Live pages for the first and additional tabs, by position; a missing one loads its address.
+    var initialTabPages = [BrowserTabPageHandoff?]()
 
     /// The profile's other windows, once it has more than one.
     var windowGroup: BrowserProfileWindowGroup?
@@ -4233,6 +4235,35 @@ enum BrowserWindowMode: Equatable {
         return handoff
     }
 
+    /// Takes a Today tab out of this window with its live page, for a new window; nil when
+    /// the page cannot move, and nothing changes then.
+    func removeTabKeepingPage(id: String, undoActionName: String) -> BrowserTabPageHandoff? {
+        guard let index = tabs.firstIndex(where: { $0.id == id }), tabs[index].placement == .temporary,
+              !hasNoPage(id), !closingTabIDs.contains(id),
+              var handoff = tabDriver.detachPage(ofTabWithID: id)
+        else { return nil }
+        handoff.profileCachePath = engineProfilePathsByID.removeValue(forKey: id) ?? nil
+        handoff.title = tabs[index].title
+        handoff.urlString = tabs[index].urlString
+        finishTabClose(
+            id: id, forceClose: true, requestsEngineClose: false,
+            registersUndo: true, undoActionName: undoActionName,
+        )
+        return handoff
+    }
+
+    /// A live page from another window becomes a new Today tab here.
+    @discardableResult func adoptPageAsNewTab(_ handoff: BrowserTabPageHandoff, makeActive: Bool) -> String? {
+        guard canCreateTab, let id = tabDriver.adoptPage(handoff, makeActive: makeActive) else { return nil }
+        engineProfilePathsByID.updateValue(handoff.profileCachePath, forKey: id)
+        handleCreatedTab(id: id, title: handoff.title, urlString: handoff.urlString, isActive: makeActive)
+        handleTabCreationStateChange(id: id, state: .ready)
+        if let index = tabs.firstIndex(where: { $0.id == id }) {
+            applyAdoptedPage(handoff, toTabAt: index)
+        }
+        return id
+    }
+
     /// This window is closing: its pages stay alive in another window of the profile,
     /// one that shows a picture of the page if there is one, or else the oldest.
     func handPagesToOtherWindows() {
@@ -5129,9 +5160,16 @@ enum BrowserWindowMode: Equatable {
         hasCreatedInitialTab = true
         // A blank window starts with no page and asks where to go.
         guard windowMode != .blank || firstTabURLString != nil else { return }
-        createTab(withURLString: firstTabURLString ?? newTabURLString, registersUndo: false)
+        let pages = initialTabPages
+        initialTabPages.removeAll()
+        let page = { (index: Int) in index < pages.count ? pages[index] : nil }
+        if page(0).flatMap({ adoptPageAsNewTab($0, makeActive: true) }) == nil {
+            createTab(withURLString: firstTabURLString ?? newTabURLString, registersUndo: false)
+        }
         let first = selectedTabID
-        for urlString in additionalTabURLStrings {
+        for (offset, urlString) in additionalTabURLStrings.enumerated()
+            where page(offset + 1).flatMap({ adoptPageAsNewTab($0, makeActive: false) }) == nil
+        {
             createTab(withURLString: urlString, registersUndo: false, makeActive: false)
         }
         additionalTabURLStrings.removeAll()

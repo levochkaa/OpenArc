@@ -255,6 +255,10 @@ struct BrowserTabPageHandoff {
     let isLoading: Bool
     /// The data store the page was created with, nil for the profile's own.
     var profileCachePath: String?
+    /// The tab's title and address in the window it leaves, for a window that has no row
+    /// for it yet.
+    var title = ""
+    var urlString = ""
 }
 
 // MARK: - BrowserNavigationEntry

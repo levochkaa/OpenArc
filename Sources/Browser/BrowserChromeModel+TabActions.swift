@@ -24,15 +24,22 @@ extension BrowserChromeModel {
     }
 
     /// Tabs dropped outside every window open in a new window of their own,
-    /// outside the Spaces. Temporary tabs move there; pinned tabs and
-    /// Favorites stay and their pages are copied. Pages load anew. Incognito
-    /// tabs never leave their window.
+    /// outside the Spaces. Temporary tabs move there with their live pages;
+    /// pinned tabs and Favorites stay and their pages are copied, loading anew.
+    /// Incognito tabs never leave their window.
     @discardableResult func moveTabsToNewWindow(ids: Set<String>, at screenPoint: CGPoint) -> Bool {
         guard windowMode != .incognito, let onMoveTabsToNewWindow else { return false }
         let moving = tabs.filter { ids.contains($0.id) && URL(string: $0.urlString) != nil }
         guard !moving.isEmpty else { return false }
-        onMoveTabsToNewWindow(moving.compactMap { URL(string: $0.urlString) }, screenPoint)
-        for tab in moving where tab.placement == .temporary {
+        let urls = moving.compactMap { URL(string: $0.urlString) }
+        // Today tabs take their live pages along; the others' pages load there anew.
+        let pages = moving.map { tab in
+            tab.placement == .temporary
+                ? removeTabKeepingPage(id: tab.id, undoActionName: BrowserStrings.tabMoveToNewWindowAction)
+                : nil
+        }
+        onMoveTabsToNewWindow(urls, pages, screenPoint)
+        for (tab, page) in zip(moving, pages) where tab.placement == .temporary && page == nil {
             closeTab(id: tab.id, forceClose: true, undoActionName: BrowserStrings.tabMoveToNewWindowAction)
         }
         return true

@@ -3111,7 +3111,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
             window.makeKeyAndOrderFront(nil)
             return true
         }
-        model.onMoveTabsToNewWindow = { [weak self] urls, screenPoint in
+        model.onMoveTabsToNewWindow = { [weak self] urls, pages, screenPoint in
             guard let self, let first = urls.first else { return }
             let source = activeBrowserWindow
             createIncognitoWindow(
@@ -3119,6 +3119,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
                 firstURL: first,
                 blank: true,
                 additionalURLs: Array(urls.dropFirst()),
+                pages: pages,
                 droppedAt: screenPoint,
                 sizedLike: source,
             )
@@ -3731,6 +3732,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         firstURL: URL? = nil,
         blank: Bool = false,
         additionalURLs: [URL] = [],
+        pages: [BrowserTabPageHandoff?] = [],
         droppedAt dropPoint: CGPoint? = nil,
         sizedLike sizeSource: NSWindow? = nil,
     ) {
@@ -3781,6 +3783,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         )
         chromeModel.firstTabURLString = firstURL?.absoluteString
         chromeModel.additionalTabURLStrings = additionalURLs.map(\.absoluteString)
+        chromeModel.initialTabPages = pages
         if blank, let sourceProfile {
             chromeModel.passwordStore = BrowserKeychainPasswordStore(profileID: sourceProfile.id)
             chromeModel.addressStore = BrowserKeychainAddressStore(profileID: sourceProfile.id)
