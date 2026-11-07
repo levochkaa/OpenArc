@@ -253,6 +253,14 @@ import Testing
         #expect(abs(palette.title.red - 0.196) < 0.01, "Bright theme: dark title from the shaded color")
     }
 
+    @Test func aFolderTakingADropIsMarkedByTheMostContrastingColorHalfCovered() throws {
+        let bright = try #require(BrowserSpaceTheme(key: Self.orange).palette)
+        #expect(bright.dropTargetBand == bright.shadedDark.nsColor(alpha: 0.5))
+        let dark = try #require(BrowserSpaceTheme(key: BrowserSpaceTheme.Color(0.2, 0.15, 0.14)).palette)
+        #expect(!dark.isLightContent)
+        #expect(dark.dropTargetBand == dark.tintedLight.nsColor(alpha: 0.45))
+    }
+
     // MARK: Rendering
 
     @Test func noColorsDrawsNothing() {

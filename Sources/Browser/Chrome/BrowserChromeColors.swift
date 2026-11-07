@@ -36,6 +36,8 @@ enum BrowserChromeColors {
     static let sidebarOverlayBorder = adaptive(light: rgba(0, 0, 0, 0.18), dark: rgba(255, 255, 255, 0.3))
     static let sidebarTopChromeDivider = adaptive(light: rgba(0, 0, 0, 0.14), dark: rgba(255, 255, 255, 0.2))
     static let sidebarClearButtonForeground = adaptive(light: rgba(0, 0, 0, 0.34), dark: rgba(255, 255, 255, 0.3))
+    /// Behind a folder that takes a dragged tab, without a Space theme.
+    static let sidebarDropTargetBand = adaptive(light: rgba(0, 0, 0, 0.25), dark: rgba(255, 255, 255, 0.45))
     static let sidebarDropIndicator = adaptive(light: rgba(0, 0, 0, 0.84), dark: rgba(255, 255, 255, 0.96))
     static let primaryText = adaptive(light: rgba(0, 0, 0, 0.86), dark: rgba(255, 255, 255, 0.92))
     static let secondaryText = adaptive(light: rgba(0, 0, 0, 0.5), dark: rgba(255, 255, 255, 0.58))

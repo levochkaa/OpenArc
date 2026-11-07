@@ -739,8 +739,10 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
                     : selected
                         ? selectedFill
                         : isHovered ? BrowserChromeColors.rowHover : nil
-            case .folder,
-                 .space:
+            case .folder:
+                // The sidebar draws a band behind a folder that takes the drop.
+                isHovered && !dropTargeted ? BrowserChromeColors.rowHover : nil
+            case .space:
                 dropTargeted ? selectedFill : isHovered ? BrowserChromeColors.rowHover : nil
             case .appTab: nil
             }

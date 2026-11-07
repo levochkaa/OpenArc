@@ -71,6 +71,10 @@ final class BrowserNativeSidebarNSView: NSView {
     private var acceptsLinkDrop = false
     private var reportedDragging = false
     private var highlightedDropRow: BrowserNativeSidebarRowNSView?
+    /// A folder that takes the drop is marked by a band across the whole
+    /// sidebar, behind the rows, not by a pill on its row.
+    private let folderDropBand = BrowserNativeNoninteractiveSurface()
+    private var folderDropBandID: String?
     private var splitPreviewRow: BrowserNativeSidebarRowNSView?
     private let scrollObserver = BrowserSpacePagerScrollNSView()
     private var pages = [String: BrowserNativeSidebarPage]()
@@ -96,6 +100,11 @@ final class BrowserNativeSidebarNSView: NSView {
         setAccessibilityIdentifier("browser.sidebar")
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
+        folderDropBand.strokeWidth = 0
+        folderDropBand.isHidden = true
+        folderDropBand.setAccessibilityElement(false)
+        folderDropBand.setAccessibilityIdentifier("browser.sidebar.folder-drop-band")
+        addSubview(folderDropBand)
         addSubview(content)
         content.clipsToBounds = false
         for view in [
@@ -285,6 +294,7 @@ final class BrowserNativeSidebarNSView: NSView {
         super.layout()
         layoutContent(animated: false)
         synchronizeGeometry()
+        layoutFolderDropBand()
     }
 
     // MARK: Links dropped from pages and other apps
@@ -344,7 +354,10 @@ final class BrowserNativeSidebarNSView: NSView {
                 page = existing
             } else {
                 page = BrowserNativeSidebarPage(spaceID: space.id)
-                page.onScroll = { [weak self] in self?.synchronizeGeometry() }
+                page.onScroll = { [weak self] in
+                    self?.synchronizeGeometry()
+                    self?.layoutFolderDropBand()
+                }
                 page.document.onEmptyClick = { [weak state] in state?.dismissRenamingIfNeeded() }
                 page.document.permitsWindowDrag = { [weak state] in state?.isDraggingSidebarItem == false }
                 pages[space.id] = page
@@ -1766,16 +1779,18 @@ final class BrowserNativeSidebarNSView: NSView {
             splitPreviewRow?.setSplitDropSide(target.side)
         }
         dragIndicator.update(line: nil, occluding: nil)
+        folderDropBandID = nil
         if let feedback = state.drag.proposal?.feedback ?? linkDropProposal?.feedback {
             switch feedback {
             case .line(let line) where state.drag.payload == nil: dragIndicator.update(line: line, occluding: nil)
             case .line: break
-            case .folder(let id): highlightedDropRow = pages.values.compactMap { $0.rows["folder:\(id)"] }.first
+            case .folder(let id): folderDropBandID = id
             case .space(let id): highlightedDropRow = pages[id]?.header
             case .app: break
             }
         }
         highlightedDropRow?.setDropHighlighted(true)
+        layoutFolderDropBand()
         spaceDock?.dropTargetID = state.drag.dockSpaceID
         guard let payload = state.drag.payload else {
             dragEvents.stop()
@@ -1799,6 +1814,27 @@ final class BrowserNativeSidebarNSView: NSView {
         )
         dragPreview.isHidden = false
         layoutDragPreview(size: dragPreviewSize)
+    }
+
+    private func layoutFolderDropBand() {
+        guard let id = folderDropBandID,
+              let page = pages.values.first(where: { $0.rows["folder:\(id)"] != nil && !$0.isLeaving }),
+              let row = page.rows["folder:\(id)"], !row.isHidden
+        else {
+            folderDropBand.isHidden = true
+            return
+        }
+        let rowFrame = row.convert(row.bounds, to: self)
+        let viewport = page.scroll.contentView.convert(page.scroll.contentView.bounds, to: self)
+        let band = CGRect(x: 0, y: rowFrame.minY, width: bounds.width, height: rowFrame.height)
+            .intersection(CGRect(x: 0, y: viewport.minY, width: bounds.width, height: viewport.height))
+        guard !band.isNull, band.height > 0 else {
+            folderDropBand.isHidden = true
+            return
+        }
+        folderDropBand.fillColor = page.spaceThemePalette?.dropTargetBand ?? BrowserChromeColors.sidebarDropTargetBand
+        folderDropBand.frame = band
+        folderDropBand.isHidden = false
     }
 
     private func layoutDragPreview(size: CGSize) {

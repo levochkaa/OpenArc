@@ -210,6 +210,11 @@ struct BrowserSpaceTheme: Codable, Equatable {
         var shadedDark: Color { key.withLightness(key.hsl.lightness / 2) }
         var title: Color { isLightContent ? shadedDark.scaled(0.3) : shadedDark.mixedWithWhite(0.85) }
         var selection: NSColor { tintedLight.nsColor(alpha: isLightContent ? 0.5 : 0.2) }
+        /// Behind a folder that takes a dragged tab: the most contrasting color, half covered.
+        var dropTargetBand: NSColor {
+            isLightContent ? shadedDark.nsColor(alpha: 0.5) : tintedLight.nsColor(alpha: 0.45)
+        }
+
         /// The editor's card.
         var card: Color { shadedDark.scaled(0.3).mixedWithWhite(0.15) }
     }
