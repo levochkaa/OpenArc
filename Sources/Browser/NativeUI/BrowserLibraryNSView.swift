@@ -97,6 +97,7 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
     private var rows = [Row]()
     private var rowViews = [NSView]()
     private var spaceCards = [String: BrowserLibrarySpaceCard]()
+    private let newSpaceButton = BrowserLibraryNewSpaceButton()
     private var archiveEntries = [BrowserTabArchiveEntry]()
     private var loadedArchiveKey: String?
     private var archiveTask: Task<Void, Never>?
@@ -507,6 +508,7 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
         }
         var x: CGFloat = 20
         let model = model
+        let snapshot = model.sidebarSnapshot
         for space in model.spaces {
             let card = spaceCards[space.id] ?? BrowserLibrarySpaceCard()
             if spaceCards[space.id] == nil {
@@ -516,7 +518,7 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
             card.update(
                 space: space,
                 theme: model.spaceThemesByID[space.id],
-                tabs: model.tabs.filter { $0.spaceID == space.id && $0.placement != .app }.map(\.displayTitle),
+                rows: BrowserLibrarySpaceRow.rows(for: space.id, in: snapshot),
                 isSelected: space.id == model.selectedSpaceID,
             )
             card.onOpen = { [weak model] in
@@ -526,6 +528,17 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
             card.frame = NSRect(x: x, y: 50, width: BrowserLibraryLayout.spaceCardWidth, height: max(height - 100, 0))
             x += BrowserLibraryLayout.spaceCardWidth + 20
         }
+        // A new Space starts from the button after the last one, halfway down.
+        if newSpaceButton.superview == nil {
+            newSpaceButton.onClick = { [weak model] _ in
+                model?.closeLibrary()
+                model?.beginCreatingSpace()
+            }
+            spacesDocument.addSubview(newSpaceButton)
+        }
+        let buttonSize: CGFloat = 28
+        newSpaceButton.frame = NSRect(x: x + 4, y: (height - buttonSize) / 2, width: buttonSize, height: buttonSize)
+        x += buttonSize + 28
         spacesDocument.frame = NSRect(x: 0, y: 0, width: max(x, spacesScroll.contentSize.width), height: height)
     }
 }
@@ -772,19 +785,24 @@ private final class BrowserLibraryEmptyState: NSView {
 
 // MARK: - BrowserLibrarySpaceCard
 
-/// A Space drawn like its sidebar, on its own theme. A click goes to it.
+/// A Space drawn like its sidebar, on its own theme: its icon and name, then its
+/// rows with their icons. A click goes to it.
 private final class BrowserLibrarySpaceCard: BrowserNativePressableView {
+    // MARK: Private
+
+    private static let rowStep: CGFloat = 31
+
     override var isFlipped: Bool { true }
 
     // MARK: Internal
 
     var onOpen: () -> Void = {}
 
-    // MARK: Private
-
     private let background = BrowserChromeBackgroundNSView()
+    private let icon = NSImageView()
     private let title = NSTextField(labelWithString: "")
-    private var tabLabels = [NSTextField]()
+    private var rowViews = [NSView]()
+    private var rows = [BrowserLibrarySpaceRow]()
 
     init() {
         super.init(frame: .zero)
@@ -798,6 +816,7 @@ private final class BrowserLibrarySpaceCard: BrowserNativePressableView {
         addSubview(background)
         title.font = .systemFont(ofSize: 13, weight: .semibold)
         title.lineBreakMode = .byTruncatingTail
+        addSubview(icon)
         addSubview(title)
     }
 
@@ -806,39 +825,179 @@ private final class BrowserLibrarySpaceCard: BrowserNativePressableView {
     override func layout() {
         super.layout()
         background.frame = bounds
-        title.frame = NSRect(x: 14, y: 14, width: bounds.width - 28, height: 18)
+        icon.frame = NSRect(x: 14, y: 15, width: 16, height: 16)
+        title.frame = NSRect(x: icon.image == nil ? 14 : 36, y: 14, width: bounds.width - 50, height: 18)
         var y: CGFloat = 44
-        for label in tabLabels {
-            label.frame = NSRect(x: 14, y: y, width: bounds.width - 28, height: 17)
-            label.isHidden = y + 17 > bounds.height - 12
-            y += 31
+        for (view, row) in zip(rowViews, rows) {
+            let isDivider = row == .divider
+            let height: CGFloat = isDivider ? 1 : 17
+            let top = isDivider ? y + 6 : y
+            view.frame = NSRect(x: 14, y: top, width: bounds.width - 28, height: height)
+            view.isHidden = top + height > bounds.height - 12
+            y += isDivider ? 14 : Self.rowStep
         }
     }
 
-    func update(space: BrowserChromeModel.Space, theme: BrowserSpaceTheme?, tabs: [String], isSelected: Bool) {
+    func update(
+        space: BrowserChromeModel.Space,
+        theme: BrowserSpaceTheme?,
+        rows: [BrowserLibrarySpaceRow],
+        isSelected: Bool,
+    ) {
         background.setTheme(theme, animated: false)
         background.mode = .black
         let palette = theme?.palette
         appearance = palette.flatMap { NSAppearance(named: $0.isLightContent ? .aqua : .darkAqua) }
         title.stringValue = space.title
         title.textColor = BrowserChromeColors.sidebarDimText
+        icon.image = BrowserIconImage.image(named: space.systemImageName, pointSize: 13)
+        icon.contentTintColor = BrowserChromeColors.sidebarDimText
         setAccessibilityLabel(space.title)
         layer?.borderColor = (isSelected ? NSColor.controlAccentColor : BrowserChromeColors.sidebarDivider).cgColor
-        for label in tabLabels.dropFirst(tabs.count) {
-            label.removeFromSuperview()
-        }
-        tabLabels = Array(tabLabels.prefix(tabs.count))
-        while tabLabels.count < tabs.count {
-            let label = NSTextField(labelWithString: "")
-            label.font = .systemFont(ofSize: 14)
-            label.lineBreakMode = .byTruncatingTail
-            addSubview(label)
-            tabLabels.append(label)
-        }
-        for (label, tab) in zip(tabLabels, tabs) {
-            label.stringValue = tab
-            label.textColor = palette?.title.nsColor ?? BrowserChromeColors.sidebarRowText
+        guard rows != self.rows else { return }
+        self.rows = rows
+        rowViews.forEach { $0.removeFromSuperview() }
+        let textColor = palette?.title.nsColor ?? BrowserChromeColors.sidebarRowText
+        rowViews = rows.map { row in
+            let view: NSView =
+                switch row {
+                case .divider:
+                    BrowserLibrarySpaceDivider()
+                case .tab(let title, let faviconURL, let urlString):
+                    BrowserLibrarySpaceRowView(title: title, color: textColor) { favicon in
+                        favicon.update(url: faviconURL, pageURLString: urlString)
+                    }
+                case .folder(let title):
+                    BrowserLibrarySpaceRowView(title: title, color: textColor, folder: true)
+                }
+            addSubview(view)
+            return view
         }
         needsLayout = true
+    }
+}
+
+// MARK: - BrowserLibraryNewSpaceButton
+
+/// A light disc with a dark plus after the last Space; it starts a new one.
+private final class BrowserLibraryNewSpaceButton: BrowserNativePressableView {
+    // MARK: Private
+
+    private let plus = NSImageView()
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.white.withAlphaComponent(0.92).cgColor
+        pressedScale = 0.92
+        plus.image = NSImage(systemSymbolName: "plus", accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 13, weight: .semibold))
+        plus.contentTintColor = .black
+        addSubview(plus)
+        setAccessibilityElement(true)
+        setAccessibilityRole(.button)
+        setAccessibilityLabel(BrowserStrings.spaceNewAction)
+    }
+
+    @available(*, unavailable) required init?(coder _: NSCoder) { fatalError() }
+
+    // MARK: Internal
+
+    override func layout() {
+        super.layout()
+        layer?.cornerRadius = min(bounds.width, bounds.height) / 2
+        plus.frame = bounds.insetBy(dx: 6, dy: 6)
+    }
+}
+
+// MARK: - BrowserLibrarySpaceRowView
+
+private final class BrowserLibrarySpaceRowView: NSView {
+    // MARK: Internal
+
+    override var isFlipped: Bool { true }
+
+    // MARK: Private
+
+    private let favicon = BrowserFaviconNSView()
+    private let symbol = NSImageView()
+    private let label = NSTextField(labelWithString: "")
+
+    init(title: String, color: NSColor, folder: Bool = false, configure: (BrowserFaviconNSView) -> Void = { _ in }) {
+        super.init(frame: .zero)
+        label.stringValue = title
+        label.font = .systemFont(ofSize: 14, weight: folder ? .semibold : .regular)
+        label.textColor = color
+        label.lineBreakMode = .byTruncatingTail
+        addSubview(label)
+        if folder {
+            symbol.image = NSImage(systemSymbolName: "folder", accessibilityDescription: nil)
+            symbol.contentTintColor = color
+            addSubview(symbol)
+        } else {
+            configure(favicon)
+            addSubview(favicon)
+        }
+    }
+
+    @available(*, unavailable) required init?(coder _: NSCoder) { fatalError() }
+
+    override func hitTest(_: NSPoint) -> NSView? { nil }
+
+    override func layout() {
+        super.layout()
+        favicon.frame = NSRect(x: 0, y: (bounds.height - 16) / 2, width: 16, height: 16)
+        symbol.frame = favicon.frame
+        label.frame = NSRect(x: 26, y: 0, width: max(bounds.width - 26, 0), height: bounds.height)
+    }
+}
+
+// MARK: - BrowserLibrarySpaceDivider
+
+/// The line between a Space's pinned rows and its temporary tabs.
+private final class BrowserLibrarySpaceDivider: NSView {
+    override var wantsUpdateLayer: Bool { true }
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+    }
+
+    @available(*, unavailable) required init?(coder _: NSCoder) { fatalError() }
+
+    override func hitTest(_: NSPoint) -> NSView? { nil }
+
+    override func updateLayer() {
+        layer?.backgroundColor = BrowserChromeColors.sidebarDivider.cgColor
+    }
+}
+
+// MARK: - BrowserLibrarySpaceRow
+
+/// One line of a Space's card: what its sidebar shows, pinned rows first.
+enum BrowserLibrarySpaceRow: Equatable {
+    case tab(title: String, faviconURL: URL?, urlString: String)
+    case folder(title: String)
+    case divider
+
+    /// Pinned tabs and top-level folders in sidebar order, then the temporary tabs,
+    /// with a divider between them when there are both.
+    static func rows(for spaceID: String, in snapshot: BrowserSidebarSnapshot) -> [Self] {
+        let tree = BrowserSidebarTabTree(snapshot: snapshot)
+        let pinned: [Self] = tree.items(in: .pinned(spaceID)).compactMap { item in
+            switch item {
+            case .tab(let id):
+                snapshot.tab(withID: id).map {
+                    .tab(title: $0.displayTitle, faviconURL: $0.faviconURL, urlString: $0.urlString)
+                }
+            case .folder(let id):
+                snapshot.pinnedTabFolder(withID: id).map { .folder(title: $0.title) }
+            }
+        }
+        let temporary: [Self] = tree.items(in: .temporary(spaceID)).compactMap { item in
+            guard case .tab(let id) = item, let tab = snapshot.tab(withID: id) else { return nil }
+            return .tab(title: tab.displayTitle, faviconURL: tab.faviconURL, urlString: tab.urlString)
+        }
+        return pinned.isEmpty || temporary.isEmpty ? pinned + temporary : pinned + [.divider] + temporary
     }
 }
