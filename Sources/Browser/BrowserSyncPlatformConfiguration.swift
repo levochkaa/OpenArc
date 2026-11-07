@@ -7,10 +7,10 @@ import Foundation
 /// The switch for everything that needs an OpenArc server: accounts, sync and
 /// the Beta update channel. While it is off, the apps are local only.
 ///
-/// Turning it on also takes a running server, `OPENARC_SPARKLE_FEED_URL` set to
-/// that server, and a privacy policy that covers accounts.
+/// It needs a running server, `OPENARC_SPARKLE_FEED_URL` set to that server,
+/// and a privacy policy that covers accounts.
 enum BrowserHostedService {
-    static let isEnabled = false
+    static let isEnabled = true
 }
 
 // MARK: - BrowserSyncDeviceIdentity

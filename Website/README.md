@@ -10,4 +10,4 @@ npm run dev
 npm run build
 ```
 
-It loads release notes and downloads from `VITE_RELEASES_API_URL`, defaulting to `https://api.openarc.su/v1/releases`, which is closed.
+It loads release notes and downloads from `VITE_RELEASES_API_URL`, defaulting to `https://api.openarc.su/v1/releases`, served by `Backend`.

@@ -99,7 +99,8 @@ archive_name="OpenArc-$short_version-$build_version.zip"
 archive_path="$updates_dir/$archive_name"
 # generate_appcast pairs release notes by the archive's name without .zip.
 generated_notes_path="$updates_dir/${archive_name%.zip}.md"
-download_url_prefix="${OPENARC_UPDATE_DOWNLOAD_URL_PREFIX:-https://github.com/$repo/releases/download/$tag}"
+# The server proxies downloads, so they work while the repository is private.
+download_url_prefix="${OPENARC_UPDATE_DOWNLOAD_URL_PREFIX:-https://api.openarc.su/downloads/}"
 # A prefix without a trailing slash loses its last path component.
 download_url_prefix="${download_url_prefix%/}/"
 maximum_versions="${SPARKLE_MAXIMUM_VERSIONS:-1}"

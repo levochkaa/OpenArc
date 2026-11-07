@@ -1,6 +1,6 @@
 # Releasing
 
-Releases are GitHub releases of `levochkaa/OpenArc`, and no OpenArc server is involved. The app reads its Sparkle feed from `https://github.com/levochkaa/OpenArc/releases/latest/download/appcast.xml`, the `appcast.xml` of the newest release that is not a pre-release. Updates therefore need a public repository. Pre-releases reach nobody through the updater: the Beta channel needs the server in `Backend` and stays hidden while `BrowserHostedService.isEnabled` is off.
+Releases are GitHub releases of `levochkaa/OpenArc`, served to the app by the server in `Backend` at `https://api.openarc.su`. The app reads its Sparkle feed from `https://api.openarc.su/appcast.xml`: the newest release that is not a pre-release, or with `?channel=beta`, which the Beta channel in Settings adds, the newest release of any kind. The server reads releases with `GITHUB_RELEASE_TOKEN` and proxies their downloads, so updates work while the repository is private. Publish with `--prerelease` to reach only the Beta channel.
 
 Sparkle compares build numbers, so every release needs a higher `CURRENT_PROJECT_VERSION` in `project.yml` than any earlier release.
 
@@ -23,7 +23,7 @@ The script:
 1. Builds Release.
 2. Signs a copy with `script/sign_release_app.sh`: Developer ID, the hardened runtime, secure timestamps, `Support/OpenArc-Distribution.entitlements` and the helper entitlements. Apple does not offer Sign in with Apple to Developer ID apps, so these builds leave it out and need no provisioning profile.
 3. Notarizes and staples that copy.
-4. Zips it and generates the appcast, with the notes embedded and download links into this release, and deltas from the earlier archives in `.build/releases/sparkle-updates`. Keep that directory between releases so later updates stay small.
+4. Zips it and generates the appcast, with the notes embedded and download links through `https://api.openarc.su/downloads/`, and deltas from the earlier archives in `.build/releases/sparkle-updates`. Keep that directory between releases so later updates stay small.
 5. Uploads the archive, notes, appcast and deltas to the GitHub release.
 
 `--no-notarize` skips signing and notarization, for local tests of the update flow.
