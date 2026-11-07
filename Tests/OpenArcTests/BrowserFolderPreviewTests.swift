@@ -80,10 +80,30 @@ import Testing
             title: "T",
             urlString: "https://t.example",
             faviconURL: nil,
+            subtitle: "1 hour ago",
         )] }
+        coordinator.name = { _ in "Work" }
         coordinator.show(folderID: "f", beside: row)
         let panel = try #require(coordinator.panel)
-        #expect(panel.parent === window && !panel.isKeyWindow, "Showing does not take the keyboard")
+        #expect(panel.parent === window)
+        let editor = panel.firstResponder as? NSTextView
+        #expect(
+            panel.firstResponder === panel.searchField || editor?.delegate === panel.searchField,
+            "Typing goes to the search at once",
+        )
+        #expect(panel.searchField.placeholderString == String(
+            format: BrowserStrings.folderPreviewSearchNamedPlaceholder,
+            "Work",
+        ))
+        #expect(
+            panel.preferredSize.height == BrowserFolderPreviewPanel.size(
+                forRowCount: 1,
+                rowHeight: BrowserFolderPreviewPanel.twoLineRowHeight,
+            )
+            .height,
+            "A second line makes the rows taller",
+        )
+        #expect(!panel.hasQuery)
         #expect(coordinator.shownFolderID == "f")
         coordinator.isEnabled = { false }
         coordinator.dismiss()

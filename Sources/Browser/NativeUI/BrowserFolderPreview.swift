@@ -9,14 +9,16 @@ struct BrowserFolderPreviewItem: Equatable {
     let title: String
     let urlString: String
     let faviconURL: URL?
+    /// A second line under the title, such as when the tab was last used.
+    var subtitle: String?
 }
 
 // MARK: - BrowserFolderPreviewCoordinator
 
 /// Folder preview: resting the pointer on a collapsed folder lists its
-/// tabs beside the sidebar, with a search field; a click or Return opens one.
-/// The list does not take the keyboard until its search field is clicked, so
-/// hovering never pulls focus from the page.
+/// tabs beside the sidebar, with a search field that takes the keyboard at
+/// once; a click or Return opens one. Leaving with nothing typed closes it and
+/// gives the keys back to the window.
 @MainActor final class BrowserFolderPreviewCoordinator {
     // MARK: Internal
 
@@ -26,6 +28,8 @@ struct BrowserFolderPreviewItem: Equatable {
 
     var isEnabled: () -> Bool = { true }
     var items: (String) -> [BrowserFolderPreviewItem] = { _ in [] }
+    /// The name the search field asks about, such as the folder's title.
+    var name: (String) -> String? = { _ in nil }
     var onSelect: (String) -> Void = { _ in }
 
     private(set) var panel: BrowserFolderPreviewPanel?
@@ -88,7 +92,7 @@ struct BrowserFolderPreviewItem: Equatable {
             return
         }
         dismiss()
-        let panel = BrowserFolderPreviewPanel(items: items)
+        let panel = BrowserFolderPreviewPanel(items: items, name: name(folderID))
         panel.onSelect = { [weak self] id in
             self?.dismiss()
             self?.onSelect(id)
@@ -98,13 +102,15 @@ struct BrowserFolderPreviewItem: Equatable {
             guard let self else { return }
             if hovered {
                 hideWork?.cancel()
-            } else if panel?.isKeyWindow == false {
+            } else if panel?.hasQuery == false {
                 scheduleHide()
             }
         }
         panel.setFrame(Self.frame(for: panel.preferredSize, beside: row), display: false)
         window.addChildWindow(panel, ordered: .above)
-        panel.orderFront(nil)
+        // Typing goes to the search at once, as it does once the field is clicked.
+        panel.makeKeyAndOrderFront(nil)
+        panel.makeFirstResponder(panel.searchField)
         self.panel = panel
         shownFolderID = folderID
     }
@@ -118,15 +124,23 @@ struct BrowserFolderPreviewItem: Equatable {
     /// Keeps a pending preview of another folder, which replaces this one.
     private func scheduleHide() {
         schedule(&hideWork, after: Self.hideDelay) { [weak self] in
-            guard let self, panel?.isPointerInside != true, panel?.isKeyWindow != true else { return }
+            guard let self, panel?.isPointerInside != true, panel?.hasQuery != true else { return }
             hidePanel()
         }
     }
 
     private func hidePanel() {
         if let panel {
-            panel.parent?.removeChildWindow(panel)
+            let parent = panel.parent
+            let wasKey = panel.isKeyWindow
+            // Losing the keyboard here is not a cancel; a preview pending for another folder stays.
+            panel.onCancel = {}
+            parent?.removeChildWindow(panel)
             panel.orderOut(nil)
+            // The keys go back to the window, and to whatever had them there.
+            if wasKey {
+                parent?.makeKey()
+            }
         }
         panel = nil
         shownFolderID = nil
@@ -142,13 +156,13 @@ struct BrowserFolderPreviewItem: Equatable {
 
 // MARK: - BrowserFolderPreviewPanel
 
-/// The preview's floating list. It becomes key only when its search field is
-/// clicked.
+/// The preview's floating list. Its search field takes the keyboard while it shows.
 final class BrowserFolderPreviewPanel: NSPanel, NSSearchFieldDelegate {
     // MARK: Internal
 
     static let width: CGFloat = 280
     static let rowHeight: CGFloat = 28
+    static let twoLineRowHeight: CGFloat = 44
     static let maximumVisibleRows = 8
     static let searchHeight: CGFloat = 36
     static let padding: CGFloat = 6
@@ -168,14 +182,27 @@ final class BrowserFolderPreviewPanel: NSPanel, NSSearchFieldDelegate {
 
     private let items: [BrowserFolderPreviewItem]
     private let list = BrowserFolderPreviewList()
+    private let emptyLabel = BrowserNativeControls.label(
+        BrowserStrings.folderPreviewNoMatches,
+        size: 12.5,
+        color: BrowserChromeColors.secondaryText,
+    )
 
-    var preferredSize: NSSize { Self.size(forRowCount: items.count) }
+    /// Something is typed, so the list stays when the pointer leaves.
+    var hasQuery: Bool { !searchField.stringValue.trimmingCharacters(in: .whitespaces).isEmpty }
 
-    init(items: [BrowserFolderPreviewItem]) {
+    var preferredSize: NSSize { Self.size(forRowCount: items.count, rowHeight: rowHeight) }
+
+    private var rowHeight: CGFloat { Self.rowHeight(for: items) }
+
+    init(items: [BrowserFolderPreviewItem], name: String? = nil) {
         self.items = items
         self.visibleItems = items
         super.init(
-            contentRect: NSRect(origin: .zero, size: Self.size(forRowCount: items.count)),
+            contentRect: NSRect(
+                origin: .zero,
+                size: Self.size(forRowCount: items.count, rowHeight: Self.rowHeight(for: items)),
+            ),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false,
@@ -195,12 +222,17 @@ final class BrowserFolderPreviewPanel: NSPanel, NSSearchFieldDelegate {
             self?.onHoverChanged(hovered)
         }
         contentView = surface
-        searchField.placeholderString = BrowserStrings.folderPreviewSearchPlaceholder
+        searchField.placeholderString = name
+            .map { String(format: BrowserStrings.folderPreviewSearchNamedPlaceholder, $0) }
+            ?? BrowserStrings.folderPreviewSearchPlaceholder
         searchField.delegate = self
         searchField.focusRingType = .none
         searchField.setAccessibilityIdentifier("browser.folder-preview.search")
         surface.addSubview(searchField)
         surface.addSubview(list)
+        emptyLabel.alignment = .center
+        emptyLabel.isHidden = true
+        surface.addSubview(emptyLabel)
         setAccessibilityIdentifier("browser.folder-preview")
         reloadRows()
     }
@@ -212,11 +244,16 @@ final class BrowserFolderPreviewPanel: NSPanel, NSSearchFieldDelegate {
         }
     }
 
-    static func size(forRowCount count: Int) -> NSSize {
+    static func size(forRowCount count: Int, rowHeight: CGFloat = rowHeight) -> NSSize {
         NSSize(
             width: width,
             height: searchHeight + CGFloat(min(max(count, 1), maximumVisibleRows)) * rowHeight + padding * 2,
         )
+    }
+
+    /// Rows grow to two lines when any of them has a second line.
+    static func rowHeight(for items: [BrowserFolderPreviewItem]) -> CGFloat {
+        items.contains { $0.subtitle != nil } ? twoLineRowHeight : rowHeight
     }
 
     func controlTextDidChange(_: Notification) {
@@ -270,8 +307,10 @@ final class BrowserFolderPreviewPanel: NSPanel, NSSearchFieldDelegate {
             width: bounds.width - Self.padding * 2,
             height: max(bounds.height - Self.searchHeight - Self.padding * 2, 0),
         )
-        list.update(items: visibleItems, rowHeight: Self.rowHeight) { [weak self] id in self?.onSelect(id) }
+        list.update(items: visibleItems, rowHeight: rowHeight) { [weak self] id in self?.onSelect(id) }
         list.highlightedIndex = visibleItems.isEmpty ? nil : selectedIndex
+        emptyLabel.isHidden = !visibleItems.isEmpty
+        emptyLabel.frame = NSRect(x: Self.padding, y: list.frame.midY - 9, width: list.frame.width, height: 18)
     }
 }
 
@@ -363,6 +402,7 @@ final class BrowserFolderPreviewRow: NSView {
 
     private let favicon = BrowserFaviconNSView()
     private let title = BrowserNativeControls.label("", size: 12.5, color: BrowserChromeColors.primaryText)
+    private let subtitle = BrowserNativeControls.label("", size: 11, color: BrowserChromeColors.secondaryText)
     private var isHovered = false
 
     init(item: BrowserFolderPreviewItem) {
@@ -372,8 +412,11 @@ final class BrowserFolderPreviewRow: NSView {
         favicon.update(url: item.faviconURL, pageURLString: item.urlString)
         title.stringValue = item.title
         title.lineBreakMode = .byTruncatingTail
+        subtitle.stringValue = item.subtitle ?? ""
+        subtitle.isHidden = item.subtitle == nil
         addSubview(favicon)
         addSubview(title)
+        addSubview(subtitle)
         setAccessibilityElement(true)
         setAccessibilityRole(.button)
         setAccessibilityLabel(item.title)
@@ -385,7 +428,14 @@ final class BrowserFolderPreviewRow: NSView {
     override func layout() {
         super.layout()
         favicon.frame = NSRect(x: 8, y: (bounds.height - 16) / 2, width: 16, height: 16)
-        title.frame = NSRect(x: 32, y: (bounds.height - 16) / 2, width: max(bounds.width - 40, 0), height: 16)
+        let width = max(bounds.width - 40, 0)
+        if subtitle.isHidden {
+            title.frame = NSRect(x: 32, y: (bounds.height - 16) / 2, width: width, height: 16)
+        } else {
+            // Bottom-up: the title above the middle, the second line below it.
+            title.frame = NSRect(x: 32, y: bounds.height / 2 + 1, width: width, height: 16)
+            subtitle.frame = NSRect(x: 32, y: bounds.height / 2 - 15, width: width, height: 14)
+        }
     }
 
     override func updateTrackingAreas() {

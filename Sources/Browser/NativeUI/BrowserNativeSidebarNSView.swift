@@ -204,6 +204,7 @@ final class BrowserNativeSidebarNSView: NSView {
             }
             return state.model.userPreferencesStore.folderPreviewsEnabled ? state.folderPreviewItems(folderID: id) : []
         }
+        folderPreview.name = { [weak state] id in state?.snapshot.pinnedTabFolder(withID: id)?.title }
         folderPreview.onSelect = { [weak state] id in
             guard let model = state?.model else { return }
             if !model.openRecentPagePreviewItem(id: id) {

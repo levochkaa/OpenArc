@@ -1644,6 +1644,14 @@ enum BrowserStrings {
         comment: "Settings toggle: resting the pointer on a collapsed sidebar folder lists its tabs.",
     )
 
+    static let folderPreviewSearchNamedPlaceholder = NSLocalizedString(
+        "browser.folder_preview.search_named_placeholder",
+        comment: "Placeholder of the search field in a sidebar folder's preview; the folder's name.",
+    )
+    static let folderPreviewNoMatches = NSLocalizedString(
+        "browser.folder_preview.no_matches",
+        comment: "Shown in a folder's preview when no tab matches the search.",
+    )
     static let folderPreviewSearchPlaceholder = NSLocalizedString(
         "browser.folder_preview.search_placeholder",
         comment: "Placeholder of the search field in a sidebar folder's preview.",

@@ -295,6 +295,8 @@
 "browser.settings.little_window_any_app" = "Open a small window with ⌥⌘N in any app";
 "browser.settings.folder_previews" = "Preview folders on hover";
 "browser.folder_preview.search_placeholder" = "Search folder";
+"browser.folder_preview.search_named_placeholder" = "Search %@…";
+"browser.folder_preview.no_matches" = "No tabs matching that search…";
 "browser.settings.peek_other_sites" = "Open links to other sites from pinned tabs in Peek";
 "browser.settings.peek_other_sites.detail" = "Pinned tabs and Favorites stay on their page. Sign-in pages on another site open in Peek too.";
 "browser.settings.links_tab" = "Links";

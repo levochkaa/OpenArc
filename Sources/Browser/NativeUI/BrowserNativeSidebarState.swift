@@ -804,6 +804,13 @@ import QuartzCore
 // MARK: - Folder preview
 
 extension BrowserNativeSidebarState {
+    /// When a tab in a folder's preview was last used, such as "1 hour ago".
+    static let lastUsedFormatter: RelativeDateTimeFormatter = {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .full
+        return formatter
+    }()
+
     /// Every tab in a folder and its subfolders, in sidebar order.
     func folderPreviewItems(folderID: String) -> [BrowserFolderPreviewItem] {
         guard let folder = snapshot.pinnedTabFolder(withID: folderID) else { return [] }
@@ -815,6 +822,7 @@ extension BrowserNativeSidebarState {
                     title: $0.displayTitle,
                     urlString: $0.urlString,
                     faviconURL: $0.faviconURL,
+                    subtitle: Self.lastUsedFormatter.localizedString(for: $0.lastActivityAt, relativeTo: Date()),
                 )
             }
         }
