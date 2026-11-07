@@ -31,6 +31,13 @@ import Foundation
         }
     }
 
+    /// Titles change without a saved session; the other windows show them at once.
+    func pageTitleDidChange(_ title: String, syncID: String, from sender: BrowserChromeModel) {
+        for model in models where model !== sender {
+            model.applyPeerPageTitle(title, syncID: syncID)
+        }
+    }
+
     /// Takes the tab's page away from whichever window has it.
     func pageWillOpen(syncID: String, in sender: BrowserChromeModel) {
         for model in models where model !== sender {

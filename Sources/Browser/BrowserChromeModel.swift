@@ -4186,6 +4186,15 @@ enum BrowserWindowMode: Equatable {
         applyRemoteSyncSnapshot(snapshot)
     }
 
+    /// The window with this tab's page saw its title change.
+    func applyPeerPageTitle(_ title: String, syncID: String) {
+        guard let index = tabs.firstIndex(where: { $0.syncID == syncID }), hasNoPage(tabs[index].id),
+              tabs[index].title != title
+        else { return }
+        tabs[index].title = title
+        updateWindowTitle()
+    }
+
     func selectTab(syncID: String) {
         guard let id = tabs.first(where: { $0.syncID == syncID })?.id else { return }
         selectTab(id: id)
@@ -7011,8 +7020,9 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
 
         var didChangePersistentURL = false
 
-        if let title {
+        if let title, tabs[index].title != title {
             tabs[index].title = title
+            windowGroup?.pageTitleDidChange(title, syncID: tabs[index].syncID, from: self)
         }
 
         // Chromium reports a view-source page by its inner URL; keep the

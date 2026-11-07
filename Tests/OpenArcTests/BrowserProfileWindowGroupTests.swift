@@ -149,6 +149,15 @@ import Testing
         #expect(pair.second.showsMovedPage, "Now the second window shows the picture")
     }
 
+    @Test func aNewPageTitleShowsInTheOtherWindow() throws {
+        let pair = Pair()
+        let source = pair.first.model
+        let id = pair.first.id("x")
+        let syncID = try #require(source.tabs.first { $0.id == id }?.syncID)
+        pair.first.driver.emitUpdate(id: id, title: "Renamed page")
+        #expect(pair.second.tabs.first { $0.syncID == syncID }?.title == "Renamed page")
+    }
+
     @Test func aPageThatCannotMoveLoadsAgain() throws {
         let pair = Pair()
         let source = pair.first.model
