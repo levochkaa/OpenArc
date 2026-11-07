@@ -3195,6 +3195,8 @@ class BrowserTabClient final : public CefClient,
                            bool has_video_access,
                            bool has_audio_access) override;
 
+  void OnFullscreenModeChange(CefRefPtr<CefBrowser> browser, bool fullscreen) override;
+
   void OnFaviconURLChange(CefRefPtr<CefBrowser> browser,
                           const std::vector<CefString> &icon_urls) override;
   bool OnBeforeDownload(
@@ -3634,6 +3636,7 @@ struct TabRecord {
                        requestID:(NSString *)requestID
                          outcome:(BrowserTabCloseRequestOutcome)outcome;
 - (void)handleTitleChange:(NSString *)title forTabID:(NSString *)tabID;
+- (void)handlePageFullscreen:(BOOL)fullscreen forTabID:(NSString *)tabID;
 - (void)applyMediaVolumeForTabID:(NSString *)tabID toFrame:(CefRefPtr<CefFrame>)frame;
 - (void)handleAddressChange:(NSString *)urlString forTabID:(NSString *)tabID;
 - (void)handleFaviconURLChange:(nullable NSString *)faviconURLString
@@ -3909,6 +3912,8 @@ std::string BrowserMediaVolumeScript(double volume) {
   std::map<std::string, CefRefPtr<CefRequestContext>> _spaceProfileContexts;
   NSTimer *_smallWindowSweepTimer;
   NSString *_activeTabID;
+  // The tab whose page is in fullscreen through the Fullscreen API.
+  NSString *_pageFullscreenTabID;
   NSArray<NSString *> *_visibleLayoutTabIDs;
   BOOL _visibleLayoutVertical;
   NSArray<NSNumber *> *_visibleLayoutFractions;
@@ -4150,6 +4155,12 @@ std::string BrowserMediaVolumeScript(double volume) {
   }
   if (keys.size() < 2) {
     keys.assign(1, ToStdString(_activeTabID));
+  }
+  // A page in fullscreen fills the host alone.
+  const std::string fullscreenKey = ToStdString(_pageFullscreenTabID);
+  if (_pageFullscreenTabID != nil &&
+      std::find(keys.begin(), keys.end(), fullscreenKey) != keys.end()) {
+    keys.assign(1, fullscreenKey);
   }
   return keys;
 }
@@ -5452,6 +5463,7 @@ std::string BrowserMediaVolumeScript(double volume) {
 }
 
 - (void)handleRenderProcessTerminatedForTabID:(NSString *)tabID errorCode:(int)errorCode {
+  [self forgetPageFullscreenForTabID:tabID];
   id<BrowserTabControllerDelegate> delegate = self.delegate;
   if ([delegate respondsToSelector:@selector(browserTabController:renderProcessTerminatedForTabWithID:errorCode:)]) {
     [delegate browserTabController:self renderProcessTerminatedForTabWithID:tabID errorCode:errorCode];
@@ -6076,6 +6088,10 @@ std::string BrowserMediaVolumeScript(double volume) {
   }
 
   record.keptVisibleForPictureInPicture = false;
+  if ([_pageFullscreenTabID isEqualToString:tabID]) {
+    record.browser->GetHost()->ExitFullscreen(true);
+    [self forgetPageFullscreenForTabID:tabID];
+  }
   BrowserTabPageTransfer *transfer = [[BrowserTabPageTransfer alloc] initWithRecord:record
                                                                        mediaVolume:_mediaVolumes[tabID]];
   [_mediaVolumes removeObjectForKey:tabID];
@@ -6147,6 +6163,42 @@ std::string BrowserMediaVolumeScript(double volume) {
                              faviconURLString:favicon.length > 0 ? favicon : nil];
   });
   return tabID;
+}
+
+- (void)handlePageFullscreen:(BOOL)fullscreen forTabID:(NSString *)tabID {
+  if (_tabRecords.find(ToStdString(tabID)) == _tabRecords.end()) return;
+  if (fullscreen) {
+    if (_pageFullscreenTabID != nil && ![_pageFullscreenTabID isEqualToString:tabID]) {
+      [self notifyPageFullscreen:NO forTabID:_pageFullscreenTabID];
+    }
+    _pageFullscreenTabID = [tabID copy];
+  } else if ([_pageFullscreenTabID isEqualToString:tabID]) {
+    _pageFullscreenTabID = nil;
+  } else {
+    return;
+  }
+  [self updateBrowserVisibilityFocusingActiveTab:NO];
+  [self notifyPageFullscreen:fullscreen forTabID:tabID];
+}
+
+- (void)notifyPageFullscreen:(BOOL)fullscreen forTabID:(NSString *)tabID {
+  id<BrowserTabControllerDelegate> delegate = self.delegate;
+  if ([delegate respondsToSelector:@selector(browserTabController:didChangePageFullscreenForTabWithID:fullscreen:)]) {
+    [delegate browserTabController:self didChangePageFullscreenForTabWithID:tabID fullscreen:fullscreen];
+  }
+}
+
+/// A page that leaves this window, closes or loses its renderer is out of fullscreen.
+- (void)forgetPageFullscreenForTabID:(NSString *)tabID {
+  if (![_pageFullscreenTabID isEqualToString:tabID]) return;
+  _pageFullscreenTabID = nil;
+  [self notifyPageFullscreen:NO forTabID:tabID];
+}
+
+- (void)exitPageFullscreen {
+  auto it = _tabRecords.find(ToStdString(_pageFullscreenTabID));
+  if (it == _tabRecords.end() || !it->second.browser) return;
+  it->second.browser->GetHost()->ExitFullscreen(true);
 }
 
 - (void)closeAllTabs {
@@ -6251,6 +6303,7 @@ std::string BrowserMediaVolumeScript(double volume) {
   [confirmation cancel];
   [self cancelSitePermissionsForTabID:tabID];
   [self closePeekSessionsOwnedByTabID:tabID];
+  [self forgetPageFullscreenForTabID:tabID];
 
   if (wasActive) {
     if (_tabRecords.empty()) {
@@ -6570,6 +6623,11 @@ void BrowserTabClient::OnMediaAccessChange(CefRefPtr<CefBrowser>,
   captures_video_ = has_video_access;
   captures_audio_ = has_audio_access;
   ReportCapture();
+}
+
+void BrowserTabClient::OnFullscreenModeChange(CefRefPtr<CefBrowser>, bool fullscreen) {
+  CEF_REQUIRE_UI_THREAD();
+  [controller_ handlePageFullscreen:fullscreen forTabID:ToNSString(tab_id_)];
 }
 
 void BrowserTabClient::ReportCapture() {
@@ -7063,11 +7121,18 @@ void BrowserTabClient::OnFindResult(CefRefPtr<CefBrowser>,
                            finalUpdate:finalUpdate];
 }
 
-bool BrowserTabClient::OnPreKeyEvent(CefRefPtr<CefBrowser>,
-                                     const CefKeyEvent &,
+// Escape takes a page out of fullscreen before the page sees the key, as Chrome does.
+bool BrowserTabClient::OnPreKeyEvent(CefRefPtr<CefBrowser> browser,
+                                     const CefKeyEvent &event,
                                      CefEventHandle,
                                      bool *) {
   CEF_REQUIRE_UI_THREAD();
+  constexpr int kEscapeKeyCode = 53;
+  if (browser && event.type == KEYEVENT_RAWKEYDOWN && event.native_key_code == kEscapeKeyCode &&
+      browser->GetHost()->IsFullscreen()) {
+    browser->GetHost()->ExitFullscreen(true);
+    return true;
+  }
   return false;
 }
 

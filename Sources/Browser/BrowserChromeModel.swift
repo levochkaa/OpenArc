@@ -313,6 +313,9 @@ enum BrowserWindowMode: Equatable {
     /// Tabs this window showed when another window of the profile took their page, and
     /// pictures of those pages once taken. The window shows the picture, faded, until
     /// the page comes back on a click.
+    /// The tab whose page is in fullscreen through the Fullscreen API; the window shows it
+    /// alone, edge to edge, in full screen.
+    @Published private(set) var pageFullscreenTabID: String?
     @Published private(set) var movedPageTabIDs = Set<String>()
     @Published private(set) var movedPagePictures = [String: NSImage]()
     var tabsNeedingReloadAfterCrash = Set<String>()
@@ -990,6 +993,14 @@ enum BrowserWindowMode: Equatable {
         }
         tabDriver.onTabClosed = { [weak self] tabID in
             self?.handleClosedTab(id: tabID)
+        }
+        tabDriver.onPageFullscreenChanged = { [weak self] tabID, fullscreen in
+            guard let self else { return }
+            if fullscreen {
+                self.pageFullscreenTabID = tabID
+            } else if pageFullscreenTabID == tabID {
+                self.pageFullscreenTabID = nil
+            }
         }
         tabDriver.onTabFocused = { [weak self] tabID in
             self?.handleSplitPaneFocused(tabID)
@@ -3807,6 +3818,10 @@ enum BrowserWindowMode: Equatable {
 
         captureSelectedTabPreviewIfNeeded()
         dismissCommandBar()
+        // Another tab never shows behind a page in fullscreen.
+        if pageFullscreenTabID != nil, pageFullscreenTabID != id {
+            exitPageFullscreen()
+        }
 
         if tab.spaceID != selectedSpaceID {
             selectedSpaceID = tab.spaceID
@@ -4272,6 +4287,12 @@ enum BrowserWindowMode: Equatable {
             let receiver = group.models.first { $0 !== self && $0.showsMovedPage(syncID: tab.syncID) } ?? oldest
             receiver.keepPageOfClosingWindow(syncID: tab.syncID)
         }
+    }
+
+    /// Asks the page in fullscreen to leave it.
+    func exitPageFullscreen() {
+        guard pageFullscreenTabID != nil else { return }
+        tabDriver.exitPageFullscreen()
     }
 
     /// Brings back the page of the selected tab from the window that took it.

@@ -81,6 +81,18 @@ import Testing
         #expect(source.model.tabs.contains { $0.id == x })
     }
 
+    @Test func aPageInFullscreenLeavesItWhenAnotherTabIsShown() {
+        let f = SidebarDragFixture()
+        let x = f.id("x"), y = f.id("y")
+        f.model.selectTab(id: x)
+        f.driver.onPageFullscreenChanged?(x, true)
+        #expect(f.model.pageFullscreenTabID == x)
+        f.model.selectTab(id: y)
+        #expect(f.driver.exitPageFullscreenCount == 1)
+        f.driver.onPageFullscreenChanged?(x, false)
+        #expect(f.model.pageFullscreenTabID == nil)
+    }
+
     @Test func aWindowNeverTakesItsOwnTabs() {
         let f = SidebarDragFixture()
         #expect(!f.model.moveTabs(ids: [f.id("x")], toWindowOf: f.model))

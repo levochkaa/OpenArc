@@ -162,6 +162,9 @@ import Foundation
     var devToolsResults = [String: String]()
     var mainFrameFills = [(username: String, password: String)]()
 
+    var onPageFullscreenChanged: ((String, Bool) -> Void)?
+    private(set) var exitPageFullscreenCount = 0
+
     /// Pages this window can give to another window, by tab ID; others close instead.
     var detachablePageTabIDs = Set<String>()
     private(set) var detachedPageTabIDs = [String]()
@@ -173,6 +176,10 @@ import Foundation
     private var pendingCreateRequests = [CreatedTabRequest]()
     private var nextTabNumber = 0
     private var activeTabID: String?
+
+    func exitPageFullscreen() {
+        exitPageFullscreenCount += 1
+    }
 
     func rendererProcessIDsByTabID() -> [String: Int32] { rendererProcessIDs }
 

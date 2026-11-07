@@ -181,6 +181,11 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
     didChangeCaptureForTabWithID:(NSString *)tabID
                            video:(BOOL)video
                            audio:(BOOL)audio;
+// The tab's page entered or left fullscreen through the Fullscreen API; while it
+// is in it, the page fills the host view alone, even in a split.
+- (void)browserTabController:(BrowserTabController *)controller
+    didChangePageFullscreenForTabWithID:(NSString *)tabID
+                             fullscreen:(BOOL)fullscreen;
 
 @end
 
@@ -378,6 +383,8 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
     NS_SWIFT_NAME(requestCloseTab(withID:requestID:));
 - (void)closeTabWithID:(NSString *)tabID forceClose:(BOOL)forceClose;
 - (void)closeTabWithID:(NSString *)tabID;
+// Asks the page in fullscreen, if any, to leave it.
+- (void)exitPageFullscreen;
 // Takes a ready page out of this window without closing it. Nil while the page
 // is being created or closed, or shows a dialog of its own.
 - (nullable BrowserTabPageTransfer *)detachTabWithID:(NSString *)tabID

@@ -33,6 +33,7 @@ import Foundation
     var onPeekSitePermissionAnswered: ((Int, Bool?) -> Void)?
     var onMediaStateChanged: ((String, BrowserTabMediaState?) -> Void)?
     var onCaptureChanged: ((String, Bool) -> Void)?
+    var onPageFullscreenChanged: ((String, Bool) -> Void)?
     var onPeekPagesChanged: (([String: String]) -> Void)?
     var onAddressFormFound: ((String, String, String) -> Void)?
     var onCardFormFound: ((String, String, String) -> Void)?
@@ -437,6 +438,10 @@ import Foundation
         controller.closeTab(withID: tabID, forceClose: forceClose)
     }
 
+    func exitPageFullscreen() {
+        controller.exitPageFullscreen()
+    }
+
     func detachPage(ofTabWithID tabID: String) -> BrowserTabPageHandoff? {
         controller.detachTab(withID: tabID).map {
             BrowserTabPageHandoff(
@@ -628,6 +633,14 @@ extension BrowserTabControllerDriver: BrowserTabControllerDelegate {
         audio: Bool,
     ) {
         MainActor.assumeIsolated { onCaptureChanged?(tabID, video || audio) }
+    }
+
+    nonisolated func browserTabController(
+        _: BrowserTabController,
+        didChangePageFullscreenForTabWithID tabID: String,
+        fullscreen: Bool,
+    ) {
+        MainActor.assumeIsolated { onPageFullscreenChanged?(tabID, fullscreen) }
     }
 
     nonisolated func browserTabController(

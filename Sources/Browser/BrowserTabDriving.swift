@@ -113,6 +113,8 @@ enum BrowserPageTranslationState: Int {
     var onMediaStateChanged: ((String, BrowserTabMediaState?) -> Void)? { get set }
     /// A tab's pages started or stopped using the camera, microphone or screen capture.
     var onCaptureChanged: ((String, Bool) -> Void)? { get set }
+    /// A tab's page entered or left fullscreen through the Fullscreen API.
+    var onPageFullscreenChanged: ((String, Bool) -> Void)? { get set }
     /// Tabs with a Peek card, open or put away, and the address in each.
     var onPeekPagesChanged: (([String: String]) -> Void)? { get set }
     /// Tab, frame and the frame's address: the page has an address form.
@@ -234,6 +236,8 @@ enum BrowserPageTranslationState: Int {
     /// means the engine has closed. Forced/structural closes supersede this request.
     @discardableResult func requestCloseTab(withID tabID: String, requestID: String) -> Bool
     func closeTab(withID tabID: String, forceClose: Bool)
+    /// Asks the page in fullscreen, if any, to leave it.
+    func exitPageFullscreen()
     /// Takes a ready page out of this window without closing it; nil when it cannot
     /// move now, such as while it loads its first page or shows a dialog.
     func detachPage(ofTabWithID tabID: String) -> BrowserTabPageHandoff?

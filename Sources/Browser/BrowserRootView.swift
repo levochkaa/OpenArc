@@ -78,6 +78,10 @@ final class BrowserRootView: NSView {
     private var showsSidebarWindowControls: Bool
     private var isWindowFullscreen = false
     private var isWindowFullscreenTransitioning = false
+    /// The page's fullscreen put the window into full screen, so leaving it takes the
+    /// window back out.
+    private var pageFullscreenEnteredWindowFullscreen = false
+    private var shownPageFullscreenTabID: String?
     private var isSidebarHoverOverlayPresented = false
     private var isSidebarHoverOverlayChromeVisible = false
     /// A floating sidebar being pinned keeps its background until the page has made room.
@@ -97,10 +101,11 @@ final class BrowserRootView: NSView {
         .init(
             windowSize: bounds.size,
             sidebarWidth: reservedSidebarWidth(swipeProgress: librarySwipeProgress),
-            isSidebarVisible: model.isSidebarVisible || model.librarySection != nil || libraryFollowsSwipe,
+            isSidebarVisible: !isPageFullscreen
+                && (model.isSidebarVisible || model.librarySection != nil || libraryFollowsSwipe),
             isHoverSidebarPresented: isSidebarHoverOverlayPresented,
             isOverlayChromeVisible: isSidebarHoverOverlayChromeVisible,
-            isFullscreen: isWindowFullscreen,
+            isFullscreen: isWindowFullscreen || isPageFullscreen,
             showsSiteToolbar: showsSiteToolbar,
             showsBookmarksBar: showsBookmarksBar,
             extensionSidePanelWidth: isExtensionSidePanelPresented ? model.extensionSidePanelWidth : nil,
@@ -122,11 +127,19 @@ final class BrowserRootView: NSView {
         return content.convert(strip, to: nil)
     }
 
-    private var showsBookmarksBar: Bool { model.isContextReady && preferences.bookmarksBarVisible }
-    private var showsSiteToolbar: Bool { model.isContextReady && preferences.siteURLToolbarEnabled }
-    private var showsDeveloperToolbar: Bool { model.isContextReady && model.isDeveloperModeOn }
+    /// A page in fullscreen fills the window alone: no sidebar, bars or insets.
+    private var isPageFullscreen: Bool { model.pageFullscreenTabID != nil }
+    private var showsBookmarksBar: Bool {
+        model.isContextReady && preferences.bookmarksBarVisible && !isPageFullscreen
+    }
+
+    private var showsSiteToolbar: Bool {
+        model.isContextReady && preferences.siteURLToolbarEnabled && !isPageFullscreen
+    }
+
+    private var showsDeveloperToolbar: Bool { model.isContextReady && model.isDeveloperModeOn && !isPageFullscreen }
     private var isExtensionSidePanelPresented: Bool {
-        model.extensionSidePanel != nil && model.extensionSidePanelHostView != nil
+        model.extensionSidePanel != nil && model.extensionSidePanelHostView != nil && !isPageFullscreen
     }
 
     private var chromeBackgroundMode: BrowserChromeBackgroundMode {
@@ -157,7 +170,7 @@ final class BrowserRootView: NSView {
         model.currentTab.map(BrowserCommandBarFaviconCandidate.init(tab:))
     }
 
-    private var usesWindowContentInsets: Bool { !isWindowFullscreen }
+    private var usesWindowContentInsets: Bool { !isWindowFullscreen && !isPageFullscreen }
     private var browserContentLeadingInset: CGFloat { windowGeometry.leadingInset }
     private var browserContentTopInset: CGFloat { windowGeometry.edgeInset }
     private var browserContentTrailingInset: CGFloat { windowGeometry.trailingInset }
@@ -985,7 +998,9 @@ final class BrowserRootView: NSView {
 
     private func refresh() {
         sessionRecovery.update(model.sessionPersistenceFailure)
+        followPageFullscreen()
         let state = [
+            isPageFullscreen,
             model.isSidebarVisible,
             isSidebarHoverOverlayPresented,
             showsBookmarksBar,
@@ -1148,7 +1163,35 @@ final class BrowserRootView: NSView {
         }
     }
 
+    /// A page entering fullscreen takes the window into full screen, and leaving
+    /// it brings the window back if the page took it there.
+    private func followPageFullscreen() {
+        guard shownPageFullscreenTabID != model.pageFullscreenTabID else { return }
+        let entering = shownPageFullscreenTabID == nil
+        shownPageFullscreenTabID = model.pageFullscreenTabID
+        guard let window, !isWindowFullscreenTransitioning else { return }
+        if entering, model.pageFullscreenTabID != nil {
+            if isSidebarHoverOverlayPresented {
+                dismissSidebarHoverOverlay()
+            }
+            if !isWindowFullscreen {
+                pageFullscreenEnteredWindowFullscreen = true
+                window.toggleFullScreen(nil)
+            }
+        } else if model.pageFullscreenTabID == nil, pageFullscreenEnteredWindowFullscreen {
+            pageFullscreenEnteredWindowFullscreen = false
+            if isWindowFullscreen {
+                window.toggleFullScreen(nil)
+            }
+        }
+    }
+
     private func handleWindowFullscreenStateChange(_ state: BrowserWindowFullscreenState) {
+        // Leaving the window's full screen, by its button or a shortcut, ends the page's.
+        if isWindowFullscreen, !state.isFullscreen, !state.isTransitioning, isPageFullscreen {
+            pageFullscreenEnteredWindowFullscreen = false
+            model.exitPageFullscreen()
+        }
         isWindowFullscreen = state.isFullscreen
         isWindowFullscreenTransitioning = state.isTransitioning
         if state.isTransitioning {
@@ -1258,7 +1301,7 @@ final class BrowserRootView: NSView {
     }
 
     private func presentSidebarHoverOverlay() {
-        guard !model.isSidebarVisible,!isSidebarHoverOverlayPresented else { return }
+        guard !model.isSidebarVisible, !isSidebarHoverOverlayPresented, !isPageFullscreen else { return }
         isSidebarRevealEdgeHovered = false
         isSidebarHoverOverlayPointerSyncSuspended = false
         isSidebarHoverOverlayChromeVisible = true
