@@ -400,6 +400,26 @@ import Testing
         #expect(f.model.selectedSplitGroup == nil)
     }
 
+    /// Past the sidebar the page shown before the drag comes back, so a drop
+    /// on it can split with it; back over the sidebar the dragged tab shows again.
+    @Test func leavingTheSidebarShowsThePageFromBeforeTheDrag() throws {
+        let f = SidebarDragFixture(temporary: ["x", "y", "z"])
+        f.model.selectTab(id: f.id("x"))
+        let h = SidebarDragHarness(f)
+        defer { h.close() }
+        try h.begin("z")
+        #expect(f.model.selectedTabID == f.id("z"))
+        let row = try #require(h.row(f.item("y")))
+        let coordinates = try #require(h.coordinateView)
+        let inside = row.convert(row.bounds.center, to: coordinates)
+        let past = CGPoint(x: coordinates.convert(h.view.bounds, from: h.view).maxX + 60, y: inside.y)
+        h.move(past)
+        #expect(f.model.selectedTabID == f.id("x"))
+        h.move(inside)
+        #expect(f.model.selectedTabID == f.id("z"))
+        h.view.cancelDragging()
+    }
+
     /// A single dragged tab activates at drag start and stays active even
     /// when the drop is a no-op. Order changes only on an accepted drop.
     @Test func singleTabDragActivatesTheDraggedTabEvenWhenCancelled() async throws {

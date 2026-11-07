@@ -152,7 +152,11 @@ final class BrowserSplitPaneBarsView: NSView {
             pageDropPreview = nil
             return nil
         }
-        guard let edge = BrowserSplitPaneLayout.pageDropEdge(at: local, in: pane.frame) else {
+        // A page not yet split takes a tab from the sidebar on the half nearer the pointer.
+        let nearerHalf: BrowserSplitPaneLayout.PageDropEdge? = group == nil
+            ? (local.x < pane.frame.midX ? .leading : .trailing)
+            : nil
+        guard let edge = BrowserSplitPaneLayout.pageDropEdge(at: local, in: pane.frame) ?? nearerHalf else {
             guard group != nil, model.canReplaceSplitPane(anchorTabID: pane.id, with: draggedTabID) else {
                 pageDropPreview = nil
                 return nil

@@ -484,8 +484,12 @@ import Testing
         let leading = try #require(drop(page.minX + 20, page.midY))
         #expect(leading.anchorTabID == f.id("x") && leading.insertion == .before && leading.orientation == .horizontal)
         #expect(bars.pageDropPreview?.width == page.width / 2)
-        #expect(drop(host.bounds.midX, host.bounds.midY) == nil, "The middle of the page is not a drop zone")
-        #expect(bars.pageDropPreview == nil)
+        let nearerHalf = try #require(drop(host.bounds.midX + 10, host.bounds.midY))
+        #expect(
+            nearerHalf.anchorTabID == f.id("x") && nearerHalf.insertion == .after,
+            "A page not yet split takes the tab on the half nearer the pointer",
+        )
+        #expect(bars.pageDropPreview?.width == page.width / 2)
 
         #expect(f.model.openInSplitView(tabID: f.id("z")))
         f.driver.simulateSplitPaneLayout([f.id("x"), f.id("z")], frames: [

@@ -78,6 +78,8 @@ final class BrowserNativeSidebarNSView: NSView {
     /// Past the sidebar the preview is drawn by a panel of its own, which
     /// follows the pointer over the page, other windows and the desktop.
     private var outsidePreviewPanel: NSPanel?
+    /// The tab shown before a drag selected the dragged one.
+    private var tabSelectedBeforeDrag: String?
     private var splitPreviewRow: BrowserNativeSidebarRowNSView?
     private let scrollObserver = BrowserSpacePagerScrollNSView()
     private var pages = [String: BrowserNativeSidebarPage]()
@@ -542,6 +544,7 @@ final class BrowserNativeSidebarNSView: NSView {
         lastWindowDragPoint = point
         state.drag.updateDockTarget(spaceDock?.spaceID(atWindowPoint: point))
         state.drag.updatePointer(content.convert(point, from: nil))
+        showPageUnderDrag(atWindowPoint: point)
         state.drag.updatePageDrop(atWindowPoint: point)
         if state.model.appTabs.isEmpty {
             needsLayout = true
@@ -700,6 +703,7 @@ final class BrowserNativeSidebarNSView: NSView {
     /// folders keep the current tab.
     /// A tab from another Space is never activated, so a drag cannot switch Spaces.
     private func activateSingleDraggedTab(_ item: BrowserSidebarItemID) {
+        tabSelectedBeforeDrag = nil
         guard case .tab(let id) = item, !state.selectedSidebarTabIDs.contains(id),
               state.model.selectedTabID != id,
               state.snapshot.splitMembers(ofTabID: id)?.contains(state.model.selectedTabID ?? "") != true,
@@ -708,7 +712,20 @@ final class BrowserNativeSidebarNSView: NSView {
         else { return }
         state.clearSidebarTabSelection()
         state.sidebarTabSelectionAnchorID = id
+        tabSelectedBeforeDrag = state.model.selectedTabID
         state.model.selectTab(id: id)
+    }
+
+    /// A single dragged tab shows its page while the pointer is over the
+    /// sidebar. Past the sidebar the page shown before comes back, so the drop
+    /// can open the dragged tab in a split with it.
+    private func showPageUnderDrag(atWindowPoint point: CGPoint) {
+        guard let previous = tabSelectedBeforeDrag, let payload = state.drag.payload,
+              payload.tabIDs.count == 1, case .tab(let id) = payload.primary
+        else { return }
+        let wanted = convert(visibleRect, to: nil).contains(point) ? id : previous
+        guard state.model.selectedTabID != wanted, state.model.tabs.contains(where: { $0.id == wanted }) else { return }
+        state.model.selectTab(id: wanted)
     }
 
     /// The list moves under a still pointer when Favorites change. Runs once rows stop moving.
@@ -1760,6 +1777,7 @@ final class BrowserNativeSidebarNSView: NSView {
     }
 
     private func completeDragPresentation() {
+        tabSelectedBeforeDrag = nil
         hideOutsidePreview()
         landingAnimation.cancel()
         dragEvents.stop()
