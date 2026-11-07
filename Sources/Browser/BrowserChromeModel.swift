@@ -130,6 +130,8 @@ enum BrowserWindowMode: Equatable {
         let spaceID: String
         let placement: BrowserTabPlacement
         let undoSnapshot: TabUndoSnapshot?
+        /// A new Today tab goes to the top of Today.
+        var placesAtTop = false
     }
 
     private final class TabCreationUndoReference {
@@ -1352,11 +1354,13 @@ enum BrowserWindowMode: Equatable {
     }
 
     func createNewTab() {
-        createTab(withURLString: newTabURLString)
+        createTab(withURLString: newTabURLString, placesAtTop: true)
     }
 
-    func openURLInNewTab(_ url: URL) {
-        createTab(withURLString: url.absoluteString)
+    /// A new Today tab; `atTop` puts it at the top of Today, with the other
+    /// tabs a person opens.
+    func openURLInNewTab(_ url: URL, atTop: Bool = false) {
+        createTab(withURLString: url.absoluteString, placesAtTop: atTop)
     }
 
     /// A new temporary tab that loads without becoming the selected one.
@@ -5549,6 +5553,7 @@ enum BrowserWindowMode: Equatable {
         registersUndo: Bool = true,
         undoActionName: String = BrowserStrings.menuNewTab,
         makeActive: Bool = true,
+        placesAtTop: Bool = false,
     ) -> String? {
         guard canCreateTab else {
             return nil
@@ -5570,6 +5575,7 @@ enum BrowserWindowMode: Equatable {
             spaceID: selectedSpaceID,
             placement: .temporary,
             undoSnapshot: nil,
+            placesAtTop: placesAtTop,
         )
         applyCreatedTabContext(context, toTabID: tabID)
         if registersUndo, canRegisterTabUndo {
@@ -5591,7 +5597,7 @@ enum BrowserWindowMode: Equatable {
 
     private func openResolvedSelectionInNewTab(_ resolvedURLString: String) {
         let pending = takePendingSplitAnchor()
-        createTab(withURLString: resolvedURLString)
+        createTab(withURLString: resolvedURLString, placesAtTop: pending == nil)
         if let pending, let tabID = selectedTabID, tabID != pending.anchorID {
             openInSplitView(
                 tabID: tabID,
@@ -5631,7 +5637,7 @@ enum BrowserWindowMode: Equatable {
         }
 
         if selectedTabID == nil {
-            createTab(withURLString: urlString)
+            createTab(withURLString: urlString, placesAtTop: true)
             return
         }
 
@@ -7059,6 +7065,14 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
 
         if let pendingContext {
             applyCreatedTabContext(pendingContext, toTabID: id)
+            if pendingContext.placesAtTop, pendingContext.undoSnapshot == nil,
+               let firstToday = tabs.firstIndex(where: {
+                   $0.spaceID == pendingContext.spaceID && $0.placement == .temporary && $0.id != id
+               }),
+               let index = tabs.firstIndex(where: { $0.id == id }), firstToday < index
+            {
+                moveTab(id: id, toGlobalIndex: firstToday)
+            }
         } else {
             if isActive || selectedTabID == nil {
                 selectedTabID = id

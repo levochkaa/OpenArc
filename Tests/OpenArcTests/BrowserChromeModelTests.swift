@@ -847,16 +847,17 @@ import Testing
 
     #expect(snapshotStore.savedSnapshots.count == initialSaveCount + 1)
     #expect(snapshotStore.savedSnapshots.last?.tabURLStrings.count == 2)
-    #expect(preferencesStore.storedSelectedTabIndex == 1)
-
-    let firstTabID = model.tabs[0].id
-    let secondTabID = model.tabs[1].id
-
-    model.selectTab(id: firstTabID)
-
+    // A new tab goes to the top of Today.
     #expect(preferencesStore.storedSelectedTabIndex == 0)
 
-    model.closeTab(id: secondTabID)
+    let newTabID = model.tabs[0].id
+    let initialTabID = model.tabs[1].id
+
+    model.selectTab(id: initialTabID)
+
+    #expect(preferencesStore.storedSelectedTabIndex == 1)
+
+    model.closeTab(id: newTabID)
 
     #expect(snapshotStore.savedSnapshots.last?.tabURLStrings.count == 1)
 }
@@ -1878,7 +1879,7 @@ import Testing
 
     model.createNewTab()
     driver.flushPendingCreateEvents()
-    let createdTabID = try #require(model.tabs.last?.id)
+    let createdTabID = try #require(model.selectedTabID)
 
     #expect(model.undoManager.canUndo)
     model.undoManager.undo()
@@ -1892,7 +1893,7 @@ import Testing
     model.undoManager.redo()
     driver.flushPendingCreateEvents()
 
-    let restoredTabID = try #require(model.tabs.last?.id)
+    let restoredTabID = try #require(model.tabs.first { $0.id != initialTabID }?.id)
     #expect(model.tabs.map(\.urlString) == [
         BrowserChromeModel.defaultNewTabURLString,
         BrowserChromeModel.defaultNewTabURLString,
@@ -1979,13 +1980,13 @@ import Testing
 
     model.createNewTab()
     driver.flushPendingCreateEvents()
-    let createdTabID = try #require(model.tabs.last?.id)
+    let createdTabID = try #require(model.selectedTabID)
 
     #expect(model.archiveSelectedTab())
     driver.emitClose(id: createdTabID)
     model.undoManager.undo()
     driver.flushPendingCreateEvents()
-    let restoredTabID = try #require(model.tabs.last?.id)
+    let restoredTabID = try #require(model.tabs.first { $0.id != initialTabID }?.id)
 
     model.undoManager.undo()
 
@@ -2230,7 +2231,7 @@ import Testing
     model.createNewTab()
     driver.flushPendingCreateEvents()
 
-    let alternateTabID = try #require(model.tabs.first?.id)
+    let alternateTabID = try #require(model.tabs.first { $0.id != model.selectedTabID }?.id)
     model.presentCommandBar()
     #expect(model.commandBarModel.isPresented)
 
@@ -2719,12 +2720,11 @@ import Testing
 
     model.handleContextReady()
     driver.flushPendingCreateEvents()
-    model.createNewTab()
-    driver.flushPendingCreateEvents()
-    model.createNewTab()
-    driver.flushPendingCreateEvents()
-
     let oldestTabID = try #require(model.tabs.first?.id)
+    model.createNewTab()
+    driver.flushPendingCreateEvents()
+    model.createNewTab()
+    driver.flushPendingCreateEvents()
 
     #expect(model.advanceTabSwitcher())
     #expect(model.advanceTabSwitcher())
@@ -2749,7 +2749,8 @@ import Testing
         driver.flushPendingCreateEvents()
     }
 
-    let expectedIDs = Array(model.tabs.suffix(5).reversed().map(\.id))
+    // New tabs go to the top, so the five newest lead the list, newest first.
+    let expectedIDs = Array(model.tabs.prefix(5).map(\.id))
 
     #expect(model.advanceTabSwitcher())
     #expect(model.tabSwitcherState?.entries.map(\.id) == expectedIDs)

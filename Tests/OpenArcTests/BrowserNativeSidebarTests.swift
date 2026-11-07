@@ -79,10 +79,12 @@ import Testing
         #expect(state.selectedSidebarTabIDs == [a.id, x.id])
         f.model.createNewTab()
         f.driver.flushPendingCreateEvents()
+        let incoming = try #require(f.model.selectedTabID)
         state.update(snapshot: f.model.sidebarSnapshot, sidebarWidth: 240, isResizing: false)
         #expect(state.selectedSidebarTabIDs == [a.id, x.id])
         state.handleSidebarTabSelection(y, in: .temporary, modifiers: .shift)
-        #expect(state.selectedSidebarTabIDs == [a.id, f.id("b"), x.id, y.id])
+        // The new tab sits at the top of Today, inside the range.
+        #expect(state.selectedSidebarTabIDs == [a.id, f.id("b"), incoming, x.id, y.id])
         state.toggleSidebarTabSelection(f.id("app"))
         #expect(!state.selectedSidebarTabIDs.contains(f.id("app")))
         f.model.selectSpace(id: "t")

@@ -3660,7 +3660,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
                 chromeModel.selectTab(syncID: syncID)
             } else if let firstURL {
                 // Open Link in New Window: the link is a new tab there.
-                chromeModel.openURLInNewTab(firstURL)
+                chromeModel.openURLInNewTab(firstURL, atTop: true)
             } else if source != nil, record == nil {
                 chromeModel.presentCommandBar()
             }

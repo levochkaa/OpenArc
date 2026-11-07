@@ -453,7 +453,8 @@ import Testing
         f.driver.flushPendingCreateEvents()
         let incoming = try #require(f.model.selectedTabID)
         #expect(f.model.commitSidebarDrop(payload: payload, destination: target))
-        #expect(f.model.temporaryTabs.map(\.id) == [f.id("z"), incoming, f.id("x"), f.id("y")])
+        // The new tab went to the top of Today while the drag was on.
+        #expect(f.model.temporaryTabs.map(\.id) == [incoming, f.id("z"), f.id("x"), f.id("y")])
         #expect(f.model.sidebarMovePlan(payload: payload, destination: .init(container: .app)) == nil)
         f.model.closeTab(id: f.id("x"))
         let before = f.model.sidebarSnapshot
