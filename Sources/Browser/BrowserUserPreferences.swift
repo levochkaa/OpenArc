@@ -451,7 +451,7 @@ final class BrowserUserPreferencesStore: ObservableObject {
         )
         self.bookmarksBarVisible = Self.loadBool(userDefaults, key: Key.bookmarksBarVisible, defaultValue: true)
         self.onboardingCompleted = Self.loadBool(userDefaults, key: Key.onboardingCompleted, defaultValue: false)
-        self.agentAccessEnabled = Self.loadBool(userDefaults, key: Key.agentAccessEnabled, defaultValue: false)
+        self.agentAccessEnabled = Self.loadBool(userDefaults, key: Key.agentAccessEnabled, defaultValue: true)
         self.toolbarConfiguration = userDefaults.stringArray(forKey: Key.toolbarConfiguration)
             .map(BrowserToolbarConfiguration.init(storedValues:)) ?? .standard
         self.siteURLToolbarEnabled = Self.loadBool(

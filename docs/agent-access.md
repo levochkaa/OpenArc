@@ -1,6 +1,6 @@
 # Agent access
 
-`openarc` lets a shell or an AI agent drive a running OpenArc with the person's sign-ins. It is off until Settings > Let agents control OpenArc is on, which opens a Unix socket that only this user can reach (`~/Library/Application Support/OpenArc/agent.sock`) and links the command into `~/.local/bin`. Nothing listens on the network.
+`openarc` lets a shell or an AI agent drive a running OpenArc with the person's sign-ins. It is on by default and turns off in Settings > Let agents control OpenArc. While on, OpenArc opens a Unix socket that only this user can reach (`~/Library/Application Support/OpenArc/agent.sock`) and links the command into `~/.local/bin`. Nothing listens on the network.
 
     openarc open https://example.com
     openarc snapshot -i
