@@ -3245,6 +3245,9 @@ class BrowserTabClient final : public CefClient,
                      const CefKeyEvent &event,
                      CefEventHandle os_event,
                      bool *is_keyboard_shortcut) override;
+  bool OnKeyEvent(CefRefPtr<CefBrowser> browser,
+                  const CefKeyEvent &event,
+                  CefEventHandle os_event) override;
 
   bool OnBeforeUnloadDialog(CefRefPtr<CefBrowser> browser,
                             const CefString &message_text,
@@ -6891,6 +6894,32 @@ bool BrowserTabClient::OnPreKeyEvent(CefRefPtr<CefBrowser>,
                                      CefEventHandle,
                                      bool *) {
   CEF_REQUIRE_UI_THREAD();
+  return false;
+}
+
+// Command-Left and Command-Right go back and forward when the page leaves them
+// alone; a text field keeps them for moving the caret, since it handles them first.
+bool BrowserTabClient::OnKeyEvent(CefRefPtr<CefBrowser> browser,
+                                  const CefKeyEvent &event,
+                                  CefEventHandle) {
+  CEF_REQUIRE_UI_THREAD();
+  constexpr int kLeftArrowKeyCode = 123;
+  constexpr int kRightArrowKeyCode = 124;
+  const uint32_t modifiers =
+      event.modifiers & (EVENTFLAG_COMMAND_DOWN | EVENTFLAG_SHIFT_DOWN |
+                         EVENTFLAG_CONTROL_DOWN | EVENTFLAG_ALT_DOWN);
+  if (!browser || event.type != KEYEVENT_RAWKEYDOWN ||
+      modifiers != EVENTFLAG_COMMAND_DOWN) {
+    return false;
+  }
+  if (event.native_key_code == kLeftArrowKeyCode && browser->CanGoBack()) {
+    browser->GoBack();
+    return true;
+  }
+  if (event.native_key_code == kRightArrowKeyCode && browser->CanGoForward()) {
+    browser->GoForward();
+    return true;
+  }
   return false;
 }
 
