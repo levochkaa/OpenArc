@@ -128,30 +128,35 @@ struct BrowserSidebarSnapshot: Equatable {
                             nil
                         }
                     }
-                    result.append(.folder(.init(
-                        folder: folder,
-                        childCount: directChildren.count,
-                        firstSectionIndex: first,
-                        afterSectionIndex: after,
-                        depth: depth,
-                    )))
-                    if folder.isExpanded {
-                        append(childContainer, depth: depth + 1)
-                    } else {
+                    var revealedRows = [BrowserSidebarPinnedTabRow]()
+                    if !folder.isExpanded {
                         var revealed = revealedTabIDsByFolderID[id] ?? []
                         if let selected = selectedTab, selected.pinnedFolderID == id {
                             revealed.insert(selected.id)
                         }
                         for (childIndex, childID) in directChildren.enumerated() where revealed.contains(childID) {
                             guard let tab = tabsByID[childID], let index = indices[childID] else { continue }
-                            result.append(.tab(.init(
+                            revealedRows.append(.init(
                                 tab: tab,
                                 sectionIndex: index,
                                 pinnedFolderID: id,
                                 folderChildIndex: childIndex,
                                 depth: depth + 1,
-                            )))
+                            ))
                         }
+                    }
+                    result.append(.folder(.init(
+                        folder: folder,
+                        childCount: directChildren.count,
+                        firstSectionIndex: first,
+                        afterSectionIndex: after,
+                        depth: depth,
+                        showsOpenTabs: !revealedRows.isEmpty,
+                    )))
+                    if folder.isExpanded {
+                        append(childContainer, depth: depth + 1)
+                    } else {
+                        result += revealedRows.map { .tab($0) }
                     }
                 }
             }
@@ -252,6 +257,8 @@ struct BrowserSidebarPinnedFolderRow: Equatable {
     let firstSectionIndex: Int
     let afterSectionIndex: Int
     var depth = 0
+    /// Collapsed with some of its tabs shown under it, which marks its icon.
+    var showsOpenTabs = false
 }
 
 // MARK: - BrowserSidebarPinnedTabRow

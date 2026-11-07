@@ -76,6 +76,8 @@ final class BrowserFolderIconView: NSView {
     private let front = CALayer()
     private let frontPanel = CAShapeLayer()
     private let frontShade = CAGradientLayer()
+    /// Three dots on the front, while the collapsed folder shows some of its tabs.
+    private let dots = CAShapeLayer()
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -120,6 +122,14 @@ final class BrowserFolderIconView: NSView {
         frontShade.endPoint = CGPoint(x: 0.9, y: 1)
         frontShade.opacity = 0
         frontPanel.addSublayer(frontShade)
+        dots.frame = front.bounds
+        let dotPath = CGMutablePath()
+        for offset: CGFloat in [-4, 0, 4] {
+            dotPath.addEllipse(in: CGRect(x: Self.side / 2 + offset - 1.25, y: 6.5 - 1.25, width: 2.5, height: 2.5))
+        }
+        dots.path = dotPath
+        dots.isHidden = true
+        frontPanel.addSublayer(dots)
         front.addSublayer(frontPanel)
 
         back.transform = Self.flat
@@ -140,7 +150,7 @@ final class BrowserFolderIconView: NSView {
             back.position = hinge
             front.position = hinge
             let scale = window?.backingScaleFactor ?? 2
-            for sublayer in [back, backShade, front, frontPanel, frontShade] {
+            for sublayer in [back, backShade, front, frontPanel, frontShade, dots] {
                 sublayer.contentsScale = scale
             }
         }
@@ -152,7 +162,12 @@ final class BrowserFolderIconView: NSView {
             back.fillColor = backFill.cgColor
             frontPanel.strokeColor = stroke.cgColor
             frontPanel.fillColor = frontFill.cgColor
+            dots.fillColor = stroke.cgColor
         }
+    }
+
+    func setShowsDots(_ shows: Bool) {
+        withoutActions { dots.isHidden = !shows }
     }
 
     func setTilted(_ tilted: Bool, animated: Bool) {

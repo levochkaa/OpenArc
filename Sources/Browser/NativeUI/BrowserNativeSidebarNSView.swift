@@ -1117,6 +1117,7 @@ final class BrowserNativeSidebarNSView: NSView {
                 let folder = folderRow.folder
                 row.update(
                     folder: folder,
+                    showsOpenTabs: folderRow.showsOpenTabs,
                     renaming: state.renamingPinnedTabFolderID == folder.id,
                     indentLevel: folderRow.depth,
                     dropTargeted: state.isPinnedFolderDropTarget(folderID: folder.id),

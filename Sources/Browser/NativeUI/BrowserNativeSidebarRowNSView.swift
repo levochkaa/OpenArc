@@ -535,6 +535,7 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
 
     func update(
         folder: BrowserChromeModel.PinnedTabFolder,
+        showsOpenTabs: Bool = false,
         renaming: Bool,
         indentLevel: Int,
         dropTargeted: Bool,
@@ -552,6 +553,8 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
             frontFill: BrowserChromeColors.sidebarFolderFill,
         )
         folderIcon.setTilted(folder.isExpanded, animated: window != nil && folderIconID == folder.id)
+        // A folder with its own icon keeps it clear of the dots.
+        folderIcon.setShowsDots(showsOpenTabs && !folder.isExpanded && folder.systemImageName == nil)
         folderIconID = folder.id
         badge.image = folder.systemImageName.map { Self.symbol(
             $0,

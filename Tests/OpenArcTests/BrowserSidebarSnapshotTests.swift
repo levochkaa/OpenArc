@@ -123,6 +123,15 @@ import Testing
         "folder-\(folder.id)",
         "tab-\(folderTab.id)",
     ])
+    // The folder's icon marks the tab shown under it.
+    guard case .folder(let shown) = rows.first,
+          case .folder(let closed) = snapshot.visiblePinnedRows(in: space.id).first
+    else {
+        Issue.record("The folder comes first")
+        return
+    }
+    #expect(shown.showsOpenTabs)
+    #expect(!closed.showsOpenTabs)
 }
 
 @Test func collapsedPinnedFolderShowsSelectedChildWithoutRevealedState() {
