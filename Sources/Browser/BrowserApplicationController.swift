@@ -3083,6 +3083,15 @@ NSMenuDelegate, NSUserInterfaceValidations {
             guard let self else { return }
             createIncognitoWindow(copyingFullscreenFrom: activeBrowserWindow, firstURL: url)
         }
+        model.onMoveTabsToWindow = { [weak self, weak model] ids, window in
+            guard let self, let model,
+                  let target = profileWindowSessions.first(where: { $0.window === window })?.chromeModel
+                  ?? incognitoWindowSessions.first(where: { $0.window === window })?.chromeModel,
+                  model.moveTabs(ids: ids, toWindowOf: target)
+            else { return false }
+            window.makeKeyAndOrderFront(nil)
+            return true
+        }
         model.onMoveTabsToNewWindow = { [weak self] urls, screenPoint in
             guard let self, let first = urls.first else { return }
             let source = activeBrowserWindow

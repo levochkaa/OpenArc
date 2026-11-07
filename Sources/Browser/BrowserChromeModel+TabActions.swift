@@ -38,6 +38,29 @@ extension BrowserChromeModel {
         return true
     }
 
+    /// Tabs dropped on another window. A window of the same profile lists the
+    /// same tabs, so it shows the first of them. Any other window takes the
+    /// pages as new tabs, the first one selected, and temporary tabs leave
+    /// this one. Incognito windows neither give nor take tabs.
+    @discardableResult func moveTabs(ids: Set<String>, toWindowOf target: BrowserChromeModel) -> Bool {
+        guard target !== self, windowMode != .incognito, target.windowMode != .incognito else { return false }
+        let moving = tabs.filter { ids.contains($0.id) && URL(string: $0.urlString) != nil }
+        guard let first = moving.first else { return false }
+        if let windowGroup, target.windowGroup === windowGroup {
+            target.selectTab(syncID: first.syncID)
+            return true
+        }
+        let opened = moving.compactMap { tab in
+            URL(string: tab.urlString).flatMap { target.openURLInBackgroundTab($0) }
+        }
+        guard let selected = opened.first else { return false }
+        target.selectTab(id: selected)
+        for tab in moving where tab.placement == .temporary {
+            closeTab(id: tab.id, forceClose: true, undoActionName: BrowserStrings.tabMoveToNewWindowAction)
+        }
+        return true
+    }
+
     /// Command-click on the icon of a pinned tab away from its page: the
     /// page moves to the top of the temporary tabs and the pinned tab goes back
     /// to its pinned page, staying selected. The moved page loads anew.

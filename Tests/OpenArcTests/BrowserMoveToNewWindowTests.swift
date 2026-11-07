@@ -28,6 +28,40 @@ import Testing
         #expect(f.model.archiveRevision == revision, "Moving is not archiving")
     }
 
+    @Test func anotherWindowTakesDroppedTabsAndTodayTabsLeaveThisOne() {
+        let source = SidebarDragFixture()
+        let target = SidebarDragFixture(pinned: [], temporary: ["t"])
+        let x = source.id("x"), a = source.id("a")
+        let before = target.model.tabs.count
+        #expect(source.model.moveTabs(ids: [x, a], toWindowOf: target.model))
+        target.driver.flushPendingCreateEvents()
+        let added = target.model.tabs.dropFirst(before).map(\.urlString)
+        #expect(Set(added) == ["https://a.example", "https://x.example"])
+        #expect(target.model.tabs.first { $0.id == target.model.selectedTabID }?.urlString == "https://a.example")
+        #expect(!source.model.tabs.contains { $0.id == x }, "A Today tab leaves")
+        #expect(source.model.tabs.contains { $0.id == a }, "A pinned tab stays")
+    }
+
+    @Test func aWindowOfTheSameProfileShowsTheTabInstead() {
+        let source = SidebarDragFixture()
+        let target = SidebarDragFixture()
+        let group = BrowserProfileWindowGroup()
+        group.add(source.model)
+        group.add(target.model)
+        let x = source.id("x")
+        let syncID = source.model.tabs.first { $0.id == x }?.syncID
+        let count = target.model.tabs.count
+        #expect(source.model.moveTabs(ids: [x], toWindowOf: target.model))
+        #expect(target.model.tabs.count == count, "The same tabs, nothing copied")
+        #expect(target.model.tabs.first { $0.id == target.model.selectedTabID }?.syncID == syncID)
+        #expect(source.model.tabs.contains { $0.id == x })
+    }
+
+    @Test func aWindowNeverTakesItsOwnTabs() {
+        let f = SidebarDragFixture()
+        #expect(!f.model.moveTabs(ids: [f.id("x")], toWindowOf: f.model))
+    }
+
     @Test func nothingMovesWithoutAWindowToTakeTheTabs() {
         let f = SidebarDragFixture()
         #expect(!f.model.moveTabsToNewWindow(ids: [f.id("x")], at: .zero))

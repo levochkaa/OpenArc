@@ -432,6 +432,8 @@ enum BrowserWindowMode: Equatable {
     var onOpenLinkInIncognito: ((URL) -> Void)?
     /// Opens pages in a new window of their own, its top left corner near a screen point.
     var onMoveTabsToNewWindow: (([URL], CGPoint) -> Void)?
+    /// Hands tabs dropped on another window of this app to that window; false when it takes none.
+    var onMoveTabsToWindow: ((Set<String>, NSWindow) -> Bool)?
     /// Pages a new window opens after its first one, in the background.
     var additionalTabURLStrings = [String]()
     /// UI-only: opens the window's theme editor for a Space.
@@ -1370,6 +1372,11 @@ enum BrowserWindowMode: Equatable {
 
     func openURLInNewTab(_ url: URL) {
         createTab(withURLString: url.absoluteString)
+    }
+
+    /// A new temporary tab that loads without becoming the selected one.
+    @discardableResult func openURLInBackgroundTab(_ url: URL) -> String? {
+        createTab(withURLString: url.absoluteString, makeActive: false)
     }
 
     /// Runs what a page's context menu asked for.
