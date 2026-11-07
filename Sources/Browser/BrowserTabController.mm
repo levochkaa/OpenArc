@@ -5246,9 +5246,15 @@ std::string BrowserMediaVolumeScript(double volume) {
   [session.panel updateWithURLString:urlString];
 }
 
+// ⌥⌘I opens Developer Tools, or closes them when they are open.
 - (void)showDevToolsForActiveTab {
   auto it = _tabRecords.find(ToStdString(_activeTabID));
   if (it == _tabRecords.end() || !it->second.closeRequestID.empty()) {
+    return;
+  }
+  CefRefPtr<CefBrowserHost> host = it->second.browser ? it->second.browser->GetHost() : nullptr;
+  if (host && host->HasDevTools()) {
+    host->CloseDevTools();
     return;
   }
 
