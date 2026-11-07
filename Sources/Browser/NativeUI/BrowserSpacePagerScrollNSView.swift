@@ -42,6 +42,8 @@ final class BrowserSpacePagerScrollNSView: NSView {
     var didSendScrollRelease = false
     var scrollEndWorkItem: DispatchWorkItem?
 
+    private var axisLock = BrowserSwipeAxisLock()
+
     // MARK: Private
 
     private let localMonitorCleanup = BrowserLocalMonitorCleanup()
@@ -97,7 +99,8 @@ final class BrowserSpacePagerScrollNSView: NSView {
 
         let horizontalDelta = event.scrollingDeltaX
         let verticalDelta = event.scrollingDeltaY
-        guard isTrackingHorizontalScroll || isHorizontalScroll(horizontalDelta, verticalDelta) else {
+        let isSideways = axisLock.isSideways(phase: event.phase, dx: horizontalDelta, dy: verticalDelta)
+        guard isTrackingHorizontalScroll || isSideways else {
             return event
         }
 
@@ -122,12 +125,6 @@ final class BrowserSpacePagerScrollNSView: NSView {
         }
 
         return nil
-    }
-
-    private func isHorizontalScroll(_ horizontalDelta: CGFloat, _ verticalDelta: CGFloat) -> Bool {
-        let horizontal = abs(horizontalDelta)
-        let vertical = abs(verticalDelta)
-        return horizontal > max(vertical * 1.08, 0.5)
     }
 
     private func scrollWasReleased(_ event: NSEvent) -> Bool {
@@ -176,5 +173,40 @@ final class BrowserSpacePagerScrollNSView: NSView {
 
     private func removeLocalMonitor() {
         localMonitorCleanup.remove()
+    }
+}
+
+// MARK: - BrowserSwipeAxisLock
+
+/// Tells a sideways swipe from a scroll. A trackpad gesture gets its axis once, from
+/// its first few points and leaning sideways, since a swipe rarely starts level; a
+/// gesture that began scrolling a list stays a scroll, so a drift never takes it over.
+/// A mouse wheel has no gesture, so each tick decides.
+struct BrowserSwipeAxisLock {
+    // MARK: Private
+
+    private enum Axis { case sideways, vertical }
+
+    private var axis: Axis?
+    private var travel = CGSize.zero
+
+    // MARK: Internal
+
+    mutating func isSideways(phase: NSEvent.Phase, dx: CGFloat, dy: CGFloat) -> Bool {
+        if phase.isEmpty {
+            return abs(dx) > max(abs(dy) * 1.08, 0.5)
+        }
+        if phase.contains(.began) || phase.contains(.mayBegin) {
+            axis = nil
+            travel = .zero
+        }
+        if axis == nil {
+            travel.width += abs(dx)
+            travel.height += abs(dy)
+            if travel.width + travel.height >= 3 {
+                axis = travel.width >= travel.height * 0.8 ? .sideways : .vertical
+            }
+        }
+        return axis == .sideways
     }
 }

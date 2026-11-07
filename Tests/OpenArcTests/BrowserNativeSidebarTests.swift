@@ -3,6 +3,8 @@
 import AppKit
 import Testing
 
+// MARK: - BrowserNativeSidebarTests
+
 @Suite(.serialized)
 @MainActor struct BrowserNativeSidebarTests {
     // MARK: Internal
@@ -511,5 +513,36 @@ import Testing
             canStopLoading: model.canStopLoading,
             canReload: model.canReload,
         )
+    }
+}
+
+// MARK: - BrowserSwipeAxisLockTests
+
+struct BrowserSwipeAxisLockTests {
+    @Test func aGestureThatStartsScrollingStaysAScroll() {
+        var lock = BrowserSwipeAxisLock()
+        // A sideways drift later in the same gesture leaves the list scrolling.
+        let result = answers([(.began, 0, 0), (.changed, 1, 4), (.changed, 20, 1), (.ended, 0, 0)], lock: &lock)
+        #expect(result == [false, false, false, false])
+    }
+
+    @Test func aSlightlySlantedStartIsStillASwipe() {
+        var lock = BrowserSwipeAxisLock()
+        let swipe = answers([(.began, 0, 0), (.changed, 2.5, 3), (.changed, 1, 6)], lock: &lock)
+        #expect(swipe == [false, true, true])
+        // The next gesture chooses again.
+        let scroll = answers([(.began, 0, 0), (.changed, 0, 5)], lock: &lock)
+        #expect(scroll == [false, false])
+    }
+
+    @Test func aMouseWheelDecidesEachTick() {
+        var lock = BrowserSwipeAxisLock()
+        let result = answers([([], 5, 1), ([], 1, 5)], lock: &lock)
+        #expect(result == [true, false])
+    }
+
+    /// Feeds a gesture's events in order and returns each answer.
+    private func answers(_ events: [(NSEvent.Phase, CGFloat, CGFloat)], lock: inout BrowserSwipeAxisLock) -> [Bool] {
+        events.map { lock.isSideways(phase: $0.0, dx: $0.1, dy: $0.2) }
     }
 }
