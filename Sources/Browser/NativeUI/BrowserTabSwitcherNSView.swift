@@ -51,6 +51,8 @@ final class BrowserTabSwitcherNSView: NSView {
 
     private(set) var selectedTabID: String?
     private(set) var cards = [BrowserTabSwitcherCardNSView]()
+    /// The chosen card's fill, from the Space's color; the plain selection without one.
+    var selectionTint: NSColor?
 
     // MARK: Private
 
@@ -116,7 +118,7 @@ final class BrowserTabSwitcherNSView: NSView {
         let existing = Dictionary(uniqueKeysWithValues: cards.map { ($0.tabID, $0) })
         let nextCards = state.entries.map { entry in
             let card = existing[entry.id] ?? BrowserTabSwitcherCardNSView(entry: entry)
-            card.update(entry: entry, selected: entry.id == state.selectedTabID)
+            card.update(entry: entry, selected: entry.id == state.selectedTabID, tint: selectionTint)
             return card
         }
         for card in cards where !nextCards.contains(where: { $0 === card }) {
@@ -175,14 +177,14 @@ final class BrowserTabSwitcherCardNSView: BrowserNativeSurface {
         )
     }
 
-    func update(entry: BrowserChromeModel.TabSwitcherEntry, selected: Bool) {
+    func update(entry: BrowserChromeModel.TabSwitcherEntry, selected: Bool, tint: NSColor? = nil) {
         isSelected = selected
         title.stringValue = entry.tab.displayTitle
         favicon.update(url: entry.tab.faviconURL, pageURLString: entry.tab.urlString)
         preview.image = entry.previewImage
         preview.title = entry.tab.displayTitle
-        let fill = selected ? BrowserChromeColors.rowSelected : BrowserChromeColors.commandBarFieldTint
-        let stroke = selected ? BrowserChromeColors.primaryText.withAlphaComponent(0.38) : .clear
+        let fill = selected ? tint ?? BrowserChromeColors.rowSelected : .clear
+        let stroke = selected && tint == nil ? BrowserChromeColors.primaryText.withAlphaComponent(0.38) : .clear
         fillColor = fill
         strokeColor = stroke
         setAccessibilityElement(true)

@@ -1086,6 +1086,9 @@ final class BrowserRootView: NSView {
         tabSwitcher.isHidden = model.tabSwitcherState?.isVisible != true
         tabSwitcher.alphaValue = 1
         if let state = model.tabSwitcherState {
+            // The chosen card takes the Space's color, as the sidebar's selection does.
+            tabSwitcher.selectionTint = model.selectedSpaceID
+                .flatMap { model.spaceThemesByID[$0]?.palette?.key.nsColor(alpha: 0.3) }
             tabSwitcher.update(state: state)
         }
         find.refresh(from: model, blockedLeadingInset: 0)
