@@ -2960,11 +2960,12 @@ enum BrowserWindowMode: Equatable {
         return copyTabLink(forTabID: selectedTabID)
     }
 
-    /// Copy URL from the menu or ⇧⌘C: the window confirms it with a note.
-    @discardableResult func copyCurrentURLWithNote() -> Bool {
-        guard copySelectedTabLink(), let url = selectedTab.flatMap({ URL(string: $0.urlString) }) else {
-            return false
-        }
+    /// Copy URL, or Copy URL as Markdown, from the menu or its shortcut: the window
+    /// confirms it with the same note.
+    @discardableResult func copyCurrentURLWithNote(asMarkdown: Bool = false) -> Bool {
+        guard asMarkdown ? copySelectedTabLinkAsMarkdown() : copySelectedTabLink(),
+              let url = selectedTab.flatMap({ URL(string: $0.urlString) })
+        else { return false }
         onCopiedCurrentURL?(url)
         return true
     }

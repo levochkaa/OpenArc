@@ -604,7 +604,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
     }
 
     public func copySelectedTabLinkAsMarkdown(_: Any?) {
-        activeChromeModel?.copySelectedTabLinkAsMarkdown()
+        activeChromeModel?.copyCurrentURLWithNote(asMarkdown: true)
     }
 
     public func copySelectedTextAsQuoteLink(_: Any?) {
@@ -2984,7 +2984,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
             command == .selectNextSpace ? model.selectNextSpace() : model.selectPreviousSpace()
             return true
         case .copyLinkAsMarkdown:
-            return activeChromeModel?.copySelectedTabLinkAsMarkdown() ?? false
+            return activeChromeModel?.copyCurrentURLWithNote(asMarkdown: true) ?? false
         case .copyLinkAsQuote:
             guard activeChromeModel?.canCopySelectedTextAsQuoteLink == true else { return false }
             copySelectedTextAsQuoteLink(nil)
