@@ -259,9 +259,9 @@ final class BrowserSiteControlsNSView: NSView {
                     ? BrowserURLDisplayFormatter.fullDisplayString(for: tab.urlString)
                     : BrowserURLDisplayFormatter.displayString(for: tab.urlString)
             } else {
-                BrowserStrings.newTabTitle
+                mode == .sidebar ? BrowserStrings.commandBarPlaceholder : BrowserStrings.newTabTitle
             }
-        urlButton.update(title: display)
+        urlButton.update(title: display, isPlaceholder: tab == nil && mode == .sidebar)
         urlButton.isInteractionEnabled = tab != nil && !isSidebarResizing
         urlButton.tooltipTitle = mode == .sidebar
             ? tab.map { BrowserURLDisplayFormatter.fullDisplayString(for: $0.urlString) } ?? BrowserStrings.newTabTitle
@@ -786,11 +786,22 @@ final class BrowserNativeURLButton: BrowserNativePressableView {
         color: BrowserChromeColors.currentURLText,
     )
     private let textMask = CAGradientLayer()
+    private let placeholderIcon = NSImageView()
+    private var isPlaceholder = false
 
     override init(frame: NSRect) {
         super.init(frame: frame)
         addSubview(textContainer)
         textContainer.addSubview(label)
+        placeholderIcon.image = NSImage(systemSymbolName: "magnifyingglass", accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(
+                pointSize: BrowserChromeLayout.sidebarAddressPlaceholderIconPointSize,
+                weight: .regular,
+            ))
+        placeholderIcon.imageScaling = .scaleNone
+        placeholderIcon.contentTintColor = BrowserChromeColors.sidebarDimText
+        placeholderIcon.isHidden = true
+        textContainer.addSubview(placeholderIcon)
         textContainer.wantsLayer = true
         label.setAccessibilityElement(false)
         cornerRadius = BrowserChromeLayout.currentURLRowCornerRadius
@@ -809,7 +820,16 @@ final class BrowserNativeURLButton: BrowserNativePressableView {
         super.layout()
         textContainer.frame = bounds
         // The sidebar's address runs to the fade; the toolbar's is centered and truncated.
-        let leading = BrowserChromeLayout.sidebarCurrentURLTextLeading
+        let leading = isPlaceholder
+            ? BrowserChromeLayout.sidebarAddressPlaceholderTextLeading
+            : BrowserChromeLayout.sidebarCurrentURLTextLeading
+        let iconSize = placeholderIcon.image?.size ?? .zero
+        placeholderIcon.frame = NSRect(
+            x: BrowserChromeLayout.sidebarAddressPlaceholderIconCenterX - iconSize.width / 2,
+            y: (bounds.height - iconSize.height) / 2,
+            width: iconSize.width,
+            height: iconSize.height,
+        )
         label.frame = NSRect(
             x: leading,
             y: (bounds.height - 17) / 2,
@@ -839,7 +859,17 @@ final class BrowserNativeURLButton: BrowserNativePressableView {
         }
     }
 
-    func update(title: String) {
+    /// A placeholder shows the search prompt after a magnifier in a fainter color.
+    func update(title: String, isPlaceholder: Bool = false) {
+        if self.isPlaceholder != isPlaceholder {
+            self.isPlaceholder = isPlaceholder
+            placeholderIcon.isHidden = !isPlaceholder
+            label.textColor = isPlaceholder
+                ? BrowserChromeColors.commandBarPlaceholder
+                : BrowserChromeColors
+                    .currentURLText
+            needsLayout = true
+        }
         label.stringValue = title
         setAccessibilityLabel(title)
         label.alignment = isToolbar ? .center : .left

@@ -51,6 +51,10 @@ enum BrowserChromeLayout {
     static let sidebarCurrentURLButtonSpacing: CGFloat = 0
     static let sidebarCurrentURLButtonTrailingPadding: CGFloat = 5
     static let sidebarCurrentURLTextLeading: CGFloat = 11
+    /// With no tab the address row shows a magnifier and the search placeholder.
+    static let sidebarAddressPlaceholderIconCenterX: CGFloat = 18
+    static let sidebarAddressPlaceholderIconPointSize: CGFloat = 12.5
+    static let sidebarAddressPlaceholderTextLeading: CGFloat = 32
     static let sidebarCurrentURLButtonSize: CGFloat = 28
     static let sidebarCurrentURLButtonCornerRadius: CGFloat = 9
     static let sidebarCurrentURLButtonSymbolSize: CGFloat = 14
