@@ -2925,6 +2925,7 @@ enum PageContextMenuCommand {
   kContextTranslate,
   kContextStartSpeaking,
   kContextStopSpeaking,
+  kContextSearchImage,
 };
 
 /// Speech › Start Speaking reads the selection aloud, as macOS apps do.
@@ -3013,6 +3014,11 @@ void BuildPageContextMenu(CefRefPtr<CefContextMenuParams> params, CefRefPtr<CefM
     }
     model->AddItem(kContextCopyMediaAddress,
                    LocalizedMenuTitle(hasImage ? @"browser.context.copy_image_address" : @"browser.context.copy_media_address"));
+    // Google finds an image by its address, offered when Google is the engine.
+    if (hasImage && allowsLinkTargets && [searchEngineName isEqualToString:NSLocalizedString(@"browser.settings.search_engine.google", nil)] &&
+        [ToNSString(params->GetSourceUrl().ToString()) hasPrefix:@"http"]) {
+      model->AddItem(kContextSearchImage, LocalizedMenuTitle(@"browser.context.search_google_for_image"));
+    }
   }
   if (isEditable) {
     separate();
@@ -6871,6 +6877,15 @@ bool BrowserTabClient::OnContextMenuCommand(CefRefPtr<CefBrowser> browser,
     case kContextOpenLinkInNewWindow:
       [delegate browserTabController:controller performPageContextCommand:@"openInNewWindow" argument:link];
       return true;
+    case kContextSearchImage: {
+      NSURLComponents *lens = [NSURLComponents componentsWithString:@"https://lens.google.com/uploadbyurl"];
+      lens.queryItems = @[ [NSURLQueryItem queryItemWithName:@"url"
+                                                        value:ToNSString(params->GetSourceUrl().ToString())] ];
+      if (lens.URL != nil) {
+        [controller createTabWithURLString:lens.URL.absoluteString makeActive:YES];
+      }
+      return true;
+    }
     case kContextCast:
       [delegate browserTabController:controller performPageContextCommand:@"cast" argument:@""];
       return true;

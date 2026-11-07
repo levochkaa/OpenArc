@@ -719,6 +719,7 @@
 "browser.context.save_media" = "Save Video As…";
 "browser.context.copy_image" = "Copy Image";
 "browser.context.copy_image_address" = "Copy Image Address";
+"browser.context.search_google_for_image" = "Search Google for Image";
 "browser.context.copy_media_address" = "Copy Video Address";
 "browser.context.undo" = "Undo";
 "browser.context.redo" = "Redo";
