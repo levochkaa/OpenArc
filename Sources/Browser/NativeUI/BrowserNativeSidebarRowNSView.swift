@@ -855,6 +855,8 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
             ofSize: kind == .space ? BrowserChromeLayout.sidebarSpaceFontSize : BrowserChromeLayout.sidebarRowFontSize,
             weight: kind == .folder || kind == .space ? .semibold : .regular,
         )
+        // The editor keeps the title's font, so a folder's name stays semibold.
+        renameField.font = titleLabel.font
         titleLabel.textColor = kind == .space || kind == .newTab
             ? BrowserChromeColors.sidebarDimText
             : enclosingSpaceThemePalette?.title.nsColor ?? BrowserChromeColors.sidebarRowText

@@ -126,7 +126,7 @@ final class BrowserSidebarRenameNSTextField: NSTextField {
         editor.insertionPointColor = activeTextColor
         editor.textColor = activeTextColor
         editor.drawsBackground = false
-        editor.font = .systemFont(ofSize: BrowserChromeLayout.sidebarRowFontSize)
+        editor.font = font
         editor.textContainerInset = NSSize(width: 0, height: 0.5)
     }
 }

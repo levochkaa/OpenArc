@@ -378,7 +378,7 @@ import Testing
         try data.write(to: URL(fileURLWithPath: "/tmp/openarc-new-tab-native.png"))
     }
 
-    @Test(arguments: [BrowserNativeSidebarRowNSView.Kind.tab, .space])
+    @Test(arguments: [BrowserNativeSidebarRowNSView.Kind.tab, .space, .folder])
     func rowTitleIsCenteredLikeItsRenameEditor(kind: BrowserNativeSidebarRowNSView.Kind) throws {
         _ = NSApplication.shared
         let window = NSWindow(
@@ -398,6 +398,15 @@ import Testing
         surface.addSubview(row)
         func update(renaming: Bool) {
             switch kind {
+            case .folder:
+                row.update(
+                    folder: .init(id: "folder", spaceID: "space", title: "HOME", isExpanded: false),
+                    renaming: renaming,
+                    indentLevel: 0,
+                    dropTargeted: false,
+                    isResizing: false,
+                    resetID: 0,
+                )
             case .space:
                 row.update(
                     space: .init(id: "space", title: "HOME", systemImageName: "house", isPinnedSectionCollapsed: false),
@@ -419,32 +428,39 @@ import Testing
             }
             surface.layoutSubtreeIfNeeded()
         }
-        func textMidY() throws -> CGFloat {
+        // The text's vertical middle and its width, in points.
+        func textMetrics() throws -> (midY: CGFloat, width: CGFloat) {
             let bitmap = try #require(surface.bitmapImageRepForCachingDisplay(in: surface.bounds))
             surface.cacheDisplay(in: surface.bounds, to: bitmap)
             let scale = CGFloat(bitmap.pixelsWide) / surface.bounds.width
             let columns = Int(row.renameField.frame.minX * scale)..<Int((row.renameField.frame.minX + 40) * scale)
             var rows = [Int]()
+            var inkColumns = [Int]()
             for x in columns {
                 for y in 0..<bitmap.pixelsHigh {
                     guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else { continue }
                     if max(color.redComponent, color.greenComponent, color.blueComponent) < 0.85 {
                         rows.append(y)
+                        inkColumns.append(x)
                     }
                 }
             }
-            return try CGFloat(#require(rows.min()) + #require(rows.max()) + 1) / 2 / scale
+            let midY = try CGFloat(#require(rows.min()) + #require(rows.max()) + 1) / 2 / scale
+            let width = try CGFloat(#require(inkColumns.max()) - #require(inkColumns.min()) + 1) / scale
+            return (midY, width)
         }
 
         update(renaming: false)
-        let title = try textMidY()
+        let title = try textMetrics()
         update(renaming: true)
         #expect(window.makeFirstResponder(row.renameField))
         #expect(row.renameField.currentEditor() != nil)
-        let editor = try textMidY()
+        let editor = try textMetrics()
 
-        #expect(abs(title - editor) <= 0.5, "title \(title), editor \(editor)")
-        #expect(abs(title - surface.bounds.midY) <= 0.75, "title \(title), row \(surface.bounds.midY)")
+        #expect(abs(title.midY - editor.midY) <= 0.5, "title \(title), editor \(editor)")
+        // The same font draws the same width.
+        #expect(abs(title.width - editor.width) <= 0.5, "title \(title), editor \(editor)")
+        #expect(abs(title.midY - surface.bounds.midY) <= 0.75, "title \(title), row \(surface.bounds.midY)")
         #expect(!window.isVisible)
     }
 
