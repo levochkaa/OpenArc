@@ -361,7 +361,12 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
             height: 13,
         )
         updateDisclosureTransform()
-        renameField.frame = NSRect(x: titleX, y: (height - 17) / 2, width: titleWidth, height: 17)
+        renameField.frame = NSRect(
+            x: titleX,
+            y: (height - 17) / 2 + BrowserSidebarRenameNSTextField.editorLineLift,
+            width: titleWidth,
+            height: 17,
+        )
     }
 
     override func draw(_: NSRect) {

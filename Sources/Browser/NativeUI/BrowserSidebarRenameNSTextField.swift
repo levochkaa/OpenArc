@@ -5,6 +5,11 @@ import AppKit
 // MARK: - BrowserSidebarRenameNSTextField
 
 final class BrowserSidebarRenameNSTextField: NSTextField {
+    /// The field sits this much lower than the title and its editor lifts the text back by
+    /// the same amount: the text stays where the title drew it, and the selection, which
+    /// starts at the field's top and ends below the line, sits evenly around it.
+    static let editorLineLift: CGFloat = 1
+
     // MARK: Internal
 
     override var intrinsicContentSize: NSSize {
@@ -127,6 +132,6 @@ final class BrowserSidebarRenameNSTextField: NSTextField {
         editor.textColor = activeTextColor
         editor.drawsBackground = false
         editor.font = font
-        editor.textContainerInset = NSSize(width: 0, height: 0.5)
+        editor.textContainerInset = NSSize(width: 0, height: 0.5 - Self.editorLineLift)
     }
 }

@@ -459,7 +459,9 @@ import Testing
         #expect(row.renameField.currentEditor() != nil)
         let editor = try textMetrics()
 
-        #expect(abs(title.midY - editor.midY) <= 0.5, "title \(title), editor \(editor)")
+        // The text stays put as editing begins, within half a pixel of antialiasing
+        // (the Space's 13 pt title rounds one edge row differently).
+        #expect(abs(title.midY - editor.midY) <= 0.25, "title \(title), editor \(editor)")
         // The same font draws the same width.
         #expect(abs(title.width - editor.width) <= 0.5, "title \(title), editor \(editor)")
         #expect(abs(title.midY - surface.bounds.midY) <= 0.75, "title \(title), row \(surface.bounds.midY)")
