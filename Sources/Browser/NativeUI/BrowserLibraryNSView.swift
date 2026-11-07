@@ -199,11 +199,11 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
         )
         let listX = BrowserLibraryLayout.columnWidth
         listBackground.frame = NSRect(x: listX, y: 0, width: max(bounds.width - listX, 0), height: height)
-        let showsSpaces = model.librarySection == .spaces
+        let showsSpaces = shownSection == .spaces
         listBackground.fillColor = showsSpaces
             ? BrowserChromeColors.solidBackground
             : NSColor.black.withAlphaComponent(0.15)
-        let showsFilter = model.librarySection == .archive || model.librarySection == .downloads
+        let showsFilter = shownSection == .archive || shownSection == .downloads
         let searchX = BrowserLibraryLayout.searchX
         let trailing = BrowserLibraryLayout.width - 8
         let searchWidth = trailing - searchX - (showsFilter ? BrowserLibraryLayout.filterWidth + 3 : 0)
@@ -309,7 +309,8 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
     }
 
     func refresh() {
-        guard let section = model.librarySection else { return }
+        // Closed, it keeps the section it opens on, so a swipe brings that one in.
+        let section = model.librarySection ?? model.lastLibrarySection
         for (candidate, button) in sectionButtons {
             button.isSelected = candidate == section
         }
@@ -333,7 +334,7 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
     }
 
     func controlTextDidChange(_: Notification) {
-        if model.librarySection == .archive {
+        if shownSection == .archive {
             loadedArchiveKey = nil
         }
         refresh()
@@ -347,7 +348,7 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
             accessibilityDescription: nil,
         )
         let options: [(title: String, value: String?)] =
-            switch model.librarySection {
+            switch shownSection {
             case .archive:
                 [(BrowserStrings.libraryFilterAll, nil)] + model.spaces.map { ($0.title, $0.id) }
             case .downloads:
@@ -486,7 +487,7 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
     }
 
     private func updateEmptyState() {
-        let section = model.librarySection
+        let section = shownSection
         emptyState.isHidden = section == .spaces || !rows.isEmpty
         guard let section else { return }
         emptyState.configure(
@@ -540,7 +541,7 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
 
     /// A card per Space, in dock order, each looking like its sidebar.
     private func layoutSpaces() {
-        guard model.librarySection == .spaces else { return }
+        guard shownSection == .spaces else { return }
         let height = spacesScroll.contentSize.height
         let ids = Set(model.spaces.map(\.id))
         for id in Set(spaceCards.keys).subtracting(ids) {

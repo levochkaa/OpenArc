@@ -384,7 +384,14 @@ enum BrowserWindowMode: Equatable {
     /// UI-only: opens the theme editor for the Space being created, beside this view.
     var onEditSpaceCreationTheme: ((NSView) -> Void)?
     /// The Library's section while it replaces the sidebar, nil when closed.
-    @Published var librarySection: BrowserLibrarySection?
+    @Published var librarySection: BrowserLibrarySection? {
+        didSet {
+            if let librarySection {
+                lastLibrarySection = librarySection
+            }
+        }
+    }
+
     /// A Space being set up in the sidebar. Its theme shows on the window at once.
     @Published private(set) var spaceCreationDraft: BrowserSpaceCreationDraft?
     /// Change Icon: the symbol shown instead of a tab's favicon, by sync
@@ -468,6 +475,9 @@ enum BrowserWindowMode: Equatable {
     /// The button the options hang from; without one they sit over the page's middle.
     weak var portraitCaptureAnchor: NSView?
 
+    /// The section the Library opens on again, however it was closed.
+    private(set) var lastLibrarySection = BrowserLibrarySection.archive
+
     /// Answers this window's waiting requests that another window's answer covers.
     private var sitePermissionDecisionsObservation: AnyCancellable?
     private var extensionTabsObservation: AnyCancellable?
@@ -475,7 +485,6 @@ enum BrowserWindowMode: Equatable {
 
     /// Spaces colored in this session; a stored projection never overrides them.
     private var locallyColoredSpaceIDs = Set<String>()
-    private var lastLibrarySection = BrowserLibrarySection.archive
 
     /// Tabs whose video was sent to Picture in Picture on leaving them.
     private var pictureInPictureTabIDs = Set<String>()
@@ -1720,7 +1729,6 @@ enum BrowserWindowMode: Equatable {
         if librarySection == nil {
             openLibrary(section: lastLibrarySection)
         } else {
-            lastLibrarySection = librarySection ?? lastLibrarySection
             closeLibrary()
         }
     }

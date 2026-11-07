@@ -510,6 +510,15 @@ import Testing
         #expect(f.model.librarySection == nil)
     }
 
+    @Test func theLibraryClosedFromItsBackButtonOpensOnTheSameSection() {
+        let f = SidebarDragFixture(temporary: ["x"])
+        f.model.openLibrary(section: .media)
+        f.model.closeLibrary()
+        #expect(f.model.lastLibrarySection == .media)
+        f.model.toggleLibrary()
+        #expect(f.model.librarySection == .media)
+    }
+
     @Test func theLibraryCommandIsAvailableAndBoundToCommandShiftL() {
         let f = SidebarDragFixture(temporary: ["x"])
         #expect(f.model.isCommandBarActionAvailable(.viewLibrary))
