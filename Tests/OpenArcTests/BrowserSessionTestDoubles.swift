@@ -72,6 +72,7 @@ import Foundation
     var onPeekSitePermissionAnswered: ((Int, Bool?) -> Void)?
     var onMediaStateChanged: ((String, BrowserTabMediaState?) -> Void)?
     var onCaptureChanged: ((String, Bool) -> Void)?
+    var onPeekPagesChanged: (([String: String]) -> Void)?
     private(set) var evaluatedScripts = [(tabID: String, code: String)]()
     var onRenderProcessTerminated: ((String, Int) -> Void)?
     private(set) var mediaControls = [(tabID: String, action: BrowserMediaAction)]()

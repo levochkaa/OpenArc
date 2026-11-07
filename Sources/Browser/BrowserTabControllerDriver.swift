@@ -33,6 +33,7 @@ import Foundation
     var onPeekSitePermissionAnswered: ((Int, Bool?) -> Void)?
     var onMediaStateChanged: ((String, BrowserTabMediaState?) -> Void)?
     var onCaptureChanged: ((String, Bool) -> Void)?
+    var onPeekPagesChanged: (([String: String]) -> Void)?
     var onAddressFormFound: ((String, String, String) -> Void)?
     var onCardFormFound: ((String, String, String) -> Void)?
     var onAddressSubmitted: ((String, String, String) -> Void)?
@@ -588,6 +589,13 @@ extension BrowserTabControllerDriver: BrowserTabControllerDelegate {
             )
             : nil
         MainActor.assumeIsolated { onMediaStateChanged?(tabID, state) }
+    }
+
+    nonisolated func browserTabController(
+        _: BrowserTabController,
+        didChangePeekPagesByTabID pages: [String: String],
+    ) {
+        MainActor.assumeIsolated { onPeekPagesChanged?(pages) }
     }
 
     nonisolated func browserTabController(

@@ -30,6 +30,7 @@ extension BrowserChromeModel {
         )
         snapshot.audibleTabIDs = audibleTabIDs
         snapshot.recordingTabIDs = recordingTabIDs
+        snapshot.peekPagesByTabID = peekPagesByTabID.filter { id, _ in tabs.contains { $0.id == id } }
         snapshot.miniPlayers = miniPlayerItems
         snapshot.tabIcons = Dictionary(
             tabs.compactMap { tab in tabIconsBySyncID[tab.syncID].map { (tab.id, $0) } },

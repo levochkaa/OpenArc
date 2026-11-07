@@ -34,6 +34,8 @@ struct BrowserSidebarSnapshot: Equatable {
     var audibleTabIDs = Set<String>()
     /// Tabs using the camera, the microphone or screen capture.
     var recordingTabIDs = Set<String>()
+    /// Tabs with a Peek card, open or put away, and the address in it.
+    var peekPagesByTabID = [String: String]()
     /// Mini players for media in tabs off screen, newest first.
     var miniPlayers = [BrowserMiniPlayerItem]()
     /// Symbols chosen in place of favicons, by runtime tab ID.

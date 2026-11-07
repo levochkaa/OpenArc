@@ -1170,6 +1170,7 @@ final class BrowserNativeSidebarNSView: NSView {
             muted: state.snapshot.mutedTabIDs.contains(tab.id),
             audible: state.snapshot.audibleTabIDs.contains(tab.id),
             recording: state.snapshot.recordingTabIDs.contains(tab.id),
+            peekPage: isApp ? nil : state.snapshot.peekPagesByTabID[tab.id],
             icon: state.snapshot.tabIcons[tab.id],
             developerHost: model.developerModeHost(forTabURLString: tab.urlString),
         )

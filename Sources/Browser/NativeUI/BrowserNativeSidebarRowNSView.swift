@@ -88,6 +88,11 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
     let pinnedSlash = BrowserNativeSidebarPinnedSlashView()
     let folderIcon = BrowserFolderIconView()
     let recordingDot = BrowserRecordingDotView()
+    /// A tab with a Peek card shows the card's page icon where the close button goes.
+    let peekBadge = BrowserNativeSurface()
+    private(set) var peekPageURLString: String?
+
+    private let peekBadgeIcon = BrowserFaviconNSView()
 
     private let unreadDot = NSView()
 
@@ -169,11 +174,18 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
             renameField,
             muteButton,
             recordingDot,
+            peekBadge,
             closeButton,
         ] {
             addSubview(view)
         }
         muteButton.onAction = { [weak self] in self?.onToggleMute() }
+        peekBadge.cornerRadius = 10
+        peekBadge.fillColor = BrowserChromeColors.rowHover
+        peekBadge.isHidden = true
+        peekBadge.setAccessibilityElement(false)
+        peekBadge.addSubview(peekBadgeIcon)
+        peekBadgeIcon.frame = NSRect(x: 3, y: 3, width: 14, height: 14)
         for image in [symbol, badge] {
             image.imageScaling = .scaleProportionallyUpOrDown
             image.setAccessibilityElement(false)
@@ -264,6 +276,7 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
             width: closeSize,
             height: closeSize,
         )
+        peekBadge.frame = NSRect(x: closeButton.frame.midX - 10, y: (height - 20) / 2, width: 20, height: 20)
         if kind == .appTab {
             let size = BrowserChromeLayout.appTabIconSize
             favicon.frame = NSRect(x: (bounds.width - size) / 2, y: (height - size) / 2, width: size, height: size)
@@ -326,9 +339,11 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
             muteButton.frame = NSRect(x: titleX - 1, y: (height - muteSize) / 2, width: muteSize, height: muteSize)
             titleX = muteButton.frame.maxX
         }
-        let trailing = closeButton.isHidden
-            ? bounds.width - BrowserChromeLayout.sidebarTabTrailingPadding
-            : closeButton.frame.minX
+        let trailing = !closeButton.isHidden
+            ? closeButton.frame.minX
+            : !peekBadge.isHidden
+                ? peekBadge.frame.minX - 4
+                : bounds.width - BrowserChromeLayout.sidebarTabTrailingPadding
         let titleWidth = max(trailing - titleX, 0)
         // Share the rename field's frame so the title glyphs stay centered and do not jump on rename.
         // The pinned URL caption lifts the title to keep the two-line stack centered.
@@ -462,6 +477,7 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
         muted: Bool = false,
         audible: Bool = false,
         recording: Bool = false,
+        peekPage: String? = nil,
         icon: String? = nil,
         developerHost: String? = nil,
     ) {
@@ -478,6 +494,14 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
         isMuted = muted && !appTile
         isAudible = audible && !appTile
         isRecording = recording
+        if peekPageURLString != peekPage {
+            peekPageURLString = peekPage
+            let origin = peekPage.flatMap { URLComponents(string: $0) }.flatMap { components -> URL? in
+                guard let scheme = components.scheme, let host = components.host else { return nil }
+                return URL(string: "\(scheme)://\(host)/favicon.ico")
+            }
+            peekBadgeIcon.update(url: origin, pageURLString: peekPage)
+        }
         muteButton.configureSymbol(
             isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill",
             title: isMuted ? BrowserStrings.tabUnmuteAction : BrowserStrings.tabMuteAction,
@@ -900,6 +924,11 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
                 : BrowserStrings.pinnedTabBackToPinnedURL
             : developerHost ?? ""
         closeButton.isHidden = !(kind == .space || kind == .tab) || !isHovered || isRenaming || isResizing
+        let showsPeekBadge = kind == .tab && peekPageURLString != nil && closeButton.isHidden && !isRenaming
+        if peekBadge.isHidden == showsPeekBadge {
+            peekBadge.isHidden = !showsPeekBadge
+            needsLayout = true
+        }
         muteButton.isHidden = kind != .tab || !(isMuted || isAudible) || isRenaming || isResizing
         let showsRecording = (kind == .tab || kind == .appTab) && isRecording && !isRenaming
         if recordingDot.isHidden == showsRecording {

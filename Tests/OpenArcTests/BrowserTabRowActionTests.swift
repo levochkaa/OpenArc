@@ -120,6 +120,31 @@ import Testing
         #expect(built == 1, "It asks the same provider as a right click")
     }
 
+    @Test func aTabWithAPeekCardShowsItsBadgeUntilTheCardCloses() throws {
+        let f = SidebarDragFixture(temporary: ["x", "y"])
+        let x = f.id("x")
+        f.driver.onPeekPagesChanged?([x: "https://iana.org/domains", "gone": "https://a.example"])
+        #expect(f.model.sidebarSnapshot.peekPagesByTabID == [x: "https://iana.org/domains"], "Only tabs that exist")
+
+        let tab = try #require(f.model.tabs.first { $0.id == x })
+        let row = BrowserNativeSidebarRowNSView(frame: NSRect(x: 0, y: 0, width: 240, height: 40))
+        row.update(
+            tab: tab,
+            selected: true,
+            isResizing: false,
+            closeDescriptor: BrowserCommands.archiveTab,
+            peekPage: "https://iana.org/domains",
+        )
+        row.layoutSubtreeIfNeeded()
+        #expect(!row.peekBadge.isHidden)
+        #expect(row.peekBadge.frame.minX > row.titleLabel.frame.maxX - 1, "It sits after the title")
+        row.update(tab: tab, selected: true, isResizing: false, closeDescriptor: BrowserCommands.archiveTab)
+        #expect(row.peekBadge.isHidden)
+
+        f.driver.onPeekPagesChanged?([:])
+        #expect(f.model.sidebarSnapshot.peekPagesByTabID.isEmpty)
+    }
+
     @Test func formatFontRunsThePagesEditingCommandInTheShownTab() {
         let f = SidebarDragFixture(temporary: ["x"])
         let x = f.id("x")

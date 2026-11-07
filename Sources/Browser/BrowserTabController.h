@@ -171,6 +171,10 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
                        hasNextTrack:(BOOL)hasNextTrack
                    pictureInPicture:(BOOL)pictureInPicture
                               title:(NSString *)title;
+// Tabs with a Peek card, open or put away while another tab is shown, and the
+// address in each card.
+- (void)browserTabController:(BrowserTabController *)controller
+    didChangePeekPagesByTabID:(NSDictionary<NSString *, NSString *> *)pages;
 // The tab's pages started or stopped using the camera, the microphone or
 // screen capture (reported as video).
 - (void)browserTabController:(BrowserTabController *)controller

@@ -3639,6 +3639,11 @@ struct TabRecord {
 @property(nonatomic) BOOL standalone;
 /// When a small window was last in front.
 @property(nonatomic, strong) NSDate *lastUsed;
+/// The tab a card was opened on. The card hides while another tab is shown and
+/// comes back with its tab; closing the tab closes it.
+@property(nonatomic, copy, nullable) NSString *ownerTabID;
+/// A card put away because its tab is not the one shown.
+@property(nonatomic) BOOL hiddenWithTab;
 @end
 
 @implementation BrowserPeekSession {
@@ -3853,6 +3858,7 @@ std::string BrowserMediaVolumeScript(double volume) {
   BOOL _lastExtensionTabsFocused;
   int _nextPeekSessionID;
   int _peekCardSessionID;
+  NSDictionary<NSString *, NSString *> *_reportedPeekPages;
   std::map<int, PendingSitePermission> _sitePermissions;
   int _nextSitePermissionID;
 }
@@ -4909,6 +4915,7 @@ std::string BrowserMediaVolumeScript(double volume) {
     return;
   }
   session.urlString = urlString;
+  [self reportPeekPages];
   [session.panel updateWithURLString:urlString];
   if (session->_browser && session->_browser->GetMainFrame()) {
     session->_browser->GetMainFrame()->LoadURL(ToStdString(urlString));
@@ -4956,11 +4963,13 @@ std::string BrowserMediaVolumeScript(double volume) {
   session.initialURLString = resolved;
   session.standalone = standalone;
   session.lastUsed = NSDate.date;
+  session.ownerTabID = standalone ? nil : _activeTabID;
   session.panel = standalone ? [BrowserPeekPanel presentStandalone] : [BrowserPeekPanel presentOverWindow:window page:_hostView];
   [session.panel updateWithURLString:resolved];
   _peekSessions[@(sessionID)] = session;
   if (!standalone) {
     _peekCardSessionID = sessionID;
+    [self reportPeekPages];
   } else {
     [self startSmallWindowSweep];
   }
@@ -5058,6 +5067,7 @@ std::string BrowserMediaVolumeScript(double volume) {
   if (_peekCardSessionID == sessionID) {
     _peekCardSessionID = 0;
   }
+  [self reportPeekPages];
   // The page stays in the card until the card has closed around it.
   __weak BrowserTabController *weakSelf = self;
   [session.panel dismissWithCompletion:^{
@@ -5131,6 +5141,7 @@ std::string BrowserMediaVolumeScript(double volume) {
   if (_peekCardSessionID == sessionID) {
     _peekCardSessionID = 0;
   }
+  [self reportPeekPages];
 }
 
 - (BrowserPeekPanel *)peekPanelForSessionID:(NSInteger)sessionID {
@@ -5152,6 +5163,7 @@ std::string BrowserMediaVolumeScript(double volume) {
     return;
   }
   session.urlString = urlString;
+  [self reportPeekPages];
   [session.panel updateWithURLString:urlString];
 }
 
@@ -6071,6 +6083,7 @@ std::string BrowserMediaVolumeScript(double volume) {
   _tabRecords.erase(it);
   [confirmation cancel];
   [self cancelSitePermissionsForTabID:tabID];
+  [self closePeekSessionsOwnedByTabID:tabID];
 
   if (wasActive) {
     if (_tabRecords.empty()) {
@@ -6220,10 +6233,67 @@ std::string BrowserMediaVolumeScript(double volume) {
   [self updateBrowserVisibilityFocusingActiveTab:YES];
 }
 
+/// Puts away the card of a tab that is no longer shown and brings back the
+/// one of the tab that now is.
+- (void)syncPeekCardsWithActiveTab {
+  BrowserPeekSession *visible = _peekSessions[@(_peekCardSessionID)];
+  if (visible != nil && !visible.closing && visible.ownerTabID != nil &&
+      ![visible.ownerTabID isEqualToString:_activeTabID]) {
+    visible.hiddenWithTab = YES;
+    [visible.panel hideForOtherTab];
+    _peekCardSessionID = 0;
+  }
+  NSWindow *window = _hostView.window;
+  if (_peekCardSessionID == 0 && _activeTabID != nil && window != nil) {
+    for (NSNumber *sessionID in _peekSessions) {
+      BrowserPeekSession *session = _peekSessions[sessionID];
+      if (session.standalone || session.closing || !session.hiddenWithTab ||
+          ![session.ownerTabID isEqualToString:_activeTabID]) {
+        continue;
+      }
+      session.hiddenWithTab = NO;
+      _peekCardSessionID = sessionID.intValue;
+      [session.panel showAgainOverWindow:window page:_hostView];
+      break;
+    }
+  }
+  [self reportPeekPages];
+}
+
+/// Tabs with a card, open or put away, and the address in it, for the sidebar.
+- (void)reportPeekPages {
+  NSMutableDictionary<NSString *, NSString *> *pages = [NSMutableDictionary dictionary];
+  for (NSNumber *sessionID in _peekSessions) {
+    BrowserPeekSession *session = _peekSessions[sessionID];
+    if (!session.standalone && !session.closing && session.ownerTabID != nil) {
+      pages[session.ownerTabID] = session.urlString ?: @"";
+    }
+  }
+  if ([pages isEqualToDictionary:_reportedPeekPages ?: @{}]) {
+    return;
+  }
+  _reportedPeekPages = [pages copy];
+  id<BrowserTabControllerDelegate> delegate = self.delegate;
+  if ([delegate respondsToSelector:@selector(browserTabController:didChangePeekPagesByTabID:)]) {
+    [delegate browserTabController:self didChangePeekPagesByTabID:_reportedPeekPages];
+  }
+}
+
+/// A tab's cards go with it.
+- (void)closePeekSessionsOwnedByTabID:(NSString *)tabID {
+  for (NSNumber *sessionID in _peekSessions.allKeys) {
+    BrowserPeekSession *session = _peekSessions[sessionID];
+    if ([session.ownerTabID isEqualToString:tabID]) {
+      [self closePeekSession:sessionID.intValue];
+    }
+  }
+}
+
 - (void)updateBrowserVisibilityFocusingActiveTab:(BOOL)focusActive {
   dispatch_async(dispatch_get_main_queue(), ^{
     [self presentWaitingDialogs];
   });
+  [self syncPeekCardsWithActiveTab];
   const std::string activeKey = ToStdString(_activeTabID);
   const std::vector<std::string> visibleKeys = [self visiblePaneKeys];
   for (auto &entry : _tabRecords) {

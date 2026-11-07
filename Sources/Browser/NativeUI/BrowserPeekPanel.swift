@@ -375,6 +375,25 @@ import AppKit
         )
     }
 
+    /// Puts the card away while another tab is shown, keeping its page.
+    @objc func hideForOtherTab() {
+        stopWatchingParent()
+        restorePageBehind()
+        parent?.removeChildWindow(self)
+        orderOut(nil)
+    }
+
+    /// Brings the card back over its tab, without the opening motion.
+    @objc(showAgainOverWindow:page:) func showAgain(over window: NSWindow, page: NSView?) {
+        window.addChildWindow(self, ordered: .above)
+        setFrame(window.frame, display: false)
+        pageBehind = page
+        placeCard(screenFrame: Self.frame(over: window, page: page))
+        setPageBehind(dimmed: true, animated: false)
+        makeKeyAndOrderFront(nil)
+        watchParent(window)
+    }
+
     @objc func dismiss() {
         stopWatchingParent()
         restorePageBehind()
@@ -643,13 +662,19 @@ import AppKit
         hostView.autoresizingMask = [.width, .height]
     }
 
-    /// A click on the window behind closes the card.
+    /// A click on the page behind closes the card. The sidebar stays usable: a
+    /// click there may show another tab, which puts the card away with its tab.
     private func watchParent(_ window: NSWindow) {
         parentMonitor = NSEvent.addLocalMonitorForEvents(matching: [
             .leftMouseDown,
             .rightMouseDown,
         ]) { [weak self, weak window] event in
             guard let self, let window, event.window === window else { return event }
+            if let page = pageBehind, page.window === window,
+               !page.convert(page.bounds, to: nil).contains(event.locationInWindow)
+            {
+                return event
+            }
             onClose?()
             return event
         }

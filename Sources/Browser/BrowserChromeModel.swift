@@ -360,6 +360,8 @@ enum BrowserWindowMode: Equatable {
     @Published var tabMediaStates = [String: BrowserTabMediaState]()
     /// Tabs using the camera, the microphone or screen capture.
     @Published var capturingTabIDs = Set<String>()
+    /// Tabs with a Peek card, open or put away, and the address in it.
+    @Published var peekPagesByTabID = [String: String]()
     var tabMediaStartOrder = [String: Int]()
     var nextTabMediaStartOrder = 0
     @Published var dismissedMiniPlayerTabIDs = Set<String>()
@@ -1067,6 +1069,9 @@ enum BrowserWindowMode: Equatable {
         }
         tabDriver.onCaptureChanged = { [weak self] tabID, capturing in
             self?.handleCaptureChange(tabID: tabID, capturing: capturing)
+        }
+        tabDriver.onPeekPagesChanged = { [weak self] pages in
+            self?.peekPagesByTabID = pages
         }
         tabDriver.onRenderProcessTerminated = { [weak self] tabID, errorCode in
             self?.handleRenderProcessTerminated(tabID: tabID, errorCode: errorCode)
