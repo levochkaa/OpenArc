@@ -158,6 +158,38 @@ import Testing
         #expect(pair.second.tabs.first { $0.syncID == syncID }?.title == "Renamed page")
     }
 
+    @Test func aClosingWindowLeavesItsPagesToTheOthers() throws {
+        let pair = Pair()
+        let source = pair.first.model
+        let x = pair.first.id("x")
+        let y = pair.first.id("y")
+        source.selectTab(id: x)
+        pair.first.driver.detachablePageTabIDs = [x]
+        let syncX = try #require(source.tabs.first { $0.id == x }?.syncID)
+        let syncY = try #require(source.tabs.first { $0.id == y }?.syncID)
+        let rowY = try #require(pair.second.tabs.first { $0.syncID == syncY }?.id)
+        pair.second.selectTab(id: rowY)
+
+        source.handPagesToOtherWindows()
+
+        #expect(pair.secondDriver.adoptedPages.map(\.page) == [x])
+        #expect(pair.secondDriver.adoptedPages.first?.makeActive == false, "It stays in the background")
+        #expect(pair.second.hasPage(forSyncID: syncX))
+        #expect(pair.second.tabs.first { $0.id == pair.second.selectedTabID }?.syncID == syncY)
+        #expect(pair.secondDriver.createdTabRequests.count == 1, "Only the selected tab loaded; x did not")
+    }
+
+    @Test func aClosedWindowClosesThePagesItKept() {
+        let pair = Pair()
+        let source = pair.first.model
+        let pages = source.tabs.filter { source.hasPage(forSyncID: $0.syncID) }.map(\.id)
+        #expect(!pages.isEmpty)
+        source.prepareForTermination()
+        source.closePagesOfClosedWindow()
+        let closed = Set(pair.first.driver.closedTabRequests.filter(\.forceClose).map(\.id))
+        #expect(Set(pages).isSubset(of: closed))
+    }
+
     @Test func aPageThatCannotMoveLoadsAgain() throws {
         let pair = Pair()
         let source = pair.first.model

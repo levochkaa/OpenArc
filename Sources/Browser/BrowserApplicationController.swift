@@ -259,6 +259,9 @@ NSMenuDelegate, NSUserInterfaceValidations {
         guard BrowserSessionClosureGuard.prepare(models: { [model] }, confirmation: confirmUnsavedSessionClosure) else {
             return false
         }
+        if !isTerminationRequested {
+            model.handPagesToOtherWindows()
+        }
         model.prepareForTermination()
         return true
     }
@@ -294,7 +297,11 @@ NSMenuDelegate, NSUserInterfaceValidations {
         if let index = profileWindowSessions.firstIndex(where: { $0.window === closedWindow }) {
             let session = profileWindowSessions.remove(at: index)
             archiveWindowControllers.removeValue(forKey: ObjectIdentifier(session.chromeModel))?.close()
+            if !isTerminationRequested {
+                session.chromeModel.handPagesToOtherWindows()
+            }
             session.chromeModel.prepareForTermination()
+            session.chromeModel.closePagesOfClosedWindow()
             removeFromWindowGroup(session)
             updateProfilePresentationForOpenWindows()
             return
@@ -306,6 +313,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
 
         let session = incognitoWindowSessions.remove(at: index)
         session.chromeModel.prepareForTermination()
+        session.chromeModel.closePagesOfClosedWindow()
     }
 
     public func handleBrowserContextInitialized() {

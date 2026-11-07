@@ -4233,10 +4233,53 @@ enum BrowserWindowMode: Equatable {
         return handoff
     }
 
+    /// This window is closing: its pages stay alive in another window of the profile,
+    /// one that shows a picture of the page if there is one, or else the oldest.
+    func handPagesToOtherWindows() {
+        guard let group = windowGroup, let oldest = group.models.first(where: { $0 !== self }) else { return }
+        for tab in tabs where !hasNoPage(tab.id) && !closingTabIDs.contains(tab.id) {
+            let receiver = group.models.first { $0 !== self && $0.showsMovedPage(syncID: tab.syncID) } ?? oldest
+            receiver.keepPageOfClosingWindow(syncID: tab.syncID)
+        }
+    }
+
     /// Brings back the page of the selected tab from the window that took it.
     func showMovedPageHere() {
         guard showsMovedPage, let id = selectedTabID else { return }
         selectTab(id: id)
+    }
+
+    /// A closed window's pages close with it; its tabs stay in the store and in the
+    /// profile's other windows. Without this they kept running in the hidden window.
+    func closePagesOfClosedWindow() {
+        guard isShuttingDown else { return }
+        for tab in tabs where !hasNoPage(tab.id) {
+            tabDriver.closeTab(withID: tab.id, forceClose: true)
+        }
+    }
+
+    private func showsMovedPage(syncID: String) -> Bool {
+        tabs.first { $0.syncID == syncID }.map { movedPageTabIDs.contains($0.id) && hasNoPage($0.id) } ?? false
+    }
+
+    /// Takes a closing window's live page for this tab, shown only if this window has the
+    /// tab selected. A page that cannot move closes with its window.
+    private func keepPageOfClosingWindow(syncID: String) {
+        guard canCreateTab, let index = tabs.firstIndex(where: { $0.syncID == syncID }), hasNoPage(tabs[index].id)
+        else { return }
+        let tab = tabs[index]
+        let isSelected = selectedTabID == tab.id
+        guard let adopted = adoptPageFromAnotherWindow(syncID: syncID, makeActive: isSelected) else { return }
+        lastPageRestoreTabIDs.remove(tab.id)
+        closedPinnedTabIDs.remove(tab.id)
+        closedAppTabIDs.remove(tab.id)
+        tabs[index] = reidentifiedTab(from: tab, id: adopted.id)
+        applyAdoptedPage(adopted.handoff, toTabAt: index)
+        replaceTabRuntimeReferences(oldID: tab.id, newID: adopted.id, spaceID: tab.spaceID, selectsInSpace: false)
+        if isSelected {
+            tabDriver.selectTab(withID: adopted.id)
+            updateWindowTitle()
+        }
     }
 
     private func indexOfTabWithPage(forSyncID syncID: String) -> Int? {
