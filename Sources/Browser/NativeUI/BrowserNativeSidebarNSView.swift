@@ -75,6 +75,9 @@ final class BrowserNativeSidebarNSView: NSView {
     /// sidebar, behind the rows, not by a pill on its row.
     private let folderDropBand = BrowserNativeNoninteractiveSurface()
     private var folderDropBandID: String?
+    /// Past the sidebar the preview is drawn by a panel of its own, which
+    /// follows the pointer over the page, other windows and the desktop.
+    private var outsidePreviewPanel: NSPanel?
     private var splitPreviewRow: BrowserNativeSidebarRowNSView?
     private let scrollObserver = BrowserSpacePagerScrollNSView()
     private var pages = [String: BrowserNativeSidebarPage]()
@@ -1659,6 +1662,7 @@ final class BrowserNativeSidebarNSView: NSView {
     }
 
     private func endDragging(at point: CGPoint, cancelled: Bool) {
+        hideOutsidePreview()
         dragEvents.stop()
         guard let payload = state.drag.payload else { return }
         let from = dragPreview.frame
@@ -1757,6 +1761,7 @@ final class BrowserNativeSidebarNSView: NSView {
     }
 
     private func completeDragPresentation() {
+        hideOutsidePreview()
         landingAnimation.cancel()
         dragEvents.stop()
         state.clearTabDragState()
@@ -1858,6 +1863,66 @@ final class BrowserNativeSidebarNSView: NSView {
         folderDropBand.isHidden = false
     }
 
+    private func updateOutsidePreview() {
+        guard let window, state.drag.phase == .dragging else {
+            hideOutsidePreview()
+            return
+        }
+        let pointer = window.convertPoint(toScreen: content.convert(state.drag.pointer, to: nil))
+        // Past the sidebar the list clips the preview, over the page as well as outside the window.
+        let sidebar = window.convertToScreen(convert(visibleRect, to: nil))
+        guard !sidebar.contains(pointer) else {
+            hideOutsidePreview()
+            return
+        }
+        let panel = outsidePreviewPanel ?? makeOutsidePreviewPanel()
+        if !panel.isVisible {
+            dragPreview.alphaValue = 1
+            let image = NSImage(size: dragPreview.bounds.size)
+            if let rep = dragPreview.bitmapImageRepForCachingDisplay(in: dragPreview.bounds) {
+                dragPreview.cacheDisplay(in: dragPreview.bounds, to: rep)
+                image.addRepresentation(rep)
+            }
+            (panel.contentView as? NSImageView)?.image = image
+            panel.setContentSize(dragPreview.bounds.size)
+        }
+        let anchor = state.drag.anchor
+        let size = panel.frame.size
+        // The preview keeps the point it was grabbed by under the pointer; screen y grows upward.
+        panel.setFrameOrigin(CGPoint(x: pointer.x - size.width * anchor.x, y: pointer.y - size.height * (1 - anchor.y)))
+        if !panel.isVisible {
+            panel.orderFront(nil)
+        }
+        dragPreview.alphaValue = 0
+    }
+
+    private func makeOutsidePreviewPanel() -> NSPanel {
+        let panel = NSPanel(
+            contentRect: .zero,
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: true,
+        )
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = true
+        panel.ignoresMouseEvents = true
+        panel.level = .popUpMenu
+        panel.isReleasedWhenClosed = false
+        panel.collectionBehavior = [.canJoinAllSpaces, .transient, .ignoresCycle]
+        let image = NSImageView()
+        image.imageScaling = .scaleNone
+        panel.contentView = image
+        outsidePreviewPanel = panel
+        return panel
+    }
+
+    private func hideOutsidePreview() {
+        guard let panel = outsidePreviewPanel, panel.isVisible else { return }
+        panel.orderOut(nil)
+        dragPreview.alphaValue = 1
+    }
+
     private func layoutDragPreview(size: CGSize) {
         let drag = state.drag
         dragPreview.frame = CGRect(
@@ -1867,6 +1932,7 @@ final class BrowserNativeSidebarNSView: NSView {
             height: size.height,
         )
         dragPreview.layoutSubtreeIfNeeded()
+        updateOutsidePreview()
         if case .line(let line) = state.drag.proposal?.feedback {
             dragIndicator.update(line: line, occluding: dragPreview.frame)
         } else {
