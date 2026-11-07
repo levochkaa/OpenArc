@@ -2240,19 +2240,21 @@ private final class BrowserNativeSidebarClearDivider: NSView {
         button.addSubview(title)
         button.addSubview(indicator)
         title.font = .systemFont(ofSize: BrowserChromeLayout.sidebarClearFontSize, weight: .bold)
-        indicator.image = NSImage(systemSymbolName: "chevron.down", accessibilityDescription: nil)?
+        indicator.image = NSImage(systemSymbolName: "arrow.down", accessibilityDescription: nil)?
             .withSymbolConfiguration(.init(
-                pointSize: 8,
-                weight: .bold,
+                pointSize: 10,
+                weight: .heavy,
             ))
-        indicator.contentTintColor = BrowserChromeColors.secondaryText
+        indicator.imageScaling = .scaleNone
         button.onClick = { [weak self] _ in self?.onClear() }
         button.onHoverChanged = { [weak self] hovered in
             guard let self else { return }
             let from = title.textColor ?? .clear
             let to = hovered ? BrowserChromeColors.secondaryText : BrowserChromeColors.sidebarClearButtonForeground
             hoverAnimation.start(.easeInOut(0.12)) { [weak self] progress in
-                self?.title.textColor = from.blended(withFraction: progress, of: to) ?? to
+                let color = from.blended(withFraction: progress, of: to) ?? to
+                self?.title.textColor = color
+                self?.indicator.contentTintColor = color
             }
         }
         button.setAccessibilityLabel(BrowserStrings.sidebarClearTemporaryTabs)
@@ -2266,7 +2268,7 @@ private final class BrowserNativeSidebarClearDivider: NSView {
         let textWidth = ceil((title.stringValue as NSString)
             .size(withAttributes: [.font: title.font ?? NSFont.systemFont(ofSize: 11)])
             .width) + 4
-        let indicatorWidth: CGFloat = includesActive ? 11 : 0
+        let indicatorWidth: CGFloat = includesActive ? 10 : 0
         let width = textWidth + indicatorWidth + BrowserChromeLayout.sidebarClearButtonHorizontalPadding * 2
         button.frame = NSRect(x: bounds.width - width, y: 0, width: width, height: bounds.height)
         title.frame = NSRect(
@@ -2275,11 +2277,12 @@ private final class BrowserNativeSidebarClearDivider: NSView {
             width: textWidth,
             height: 16,
         )
+        // The arrow stands as tall as the title's capitals and centers on them.
         indicator.frame = NSRect(
-            x: BrowserChromeLayout.sidebarClearButtonHorizontalPadding,
-            y: (bounds.height - 8) / 2,
-            width: 8,
-            height: 8,
+            x: BrowserChromeLayout.sidebarClearButtonHorizontalPadding - 0.5,
+            y: (bounds.height - 12) / 2 - 2,
+            width: 11,
+            height: 12,
         )
         line.frame = NSRect(
             x: BrowserChromeLayout.sidebarDividerInset,
@@ -2311,6 +2314,7 @@ private final class BrowserNativeSidebarClearDivider: NSView {
         title.textColor = button.isHovered
             ? BrowserChromeColors.secondaryText
             : BrowserChromeColors.sidebarClearButtonForeground
+        indicator.contentTintColor = title.textColor
         needsLayout = true
     }
 }
