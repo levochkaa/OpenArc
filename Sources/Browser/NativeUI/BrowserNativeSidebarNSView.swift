@@ -1893,20 +1893,35 @@ final class BrowserNativeSidebarNSView: NSView {
             return
         }
         let panel = outsidePreviewPanel ?? makeOutsidePreviewPanel()
-        if !panel.isVisible {
+        guard let container = panel.contentView as? BrowserDragOutsidePreview else { return }
+        // Over a page that will split, the tab is the card of the pane it will become.
+        var cardTab: BrowserChromeModel.Tab?
+        if state.drag.pageSplitTarget != nil, case .tab(let id)? = state.drag.payload?.primary {
+            cardTab = state.snapshot.tab(withID: id)
+        }
+        if let cardTab {
+            container.showCard(for: cardTab)
+        } else if !container.showsRow || !panel.isVisible {
             dragPreview.alphaValue = 1
             let image = NSImage(size: dragPreview.bounds.size)
             if let rep = dragPreview.bitmapImageRepForCachingDisplay(in: dragPreview.bounds) {
                 dragPreview.cacheDisplay(in: dragPreview.bounds, to: rep)
                 image.addRepresentation(rep)
             }
-            (panel.contentView as? NSImageView)?.image = image
-            panel.setContentSize(dragPreview.bounds.size)
+            container.showRow(image)
         }
-        let anchor = state.drag.anchor
-        let size = panel.frame.size
-        // The preview keeps the point it was grabbed by under the pointer; screen y grows upward.
-        panel.setFrameOrigin(CGPoint(x: pointer.x - size.width * anchor.x, y: pointer.y - size.height * (1 - anchor.y)))
+        let size = container.preferredSize
+        let origin =
+            if cardTab != nil {
+                CGPoint(x: pointer.x - size.width / 2, y: pointer.y - size.height / 2)
+            } else {
+                // The row keeps the point it was grabbed by under the pointer; screen y grows upward.
+                CGPoint(
+                    x: pointer.x - size.width * state.drag.anchor.x,
+                    y: pointer.y - size.height * (1 - state.drag.anchor.y),
+                )
+            }
+        panel.setFrame(CGRect(origin: origin, size: size), display: true)
         if !panel.isVisible {
             panel.orderFront(nil)
         }
@@ -1927,9 +1942,7 @@ final class BrowserNativeSidebarNSView: NSView {
         panel.level = .popUpMenu
         panel.isReleasedWhenClosed = false
         panel.collectionBehavior = [.canJoinAllSpaces, .transient, .ignoresCycle]
-        let image = NSImageView()
-        image.imageScaling = .scaleNone
-        panel.contentView = image
+        panel.contentView = BrowserDragOutsidePreview()
         outsidePreviewPanel = panel
         return panel
     }
@@ -2349,6 +2362,94 @@ private final class BrowserNativeSidebarDragPreview: BrowserNativePressableView 
         row.tooltipTitle = nil
         needsLayout = true
     }
+}
+
+// MARK: - BrowserDragOutsidePreview
+
+/// What a dragged tab looks like past the sidebar: its row, or over a page
+/// that will split, a dark card with its icon and title.
+private final class BrowserDragOutsidePreview: NSView {
+    // MARK: Internal
+
+    static let cardSize = CGSize(width: 146, height: 249)
+
+    override var isFlipped: Bool { true }
+
+    private(set) var showsRow = true
+
+    // MARK: Private
+
+    private let rowImage = NSImageView()
+    private let card = BrowserDragCardSurface()
+    private let favicon = BrowserFaviconNSView()
+    private let title = NSTextField(labelWithString: "")
+
+    var preferredSize: CGSize { showsRow ? rowImage.image?.size ?? .zero : Self.cardSize }
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        rowImage.imageScaling = .scaleNone
+        card.wantsLayer = true
+        card.layer?.backgroundColor = NSColor(white: 0.05, alpha: 1).cgColor
+        card.layer?.cornerRadius = 19
+        card.layer?.cornerCurve = .continuous
+        title.font = .systemFont(ofSize: 13, weight: .semibold)
+        title.textColor = .white
+        title.alignment = .center
+        title.lineBreakMode = .byWordWrapping
+        title.maximumNumberOfLines = 2
+        title.cell?.truncatesLastVisibleLine = true
+        card.addSubview(favicon)
+        card.addSubview(title)
+        addSubview(rowImage)
+        addSubview(card)
+        card.isHidden = true
+    }
+
+    @available(*, unavailable) required init?(coder _: NSCoder) { fatalError() }
+
+    override func layout() {
+        super.layout()
+        rowImage.frame = bounds
+        card.frame = bounds
+        let icon: CGFloat = 16
+        favicon.frame = CGRect(
+            x: (bounds.width - icon) / 2,
+            y: bounds.height * 0.42 - icon / 2,
+            width: icon,
+            height: icon,
+        )
+        let titleHeight = title.sizeThatFits(CGSize(width: bounds.width - 24, height: 40)).height
+        title.frame = CGRect(
+            x: 12,
+            y: bounds.height * 0.58 - titleHeight / 2,
+            width: bounds.width - 24,
+            height: titleHeight,
+        )
+    }
+
+    func showRow(_ image: NSImage) {
+        rowImage.image = image
+        showsRow = true
+        rowImage.isHidden = false
+        card.isHidden = true
+        needsLayout = true
+    }
+
+    func showCard(for tab: BrowserChromeModel.Tab) {
+        title.stringValue = tab.displayTitle
+        favicon.update(url: tab.faviconURLString.flatMap(URL.init(string:)), pageURLString: tab.urlString)
+        showsRow = false
+        rowImage.isHidden = true
+        card.isHidden = false
+        needsLayout = true
+    }
+}
+
+// MARK: - BrowserDragCardSurface
+
+private final class BrowserDragCardSurface: NSView {
+    override var isFlipped: Bool { true }
 }
 
 // MARK: - BrowserSidebarLinkDrop
