@@ -86,9 +86,9 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
     private let searchField = NSTextField()
     private let filterPill = BrowserNativeSurface()
     private let filterButton = NSPopUpButton(frame: .zero, pullsDown: true)
-    private let scroll = NSScrollView()
+    private let scroll = BrowserLibraryScrollView()
     private let document = BrowserLibraryDocument()
-    private let spacesScroll = NSScrollView()
+    private let spacesScroll = BrowserLibraryScrollView()
     private let spacesDocument = BrowserLibraryDocument()
     private let emptyState = BrowserLibraryEmptyState()
     private var observations = Set<AnyCancellable>()
@@ -635,6 +635,14 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
 
 private final class BrowserLibraryDocument: NSView {
     override var isFlipped: Bool { true }
+}
+
+// MARK: - BrowserLibraryScrollView
+
+/// Scrolls on the main thread. A responsive scroll view takes a gesture's later events off
+/// the main event path, out of reach of the swipe that closes the Library.
+private final class BrowserLibraryScrollView: NSScrollView {
+    override class var isCompatibleWithResponsiveScrolling: Bool { false }
 }
 
 // MARK: - BrowserLibrarySectionButton
