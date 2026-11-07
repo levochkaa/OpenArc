@@ -2996,6 +2996,17 @@ enum BrowserWindowMode: Equatable {
         tabDriver.focusActivePage()
     }
 
+    /// A small picture of the page on screen, for a tab dragged out of the window.
+    func captureSelectedPageThumbnail(maximumPixelSize: CGFloat, completion: @escaping @MainActor (NSImage?) -> Void) {
+        guard selectedTabID != nil else {
+            completion(nil)
+            return
+        }
+        tabDriver.captureActiveTabPicture { png in
+            completion(png.flatMap { BrowserImageThumbnailer.image(data: $0, maximumPixelSize: maximumPixelSize) })
+        }
+    }
+
     @discardableResult func beginPortraitCapture() -> Bool {
         guard canCaptureArea else { return false }
         tabDriver.captureActiveTabPicture { [weak self] png in

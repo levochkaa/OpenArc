@@ -80,6 +80,9 @@ final class BrowserNativeSidebarNSView: NSView {
     private var outsidePreviewPanel: NSPanel?
     /// The tab shown before a drag selected the dragged one.
     private var tabSelectedBeforeDrag: String?
+    /// The dragged tab's page as it looked when the drag began, shown outside the window.
+    private var draggedPageThumbnail: NSImage?
+    private var draggedPageThumbnailTabID: String?
     private var splitPreviewRow: BrowserNativeSidebarRowNSView?
     private let scrollObserver = BrowserSpacePagerScrollNSView()
     private var pages = [String: BrowserNativeSidebarPage]()
@@ -499,6 +502,7 @@ final class BrowserNativeSidebarNSView: NSView {
         dragEvents.stop()
         state.clearTabDragState()
         activateSingleDraggedTab(item)
+        captureDraggedPageThumbnail(item)
         state.update(snapshot: state.model.sidebarSnapshot, sidebarWidth: state.sidebarWidth, isResizing: false)
         let tree = BrowserSidebarTabTree(snapshot: state.snapshot)
         let ids: Set<String>
@@ -714,6 +718,25 @@ final class BrowserNativeSidebarNSView: NSView {
         state.sidebarTabSelectionAnchorID = id
         tabSelectedBeforeDrag = state.model.selectedTabID
         state.model.selectTab(id: id)
+    }
+
+    /// Takes a picture of a single dragged tab's page once it is on screen.
+    private func captureDraggedPageThumbnail(_ item: BrowserSidebarItemID) {
+        draggedPageThumbnail = nil
+        draggedPageThumbnailTabID = nil
+        guard case .tab(let id) = item, state.model.selectedTabID == id else { return }
+        draggedPageThumbnailTabID = id
+        let scale = window?.backingScaleFactor ?? 2
+        // The page of a tab the drag just selected needs a moment to draw.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
+            guard let self, draggedPageThumbnailTabID == id, state.drag.isDragging else { return }
+            state.model.captureSelectedPageThumbnail(
+                maximumPixelSize: BrowserDragOutsidePreview.thumbnailWidth * scale,
+            ) { [weak self] image in
+                guard let self, draggedPageThumbnailTabID == id, let image else { return }
+                draggedPageThumbnail = image
+            }
+        }
     }
 
     /// A single dragged tab shows its page while the pointer is over the
@@ -1778,6 +1801,8 @@ final class BrowserNativeSidebarNSView: NSView {
 
     private func completeDragPresentation() {
         tabSelectedBeforeDrag = nil
+        draggedPageThumbnail = nil
+        draggedPageThumbnailTabID = nil
         hideOutsidePreview()
         landingAnimation.cancel()
         dragEvents.stop()
@@ -1899,8 +1924,12 @@ final class BrowserNativeSidebarNSView: NSView {
         if state.drag.pageSplitTarget != nil, case .tab(let id)? = state.drag.payload?.primary {
             cardTab = state.snapshot.tab(withID: id)
         }
+        let outsideWindow = !window.frame.contains(pointer)
         if let cardTab {
             container.showCard(for: cardTab)
+        } else if outsideWindow, let thumbnail = draggedPageThumbnail {
+            // Past the window, the tab is the window it will open in.
+            container.showThumbnail(thumbnail)
         } else if !container.showsRow || !panel.isVisible {
             dragPreview.alphaValue = 1
             let image = NSImage(size: dragPreview.bounds.size)
@@ -1912,7 +1941,7 @@ final class BrowserNativeSidebarNSView: NSView {
         }
         let size = container.preferredSize
         let origin =
-            if cardTab != nil {
+            if !container.showsRow {
                 CGPoint(x: pointer.x - size.width / 2, y: pointer.y - size.height / 2)
             } else {
                 // The row keeps the point it was grabbed by under the pointer; screen y grows upward.
@@ -2372,19 +2401,31 @@ private final class BrowserDragOutsidePreview: NSView {
     // MARK: Internal
 
     static let cardSize = CGSize(width: 146, height: 249)
+    static let thumbnailWidth: CGFloat = 220
 
     override var isFlipped: Bool { true }
 
     private(set) var showsRow = true
+
+    private(set) var showsThumbnail = false
 
     // MARK: Private
 
     private let rowImage = NSImageView()
     private let card = BrowserDragCardSurface()
     private let favicon = BrowserFaviconNSView()
+    private let thumbnail = NSImageView()
     private let title = NSTextField(labelWithString: "")
 
-    var preferredSize: CGSize { showsRow ? rowImage.image?.size ?? .zero : Self.cardSize }
+    var preferredSize: CGSize {
+        if showsThumbnail, let size = thumbnail.image?.size, size.width > 0 {
+            return CGSize(
+                width: Self.thumbnailWidth,
+                height: (Self.thumbnailWidth * size.height / size.width).rounded(),
+            )
+        }
+        return showsRow ? rowImage.image?.size ?? .zero : Self.cardSize
+    }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -2401,9 +2442,18 @@ private final class BrowserDragOutsidePreview: NSView {
         title.cell?.truncatesLastVisibleLine = true
         card.addSubview(favicon)
         card.addSubview(title)
+        thumbnail.imageScaling = .scaleProportionallyUpOrDown
+        thumbnail.wantsLayer = true
+        thumbnail.layer?.cornerRadius = 8
+        thumbnail.layer?.cornerCurve = .continuous
+        thumbnail.layer?.masksToBounds = true
+        thumbnail.layer?.borderWidth = 1
+        thumbnail.layer?.borderColor = NSColor.black.withAlphaComponent(0.12).cgColor
         addSubview(rowImage)
         addSubview(card)
+        addSubview(thumbnail)
         card.isHidden = true
+        thumbnail.isHidden = true
     }
 
     @available(*, unavailable) required init?(coder _: NSCoder) { fatalError() }
@@ -2412,6 +2462,7 @@ private final class BrowserDragOutsidePreview: NSView {
         super.layout()
         rowImage.frame = bounds
         card.frame = bounds
+        thumbnail.frame = bounds
         let icon: CGFloat = 16
         favicon.frame = CGRect(
             x: (bounds.width - icon) / 2,
@@ -2430,18 +2481,26 @@ private final class BrowserDragOutsidePreview: NSView {
 
     func showRow(_ image: NSImage) {
         rowImage.image = image
-        showsRow = true
-        rowImage.isHidden = false
-        card.isHidden = true
-        needsLayout = true
+        show(row: true, card: false, thumbnail: false)
+    }
+
+    func showThumbnail(_ image: NSImage) {
+        thumbnail.image = image
+        show(row: false, card: false, thumbnail: true)
     }
 
     func showCard(for tab: BrowserChromeModel.Tab) {
         title.stringValue = tab.displayTitle
         favicon.update(url: tab.faviconURLString.flatMap(URL.init(string:)), pageURLString: tab.urlString)
-        showsRow = false
-        rowImage.isHidden = true
-        card.isHidden = false
+        show(row: false, card: true, thumbnail: false)
+    }
+
+    private func show(row: Bool, card showsCard: Bool, thumbnail showsPicture: Bool) {
+        showsRow = row
+        showsThumbnail = showsPicture
+        rowImage.isHidden = !row
+        card.isHidden = !showsCard
+        thumbnail.isHidden = !showsPicture
         needsLayout = true
     }
 }
