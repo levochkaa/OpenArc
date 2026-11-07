@@ -383,6 +383,8 @@ enum BrowserWindowMode: Equatable {
     var onPresentLittleWindowLauncher: (() -> Bool)?
     /// Opens pages in a new window of their own, its top left corner near a screen point.
     var onMoveTabsToNewWindow: (([URL], [BrowserTabPageHandoff?], CGPoint) -> Void)?
+    /// UI-only: Copy URL from the menu or its shortcut copied this address.
+    var onCopiedCurrentURL: ((URL) -> Void)?
     /// Hands tabs dropped on another window of this app to that window; false when it takes none.
     var onMoveTabsToWindow: ((Set<String>, NSWindow) -> Bool)?
     /// Pages a new window opens after its first one, in the background.
@@ -2956,6 +2958,15 @@ enum BrowserWindowMode: Equatable {
         }
 
         return copyTabLink(forTabID: selectedTabID)
+    }
+
+    /// Copy URL from the menu or ⇧⌘C: the window confirms it with a note.
+    @discardableResult func copyCurrentURLWithNote() -> Bool {
+        guard copySelectedTabLink(), let url = selectedTab.flatMap({ URL(string: $0.urlString) }) else {
+            return false
+        }
+        onCopiedCurrentURL?(url)
+        return true
     }
 
     /// Capture…: the user outlines part of the page, which is copied as an image.

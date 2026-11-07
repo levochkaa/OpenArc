@@ -4,16 +4,20 @@ import AppKit
 
 // MARK: - BrowserCaptureToastView
 
-/// A small note at the page's top right after a capture, or before the first
-/// one. It takes the Space's pale color and leaves by itself.
+/// A small note at the page's top right after a capture, before the first one, or
+/// after Copy URL. It takes the Space's pale color and leaves by itself.
 final class BrowserCaptureToastView: NSView {
     // MARK: Internal
 
     static let didCopyNotification = Notification.Name("BrowserCaptureDidCopy")
 
     static let height: CGFloat = 42
+    static let copiedURLHeight: CGFloat = 46
 
     override var isFlipped: Bool { true }
+
+    /// The height of what it shows now.
+    private(set) var preferredHeight = BrowserCaptureToastView.height
 
     var fill = NSColor.windowBackgroundColor { didSet { surface.fillColor = fill } }
 
@@ -29,6 +33,7 @@ final class BrowserCaptureToastView: NSView {
     private let trailingLabel = NSTextField(labelWithString: "")
     private var hideWork: DispatchWorkItem?
     private var png: Data?
+    private var copiedURL: URL?
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -59,7 +64,8 @@ final class BrowserCaptureToastView: NSView {
     override func layout() {
         super.layout()
         surface.frame = bounds
-        let y = (Self.height - 18) / 2
+        let height = bounds.height
+        let y = (height - 18) / 2
         var x: CGFloat = 12
         label.frame = NSRect(x: x, y: y, width: textWidth(label), height: 18)
         x = label.frame.maxX + 6
@@ -70,13 +76,31 @@ final class BrowserCaptureToastView: NSView {
             trailingLabel.frame = NSRect(x: x, y: y, width: textWidth(trailingLabel), height: 18)
         }
         if !saveButton.isHidden {
-            saveButton.frame = NSRect(x: x + 4, y: (Self.height - 28) / 2, width: 48, height: 28)
-            shareButton.frame = NSRect(x: saveButton.frame.maxX + 6, y: (Self.height - 28) / 2, width: 32, height: 28)
+            saveButton.frame = NSRect(x: x + 4, y: (height - 28) / 2, width: 48, height: 28)
+            shareButton.frame = NSRect(x: saveButton.frame.maxX + 6, y: (height - 28) / 2, width: 32, height: 28)
+        } else if !shareButton.isHidden {
+            shareButton.frame = NSRect(x: x + 4, y: (height - 28) / 2, width: 32, height: 28)
         }
+    }
+
+    /// "Copied Current URL" and Share, after Copy URL from the menu or its shortcut.
+    func showCopiedURL(_ url: URL) {
+        png = nil
+        copiedURL = url
+        preferredHeight = Self.copiedURLHeight
+        label.stringValue = BrowserStrings.copiedCurrentURLToast
+        keys.isHidden = true
+        trailingLabel.isHidden = true
+        saveButton.isHidden = true
+        shareButton.isHidden = false
+        preferredWidth = 12 + textWidth(label) + 10 + 32 + 10
+        show(for: 3)
     }
 
     /// "Screenshot Copied to Clipboard", Save and Share.
     func showCopied(png: Data) {
+        copiedURL = nil
+        preferredHeight = Self.height
         self.png = png
         label.stringValue = BrowserStrings.captureToastCopied
         keys.isHidden = true
@@ -90,6 +114,8 @@ final class BrowserCaptureToastView: NSView {
     /// The way to capture without the menu.
     func showHint(keysText: String) {
         png = nil
+        copiedURL = nil
+        preferredHeight = Self.height
         label.stringValue = BrowserStrings.captureToastHintLeading
         keysLabel.stringValue = keysText
         trailingLabel.stringValue = BrowserStrings.captureToastHintTrailing
@@ -128,6 +154,11 @@ final class BrowserCaptureToastView: NSView {
     }
 
     private func share() {
+        if let copiedURL {
+            NSSharingServicePicker(items: [copiedURL])
+                .show(relativeTo: shareButton.bounds, of: shareButton, preferredEdge: .minY)
+            return
+        }
         guard let png else { return }
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(BrowserStrings.captureFileName + ".png")
         guard (try? png.write(to: url)) != nil else { return }

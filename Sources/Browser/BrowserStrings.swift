@@ -2038,6 +2038,10 @@ enum BrowserStrings {
         comment: "Title above a blank window's tabs.",
     )
     static let captureToastCopied = NSLocalizedString("browser.capture.toast_copied", comment: "Note after a capture.")
+    static let copiedCurrentURLToast = NSLocalizedString(
+        "browser.toast.copied_current_url",
+        comment: "Note at the page's top right after Copy URL from the menu or its shortcut.",
+    )
     static let captureToastSave = NSLocalizedString(
         "browser.capture.toast_save",
         comment: "Button that saves a capture.",

@@ -175,3 +175,34 @@ import Testing
         #expect(!f.model.copyAllLinks(inFolderID: "missing"))
     }
 }
+
+// MARK: - BrowserCopyURLNoteTests
+
+@Suite(.serialized)
+@MainActor struct BrowserCopyURLNoteTests {
+    @Test func copyURLFromTheMenuCopiesAndAsksForTheNote() {
+        let f = SidebarDragFixture()
+        f.model.selectTab(id: f.id("x"))
+        let pasteboard = NSPasteboard.general
+        let saved = pasteboard.pasteboardItems?.map { item in
+            Dictionary(uniqueKeysWithValues: item.types.compactMap { type in
+                item.data(forType: type).map { (type, $0) }
+            })
+        } ?? []
+        defer {
+            pasteboard.clearContents()
+            pasteboard.writeObjects(saved.map { types in
+                let item = NSPasteboardItem()
+                for (type, data) in types {
+                    item.setData(data, forType: type)
+                }
+                return item
+            })
+        }
+        var noted = [URL]()
+        f.model.onCopiedCurrentURL = { noted.append($0) }
+        #expect(f.model.copyCurrentURLWithNote())
+        #expect(pasteboard.string(forType: .string) == "https://x.example")
+        #expect(noted.map(\.absoluteString) == ["https://x.example"])
+    }
+}

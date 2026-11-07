@@ -745,7 +745,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
     }
 
     public func copySelectedTabLink(_: Any?) {
-        activeChromeModel?.copySelectedTabLink()
+        activeChromeModel?.copyCurrentURLWithNote()
     }
 
     public func findInPage(_: Any?) {
@@ -2841,7 +2841,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
                 return false
             }
 
-            return activeChromeModel?.copySelectedTabLink() ?? false
+            return activeChromeModel?.copyCurrentURLWithNote() ?? false
         case .findInPage:
             if let archive = focusedArchiveWindowController {
                 archive.archiveController.focusSearch()

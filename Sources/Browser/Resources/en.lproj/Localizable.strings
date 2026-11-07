@@ -829,6 +829,7 @@
 "browser.settings.show_ai_search_suggestion" = "Offer an AI answer in the command bar";
 "browser.sidebar.blank_window_tabs" = "This Window";
 "browser.capture.toast_copied" = "Screenshot Copied to Clipboard";
+"browser.toast.copied_current_url" = "Copied Current URL";
 "browser.capture.toast_save" = "Save";
 "browser.capture.toast_hint_leading" = "Next time, hold";
 "browser.capture.toast_hint_trailing" = "and drag your mouse to capture any time.";
