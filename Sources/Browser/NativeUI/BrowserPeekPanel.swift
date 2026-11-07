@@ -214,17 +214,22 @@ import AppKit
         return NSRect(x: parent.midX - width / 2, y: parent.midY - height / 2, width: width, height: height).integral
     }
 
-    @objc(presentStandalone) static func presentStandalone() -> BrowserPeekPanel {
-        let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1280, height: 800)
+    /// A small window sits in the top right corner of the screen, where its address bar appeared.
+    static func standaloneFrame(in screen: NSRect) -> NSRect {
+        let margin = BrowserLittleWindowLauncher.screenMargin
         let size = NSSize(width: min(820, screen.width - 80), height: min(640, screen.height - 80))
-        let frame = NSRect(
-            x: screen.midX - size.width / 2,
-            y: screen.midY - size.height / 2,
+        return NSRect(
+            x: screen.maxX - margin - size.width,
+            y: screen.maxY - margin - size.height,
             width: size.width,
             height: size.height,
         )
         .integral
-        let panel = BrowserPeekPanel(contentRect: frame, standalone: true)
+    }
+
+    @objc(presentStandalone) static func presentStandalone() -> BrowserPeekPanel {
+        let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1280, height: 800)
+        let panel = BrowserPeekPanel(contentRect: standaloneFrame(in: screen), standalone: true)
         // An empty page paints white before it has anything to show.
         panel.hostView.wantsLayer = true
         panel.hostView.alphaValue = 0

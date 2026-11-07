@@ -252,80 +252,21 @@ enum BrowserWindowMode: Equatable {
     let windowMode: BrowserWindowMode
     let profile: BrowserProfile
     let undoManager = BrowserTabUndoManager()
-    lazy var commandBarModel = BrowserCommandBarModel(
-        suggestionProvider: commandBarSuggestionProvider,
-        navigationResolver: navigationResolver,
-        localSuggestionProvider: { [weak self] query, maximumCount in
-            self?.localCommandSuggestions(for: query, maximumCount: maximumCount) ?? []
-        },
-        remoteSuggestionsEnabledProvider: { [weak self] in
-            self?.canLoadRemoteSearchSuggestions ?? false
-        },
-        aiSearchProviderProvider: { [weak self] in
-            self?.userPreferencesStore.aiSearchProvider ?? .chatGPT
-        },
-        aiSearchEnabledProvider: { [weak self] in
-            self?.userPreferencesStore.showsAISearchSuggestion ?? false
-        },
-        recentPagesProvider: { [weak self] maximumCount in
-            self?.recentCommandBarPages(maximumCount: maximumCount) ?? []
-        },
-        siteSearchesProvider: { [weak self] in
-            self?.userPreferencesStore.siteSearches ?? []
-        },
-        siteRecentPagesProvider: { [weak self] site, maximumCount in
-            site.resultsURLPrefix.map {
-                self?.historyStore.recentSuggestions(withURLPrefix: $0, maximumCount: maximumCount) ?? []
-            } ?? []
-        },
-        submitHandler: { [weak self] resolvedURLString in
-            self?.openResolvedSelectionInNewTab(resolvedURLString)
-        },
-        openTabHandler: { [weak self] tabIDs in
-            self?.openCommandBarTabSelection(tabIDs: tabIDs)
-        },
-        commandHandler: { [weak self] commandID in
-            guard let self else { return }
-            commandHandler(commandID, self)
-        },
-    )
-    lazy var currentPageCommandBarModel = BrowserCommandBarModel(
-        suggestionProvider: commandBarSuggestionProvider,
-        navigationResolver: navigationResolver,
-        localSuggestionProvider: { [weak self] query, maximumCount in
-            self?.localCommandSuggestions(for: query, maximumCount: maximumCount) ?? []
-        },
-        remoteSuggestionsEnabledProvider: { [weak self] in
-            self?.canLoadRemoteSearchSuggestions ?? false
-        },
-        aiSearchProviderProvider: { [weak self] in
-            self?.userPreferencesStore.aiSearchProvider ?? .chatGPT
-        },
-        aiSearchEnabledProvider: { [weak self] in
-            self?.userPreferencesStore.showsAISearchSuggestion ?? false
-        },
-        recentPagesProvider: { [weak self] maximumCount in
-            self?.recentCommandBarPages(maximumCount: maximumCount) ?? []
-        },
-        siteSearchesProvider: { [weak self] in
-            self?.userPreferencesStore.siteSearches ?? []
-        },
-        siteRecentPagesProvider: { [weak self] site, maximumCount in
-            site.resultsURLPrefix.map {
-                self?.historyStore.recentSuggestions(withURLPrefix: $0, maximumCount: maximumCount) ?? []
-            } ?? []
-        },
-        submitHandler: { [weak self] resolvedURLString in
-            self?.navigateSelectedTab(toURLString: resolvedURLString)
-        },
-        openTabHandler: { [weak self] tabIDs in
-            self?.openCommandBarTabSelection(tabIDs: tabIDs)
-        },
-        commandHandler: { [weak self] commandID in
-            guard let self else { return }
-            commandHandler(commandID, self)
-        },
-    )
+    lazy var commandBarModel = makeCommandBarModel { [weak self] resolvedURLString in
+        self?.openResolvedSelectionInNewTab(resolvedURLString)
+    }
+
+    lazy var currentPageCommandBarModel = makeCommandBarModel { [weak self] resolvedURLString in
+        self?.navigateSelectedTab(toURLString: resolvedURLString)
+    }
+
+    /// The bar New Small Window shows first: what it opens goes to a small window.
+    lazy var littleWindowCommandBarModel = makeCommandBarModel { [weak self] resolvedURLString in
+        if let url = URL(string: resolvedURLString) {
+            self?.openInLittleWindow(url)
+        }
+    }
+
     private(set) var isContextReady = false
     var isShuttingDown = false
 
@@ -430,6 +371,8 @@ enum BrowserWindowMode: Equatable {
     /// UI-only: shows the share sheet in the window.
     var onShareURL: ((URL) -> Void)?
     var onOpenLinkInIncognito: ((URL) -> Void)?
+    /// Shows the bar for a new small window; false when no window can show it.
+    var onPresentLittleWindowLauncher: (() -> Bool)?
     /// Opens pages in a new window of their own, its top left corner near a screen point.
     var onMoveTabsToNewWindow: (([URL], CGPoint) -> Void)?
     /// Hands tabs dropped on another window of this app to that window; false when it takes none.
@@ -3410,7 +3353,10 @@ enum BrowserWindowMode: Equatable {
     /// field focused.
     @discardableResult func openNewLittleWindow() -> Bool {
         guard canOpenLittleWindow else { return false }
-        tabDriver.showNewLittleWindow()
+        historyStore.prepareSearchIndex()
+        if onPresentLittleWindowLauncher?() != true {
+            tabDriver.showNewLittleWindow()
+        }
         return true
     }
 
@@ -4242,6 +4188,46 @@ enum BrowserWindowMode: Equatable {
             tabDriver.deselectActiveTab()
         }
         updateWindowTitle()
+    }
+
+    private func makeCommandBarModel(
+        submit: @escaping (String) -> Void,
+    ) -> BrowserCommandBarModel {
+        BrowserCommandBarModel(
+            suggestionProvider: commandBarSuggestionProvider,
+            navigationResolver: navigationResolver,
+            localSuggestionProvider: { [weak self] query, maximumCount in
+                self?.localCommandSuggestions(for: query, maximumCount: maximumCount) ?? []
+            },
+            remoteSuggestionsEnabledProvider: { [weak self] in
+                self?.canLoadRemoteSearchSuggestions ?? false
+            },
+            aiSearchProviderProvider: { [weak self] in
+                self?.userPreferencesStore.aiSearchProvider ?? .chatGPT
+            },
+            aiSearchEnabledProvider: { [weak self] in
+                self?.userPreferencesStore.showsAISearchSuggestion ?? false
+            },
+            recentPagesProvider: { [weak self] maximumCount in
+                self?.recentCommandBarPages(maximumCount: maximumCount) ?? []
+            },
+            siteSearchesProvider: { [weak self] in
+                self?.userPreferencesStore.siteSearches ?? []
+            },
+            siteRecentPagesProvider: { [weak self] site, maximumCount in
+                site.resultsURLPrefix.map {
+                    self?.historyStore.recentSuggestions(withURLPrefix: $0, maximumCount: maximumCount) ?? []
+                } ?? []
+            },
+            submitHandler: submit,
+            openTabHandler: { [weak self] tabIDs in
+                self?.openCommandBarTabSelection(tabIDs: tabIDs)
+            },
+            commandHandler: { [weak self] commandID in
+                guard let self else { return }
+                commandHandler(commandID, self)
+            },
+        )
     }
 
     /// An inline translation reports no failure, so check that it took effect.

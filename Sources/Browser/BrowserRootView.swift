@@ -44,6 +44,7 @@ final class BrowserRootView: NSView {
     private let pageLoadingIndicator = BrowserPageLoadingIndicatorView()
     private let linkStatus = BrowserLinkStatusView()
     private let command: BrowserCommandBarNSView
+    private lazy var littleWindowLauncher = BrowserLittleWindowLauncher(model: model.littleWindowCommandBarModel)
     private let currentPageCommand: BrowserCommandBarNSView
     private let sidebarDismiss = BrowserSidebarHoverOverlayDismissNSView()
     private let sidebarInteraction = BrowserPassthroughInteractionNSView()
@@ -275,6 +276,10 @@ final class BrowserRootView: NSView {
             )
         }
         model.onEditSpaceCreationTheme = { [weak self] _ in self?.presentSpaceCreationThemeEditor() }
+        model.onPresentLittleWindowLauncher = { [weak self] in
+            guard let self else { return false }
+            return littleWindowLauncher.present(on: window?.screen)
+        }
         sidebar.sidebar.state.drag.pageSplitDropResolver = { [weak content] point, tabID in
             content?.splitPaneBars.pageSplitDrop(atWindowPoint: point, draggedTabID: tabID)
         }
