@@ -9,6 +9,8 @@ import QuartzCore
 final class BrowserRootView: NSView {
     private static let captureHintSeenKey = "browser.capture.hintSeen"
 
+    private static let minimumPageBesideLibrary: CGFloat = 320
+
     // MARK: Internal
 
     override var isFlipped: Bool { true }
@@ -161,6 +163,20 @@ final class BrowserRootView: NSView {
     private var browserContentTrailingInset: CGFloat { windowGeometry.trailingInset }
     private var browserContentBottomInset: CGFloat { windowGeometry.edgeInset }
     private var browserContentMinX: CGFloat { windowGeometry.contentMinX }
+
+    /// Spaces are as wide as their cards, up to the window; the other sections keep one width.
+    /// Closed, it is the width of the section it opens on, so a swipe in and the slide out
+    /// keep the size it has open.
+    private var presentedLibraryWidth: CGFloat {
+        guard (model.librarySection ?? model.lastLibrarySection) == .spaces else { return BrowserLibraryLayout.width }
+        return min(BrowserLibraryLayout.spacesWidth(spaceCount: model.spaces.count), bounds.width)
+    }
+
+    /// The page sits beside the Library, unless Spaces leave it too little room and cover it.
+    private var libraryReservedWidth: CGFloat {
+        let width = presentedLibraryWidth
+        return bounds.width - width >= Self.minimumPageBesideLibrary ? width : BrowserLibraryLayout.width
+    }
 
     init(model: BrowserChromeModel, updateController: BrowserUpdateController) {
         self.model = model
@@ -385,9 +401,9 @@ final class BrowserRootView: NSView {
         layoutDownloadFlight()
         let onRight = preferences.sidebarPosition == .right
         libraryScrollObserver.frame = CGRect(
-            x: onRight ? bounds.width - BrowserLibraryLayout.width : 0,
+            x: onRight ? bounds.width - presentedLibraryWidth : 0,
             y: 0,
-            width: BrowserLibraryLayout.width,
+            width: presentedLibraryWidth,
             height: bounds.height,
         )
         sidebarInteraction.frame = NSRect(
@@ -419,7 +435,7 @@ final class BrowserRootView: NSView {
             width: recoveryWidth,
             height: recoveryHeight,
         )
-        let libraryWidth = model.librarySection == .spaces ? bounds.width : BrowserLibraryLayout.width
+        let libraryWidth = presentedLibraryWidth
         let libraryShown = model.librarySection != nil
         developerToolbar.isHidden = !showsDeveloperToolbar
         var targets: [(NSView, CGRect)] = [
@@ -539,10 +555,10 @@ final class BrowserRootView: NSView {
 
     private func reservedSidebarWidth(swipeProgress: CGFloat?) -> CGFloat {
         guard let swipeProgress else {
-            return model.librarySection == nil ? model.sidebarWidth : BrowserLibraryLayout.width
+            return model.librarySection == nil ? model.sidebarWidth : libraryReservedWidth
         }
         let start = model.isSidebarVisible ? model.sidebarWidth : 0
-        return start + (BrowserLibraryLayout.width - start) * swipeProgress
+        return start + (libraryReservedWidth - start) * swipeProgress
     }
 
     private func libraryFrame(width: CGFloat, progress: CGFloat) -> CGRect {

@@ -45,14 +45,21 @@ enum BrowserLibraryLayout {
     static let searchCornerRadius: CGFloat = 12
     static let filterWidth: CGFloat = 73
     static let spaceCardWidth: CGFloat = 240
+
     /// The first window control's corner: lower and further in than on the sidebar.
     static let windowControlsOrigin = CGPoint(x: 16, y: 21)
+
+    /// Spaces show only as wide as their cards and the new Space button, after the
+    /// column of sections.
+    static func spacesWidth(spaceCount: Int) -> CGFloat {
+        columnWidth + 20 + CGFloat(spaceCount) * (spaceCardWidth + 20) + 4 + 28 + 28
+    }
 }
 
 // MARK: - BrowserLibraryNSView
 
 /// Replaces the sidebar with sections of saved things: media, downloads, Spaces
-/// and archived tabs. Spaces take the whole window, the others sit beside the page.
+/// and archived tabs, beside the page. Spaces are as wide as their cards.
 final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
     // MARK: Private
 
