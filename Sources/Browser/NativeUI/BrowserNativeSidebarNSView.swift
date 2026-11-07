@@ -1185,7 +1185,9 @@ final class BrowserNativeSidebarNSView: NSView {
             }
             folderPreview.rowHoverChanged(folderID: previewID, row: row, hovered: hovered)
         }
-        row.dragOpacity = state.draggedTabIDs.contains(tab.id) ? 0 : 1
+        // The row stays where it was while it is dragged and goes once dropped,
+        // so the drop does not slide it across the list beside the preview.
+        row.dragOpacity = !state.drag.isDragging && state.draggedTabIDs.contains(tab.id) ? 0 : 1
         row.onSelect = { [weak state] in
             guard let state else { return }
             if state.renamingTabID != tab.id {
@@ -1271,7 +1273,8 @@ final class BrowserNativeSidebarNSView: NSView {
             isResizing: state.isSidebarResizing,
             resetID: state.tabRowInteractionResetID,
         )
-        row.dragOpacity = !state.draggedTabIDs.isEmpty && memberIDs.allSatisfy(state.draggedTabIDs.contains) ? 0 : 1
+        row.dragOpacity = !state.drag.isDragging && !state.draggedTabIDs.isEmpty
+            && memberIDs.allSatisfy(state.draggedTabIDs.contains) ? 0 : 1
         row.onSelectSplitMember = { [weak state] id in
             guard let state, let member = state.snapshot.tab(withID: id) else { return }
             state.dismissRenamingIfNeeded()
@@ -2128,7 +2131,8 @@ private final class BrowserNativeSidebarDragPreview: BrowserNativePressableView 
         super.init(frame: frame)
         cornerRadius = BrowserChromeLayout.sidebarRowCornerRadius
         strokeWidth = 1
-        fillColor = BrowserChromeColors.solidBackground
+        // See-through, so the insertion line and the row under it still show.
+        fillColor = BrowserChromeColors.solidBackground.withAlphaComponent(0.7)
         strokeColor = BrowserChromeColors.sidebarDropIndicator.withAlphaComponent(0.28)
         shadow = NSShadow()
         shadow?.shadowColor = NSColor.black.withAlphaComponent(0.32)

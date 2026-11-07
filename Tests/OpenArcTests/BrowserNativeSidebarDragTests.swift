@@ -18,6 +18,7 @@ import Testing
         let slot = try #require(geometry.slots.first { $0.proposal.destination == destination })
         h.move(slot.hitFrame.center)
         #expect(f.model.tabs == original, "Hover must never mutate model order")
+        #expect(try #require(h.row(f.item("x"))).dragOpacity == 1, "The dragged row stays in place until the drop")
         let proposal = try #require(h.state.drag.proposal)
         guard case .line(let line) = proposal.feedback else { Issue.record("Expected line")
             return
