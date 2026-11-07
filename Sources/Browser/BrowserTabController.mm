@@ -2926,6 +2926,8 @@ enum PageContextMenuCommand {
   kContextStartSpeaking,
   kContextStopSpeaking,
   kContextSearchImage,
+  kContextLookUp,
+  kContextEmojiAndSymbols,
 };
 
 /// Speech › Start Speaking reads the selection aloud, as macOS apps do.
@@ -2942,8 +2944,9 @@ NSString *TranslateMenuTitle() {
   return [NSString stringWithFormat:NSLocalizedString(@"browser.context.translate_to", nil), name];
 }
 
+// Context menus read "&" as a mnemonic mark; "&&" shows one.
 CefString LocalizedMenuTitle(NSString *key) {
-  return CefString(NSLocalizedString(key, nil).UTF8String);
+  return CefString([NSLocalizedString(key, nil) stringByReplacingOccurrencesOfString:@"&" withString:@"&&"].UTF8String);
 }
 
 /// Copies a page's image as a picture once it has downloaded.
@@ -3020,8 +3023,36 @@ void BuildPageContextMenu(CefRefPtr<CefContextMenuParams> params, CefRefPtr<CefM
       model->AddItem(kContextSearchImage, LocalizedMenuTitle(@"browser.context.search_google_for_image"));
     }
   }
-  if (isEditable) {
+  // The selection, shortened for menu titles, and the engine search for it.
+  NSString *selection = ToNSString(params->GetSelectionText().ToString());
+  selection = [selection stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+  NSString *fullSelection = selection;
+  if (selection.length > 40) {
+    selection = [[selection substringToIndex:40] stringByAppendingString:@"…"];
+  }
+  const auto addSearch = [&]() {
+    NSString *title = searchEngineName.length > 0
+        ? [NSString stringWithFormat:NSLocalizedString(@"browser.context.search_engine_for_selection", nil),
+                                     searchEngineName, selection]
+        : [NSString stringWithFormat:NSLocalizedString(@"browser.context.search_for_selection", nil), selection];
+    model->AddItem(kContextSearchForSelection,
+                   CefString([title stringByReplacingOccurrencesOfString:@"&" withString:@"&&"].UTF8String));
+  };
+  // Look Up shows the system's definition, for text outside links.
+  const bool looksUp = hasSelection && !hasLink && allowsLinkTargets && fullSelection.length > 0;
+  if (looksUp) {
     separate();
+    NSString *lookUp = [NSString stringWithFormat:NSLocalizedString(@"browser.context.look_up", nil), selection];
+    model->AddItem(kContextLookUp,
+                   CefString([lookUp stringByReplacingOccurrencesOfString:@"&" withString:@"&&"].UTF8String));
+    model->AddSeparator();
+  }
+  if (isEditable) {
+    if (looksUp) {
+      addSearch();
+    }
+    model->AddItem(kContextEmojiAndSymbols, LocalizedMenuTitle(@"browser.context.emoji_symbols"));
+    model->AddSeparator();
     std::vector<CefString> suggestions;
     if (params->GetDictionarySuggestions(suggestions) && !suggestions.empty()) {
       int index = 0;
@@ -3047,22 +3078,24 @@ void BuildPageContextMenu(CefRefPtr<CefContextMenuParams> params, CefRefPtr<CefM
     addEdit(MENU_ID_PASTE, @"browser.context.paste", CM_EDITFLAG_CAN_PASTE);
     addEdit(MENU_ID_PASTE_MATCH_STYLE, @"browser.context.paste_match_style", CM_EDITFLAG_CAN_PASTE);
     addEdit(MENU_ID_SELECT_ALL, @"browser.context.select_all", CM_EDITFLAG_CAN_SELECT_ALL);
+    if (hasSelection) {
+      model->AddSeparator();
+      model->AddItem(kContextPrint, LocalizedMenuTitle(@"browser.context.print"));
+    }
   } else if (hasSelection) {
-    separate();
+    // Outside links the search comes first; on a link it follows Copy.
+    if (looksUp) {
+      addSearch();
+    } else {
+      separate();
+    }
     model->AddItem(MENU_ID_COPY, LocalizedMenuTitle(@"browser.context.copy"));
     if (allowsLinkTargets) {
       model->AddItem(kContextCopyLinkToHighlight, LocalizedMenuTitle(@"browser.context.copy_link_to_highlight"));
     }
-    NSString *selection = ToNSString(params->GetSelectionText().ToString());
-    selection = [selection stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
-    if (selection.length > 40) {
-      selection = [[selection substringToIndex:40] stringByAppendingString:@"…"];
+    if (!looksUp) {
+      addSearch();
     }
-    NSString *title = searchEngineName.length > 0
-        ? [NSString stringWithFormat:NSLocalizedString(@"browser.context.search_engine_for_selection", nil),
-                                     searchEngineName, selection]
-        : [NSString stringWithFormat:NSLocalizedString(@"browser.context.search_for_selection", nil), selection];
-    model->AddItem(kContextSearchForSelection, CefString(title.UTF8String));
   }
   if (!hasLink && !hasImage && !hasPlayer && !hasSelection && !isEditable) {
     model->AddItem(MENU_ID_BACK, LocalizedMenuTitle(@"browser.context.back"));
@@ -3145,6 +3178,20 @@ bool RunBasicPageContextCommand(CefRefPtr<CefBrowser> browser,
     case kContextStopSpeaking:
       [SharedSpeechSynthesizer() stopSpeakingAtBoundary:AVSpeechBoundaryImmediate];
       return true;
+    case kContextEmojiAndSymbols:
+      [NSApp orderFrontCharacterPalette:nil];
+      return true;
+    case kContextLookUp: {
+      NSView *view = CAST_CEF_WINDOW_HANDLE_TO_NSVIEW(host->GetWindowHandle());
+      NSString *text = ToNSString(params->GetSelectionText().ToString());
+      if (view != nil && text.length > 0) {
+        // The click point is from the view's top left; the definition sits at the text's baseline.
+        const NSPoint point = NSMakePoint(params->GetXCoord(),
+                                          view.isFlipped ? params->GetYCoord() : NSHeight(view.bounds) - params->GetYCoord());
+        [view showDefinitionForAttributedString:[[NSAttributedString alloc] initWithString:text] atPoint:point];
+      }
+      return true;
+    }
     case kContextInspect: {
       CefWindowInfo windowInfo;
       windowInfo.runtime_style = CEF_RUNTIME_STYLE_ALLOY;
