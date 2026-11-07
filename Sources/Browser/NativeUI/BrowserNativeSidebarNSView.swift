@@ -1161,6 +1161,7 @@ final class BrowserNativeSidebarNSView: NSView {
                             state?.withSidebarAnimation { _ = model.turnFolderIntoSpace(id: folder.id) }
                         }
                         : nil,
+                    onCopyAllLinks: { _ = model.copyAllLinks(inFolderID: folder.id) },
                     onDuplicate: { [weak state] in
                         state?.withSidebarAnimation { _ = model.duplicateFolder(id: folder.id) }
                     },

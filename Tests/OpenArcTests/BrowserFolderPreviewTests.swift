@@ -144,3 +144,34 @@ import Testing
         #expect(coordinator.shownFolderID == "b", "Resting on B replaces A's preview after it hides")
     }
 }
+
+// MARK: - BrowserFolderCopyAllLinksTests
+
+@Suite(.serialized)
+@MainActor struct BrowserFolderCopyAllLinksTests {
+    @Test func copyAllLinksPutsEveryTabOfTheFolderOnItsOwnLine() {
+        let f = SidebarDragFixture(
+            pinned: [("one", "folder"), ("two", "folder"), ("out", nil)],
+            folders: [.init(id: "folder", spaceID: "s", title: "Folder")],
+        )
+        let pasteboard = NSPasteboard.general
+        let saved = pasteboard.pasteboardItems?.map { item in
+            Dictionary(uniqueKeysWithValues: item.types.compactMap { type in
+                item.data(forType: type).map { (type, $0) }
+            })
+        } ?? []
+        defer {
+            pasteboard.clearContents()
+            pasteboard.writeObjects(saved.map { types in
+                let item = NSPasteboardItem()
+                for (type, data) in types {
+                    item.setData(data, forType: type)
+                }
+                return item
+            })
+        }
+        #expect(f.model.copyAllLinks(inFolderID: "folder"))
+        #expect(pasteboard.string(forType: .string) == "https://one.example\nhttps://two.example")
+        #expect(!f.model.copyAllLinks(inFolderID: "missing"))
+    }
+}

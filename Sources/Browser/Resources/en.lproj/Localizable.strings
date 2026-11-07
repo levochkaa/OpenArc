@@ -873,7 +873,8 @@
 "browser.card.fill_reason" = "fill a saved card";
 "browser.settings.cards" = "Cards";
 "browser.card.none_saved" = "No saved cards";
-"browser.pinned_tab_folder.new_nested" = "New Nested Folder";
+"browser.pinned_tab_folder.new_nested" = "New Nested Folder…";
+"browser.pinned_tab_folder.copy_all_links" = "Copy All Links";
 "browser.pinned_tab_folder.turn_into_space" = "Turn “%@” into Space";
 "browser.js_dialog.says" = "%@ says";
 "browser.js_dialog.page_says" = "This page says";

@@ -3035,6 +3035,21 @@ enum BrowserWindowMode: Equatable {
         return pasteboard.setString(link, forType: .string)
     }
 
+    /// Copy All Links: the addresses of a folder's tabs, its subfolders' too,
+    /// in sidebar order, one per line.
+    @discardableResult func copyAllLinks(inFolderID folderID: String) -> Bool {
+        let snapshot = sidebarSnapshot
+        guard let folder = snapshot.pinnedTabFolder(withID: folderID) else { return false }
+        let links = BrowserSidebarTabTree(snapshot: snapshot)
+            .tabIDs(in: .pinned(folder.spaceID, folderID: folderID))
+            .compactMap { tabURLString(forTabID: $0) }
+            .filter { !$0.isEmpty }
+        guard !links.isEmpty else { return false }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        return pasteboard.setString(links.joined(separator: "\n"), forType: .string)
+    }
+
     @discardableResult func copyTabLink(forTabID tabID: String) -> Bool {
         guard
             let urlString = tabURLString(forTabID: tabID),

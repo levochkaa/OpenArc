@@ -147,6 +147,7 @@ import AppKit
         onChangeIcon: @escaping (String?) -> Void,
         onNewNested: (() -> Void)? = nil,
         onTurnIntoSpace: (() -> Void)? = nil,
+        onCopyAllLinks: (() -> Void)? = nil,
         onDuplicate: (() -> Void)? = nil,
         moveTargets: [BrowserChromeModel.Space] = [],
         onMove: @escaping (String) -> Void = { _ in },
@@ -162,6 +163,9 @@ import AppKit
                 to: menu,
                 action: onTurnIntoSpace,
             )
+        }
+        if let onCopyAllLinks {
+            add(BrowserStrings.pinnedTabFolderCopyAllLinksAction, to: menu, action: onCopyAllLinks)
         }
         if !menu.items.isEmpty {
             menu.addItem(.separator())
