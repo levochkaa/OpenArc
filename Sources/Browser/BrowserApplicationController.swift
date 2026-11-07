@@ -668,7 +668,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
 
     public func showArchive(_: Any?) {
         guard let model = archiveContextModel else { return }
-        _ = performArchiveCommand(.viewArchive, from: model)
+        _ = viewArchive(from: model)
     }
 
     public func clearArchive(_: Any?) {
@@ -1073,6 +1073,17 @@ NSMenuDelegate, NSUserInterfaceValidations {
         } else if openNewWindow(), let session = profileWindowSessions.last {
             scriptWindow.attach(window: session.window, model: session.chromeModel)
         }
+    }
+
+    /// View Archive opens the Library on Archived Tabs beside the window's page;
+    /// a window without a Library uses the Archive window.
+    @nonobjc private func viewArchive(from model: BrowserChromeModel) -> Bool {
+        guard !isTerminationRequested, model.canBrowseArchive, model.supportsSpaces,
+              let window = profileWindowSessions.first(where: { $0.chromeModel === model })?.window
+        else { return performArchiveCommand(.viewArchive, from: model) }
+        model.openLibrary(section: .archive)
+        window.makeKeyAndOrderFront(nil)
+        return true
     }
 
     /// Only for someone new: an existing session marks it done without showing it.
@@ -2799,7 +2810,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
             return activeChromeModel?.archiveSelectedTab() ?? false
         case .viewArchive:
             guard let model = archiveContextModel else { return false }
-            return performArchiveCommand(.viewArchive, from: model)
+            return viewArchive(from: model)
         case .clearArchive:
             guard let model = archiveContextModel else { return false }
             return performArchiveCommand(.clearArchive, from: model)
