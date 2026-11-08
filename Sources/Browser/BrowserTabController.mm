@@ -2928,6 +2928,8 @@ enum PageContextMenuCommand {
   kContextSearchImage,
   kContextLookUp,
   kContextEmojiAndSymbols,
+  kContextMediaLoop,
+  kContextMediaControls,
 };
 
 /// Speech › Start Speaking reads the selection aloud, as macOS apps do.
@@ -3002,9 +3004,19 @@ void BuildPageContextMenu(CefRefPtr<CefContextMenuParams> params, CefRefPtr<CefM
     model->AddItem(kContextSaveLink, LocalizedMenuTitle(@"browser.context.save_link"));
     model->AddItem(kContextCopyLinkAddress, LocalizedMenuTitle(@"browser.context.copy_link"));
   }
-  if (mediaType == CM_MEDIATYPE_VIDEO) {
+  if (hasPlayer) {
+    // Player menu: Loop and Show All Controls first, Picture in Picture and
+    // Cast… after the address items.
+    const auto media = params->GetMediaStateFlags();
     separate();
-    model->AddItem(kContextPictureInPicture, LocalizedMenuTitle(@"browser.context.picture_in_picture"));
+    if ((media & CM_MEDIAFLAG_CAN_LOOP) != 0) {
+      model->AddCheckItem(kContextMediaLoop, LocalizedMenuTitle(@"browser.context.media_loop"));
+      model->SetChecked(kContextMediaLoop, (media & CM_MEDIAFLAG_LOOP) != 0);
+    }
+    if ((media & CM_MEDIAFLAG_CAN_TOGGLE_CONTROLS) != 0) {
+      model->AddCheckItem(kContextMediaControls, LocalizedMenuTitle(@"browser.context.media_controls"));
+      model->SetChecked(kContextMediaControls, (media & CM_MEDIAFLAG_CONTROLS) != 0);
+    }
   }
   if (hasImage || hasPlayer) {
     separate();
@@ -3017,6 +3029,12 @@ void BuildPageContextMenu(CefRefPtr<CefContextMenuParams> params, CefRefPtr<CefM
     }
     model->AddItem(kContextCopyMediaAddress,
                    LocalizedMenuTitle(hasImage ? @"browser.context.copy_image_address" : @"browser.context.copy_media_address"));
+    if (mediaType == CM_MEDIATYPE_VIDEO) {
+      model->AddItem(kContextPictureInPicture, LocalizedMenuTitle(@"browser.context.picture_in_picture"));
+    }
+    if (hasPlayer && allowsLinkTargets) {
+      model->AddItem(kContextCast, LocalizedMenuTitle(@"browser.context.cast"));
+    }
     // Google finds an image by its address, offered when Google is the engine.
     if (hasImage && allowsLinkTargets && [searchEngineName isEqualToString:NSLocalizedString(@"browser.settings.search_engine.google", nil)] &&
         [ToNSString(params->GetSourceUrl().ToString()) hasPrefix:@"http"]) {
@@ -6891,11 +6909,25 @@ void BrowserTabClient::OnLoadingStateChange(CefRefPtr<CefBrowser> browser,
 }
 
 bool BrowserTabClient::OnContextMenuCommand(CefRefPtr<CefBrowser> browser,
-                                            CefRefPtr<CefFrame>,
+                                            CefRefPtr<CefFrame> frame,
                                             CefRefPtr<CefContextMenuParams> params,
                                             int command_id,
                                             EventFlags) {
   CEF_REQUIRE_UI_THREAD();
+  if ((command_id == kContextMediaLoop || command_id == kContextMediaControls) && frame) {
+    // The player under the menu, found by its address in the frame that showed it.
+    NSData *json = [NSJSONSerialization dataWithJSONObject:@[ ToNSString(params->GetSourceUrl().ToString()) ]
+                                                   options:0
+                                                     error:nil];
+    NSString *source = [[NSString alloc] initWithData:json encoding:NSUTF8StringEncoding];
+    NSString *property = command_id == kContextMediaLoop ? @"loop" : @"controls";
+    NSString *script = [NSString stringWithFormat:
+        @"(() => { const [src] = %@; const media = [...document.querySelectorAll('video, audio')]"
+         ".find(m => m.currentSrc === src || m.src === src); if (media) media.%@ = !media.%@; })();",
+        source, property, property];
+    frame->ExecuteJavaScript(ToStdString(script), frame->GetURL(), 0);
+    return true;
+  }
   if (RunBasicPageContextCommand(browser, params, command_id)) {
     return true;
   }

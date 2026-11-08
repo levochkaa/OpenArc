@@ -770,6 +770,8 @@
 "browser.menu.close_picture_in_picture" = "Close Picture in Picture";
 "browser.sidebar.drag_to_add_favorites" = "Drag to add Favorites";
 "browser.context.picture_in_picture" = "Picture in Picture";
+"browser.context.media_loop" = "Loop";
+"browser.context.media_controls" = "Show All Controls";
 
 "browser.menu.import_from_browser" = "Import from Another Browser…";
 "browser.menu.blank_window" = "Blank Window";
