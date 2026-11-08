@@ -14,6 +14,10 @@ enum BrowserAppIcon: String, CaseIterable {
 
     // MARK: Internal
 
+    /// The icons Settings offers. The bundle's own icon is the ring, so it is
+    /// listed once, as the original; a stored `ring` still reads and shows it.
+    static var choices: [Self] { allCases.filter { $0 != .ring } }
+
     var title: String {
         switch self {
         case .standard: BrowserStrings.appIconStandard
@@ -28,7 +32,7 @@ enum BrowserAppIcon: String, CaseIterable {
     /// The bundle's icon for `standard`, or one of the shipped images, with its hue turned.
     var image: NSImage? {
         switch self {
-        case .standard: NSWorkspace.shared.icon(forFile: Bundle.main.bundlePath)
+        case .standard: NSImage(named: "AppIcon") ?? NSWorkspace.shared.icon(forFile: Bundle.main.bundlePath)
         case .ring: Self.shipped("openarc-icon-ring")
         case .monogram: Self.shipped("openarc-icon-monogram")
         case .neon: Self.turned("openarc-icon-ring", radians: 2.2)
