@@ -160,6 +160,11 @@ NSMenuDelegate, NSUserInterfaceValidations {
     }
 
     /// A card or small window with the keyboard finds in its own page.
+    /// The small window in front, which New Tab searches in.
+    private var focusedSmallWindow: BrowserPeekPanel? {
+        (NSApp.keyWindow as? BrowserPeekPanel).flatMap { $0.isStandalone ? $0 : nil }
+    }
+
     private var focusedFindablePanel: BrowserPeekPanel? {
         (NSApp.keyWindow as? BrowserPeekPanel).flatMap { $0.canFind ? $0 : nil }
     }
@@ -674,6 +679,9 @@ NSMenuDelegate, NSUserInterfaceValidations {
     }
 
     public func createNewTab(_: Any?) {
+        if presentSmallWindowSearch() {
+            return
+        }
         guard activeChromeModel?.isWebApp != true else {
             return
         }
@@ -888,6 +896,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
 
         switch action {
         case #selector(createNewTab(_:)):
+            if focusedSmallWindow != nil { return true }
             return activeChromeModel?.canCreateTab == true && activeChromeModel?.isWebApp != true
         case #selector(stopLoadingCurrentTab(_:)):
             return activeChromeModel?.canStopLoading ?? false
@@ -1147,6 +1156,20 @@ NSMenuDelegate, NSUserInterfaceValidations {
         } else if openNewWindow(), let session = profileWindowSessions.last {
             scriptWindow.attach(window: session.window, model: session.chromeModel)
         }
+    }
+
+    /// New Tab in a small window asks where to go over its page and goes there in it.
+    private func presentSmallWindowSearch() -> Bool {
+        guard
+            let panel = focusedSmallWindow,
+            let chromeModel = activeProfileWindowSession?.chromeModel ?? profileWindowSessions.first?.chromeModel
+        else {
+            return false
+        }
+        panel.presentSearch(model: chromeModel.makeLittleWindowSearchModel { [weak panel] urlString in
+            panel?.onNavigate?(urlString)
+        })
+        return true
     }
 
     /// A card or small window with the keyboard shows its own page's tools, and
@@ -2818,6 +2841,9 @@ NSMenuDelegate, NSUserInterfaceValidations {
             setAsDefaultBrowser(nil)
             return true
         case .newTab:
+            if presentSmallWindowSearch() {
+                return true
+            }
             guard activeChromeModel?.isWebApp != true, activeChromeModel?.canCreateTab ?? false else {
                 return false
             }

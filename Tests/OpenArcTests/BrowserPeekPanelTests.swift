@@ -134,6 +134,24 @@ import Testing
         #expect(panel.linkStatus.superview != nil)
     }
 
+    @Test func newTabInTheSmallWindowSearchesOverItsPageAndGoesThereInIt() async throws {
+        let f = SidebarDragFixture()
+        let panel = BrowserPeekPanel.presentStandalone()
+        defer { panel.dismiss() }
+        var navigated = [String]()
+        let model = f.model.makeLittleWindowSearchModel { navigated.append($0) }
+        panel.presentSearch(model: model)
+        let bar = try #require(panel.searchBar)
+        #expect(model.isPresented && bar.showsCloseButton)
+        #expect(bar.panelWidthLimit == BrowserLittleWindowLauncher.barWidth, "As wide as the small window bar")
+
+        model.query = "example.com"
+        model.submitSelection()
+        #expect(navigated.count == 1 && navigated[0].contains("example.com"))
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(panel.searchBar == nil && bar.superview == nil, "A result closes the search")
+    }
+
     @Test func smallWindowIsOptInAndOpensAStandaloneWindow() throws {
         let f = SidebarDragFixture(temporary: ["x"])
         #expect(!f.model.opensExternalLinksInLittleWindow, "Links keep opening as tabs by default")

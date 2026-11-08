@@ -18,6 +18,11 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
     /// The selected row's fill, from the Space's theme.
     var themeSelectionColor: NSColor?
 
+    /// The widest the bar gets, below the usual width, as over a small window.
+    var panelWidthLimit: CGFloat? {
+        didSet { needsLayout = true }
+    }
+
     // MARK: Private
 
     private let model: BrowserCommandBarModel
@@ -173,6 +178,7 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
             displayText: model.previewDisplayText ?? model.query,
             suggestionCount: displayedSuggestions.count,
             extraWidth: siteSearchWidth(),
+            widthLimit: panelWidthLimit,
         )
         panel.frame = geometry.panelFrame
         let outer = BrowserChromeLayout.commandBarOuterPadding

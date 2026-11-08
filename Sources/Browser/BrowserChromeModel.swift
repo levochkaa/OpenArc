@@ -4439,6 +4439,11 @@ enum BrowserWindowMode: Equatable {
         windowTitleHandler(title)
     }
 
+    /// New Tab in a small window: the same results as its bar, going to `navigate`.
+    func makeLittleWindowSearchModel(navigate: @escaping (String) -> Void) -> BrowserCommandBarModel {
+        makeCommandBarModel(forLittleWindow: true, submit: navigate)
+    }
+
     private func showsMovedPage(syncID: String) -> Bool {
         tabs.first { $0.syncID == syncID }.map { movedPageTabIDs.contains($0.id) && hasNoPage($0.id) } ?? false
     }

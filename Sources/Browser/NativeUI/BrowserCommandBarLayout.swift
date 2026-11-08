@@ -138,12 +138,14 @@ struct BrowserCommandBarLayout {
     let suggestionCount: Int
     /// Room for a site search chip or offer beside the text.
     var extraWidth: CGFloat = 0
+    /// A narrower standard bar, as over a small window's page.
+    var widthLimit: CGFloat?
 
     var panelWidth: CGFloat {
         switch style {
         case .standard:
             return min(
-                BrowserChromeLayout.commandBarWidth,
+                widthLimit ?? BrowserChromeLayout.commandBarWidth,
                 max(availableSize.width - BrowserChromeLayout.sidebarOuterPadding * 2, 0),
             )
         case .compact(let anchor, let sidebarWidth, let matchesAnchorWidth):
@@ -186,10 +188,7 @@ struct BrowserCommandBarLayout {
         switch style {
         case .standard:
             return CGPoint(
-                x: max((availableSize.width - min(
-                    BrowserChromeLayout.commandBarWidth,
-                    max(availableSize.width - BrowserChromeLayout.sidebarOuterPadding * 2, 0),
-                )) / 2, 0),
+                x: max((availableSize.width - panelWidth) / 2, 0),
                 y: standardTopInset,
             )
         case .compact(let anchor, _, _):

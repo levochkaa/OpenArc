@@ -1,6 +1,7 @@
 // BrowserPeekPanel.swift
 
 import AppKit
+import Combine
 
 // MARK: - BrowserPeekPanel
 
@@ -105,6 +106,9 @@ import AppKit
     /// The address of the link under the pointer, at the page's bottom left.
     let linkStatus = BrowserLinkStatusView()
 
+    /// The bar New Tab shows over the small window's page, if any.
+    private(set) var searchBar: BrowserCommandBarNSView?
+
     private let addressSymbol = NSImageView()
 
     private var parentMonitor: Any?
@@ -123,6 +127,7 @@ import AppKit
     private var findMatchCount: Int?
     private var findActiveOrdinal: Int?
     private var findFocusRequest = 0
+    private var searchObservation: AnyCancellable?
 
     /// The engine keeps a loading page from taking the keys meanwhile.
     @objc var isEditingAddress: Bool { hostLabel.currentEditor() != nil }
@@ -561,6 +566,27 @@ import AppKit
         refreshFind()
     }
 
+    /// New Tab: a command bar over the page, closed by Escape, × or a result.
+    func presentSearch(model: BrowserCommandBarModel) {
+        dismissSearch()
+        let bar = BrowserCommandBarNSView(model: model)
+        bar.configure(blockedLeadingInset: 0, style: .standard, faviconCandidate: nil)
+        bar.showsCloseButton = true
+        // As wide as the small window bar, centered on the whole window.
+        bar.panelWidthLimit = BrowserLittleWindowLauncher.barWidth
+        bar.frame = card.bounds
+        bar.autoresizingMask = [.width, .height]
+        card.addSubview(bar, positioned: .above, relativeTo: nil)
+        searchBar = bar
+        searchObservation = model.$isPresented
+            .dropFirst()
+            .filter { !$0 }
+            .sink { [weak self] _ in
+                DispatchQueue.main.async { self?.dismissSearch() }
+            }
+        model.present()
+    }
+
     /// Copy Link and Copy URL: the page's address, with the same note as in a
     /// browser window at the card's top right.
     @discardableResult @objc func copyLink() -> Bool {
@@ -595,6 +621,14 @@ import AppKit
         )
         linkStatus.cornerRadius = Self.linkStatusHeight / 2
         linkStatus.autoresizingMask = [.maxXMargin, .maxYMargin]
+    }
+
+    private func dismissSearch() {
+        searchObservation = nil
+        guard let bar = searchBar else { return }
+        searchBar = nil
+        bar.removeFromSuperview()
+        focusPage()
     }
 
     private func layoutCopiedToast() {
