@@ -75,6 +75,8 @@ final class BrowserMobilePageViewController: UIViewController, UITextFieldDelega
     private var newButton = UIButton(type: .system)
     private var shareButton = UIButton(type: .system)
     private var findButton = UIButton(type: .system)
+    private let toolbarSpacer = UIView()
+    private var toolbarRow = UIStackView()
     private var downloadsButton = UIButton(type: .system)
 
     private var canPresentFind: Bool {
@@ -356,6 +358,14 @@ final class BrowserMobilePageViewController: UIViewController, UITextFieldDelega
         // Landscape/short windows keep chrome above content and keyboard.
         chromeIsAtBottom = traitCollection.horizontalSizeClass != .regular && traitCollection
             .verticalSizeClass != .compact
+        // A phone on its side has width to spare and little height: the
+        // address and the buttons share one row.
+        let oneRow = traitCollection.verticalSizeClass == .compact && traitCollection.horizontalSizeClass != .regular
+        chromeStack.axis = oneRow ? .horizontal : .vertical
+        chromeStack.spacing = oneRow ? 8 : 4
+        toolbarSpacer.isHidden = oneRow
+        toolbarRow.setContentHuggingPriority(oneRow ? .required : .defaultLow, for: .horizontal)
+        toolbarRow.setContentCompressionResistancePriority(oneRow ? .required : .defaultHigh, for: .horizontal)
         let ordered: [UIView] = chromeIsAtBottom
             ? [banner, content, progress, chrome]
             : [chrome, progress, banner, content]
@@ -424,13 +434,14 @@ final class BrowserMobilePageViewController: UIViewController, UITextFieldDelega
         let toolbar = UIStackView(arrangedSubviews: [
             backButton,
             forwardButton,
-            UIView(),
+            toolbarSpacer,
             findButton,
             shareButton,
             tabsButton,
             newButton,
         ])
         toolbar.spacing = 4
+        toolbarRow = toolbar
         chromeStack.addArrangedSubview(toolbar)
     }
 
