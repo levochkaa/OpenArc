@@ -496,7 +496,8 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
         let downloads = model.downloadsModel
         var result = [Row]()
         var lastHeader: String?
-        for item in downloads.items {
+        // A canceled download left nothing behind to list.
+        for item in downloads.items where item.state != .canceled {
             let name = item.fileName
             if !query.isEmpty, !name.lowercased().contains(query) { continue }
             if let filter, !Self.matches(fileName: name, kind: filter) { continue }
