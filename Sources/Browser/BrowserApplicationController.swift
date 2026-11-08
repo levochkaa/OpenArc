@@ -29,7 +29,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
     }
 
     private var aboutWindow: NSWindow?
-    private let fullScreenMenuTarget = BrowserFullScreenMenuTarget()
+    private let windowCommandTarget = BrowserWindowCommandTarget()
     private var settingsWindowController: SettingsWindowController?
     private var lastLiveFolderRefresh = Date.distantPast
     private var archiveWindowControllers = [ObjectIdentifier: BrowserArchiveWindowController]()
@@ -1765,7 +1765,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
             keyEquivalent: "f",
         )
         fullScreenItem.keyEquivalentModifierMask = [.control, .command]
-        fullScreenItem.target = fullScreenMenuTarget
+        fullScreenItem.target = windowCommandTarget
         viewMenu.addItem(fullScreenItem)
         viewMenuItem.submenu = viewMenu
 
@@ -2517,12 +2517,14 @@ NSMenuDelegate, NSUserInterfaceValidations {
             title: BrowserStrings.menuMinimize,
             action: #selector(NSWindow.performMiniaturize(_:)),
             keyEquivalent: standardKey("m"),
+            target: windowCommandTarget,
         ))
         windowMenu.addItem(makeStandardMenuItem(
             title: BrowserStrings.menuZoom,
             action: #selector(NSWindow.performZoom(_:)),
             keyEquivalent: "",
             modifiers: [],
+            target: windowCommandTarget,
         ))
         windowMenu.addItem(.separator())
         windowMenu.addItem(makeStandardMenuItem(
@@ -2716,8 +2718,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
             NSApp.hideOtherApplications(nil)
             return true
         case .minimizeWindow:
-            guard let window = NSApp.keyWindow, window.styleMask.contains(.miniaturizable) else { return false }
-            window.performMiniaturize(nil)
+            guard let window = BrowserWindowCommandTarget.targetWindow,
+                  window.styleMask.contains(.miniaturizable)
+            else { return false }
+            window.miniaturize(nil)
             return true
         case .closeWindow:
             guard let window = NSApp.keyWindow else { return false }
