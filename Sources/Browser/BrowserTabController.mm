@@ -4534,6 +4534,10 @@ std::string BrowserMediaVolumeScript(double volume) {
   _dockedDevTools[key] = window;
   _dockedDevToolsObservers[key] = @[ closeObserver, mainObserver ];
   [self syncBrowserFrames];
+  // The tools were main before they were found.
+  if (window.isMainWindow) {
+    [window.parentWindow makeMainWindow];
+  }
 }
 
 - (void)forgetDockedDevToolsForTabID:(NSString *)tabID {
