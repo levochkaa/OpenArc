@@ -364,6 +364,16 @@ import Combine
         onClose?()
     }
 
+    /// A small window's close button closes the window itself; its page and
+    /// session close with it, as with Close Window.
+    override func close() {
+        guard let onClose else {
+            super.close()
+            return
+        }
+        onClose()
+    }
+
     /// The card's frame for a parent window, centered over its content.
     static func frame(over window: NSWindow, page: NSView? = nil) -> NSRect {
         if let page, page.window === window {
