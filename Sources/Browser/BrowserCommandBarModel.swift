@@ -30,6 +30,9 @@ struct BrowserCommandSuggestion: Identifiable, Equatable {
     var spaceTitle: String?
     /// An open tab's icon, from the address its page last reported.
     var faviconURL: URL?
+    /// The page's address as the field completes the typed text to it, such
+    /// as "example.com/a" for "exam".
+    var completionText: String?
     /// The page's icon from the browser's own records.
     var iconData: Data?
 
@@ -102,6 +105,7 @@ struct BrowserCommandSuggestion: Identifiable, Equatable {
     }
 
     func inlineCompletionSuffix(relativeTo query: String) -> String? {
+        let displayText = completionText ?? displayText
         guard kind != .command,
               !query.isEmpty,
               let matchedRange = displayText.range(
@@ -252,7 +256,7 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
             return nil
         }
 
-        let previewDisplayText = selectedSuggestion.displayText
+        let previewDisplayText = selectedSuggestion.completionText ?? selectedSuggestion.displayText
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard
             previewDisplayText != query,
@@ -542,6 +546,12 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
             seenSuggestionKeys.insert(suggestionKey)
         }
 
+        // A visited page whose address starts with the text comes first, and the
+        // field completes the text to that address.
+        if let completed = Self.addressCompletion(for: query, in: localSuggestions) {
+            appendSuggestion(completed)
+        }
+
         let primary = primarySuggestion(for: query)
         // A command that answers the query comes before searching for it, unless it is an address.
         if primary?.kind != .url, let command = localSuggestions.first(where: { Self.commandAnswers($0, query) }) {
@@ -594,6 +604,45 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
         }
 
         return assembledSuggestions
+    }
+
+    /// The first page among these whose address, without its scheme and
+    /// "www.", starts with the text.
+    static func addressCompletion(
+        for query: String,
+        in suggestions: [BrowserCommandSuggestion],
+    ) -> BrowserCommandSuggestion? {
+        let needle = query.lowercased()
+        guard needle.count >= 2, !needle.contains(where: \.isWhitespace) else { return nil }
+        for suggestion in suggestions where [.openTab, .history, .bookmark].contains(suggestion.kind) {
+            guard let address = completionAddress(for: suggestion.resolvedURLString),
+                  address.lowercased().hasPrefix(needle), address.count > needle.count
+            else { continue }
+            var completed = suggestion
+            completed.completionText = address
+            return completed
+        }
+        return nil
+    }
+
+    private static func completionAddress(for urlString: String) -> String? {
+        guard var components = URLComponents(string: urlString),
+              let scheme = components.scheme?.lowercased(), scheme == "https" || scheme == "http",
+              var host = components.host
+        else { return nil }
+        if host.lowercased().hasPrefix("www.") {
+            host.removeFirst(4)
+        }
+        components.scheme = nil
+        components.host = host
+        var address = components.string ?? host
+        if address.hasPrefix("//") {
+            address.removeFirst(2)
+        }
+        if address.hasSuffix("/") {
+            address.removeLast()
+        }
+        return address
     }
 
     private static func commandAnswers(_ suggestion: BrowserCommandSuggestion, _ query: String) -> Bool {

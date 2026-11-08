@@ -283,14 +283,16 @@ private let defaultAISuggestionTitle = BrowserStrings.commandBarAskAI(BrowserAIS
     model.query = "docs"
     await model.waitForPendingSuggestionLoad()
 
+    // The tab's address starts with the text, so it leads and completes the field.
     #expect(model.suggestions.map(\.displayText) == [
+        "Docs Tab",
         "docs",
         defaultAISuggestionTitle,
-        "Docs Tab",
         "Docs Bookmark",
         "docs remote",
     ])
-    #expect(model.suggestions.map(\.kind) == [.search, .aiSearch, .openTab, .bookmark, .googleSuggestion])
+    #expect(model.suggestions.map(\.kind) == [.openTab, .search, .aiSearch, .bookmark, .googleSuggestion])
+    #expect(model.inlineCompletionSuffix == ".example")
 }
 
 @Test
@@ -357,7 +359,8 @@ private let defaultAISuggestionTitle = BrowserStrings.commandBarAskAI(BrowserAIS
     model.present()
     model.query = "open"
     await model.waitForPendingSuggestionLoad()
-    model.moveSelection(by: 2)
+    // open.example completes "open", so the tab is already selected.
+    #expect(model.selectedSuggestion?.kind == .openTab)
     model.submitSelection()
 
     #expect(openedTabIDGroups == [["tab-1", "tab-2"]])
