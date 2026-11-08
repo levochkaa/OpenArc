@@ -329,7 +329,7 @@ targets:
     settings:
       base:
         PRODUCT_NAME: OpenArc
-        PRODUCT_BUNDLE_IDENTIFIER: com.levochkaa.OpenArc.ios
+        PRODUCT_BUNDLE_IDENTIFIER: com.levochkaa.OpenArc
         INFOPLIST_FILE: Support/OpenArciOS-Info.plist
         CODE_SIGN_ENTITLEMENTS: Support/OpenArciOS.entitlements
         SUPPORTS_MACCATALYST: NO
