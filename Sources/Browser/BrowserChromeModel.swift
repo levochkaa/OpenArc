@@ -7291,6 +7291,11 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
             tabs[index].faviconURLString = faviconURLString
         }
 
+        // The engine's history file lags; this session's pages stay searchable.
+        if windowMode != .incognito, title != nil || urlString != nil {
+            historyStore.noteVisit(title: tabs[index].displayTitle, urlString: tabs[index].urlString)
+        }
+
         updateWindowTitle()
 
         if didChangePersistentURL {

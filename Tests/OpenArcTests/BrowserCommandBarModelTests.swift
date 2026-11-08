@@ -659,3 +659,19 @@ private struct RejectingDomainParser: BrowserDomainParsing {
 private struct BrowserEmptySuggestionProviderForTests: BrowserSuggestionProviding {
     func suggestions(for _: String, maximumCount _: Int) -> [String] { [] }
 }
+
+@MainActor @Test func pagesOfThisSessionAreSearchableBeforeTheEngineWritesThem() {
+    let empty = FileManager.default.temporaryDirectory.appendingPathComponent("NoHistory-\(UUID().uuidString)")
+    let store = BrowserChromiumHistoryStore(profileDirectoryCandidates: [empty])
+    #expect(store.suggestions(for: "exam", maximumCount: 5).isEmpty)
+    store.noteVisit(title: "Example Domain", urlString: "https://example.org/")
+    store.noteVisit(title: "Example Domain", urlString: "https://example.com/")
+    store.noteVisit(title: "Ignored", urlString: "openarc://settings/")
+    #expect(Set(store.suggestions(for: "exam", maximumCount: 5).map(\.resolvedURLString))
+        == ["https://example.org/", "https://example.com/"])
+    #expect(
+        store.recentSuggestions(maximumCount: 5).map(\.resolvedURLString)
+            == ["https://example.com/", "https://example.org/"],
+        "Newest first",
+    )
+}
