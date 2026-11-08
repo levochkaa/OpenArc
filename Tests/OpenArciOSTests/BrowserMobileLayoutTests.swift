@@ -90,7 +90,7 @@ import UIKit
         #expect(engine.navigations.last?.0 == tab.runtimeID)
         #expect(engine.navigations.last?.1.absoluteString == "https://example.com/from-address")
         #expect(workspace.selectedTab?.urlString == "https://example.com/from-address")
-        #expect(page.addressField.text == "https://example.com/from-address")
+        #expect(page.addressField.text == "example.com", "Outside editing the field names the site")
         let reload = try #require(page.view.mobileView(withID: "browser.reload") as? UIButton)
         reload.sendActions(for: .touchUpInside)
         #expect(engine.commands.last == "stop:\(tab.runtimeID)")
@@ -142,7 +142,7 @@ import UIKit
         sidebar.tableView(table, didSelectRowAt: .init(row: 0, section: 0))
         #expect(workspace.selectedTabID == original.id)
         #expect(!page.addressField.isFirstResponder)
-        #expect(page.addressField.text == original.urlString)
+        #expect(page.addressField.text == "example.com")
         page.focusAddress()
         try #require(page.addressField.isFirstResponder)
         page.addressField.text = "revised draft for original tab"

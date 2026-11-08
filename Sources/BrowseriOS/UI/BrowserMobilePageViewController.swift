@@ -143,6 +143,13 @@ final class BrowserMobilePageViewController: UIViewController, UITextFieldDelega
         render()
     }
 
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        // On a phone the page sits in the tab list's navigation stack; its bar
+        // would only repeat the toolbar's Show Tabs, so the page takes the room.
+        navigationController?.setNavigationBarHidden(true, animated: animated)
+    }
+
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         render()
@@ -151,6 +158,18 @@ final class BrowserMobilePageViewController: UIViewController, UITextFieldDelega
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         workspace.dismissFindInPage()
+    }
+
+    /// The address as the field shows it outside editing: the site's host
+    /// without `www.`, or the whole address for pages without a web host.
+    static func displayAddress(_ urlString: String?) -> String {
+        guard let urlString, urlString != "about:blank" else { return "" }
+        guard let components = URLComponents(string: urlString),
+              let scheme = components.scheme?.lowercased(), ["http", "https"].contains(scheme),
+              var host = components.host, !host.isEmpty
+        else { return urlString }
+        if host.lowercased().hasPrefix("www.") { host.removeFirst(4) }
+        return host
     }
 
     private static func hasPresentedController(_ controller: UIViewController) -> Bool {
@@ -168,7 +187,7 @@ final class BrowserMobilePageViewController: UIViewController, UITextFieldDelega
             addressField.resignFirstResponder()
         }
         if selectionChanged || !addressField.isFirstResponder {
-            addressField.text = tab?.urlString == "about:blank" ? "" : tab?.urlString
+            addressField.text = Self.displayAddress(tab?.urlString)
         }
         addressField.isEnabled = workspace.isReady
         backButton.isEnabled = tab?.state.canGoBack == true
@@ -268,7 +287,16 @@ final class BrowserMobilePageViewController: UIViewController, UITextFieldDelega
 
     func textFieldDidEndEditing(_: UITextField) { render() }
 
-    func textFieldDidBeginEditing(_: UITextField) { workspace.dismissFindInPage() }
+    func textFieldDidBeginEditing(_ textField: UITextField) {
+        workspace.dismissFindInPage()
+        // Editing starts from the whole address, selected to type over.
+        let address = workspace.selectedTab?.urlString
+        textField.text = address == "about:blank" ? "" : address
+        DispatchQueue.main.async { [weak textField] in
+            guard let textField, textField.isFirstResponder else { return }
+            textField.selectAll(nil)
+        }
+    }
 
     @objc private func sceneBecameInactive(_ notification: Notification) {
         guard let scene = notification.object as? UIWindowScene,

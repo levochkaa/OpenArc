@@ -400,3 +400,11 @@ extension BrowserMobileUITests {
     }
     return view.subviews.lazy.compactMap { mobileFindView(id, in: $0) }.first
 }
+
+@Test func thePhoneAddressFieldShowsTheSiteAndEditsTheWholeAddress() {
+    #expect(BrowserMobilePageViewController.displayAddress("https://www.example.com/a?b=1") == "example.com")
+    #expect(BrowserMobilePageViewController.displayAddress("http://example.org/") == "example.org")
+    #expect(BrowserMobilePageViewController.displayAddress("about:blank") == "")
+    #expect(BrowserMobilePageViewController.displayAddress(nil) == "")
+    #expect(BrowserMobilePageViewController.displayAddress("file:///tmp/a.html") == "file:///tmp/a.html")
+}
