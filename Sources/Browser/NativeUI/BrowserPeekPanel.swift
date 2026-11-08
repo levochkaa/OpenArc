@@ -137,6 +137,8 @@ import Combine
     /// The small window's Space picker, over the top right, as Open in's chevron shows it.
     private(set) var spacePicker: BrowserPeekSpacePicker?
 
+    private var spacePickerMonitor: Any?
+
     private let addressSymbol = NSImageView()
 
     private var parentMonitor: Any?
@@ -513,11 +515,24 @@ import Combine
         card.addSubview(picker, positioned: .above, relativeTo: nil)
         spacePicker = picker
         makeFirstResponder(picker.searchField)
+        // A click anywhere else in the window closes it.
+        spacePickerMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) {
+            [weak self] event in
+            guard let self, let picker = spacePicker, event.window === self else { return event }
+            if !picker.bounds.contains(picker.convert(event.locationInWindow, from: nil)) {
+                dismissSpacePicker()
+            }
+            return event
+        }
     }
 
     func dismissSpacePicker() {
         spacePicker?.removeFromSuperview()
         spacePicker = nil
+        if let spacePickerMonitor {
+            NSEvent.removeMonitor(spacePickerMonitor)
+            self.spacePickerMonitor = nil
+        }
     }
 
     /// Names the Space a page opens in from the small window.
