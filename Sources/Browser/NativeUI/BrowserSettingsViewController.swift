@@ -1011,7 +1011,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
         let body = NSStackView()
         func rows() -> [NSView] {
             BrowserAppIcon.choices.map { icon in
-                let selected = preferences.appIcon == icon || (icon == .standard && preferences.appIcon == .ring)
+                let selected = preferences.appIcon == icon
                 let radio = BrowserActionButton("") { [weak self] in
                     preferences.appIcon = icon
                     icon.apply()

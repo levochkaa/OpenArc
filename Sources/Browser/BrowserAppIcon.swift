@@ -1,64 +1,41 @@
 // BrowserAppIcon.swift
 
 import AppKit
-import CoreImage
 
-/// The Dock icon the user picked in Settings.
+/// The Dock icon the user picked in Settings. `script/app_icon/make_icons.py`
+/// draws every icon; the bundle's own is the Original.
 enum BrowserAppIcon: String, CaseIterable {
     case standard
-    case ring
-    case monogram
-    case neon
     case candy
-    case forest
+    case neon
+    case hologram
+    case sunset
+    case sticker
+    case monochrome
 
     // MARK: Internal
 
-    /// The icons Settings offers. The bundle's own icon is the ring, so it is
-    /// listed once, as the original; a stored `ring` still reads and shows it.
-    static var choices: [Self] { allCases.filter { $0 != .ring } }
+    static var choices: [Self] { allCases }
 
     var title: String {
         switch self {
         case .standard: BrowserStrings.appIconStandard
-        case .ring: BrowserStrings.appIconRing
-        case .monogram: BrowserStrings.appIconMonogram
-        case .neon: BrowserStrings.appIconNeon
         case .candy: BrowserStrings.appIconCandy
-        case .forest: BrowserStrings.appIconForest
+        case .neon: BrowserStrings.appIconNeon
+        case .hologram: BrowserStrings.appIconHologram
+        case .sunset: BrowserStrings.appIconSunset
+        case .sticker: BrowserStrings.appIconSticker
+        case .monochrome: BrowserStrings.appIconMonochrome
         }
     }
 
-    /// The bundle's icon for `standard`, or one of the shipped images, with its hue turned.
     var image: NSImage? {
         switch self {
         case .standard: NSImage(named: "AppIcon") ?? NSWorkspace.shared.icon(forFile: Bundle.main.bundlePath)
-        case .ring: Self.shipped("openarc-icon-ring")
-        case .monogram: Self.shipped("openarc-icon-monogram")
-        case .neon: Self.turned("openarc-icon-ring", radians: 2.2)
-        case .candy: Self.turned("openarc-icon-ring", radians: -1)
-        case .forest: Self.turned("openarc-icon-monogram", radians: 1.6)
+        default: Bundle.main
+            .url(forResource: "openarc-icon-\(rawValue)", withExtension: "png")
+            .flatMap(NSImage.init(contentsOf:))
         }
-    }
-
-    // MARK: Private
-
-    private static func shipped(_ name: String) -> NSImage? {
-        Bundle.main.url(forResource: name, withExtension: "png").flatMap(NSImage.init(contentsOf:))
-    }
-
-    private static func turned(_ name: String, radians: CGFloat) -> NSImage? {
-        guard let url = Bundle.main.url(forResource: name, withExtension: "png"),
-              let input = CIImage(contentsOf: url),
-              let filter = CIFilter(name: "CIHueAdjust")
-        else { return nil }
-        filter.setValue(input, forKey: kCIInputImageKey)
-        filter.setValue(radians, forKey: kCIInputAngleKey)
-        guard let output = filter.outputImage else { return nil }
-        let rep = NSCIImageRep(ciImage: output)
-        let image = NSImage(size: rep.size)
-        image.addRepresentation(rep)
-        return image
     }
 
     @MainActor func apply() {

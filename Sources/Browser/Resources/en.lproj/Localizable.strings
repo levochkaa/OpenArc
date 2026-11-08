@@ -869,11 +869,12 @@
 "browser.capture.file_name" = "OpenArc Capture";
 "browser.settings.icon_tab" = "Icon";
 "browser.app_icon.standard" = "The Original OpenArc";
-"browser.app_icon.ring" = "Ring";
-"browser.app_icon.monogram" = "Monogram";
-"browser.app_icon.neon" = "Neon";
 "browser.app_icon.candy" = "Candy";
-"browser.app_icon.forest" = "Forest";
+"browser.app_icon.neon" = "Neon";
+"browser.app_icon.hologram" = "Hologram";
+"browser.app_icon.sunset" = "Sunset";
+"browser.app_icon.sticker" = "Sticker";
+"browser.app_icon.monochrome" = "Monochrome";
 "browser.settings.recent_pages_previews" = "Preview recent pages on Linear, Notion and Figma";
 "browser.capture.portrait" = "Capture in Portrait Mode";
 "browser.live_folders.menu" = "Live Folders";

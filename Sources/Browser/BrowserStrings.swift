@@ -2097,11 +2097,12 @@ enum BrowserStrings {
         comment: "Settings pane for the Dock icon.",
     )
     static let appIconStandard = NSLocalizedString("browser.app_icon.standard", comment: "App icon name.")
-    static let appIconRing = NSLocalizedString("browser.app_icon.ring", comment: "App icon name.")
-    static let appIconMonogram = NSLocalizedString("browser.app_icon.monogram", comment: "App icon name.")
     static let appIconNeon = NSLocalizedString("browser.app_icon.neon", comment: "App icon name.")
     static let appIconCandy = NSLocalizedString("browser.app_icon.candy", comment: "App icon name.")
-    static let appIconForest = NSLocalizedString("browser.app_icon.forest", comment: "App icon name.")
+    static let appIconHologram = NSLocalizedString("browser.app_icon.hologram", comment: "App icon name.")
+    static let appIconSunset = NSLocalizedString("browser.app_icon.sunset", comment: "App icon name.")
+    static let appIconSticker = NSLocalizedString("browser.app_icon.sticker", comment: "App icon name.")
+    static let appIconMonochrome = NSLocalizedString("browser.app_icon.monochrome", comment: "App icon name.")
     static let settingsRecentPagesPreviews = NSLocalizedString(
         "browser.settings.recent_pages_previews",
         comment: "Settings toggle for hover previews on some sites.",
