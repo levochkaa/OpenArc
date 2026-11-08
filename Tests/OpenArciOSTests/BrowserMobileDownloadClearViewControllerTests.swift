@@ -270,12 +270,16 @@ extension BrowserMobileUITests {
         let bar = host.navigation.navigationBar
         // UIKit can render a system Done item as an icon. Identify the mounted
         // items through their public accessibility IDs, not a label subtree.
+        // iOS 27's glass bar no longer copies an item's ID to its button; the
+        // Clear button is then the one showing its title, Done the other one.
+        let barButtons = clearUIBarButtons(in: bar)
+        let titledClear = barButtons.first { clearUILabel(host.clearButton.title ?? "", in: $0) }
         let clearControl = try #require(
-            clearUIView("browser.downloads.clear-completed", in: bar),
+            clearUIView("browser.downloads.clear-completed", in: bar) ?? titledClear,
             "Clear control missing: \(clearUIHierarchy(bar))",
         )
         let doneControl = try #require(
-            clearUIView("browser.downloads.done", in: bar),
+            clearUIView("browser.downloads.done", in: bar) ?? barButtons.first { $0 !== titledClear },
             "Done control missing: \(clearUIHierarchy(bar))",
         )
         let clearRect = clearControl.convert(clearControl.bounds, to: bar)
@@ -537,6 +541,27 @@ private func clearUIEntry(
         return view
     }
     return view.subviews.lazy.compactMap { clearUIView(id, in: $0) }.first
+}
+
+/// The buttons a navigation bar draws for its items, leading to trailing.
+@MainActor private func clearUIBarButtons(in view: UIView) -> [UIView] {
+    var found = [UIView]()
+    func visit(_ view: UIView) {
+        if String(describing: type(of: view)).hasSuffix("ButtonBarButton") {
+            found.append(view)
+            return
+        }
+        view.subviews.forEach(visit)
+    }
+    visit(view)
+    return found.sorted { $0.convert($0.bounds, to: nil).minX < $1.convert($1.bounds, to: nil).minX }
+}
+
+@MainActor private func clearUILabel(_ text: String, in view: UIView) -> Bool {
+    if let label = view as? UILabel, label.text == text {
+        return true
+    }
+    return view.subviews.contains { clearUILabel(text, in: $0) }
 }
 
 @MainActor private func clearUIHierarchy(_ view: UIView) -> String {
