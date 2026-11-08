@@ -3620,6 +3620,14 @@ class BrowserPeekClient final : public CefClient,
   void OnAddressChange(CefRefPtr<CefBrowser> browser,
                        CefRefPtr<CefFrame> frame,
                        const CefString &url) override;
+  // The small window takes the page's title, for the Window menu and Mission Control.
+  void OnTitleChange(CefRefPtr<CefBrowser>, const CefString &title) override {
+    CEF_REQUIRE_UI_THREAD();
+    BrowserPeekPanel *panel = [controller_ peekPanelForSessionID:session_id_];
+    if (panel.isStandalone) {
+      panel.title = ToNSString(title.ToString());
+    }
+  }
   bool OnBeforeDownload(CefRefPtr<CefBrowser> browser,
                         CefRefPtr<CefDownloadItem> download_item,
                         const CefString &suggested_name,
