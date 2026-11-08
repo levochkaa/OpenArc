@@ -152,6 +152,16 @@ import Testing
         #expect(panel.searchBar == nil && bar.superview == nil, "A result closes the search")
     }
 
+    @Test func viewSourceShowsTheSourceInTheCardItself() {
+        let panel = BrowserPeekPanel.presentStandalone()
+        defer { panel.dismiss() }
+        var targets = [String]()
+        panel.onNavigate = { targets.append($0) }
+        panel.update(urlString: "https://example.com/")
+        #expect(panel.viewSource())
+        #expect(targets == ["view-source:https://example.com/"])
+    }
+
     @Test func backForwardAndReloadGoToTheCardsPage() {
         let panel = BrowserPeekPanel.presentStandalone()
         defer { panel.dismiss() }

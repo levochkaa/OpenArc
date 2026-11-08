@@ -182,6 +182,10 @@ import Combine
 
     var canZoom: Bool { onSetZoomLevel != nil }
 
+    var canViewSource: Bool {
+        onNavigate != nil && currentURLString.hasPrefix("http")
+    }
+
     /// The app answers with a search over the page; without it the field edits inline.
     private var canSearchAddress: Bool {
         isStandalone && NSApp.target(forAction: Self.searchAddressAction, to: nil, from: self) != nil
@@ -418,6 +422,13 @@ import Combine
 
     func navigate(_ command: NavigationCommand) {
         onNavigationCommand?(command.rawValue)
+    }
+
+    /// View Source shows the page's source in the card itself.
+    @discardableResult func viewSource() -> Bool {
+        guard canViewSource else { return false }
+        onNavigate?("view-source:" + currentURLString)
+        return true
     }
 
     /// The small window, centered on the main screen.

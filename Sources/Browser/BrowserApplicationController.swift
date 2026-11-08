@@ -494,6 +494,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
     }
 
     public func viewSource(_: Any?) {
+        if let panel = focusedNavigablePanel {
+            panel.viewSource()
+            return
+        }
         activeChromeModel?.viewSourceOfSelectedTab()
     }
 
@@ -955,6 +959,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
             }
             return activeChromeModel?.canShowDeveloperTools ?? false
         case #selector(viewSource(_:)):
+            if let panel = focusedNavigablePanel { return panel.canViewSource }
             return activeChromeModel?.canViewSource ?? false
         case #selector(zoomIn(_:)):
             if let panel = focusedZoomablePanel {
@@ -2983,6 +2988,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
             if toggleDeveloperToolsOutsideBrowserWindows() { return true }
             return activeChromeModel?.showDeveloperTools() ?? false
         case .viewSource:
+            if let panel = focusedNavigablePanel { return panel.viewSource() }
             return activeChromeModel?.viewSourceOfSelectedTab() ?? false
         case .zoomIn:
             if let panel = focusedZoomablePanel {
