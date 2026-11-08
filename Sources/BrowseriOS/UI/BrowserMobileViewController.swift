@@ -46,6 +46,9 @@ final class BrowserMobileViewController: UISplitViewController, UISplitViewContr
         minimumPrimaryColumnWidth = 240
         maximumPrimaryColumnWidth = 360
         preferredPrimaryColumnWidthFraction = 0.28
+        // The toolbar's Show Tabs shows and hides the sidebar; UIKit's own
+        // button would be a second one for the same thing.
+        displayModeButtonVisibility = .never
         setViewController(UINavigationController(rootViewController: tabsController), for: .primary)
         setViewController(pageController, for: .secondary)
         pageController.showTabs = { [weak self] in self?.showTabList() }
