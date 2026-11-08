@@ -526,7 +526,9 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
                 return
             }
 
-            let shouldDedupeDisplayText = suggestion.kind != .openTab
+            // Pages with one title on different sites stay apart; they
+            // share an address key only when they are the same page.
+            let shouldDedupeDisplayText = ![.openTab, .history, .bookmark].contains(suggestion.kind)
             guard
                 !shouldDedupeDisplayText || !seenDisplayTexts.contains(displayKey),
                 !seenSuggestionKeys.contains(suggestionKey),

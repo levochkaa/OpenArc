@@ -635,6 +635,22 @@ private struct RejectingDomainParser: BrowserDomainParsing {
     #expect(!model.suggestions.contains { $0.kind == .aiSearch })
 }
 
+@MainActor @Test func pagesWithOneTitleOnDifferentSitesAreListedApart() {
+    let pages = ["https://example.com/", "https://example.org/", "https://example.com/"].map {
+        BrowserCommandSuggestion(kind: .history, displayText: "Example Domain", resolvedURLString: $0)
+    }
+    let model = BrowserCommandBarModel(
+        suggestionProvider: BrowserEmptySuggestionProviderForTests(),
+        localSuggestionProvider: { _, _ in pages },
+        aiSearchEnabledProvider: { false },
+        submitHandler: { _ in },
+    )
+    model.present()
+    model.query = "exam"
+    #expect(model.suggestions.filter { $0.kind == .history }.map(\.resolvedURLString)
+        == ["https://example.com/", "https://example.org/"])
+}
+
 // MARK: - BrowserEmptySuggestionProviderForTests
 
 private struct BrowserEmptySuggestionProviderForTests: BrowserSuggestionProviding {
