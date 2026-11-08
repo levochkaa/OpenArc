@@ -139,7 +139,9 @@ extension BrowserMobileAppleSignInService: BrowserMobileSignInWindowAnchoring {}
         let session = ASWebAuthenticationSession(
             url: url,
             callback: .customScheme(callbackScheme),
-        ) { callbackURL, error in
+            // AuthenticationServices calls back on its own queue, never the main
+            // one: the handler must not inherit the main actor, or Swift traps.
+        ) { @Sendable callbackURL, error in
             Task { @MainActor in
                 if let callbackURL {
                     completion(.success(callbackURL))

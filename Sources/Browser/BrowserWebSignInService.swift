@@ -13,6 +13,25 @@ import Foundation
 
     private var session: ASWebAuthenticationSession?
 
+    /// The session's completion. AuthenticationServices calls it on its own
+    /// queue, never the main one, so it must not inherit the main actor, or
+    /// Swift traps; the result reaches `finish` on the main actor.
+    nonisolated static func completionHandler(
+        _ finish: @escaping @MainActor (Result<URL, Error>) -> Void,
+    ) -> @Sendable (URL?, Error?) -> Void {
+        { callbackURL, error in
+            Task { @MainActor in
+                if let callbackURL {
+                    finish(.success(callbackURL))
+                } else if let error = error as? ASWebAuthenticationSessionError, error.code == .canceledLogin {
+                    finish(.failure(BrowserWebSignInError.cancelled))
+                } else {
+                    finish(.failure(error ?? BrowserWebSignInError.cancelled))
+                }
+            }
+        }
+    }
+
     // MARK: Internal
 
     func signIn(at url: URL, callbackScheme: String) async throws -> URL {
@@ -21,17 +40,8 @@ import Foundation
             let session = ASWebAuthenticationSession(
                 url: url,
                 callback: .customScheme(callbackScheme),
-            ) { callbackURL, error in
-                Task { @MainActor in
-                    if let callbackURL {
-                        continuation.resume(returning: callbackURL)
-                    } else if let error = error as? ASWebAuthenticationSessionError, error.code == .canceledLogin {
-                        continuation.resume(throwing: BrowserWebSignInError.cancelled)
-                    } else {
-                        continuation.resume(throwing: error ?? BrowserWebSignInError.cancelled)
-                    }
-                }
-            }
+                completionHandler: Self.completionHandler { continuation.resume(with: $0) },
+            )
             session.presentationContextProvider = self
             self.session = session
             if !session.start() {

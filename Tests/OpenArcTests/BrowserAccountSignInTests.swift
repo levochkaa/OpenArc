@@ -354,6 +354,19 @@ private final class SignInURLProtocol: URLProtocol, @unchecked Sendable {
     }
 }
 
+@Test func webSignInCompletionRunsOffTheMainQueueAndFinishesOnTheMainActor() async throws {
+    let url = signInTestURL("openarc-auth://callback?code=abc")
+    let result: Result<URL, Error> = await withCheckedContinuation { continuation in
+        let handler = BrowserWebSignInService.completionHandler { result in
+            MainActor.preconditionIsolated()
+            continuation.resume(returning: result)
+        }
+        // AuthenticationServices replies on an XPC queue, as here.
+        DispatchQueue.global().async { handler(url, nil) }
+    }
+    #expect(try result.get() == url)
+}
+
 private func signInTestURL(_ string: String) -> URL {
     URL(string: string)!
 }
