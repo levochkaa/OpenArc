@@ -4161,6 +4161,7 @@ class BrowserTabNavigationTask final : public CefTask {
 
 namespace {
 void WatchClickModifiers();
+void CenterPageModalWindowsOver(NSView *pageView);
 }  // namespace
 
 namespace {
@@ -4273,6 +4274,7 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
 
   _hostView = hostView;
   _hostView.controller = self;
+  CenterPageModalWindowsOver(hostView);
   if (usesEphemeralRequestContext) {
     CefRequestContextSettings settings;
     _requestContext = CefRequestContext::CreateContext(settings, nullptr);
@@ -7647,6 +7649,42 @@ void WatchClickModifiers() {
                                             gLastClickUptime = event.timestamp;
                                             return event;
                                           }];
+  });
+}
+
+/// Chromium's dialogs over a page, such as print preview, appear centered on
+/// the window; they move once to the middle of the page they belong to.
+void CenterPageModalWindowsOver(NSView *pageView) {
+  static NSHashTable<NSView *> *pageViews = [NSHashTable weakObjectsHashTable];
+  static NSHashTable<NSWindow *> *placed = [NSHashTable weakObjectsHashTable];
+  [pageViews addObject:pageView];
+  static dispatch_once_t once;
+  dispatch_once(&once, ^{
+    [NSNotificationCenter.defaultCenter
+        addObserverForName:NSWindowDidBecomeKeyNotification
+                    object:nil
+                     queue:NSOperationQueue.mainQueue
+                usingBlock:^(NSNotification *note) {
+      NSWindow *dialog = note.object;
+      if ([placed containsObject:dialog] ||
+          ![NSStringFromClass(dialog.class) containsString:@"NativeWidgetMacNSWindow"] ||
+          [dialog.title hasPrefix:@"DevTools"]) {
+        return;
+      }
+      for (NSView *view in pageViews) {
+        NSWindow *window = view.window;
+        if (window == nil || view.hiddenOrHasHiddenAncestor || !NSContainsRect(window.frame, dialog.frame)) {
+          continue;
+        }
+        NSRect page = [window convertRectToScreen:[view convertRect:view.bounds toView:nil]];
+        NSRect frame = dialog.frame;
+        frame.origin.x = round(NSMidX(page) - frame.size.width / 2);
+        frame.origin.y = round(NSMidY(page) - frame.size.height / 2);
+        [dialog setFrameOrigin:frame.origin];
+        [placed addObject:dialog];
+        return;
+      }
+    }];
   });
 }
 
