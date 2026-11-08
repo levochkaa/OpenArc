@@ -41,6 +41,11 @@ import AppKit
     @objc var onOpenInTab: (() -> Void)?
     /// Opens the page's Developer Tools, or closes them when they are open.
     @objc var onToggleDeveloperTools: (() -> Void)?
+    /// Finds text in the page: the text, forward, and whether to select a match.
+    @objc var onFind: ((String, Bool, Bool) -> Void)?
+    @objc var onStopFinding: (() -> Void)?
+    /// Find in the card's page, over its top trailing corner as in a tab.
+    let findBar = BrowserFindBarNSView()
     /// A typed address or search, resolved to the URL the page should load.
     @objc var onNavigate: ((String) -> Void)?
     /// The card's page joins the page behind it in a Split View.
@@ -90,6 +95,11 @@ import AppKit
     /// The page behind the card, which dims and steps back.
     private weak var pageBehind: NSView?
     private var isClosingAnimated = false
+    private var findQuery = ""
+    private var isFindPresented = false
+    private var findMatchCount: Int?
+    private var findActiveOrdinal: Int?
+    private var findFocusRequest = 0
 
     /// The engine keeps a loading page from taking the keys meanwhile.
     @objc var isEditingAddress: Bool { hostLabel.currentEditor() != nil }
@@ -97,6 +107,15 @@ import AppKit
     /// The card on screen, without the clear part of the panel.
     var cardScreenFrame: NSRect {
         isStandalone ? frame : convertToScreen(cardHost.convert(cardHost.bounds, to: nil))
+    }
+
+    // MARK: Find
+
+    /// Find works once the page can search.
+    @objc var canFind: Bool { onFind != nil }
+
+    @objc var canStepThroughFindMatches: Bool {
+        isFindPresented && !findQuery.isEmpty && findMatchCount != 0
     }
 
     private init(contentRect: NSRect, standalone: Bool) {
@@ -146,9 +165,14 @@ import AppKit
             card.frame = cardHost.bounds
             cardHost.addSubview(card)
         }
-        for view in [closeButton, hostLabel, splitButton, openButton, hostView, permissionPrompt] {
+        for view in [closeButton, hostLabel, splitButton, openButton, hostView, findBar, permissionPrompt] {
             card.addSubview(view)
         }
+        findBar.queryField.focusPermission = { [weak self] in self?.isFindPresented == true }
+        findBar.onQueryChanged = { [weak self] in self?.findQueryDidChange($0) }
+        findBar.onNext = { [weak self] in self?.findNext() }
+        findBar.onPrevious = { [weak self] in self?.findPrevious() }
+        findBar.onDismiss = { [weak self] in self?.dismissFind() }
         permissionPrompt.isHidden = true
         permissionPrompt.autoresizingMask = [.maxXMargin, .minYMargin]
         permissionPrompt.onAnswer = { [weak self] id, allowed in self?.onSitePermissionAnswer?(id, allowed) }
@@ -433,6 +457,38 @@ import AppKit
         }
     }
 
+    /// Command-F: shows the find bar with its last query selected.
+    @objc func presentFind() {
+        guard canFind else { return }
+        isFindPresented = true
+        findFocusRequest += 1
+        if !findQuery.isEmpty {
+            onFind?(findQuery, true, false)
+        }
+        refreshFind()
+    }
+
+    @objc func findNext() {
+        guard canStepThroughFindMatches else { return }
+        onFind?(findQuery, true, true)
+    }
+
+    @objc func findPrevious() {
+        guard canStepThroughFindMatches else { return }
+        onFind?(findQuery, false, true)
+    }
+
+    @objc func updateFindResult(count: Int, activeOrdinal: Int, finalUpdate: Bool) {
+        guard isFindPresented, !findQuery.isEmpty else { return }
+        if finalUpdate || count > 0 {
+            findMatchCount = max(count, 0)
+        }
+        if activeOrdinal > 0 {
+            findActiveOrdinal = activeOrdinal
+        }
+        refreshFind()
+    }
+
     private func placeCard(screenFrame: NSRect) {
         guard let content = contentView else { return }
         let local = content.convert(convertFromScreen(screenFrame), from: nil)
@@ -638,6 +694,40 @@ import AppKit
         update(urlString: currentURLString)
     }
 
+    private func findQueryDidChange(_ query: String) {
+        findQuery = query
+        findMatchCount = nil
+        findActiveOrdinal = nil
+        if query.isEmpty {
+            onStopFinding?()
+        } else {
+            // A new query selects its first match.
+            onFind?(query, true, true)
+        }
+        refreshFind()
+    }
+
+    private func dismissFind() {
+        guard isFindPresented else { return }
+        isFindPresented = false
+        findMatchCount = nil
+        findActiveOrdinal = nil
+        onStopFinding?()
+        refreshFind()
+        focusPage()
+    }
+
+    private func refreshFind() {
+        findBar.update(
+            query: findQuery,
+            isPresented: isFindPresented,
+            canStep: canStepThroughFindMatches,
+            result: BrowserFindBarNSView.result(query: findQuery, count: findMatchCount, active: findActiveOrdinal),
+            focusRequestID: findFocusRequest,
+            blockedLeadingInset: 0,
+        )
+    }
+
     /// The engine focuses its page; until the page attaches, the window keeps the keys.
     private func focusPage() {
         makeFirstResponder(nil)
@@ -662,6 +752,8 @@ import AppKit
             height: 16,
         )
         hostView.frame = NSRect(x: 0, y: 0, width: bounds.width, height: max(bounds.height - Self.barHeight, 0))
+        findBar.frame = hostView.frame
+        findBar.autoresizingMask = [.width, .height]
         closeButton.autoresizingMask = [.maxXMargin, .minYMargin]
         openButton.autoresizingMask = [.minXMargin, .minYMargin]
         splitButton.autoresizingMask = [.minXMargin, .minYMargin]

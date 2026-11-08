@@ -159,6 +159,11 @@ NSMenuDelegate, NSUserInterfaceValidations {
             ?? incognitoWindowSession(containing: NSApp.mainWindow)
     }
 
+    /// A card or small window with the keyboard finds in its own page.
+    private var focusedFindablePanel: BrowserPeekPanel? {
+        (NSApp.keyWindow as? BrowserPeekPanel).flatMap { $0.canFind ? $0 : nil }
+    }
+
     override public init() {
         self.webAppConfiguration = BrowserWebAppConfiguration.current()
         super.init()
@@ -780,16 +785,28 @@ NSMenuDelegate, NSUserInterfaceValidations {
             archive.archiveController.focusSearch()
             return
         }
+        if let panel = focusedFindablePanel {
+            panel.presentFind()
+            return
+        }
         _ = activeChromeModel?.presentFindInPage()
     }
 
     public func findAndReplace(_: Any?) {}
 
     public func findNextInPage(_: Any?) {
+        if let panel = focusedFindablePanel {
+            panel.findNext()
+            return
+        }
         activeChromeModel?.findNextInPage()
     }
 
     public func findPreviousInPage(_: Any?) {
+        if let panel = focusedFindablePanel {
+            panel.findPrevious()
+            return
+        }
         activeChromeModel?.findPreviousInPage()
     }
 
@@ -938,9 +955,11 @@ NSMenuDelegate, NSUserInterfaceValidations {
         case #selector(copySelectedTabLink(_:)):
             return activeChromeModel?.canCopySelectedTabLink ?? false
         case #selector(findInPage(_:)):
-            return focusedArchiveWindowController != nil || activeChromeModel?.canPresentFindInPage == true
+            return focusedArchiveWindowController != nil || focusedFindablePanel != nil
+                || activeChromeModel?.canPresentFindInPage == true
         case #selector(findNextInPage(_:)),
              #selector(findPreviousInPage(_:)):
+            if let panel = focusedFindablePanel { return panel.canStepThroughFindMatches }
             return activeChromeModel?.canStepThroughFindMatches ?? false
         case #selector(findAndReplace(_:)):
             return false
@@ -2920,6 +2939,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
                 archive.archiveController.focusSearch()
                 return true
             }
+            if let panel = focusedFindablePanel {
+                panel.presentFind()
+                return true
+            }
             guard activeChromeModel?.canPresentFindInPage ?? false else {
                 return false
             }
@@ -2928,6 +2951,11 @@ NSMenuDelegate, NSUserInterfaceValidations {
         case .findAndReplace:
             return false
         case .findNextInPage:
+            if let panel = focusedFindablePanel {
+                guard panel.canStepThroughFindMatches else { return false }
+                panel.findNext()
+                return true
+            }
             guard activeChromeModel?.canStepThroughFindMatches ?? false else {
                 return false
             }
@@ -2935,6 +2963,11 @@ NSMenuDelegate, NSUserInterfaceValidations {
             findNextInPage(nil)
             return true
         case .findPreviousInPage:
+            if let panel = focusedFindablePanel {
+                guard panel.canStepThroughFindMatches else { return false }
+                panel.findPrevious()
+                return true
+            }
             guard activeChromeModel?.canStepThroughFindMatches ?? false else {
                 return false
             }

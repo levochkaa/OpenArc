@@ -3524,7 +3524,8 @@ class BrowserPeekClient final : public CefClient,
                                 public CefLoadHandler,
                                 public CefRequestHandler,
                                 public CefJSDialogHandler,
-                                public CefPermissionHandler {
+                                public CefPermissionHandler,
+                                public CefFindHandler {
  public:
   BrowserPeekClient(BrowserTabController *controller, int sessionID)
       : controller_(controller), session_id_(sessionID) {}
@@ -3538,6 +3539,20 @@ class BrowserPeekClient final : public CefClient,
   CefRefPtr<CefLoadHandler> GetLoadHandler() override { return this; }
   CefRefPtr<CefRequestHandler> GetRequestHandler() override { return this; }
   CefRefPtr<CefPermissionHandler> GetPermissionHandler() override { return this; }
+  CefRefPtr<CefFindHandler> GetFindHandler() override { return this; }
+
+  // Find in the card's own page reports to its find bar.
+  void OnFindResult(CefRefPtr<CefBrowser>,
+                    int,
+                    int count,
+                    const CefRect &,
+                    int activeMatchOrdinal,
+                    bool finalUpdate) override {
+    CEF_REQUIRE_UI_THREAD();
+    [[controller_ peekPanelForSessionID:session_id_] updateFindResultWithCount:count
+                                                                 activeOrdinal:activeMatchOrdinal
+                                                                   finalUpdate:finalUpdate];
+  }
 
   bool OnProcessMessageReceived(CefRefPtr<CefBrowser> browser,
                                 CefRefPtr<CefFrame> frame,
@@ -5584,6 +5599,20 @@ std::string BrowserMediaVolumeScript(double volume) {
     BrowserPeekSession *focused = strongSelf != nil ? strongSelf->_peekSessions[@(sessionID)] : nil;
     if (focused != nil && focused->_browser) {
       focused->_browser->GetHost()->SetFocus(true);
+    }
+  };
+  session.panel.onFind = ^(NSString *text, BOOL forward, BOOL findNext) {
+    BrowserTabController *strongSelf = weakSelf;
+    BrowserPeekSession *shown = strongSelf != nil ? strongSelf->_peekSessions[@(sessionID)] : nil;
+    if (shown != nil && shown->_browser) {
+      shown->_browser->GetHost()->Find(ToStdString(text), forward, false, findNext);
+    }
+  };
+  session.panel.onStopFinding = ^{
+    BrowserTabController *strongSelf = weakSelf;
+    BrowserPeekSession *shown = strongSelf != nil ? strongSelf->_peekSessions[@(sessionID)] : nil;
+    if (shown != nil && shown->_browser) {
+      shown->_browser->GetHost()->StopFinding(true);
     }
   };
   // Developer Tools of a card or small window open in their own window.

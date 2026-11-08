@@ -45,6 +45,47 @@ import Testing
             .object(forKey: BrowserUserPreferencesStore.peekEnabledKey) != nil)
     }
 
+    @Test func findWorksInTheCardsOwnPage() {
+        let panel = BrowserPeekPanel.presentStandalone()
+        defer { panel.dismiss() }
+        #expect(!panel.canFind, "Find waits for the page")
+        var finds = [String]()
+        var stops = 0
+        panel.onFind = { text, forward, selects in finds.append("\(text) \(forward) \(selects)") }
+        panel.onStopFinding = { stops += 1 }
+        #expect(panel.canFind)
+
+        panel.presentFind()
+        #expect(finds.isEmpty, "An empty query searches nothing")
+        panel.findBar.queryField.stringValue = "needle"
+        panel.findBar.controlTextDidChange(Notification(
+            name: NSControl.textDidChangeNotification,
+            object: panel.findBar.queryField,
+        ))
+        #expect(finds == ["needle true true"], "A typed query selects its first match")
+
+        panel.updateFindResult(count: 3, activeOrdinal: 1, finalUpdate: true)
+        panel.findBar.layoutSubtreeIfNeeded()
+        #expect(panel.findBar.countLabel.stringValue == "1/3")
+        panel.findNext()
+        panel.findPrevious()
+        #expect(finds.suffix(2) == ["needle true true", "needle false true"])
+
+        panel.updateFindResult(count: 0, activeOrdinal: 0, finalUpdate: true)
+        #expect(!panel.canStepThroughFindMatches)
+        panel.findNext()
+        #expect(finds.count == 3, "No match, nothing to step to")
+
+        let editor = NSTextView()
+        _ = panel.findBar.control(
+            panel.findBar.queryField,
+            textView: editor,
+            doCommandBy: #selector(NSResponder.cancelOperation(_:)),
+        )
+        #expect(stops == 1, "Escape closes find and clears the page's highlights")
+        #expect(!panel.canStepThroughFindMatches)
+    }
+
     @Test func smallWindowIsOptInAndOpensAStandaloneWindow() throws {
         let f = SidebarDragFixture(temporary: ["x"])
         #expect(!f.model.opensExternalLinksInLittleWindow, "Links keep opening as tabs by default")
