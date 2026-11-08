@@ -265,9 +265,20 @@ enum BrowserWindowMode: Equatable {
     let windowMode: BrowserWindowMode
     let profile: BrowserProfile
     let undoManager = BrowserTabUndoManager()
-    lazy var commandBarModel = makeCommandBarModel { [weak self] resolvedURLString in
-        self?.openResolvedSelectionInNewTab(resolvedURLString)
-    }
+    lazy var commandBarModel: BrowserCommandBarModel = {
+        let model = makeCommandBarModel { [weak self] resolvedURLString in
+            self?.openResolvedSelectionInNewTab(resolvedURLString)
+        }
+        // Option-Return opens the page beside the one on screen.
+        model.splitSubmitHandler = { [weak self] resolvedURLString in
+            guard let self else { return }
+            if pendingSplitAnchorTabID == nil, let url = URL(string: resolvedURLString), openURLInSplitView(url) {
+                return
+            }
+            openResolvedSelectionInNewTab(resolvedURLString)
+        }
+        return model
+    }()
 
     /// The address bar shows centered on the page, as from Command-L.
     private(set) var isCurrentPageCommandBarCentered = false

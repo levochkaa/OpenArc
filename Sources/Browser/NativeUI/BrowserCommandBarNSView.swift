@@ -329,7 +329,11 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
             return true
         case #selector(NSResponder.insertNewline(_:)),
              #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)):
-            model.submitSelection()
+            if NSApp.currentEvent?.modifierFlags.contains(.option) == true {
+                model.submitSelectionInSplitView()
+            } else {
+                model.submitSelection()
+            }
             return true
         case #selector(NSResponder.cancelOperation(_:)):
             if model.endSiteSearch(restoringQuery: false) {

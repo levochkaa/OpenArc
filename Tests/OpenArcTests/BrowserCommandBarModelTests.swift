@@ -690,3 +690,23 @@ private struct BrowserEmptySuggestionProviderForTests: BrowserSuggestionProvidin
         "Newest first",
     )
 }
+
+@MainActor @Test func optionReturnSendsAPageToTheSplitHandlerAndCommandsAsUsual() {
+    var opened = [String]()
+    var split = [String]()
+    let model = BrowserCommandBarModel(
+        suggestionProvider: BrowserEmptySuggestionProviderForTests(),
+        submitHandler: { opened.append($0) },
+    )
+    model.present()
+    model.query = "example.net"
+    model.submitSelectionInSplitView()
+    #expect(opened.count == 1 && split.isEmpty, "Without a split handler it is a plain Return")
+
+    model.splitSubmitHandler = { split.append($0) }
+    model.present()
+    model.query = "example.net"
+    model.submitSelectionInSplitView()
+    #expect(split.count == 1 && split[0].contains("example.net"))
+    #expect(!model.isPresented)
+}

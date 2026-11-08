@@ -204,6 +204,9 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
         }
     }
 
+    /// Where Option-Return sends a page; nil makes it a plain Return.
+    var splitSubmitHandler: ((String) -> Void)?
+
     // MARK: Private
 
     /// The page the bar opened on, with its address as the query.
@@ -393,6 +396,23 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
         }
 
         selectedSuggestionIndex = index
+    }
+
+    /// Option-Return: the chosen page opens in a Split View beside the one on
+    /// screen. Commands and tabs go as with Return.
+    func submitSelectionInSplitView() {
+        guard
+            let splitSubmitHandler,
+            let suggestion = selectedSuggestion ?? primarySuggestion(for: query),
+            suggestion.kind != .command,
+            suggestion.kind != .openTab,
+            !suggestion.resolvedURLString.isEmpty
+        else {
+            submitSelection()
+            return
+        }
+        splitSubmitHandler(suggestion.resolvedURLString)
+        dismiss()
     }
 
     func submitSelection() {
