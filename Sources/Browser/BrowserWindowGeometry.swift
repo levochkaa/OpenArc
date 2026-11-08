@@ -11,6 +11,9 @@ enum BrowserWindowGeometry {
     /// they came from, its top left corner a little up and left of the drop,
     /// inside the visible part of the screen under the drop. Screen
     /// coordinates, origin at the bottom left.
+    /// As small as a browser window gets: the sidebar and a narrow page beside it.
+    static let browserWindowMinimumSize = CGSize(width: 470, height: 382)
+
     static func frame(droppedAt point: CGPoint, size: CGSize?, minSize: CGSize, visible: CGRect) -> CGRect {
         var size = size ?? CGSize(width: 1360, height: 860)
         size.width = min(max(size.width, minSize.width), visible.width)

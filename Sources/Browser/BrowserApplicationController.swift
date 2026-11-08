@@ -3871,7 +3871,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         window.title = windowTitle(for: profile)
         window.delegate = self
         window.browserUndoManager = chromeModel.undoManager
-        window.minSize = NSSize(width: 960, height: 640)
+        window.minSize = BrowserWindowGeometry.browserWindowMinimumSize
         window.isReleasedWhenClosed = false
         window.configureBrowserChrome()
 
@@ -4102,7 +4102,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         window.title = blank ? BrowserStrings.menuBlankWindow : BrowserStrings.menuNewIncognitoWindow
         window.delegate = self
         window.browserUndoManager = chromeModel.undoManager
-        window.minSize = NSSize(width: 960, height: 640)
+        window.minSize = BrowserWindowGeometry.browserWindowMinimumSize
         window.isReleasedWhenClosed = false
         window.configureBrowserChrome()
 
