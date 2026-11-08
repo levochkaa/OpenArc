@@ -1927,6 +1927,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         changeProfileItem.identifier = Self.spaceProfileItemIdentifier
         changeProfileItem.submenu = NSMenu(title: BrowserStrings.menuChangeProfile)
         spacesMenu.addItem(changeProfileItem)
+        spacesMenu.addItem(.separator())
         spacesMenu.addItem(makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .selectNextSpace),
             action: #selector(selectNextSpace(_:)),
@@ -2293,10 +2294,12 @@ NSMenuDelegate, NSUserInterfaceValidations {
         {
             menu.removeItem(item)
         }
+        // The list follows the separator after Previous Space.
         guard let model = activeChromeModel, model.supportsSpaces, !model.spaces.isEmpty,
-              let separator = menu.items.firstIndex(where: \.isSeparatorItem)
+              let previous = menu.items.firstIndex(where: { $0.action == #selector(selectPreviousSpace(_:)) }),
+              menu.items.indices.contains(previous + 1), menu.items[previous + 1].isSeparatorItem
         else { return }
-        var position = separator + 1
+        var position = previous + 2
         for (index, space) in model.spaces.enumerated() {
             let shortcut = BrowserSpaceShortcuts.shortcut(forSpaceIndex: index)
             let item = NSMenuItem(
