@@ -207,6 +207,8 @@ enum BrowserWindowMode: Equatable {
         subsystem: Bundle.main.bundleIdentifier ?? "com.levochkaa.OpenArc", category: "AutomaticArchival",
     )
 
+    private static let selectionHistoryLimit = 64
+
     @Published private(set) var tabs = [Tab]()
     @Published private(set) var isCustomizingToolbar = false
     /// Tabs whose close the engine is still confirming. Their rows go at once, and the model
@@ -469,6 +471,13 @@ enum BrowserWindowMode: Equatable {
             }
         }
         didSet {
+            if let selectedTabID, selectedTabID != oldValue {
+                selectionHistory.removeAll { $0 == selectedTabID }
+                selectionHistory.append(selectedTabID)
+                if selectionHistory.count > Self.selectionHistoryLimit {
+                    selectionHistory.removeFirst(selectionHistory.count - Self.selectionHistoryLimit)
+                }
+            }
             recordSplitFocus(tabID: selectedTabID)
             syncSplitLayout()
             refreshZoomFromEngine()
@@ -476,6 +485,10 @@ enum BrowserWindowMode: Equatable {
             revealCrashedTabs()
         }
     }
+
+    /// Tabs in the order they were last selected, the latest last; closing the
+    /// selected tab goes back to the one before it.
+    private(set) var selectionHistory = [String]()
 
     @Published var findQuery = "" {
         didSet {
@@ -6979,6 +6992,9 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
         }
 
         let visibleTabs = sidebarTabs(forSpaceID: closingTab.spaceID)
+        if let previous = recentlySelectedTabID(among: visibleTabs, excluding: [closingTab.id]) {
+            return previous
+        }
         let previousSidebarOrder = sidebarTabs(
             forSpaceID: closingTab.spaceID,
             including: closingTab,
@@ -6999,6 +7015,12 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
         return visibleTabs.first?.id
     }
 
+    /// The latest selected of these tabs, other than the excluded ones.
+    private func recentlySelectedTabID(among candidates: [Tab], excluding excluded: Set<String>) -> String? {
+        let ids = Set(candidates.map(\.id))
+        return selectionHistory.last { ids.contains($0) && !excluded.contains($0) }
+    }
+
     func fallbackTabID(afterClosingDormantTab closingTab: Tab, excluding excludedTabIDs: Set<String>) -> String? {
         if let splitSiblingID = splitSiblingTabID(
             afterClosing: closingTab,
@@ -7008,6 +7030,9 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
         }
         let visibleTabs = sidebarTabs(forSpaceID: closingTab.spaceID)
             .filter { !excludedTabIDs.contains($0.id) && !closedPinnedTabIDs.contains($0.id) }
+        if let previous = recentlySelectedTabID(among: visibleTabs, excluding: [closingTab.id]) {
+            return previous
+        }
         let previousSidebarOrder = sidebarTabs(forSpaceID: closingTab.spaceID, including: closingTab)
         guard let closingIndex = previousSidebarOrder.firstIndex(where: { $0.id == closingTab.id }) else {
             return visibleTabs.first?.id

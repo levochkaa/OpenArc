@@ -1859,8 +1859,9 @@ import Testing
     #expect(model.archiveSelectedTab())
 
     #expect(model.tabs.map(\.id) == [firstTabID, thirdTabID])
-    #expect(model.selectedTabID == thirdTabID)
-    #expect(driver.selectedTabIDs.last == thirdTabID)
+    // The last new tab, at the top, was selected before the closed one.
+    #expect(model.selectedTabID == firstTabID)
+    #expect(driver.selectedTabIDs.last == firstTabID)
     #expect(driver.closedTabRequests.last == FakeBrowserTabDriver.CloseTabRequest(id: secondTabID, forceClose: false))
 }
 

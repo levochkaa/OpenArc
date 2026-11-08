@@ -234,3 +234,22 @@ import Testing
         #expect(f.model.certificateChainOfSelectedTab() == [Data([0x30, 0x01])])
     }
 }
+
+// MARK: - BrowserCloseSelectionTests
+
+@Suite(.serialized)
+@MainActor struct BrowserCloseSelectionTests {
+    @Test func closingTheSelectedTabGoesBackToTheTabSelectedBefore() {
+        let f = SidebarDragFixture(temporary: ["x", "y", "z", "w"])
+        f.driver.automaticallyConfirmsCloseRequests = true
+        f.model.selectTab(id: f.id("x"))
+        f.model.selectTab(id: f.id("z"))
+        let x = f.id("x"), y = f.id("y")
+        #expect(f.model.archiveSelectedTab())
+        #expect(f.model.selectedTabID == x, "The tab selected before, not a neighbor of z")
+
+        f.model.selectTab(id: y)
+        #expect(f.model.archiveSelectedTab())
+        #expect(f.model.selectedTabID == x)
+    }
+}
