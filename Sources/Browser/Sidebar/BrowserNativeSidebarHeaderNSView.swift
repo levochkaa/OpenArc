@@ -71,6 +71,8 @@ final class BrowserNativeSidebarHeaderNSView: NSView {
         return BrowserChromeLayout.chromeButtonSize + profileHeight + urlHeight
     }
 
+    private var isMirrored: Bool { model.userPreferencesStore.sidebarPosition == .right }
+
     init(model: BrowserChromeModel) {
         self.model = model
         self.urlControls = BrowserSiteControlsNSView(model: model, mode: .sidebar)
@@ -124,28 +126,58 @@ final class BrowserNativeSidebarHeaderNSView: NSView {
         let spacing = BrowserChromeLayout.sidebarChromeButtonSpacing
         let buttonY = BrowserChromeLayout.sidebarHeaderButtonY
         let controlsWidth = windowControls.intrinsicContentSize.width
-        windowControls.frame = NSRect(
-            x: BrowserChromeLayout.sidebarWindowControlsLeading,
-            y: 0,
-            width: controlsWidth,
-            height: size,
-        )
-        toggle.frame = NSRect(
-            x: controlsWidth > 0 ? windowControls.frame.maxX + BrowserChromeLayout.sidebarWindowControlsToggleGap : 0,
-            y: buttonY,
-            width: size,
-            height: size,
-        )
         let menuWidth: CGFloat = model.isDeveloperModeOn ? 14 : 0
-        reload.frame = NSRect(
-            x: bounds.width + BrowserChromeLayout.sidebarHeaderTrailingOverhang - size - menuWidth,
-            y: buttonY,
-            width: size,
-            height: size,
-        )
-        reloadMenu.frame = NSRect(x: reload.frame.maxX - 4, y: buttonY, width: menuWidth + 4, height: size)
-        forward.frame = reload.frame.offsetBy(dx: -(size + spacing), dy: 0)
-        back.frame = forward.frame.offsetBy(dx: -(size + spacing), dy: 0)
+        // A sidebar on the right mirrors the row: window controls and the
+        // toggle at the right edge, navigation at the left with Reload outermost.
+        if isMirrored {
+            windowControls.frame = NSRect(
+                x: bounds.width - BrowserChromeLayout.sidebarWindowControlsLeading - controlsWidth,
+                y: 0,
+                width: controlsWidth,
+                height: size,
+            )
+            toggle.frame = NSRect(
+                x: controlsWidth > 0
+                    ? windowControls.frame.minX - BrowserChromeLayout.sidebarWindowControlsToggleGap - size
+                    : bounds.width - size,
+                y: buttonY,
+                width: size,
+                height: size,
+            )
+            reload.frame = NSRect(
+                x: -BrowserChromeLayout.sidebarHeaderTrailingOverhang,
+                y: buttonY,
+                width: size,
+                height: size,
+            )
+            reloadMenu.frame = NSRect(x: reload.frame.maxX - 4, y: buttonY, width: menuWidth + 4, height: size)
+            back.frame = reload.frame.offsetBy(dx: size + spacing + menuWidth, dy: 0)
+            forward.frame = back.frame.offsetBy(dx: size + spacing, dy: 0)
+        } else {
+            windowControls.frame = NSRect(
+                x: BrowserChromeLayout.sidebarWindowControlsLeading,
+                y: 0,
+                width: controlsWidth,
+                height: size,
+            )
+            toggle.frame = NSRect(
+                x: controlsWidth > 0
+                    ? windowControls.frame.maxX + BrowserChromeLayout.sidebarWindowControlsToggleGap
+                    : 0,
+                y: buttonY,
+                width: size,
+                height: size,
+            )
+            reload.frame = NSRect(
+                x: bounds.width + BrowserChromeLayout.sidebarHeaderTrailingOverhang - size - menuWidth,
+                y: buttonY,
+                width: size,
+                height: size,
+            )
+            reloadMenu.frame = NSRect(x: reload.frame.maxX - 4, y: buttonY, width: menuWidth + 4, height: size)
+            forward.frame = reload.frame.offsetBy(dx: -(size + spacing), dy: 0)
+            back.frame = forward.frame.offsetBy(dx: -(size + spacing), dy: 0)
+        }
         var y = BrowserChromeLayout.chromeButtonSize
         if !profile.isHidden {
             y += BrowserChromeLayout.sidebarSectionSpacing
@@ -173,7 +205,7 @@ final class BrowserNativeSidebarHeaderNSView: NSView {
         windowControls.showsInSidebar = showsWindowControls
         self.showsURL = showsURL
         self.showsNavigation = showsNavigation ?? showsURL
-        toggle.configureSymbol("sidebar.left", title: toggleTitle)
+        toggle.configureSymbol(isMirrored ? "sidebar.right" : "sidebar.left", title: toggleTitle)
         urlControls.isHidden = !showsURL
         urlControls.isSidebarResizing = isResizing
         refresh()
