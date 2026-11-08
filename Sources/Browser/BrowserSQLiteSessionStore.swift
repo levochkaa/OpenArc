@@ -264,6 +264,8 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
     }
 
     private let dbQueue: DatabaseQueue
+    /// Used only inside `dbQueue` writes, which run one at a time.
+    private let syncReplayMemo = BrowserSyncOutboxReplayMemo()
 
     init(databaseURL: URL) throws {
         try FileManager.default.createDirectory(
@@ -794,6 +796,11 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
         events: [BrowserSyncEvent], cursor: Int, for owner: BrowserSyncOwner,
     ) throws -> BrowserTabSessionSnapshot {
         try completeSyncBootstrap(events: events, cursor: cursor, for: owner, expiryRecovery: false)
+    }
+
+    /// How many queue replays this store skipped; tests read it.
+    func syncReplayReuses() throws -> Int {
+        try dbQueue.read { _ in syncReplayMemo.reuses }
     }
 
     func acknowledgeSyncMutation(
@@ -1546,6 +1553,12 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
     }
 
     private func readSyncQueue(_ db: Database, limit: Int? = nil) throws -> [BrowserSyncQueuedMutation] {
+        try readSyncQueueRows(db, limit: limit).map(\.mutation)
+    }
+
+    private func readSyncQueueRows(
+        _ db: Database, limit: Int? = nil,
+    ) throws -> [(mutation: BrowserSyncQueuedMutation, identity: BrowserSyncQueuedRowIdentity)] {
         let rows = try Row.fetchAll(
             db,
             sql: "SELECT mutation_id, payload, protocol_version FROM browser_sync_outbox ORDER BY position ASC LIMIT ?",
@@ -1572,7 +1585,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
             }
             guard mutation.id == row["mutation_id"] as String
             else { throw BrowserSyncQueueError.invalidMutationIdentity }
-            return mutation
+            return (mutation, BrowserSyncQueuedRowIdentity(protocolVersion: version, payload: row["payload"]))
         }
     }
 
@@ -1581,9 +1594,12 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
         in db: Database,
     ) throws -> BrowserTabSessionSnapshot {
         let local = try readSnapshot(db)
+        let rows = try readSyncQueueRows(db)
+        // Each ACK removes the head row; the memo lets it skip replaying the rest.
         let snapshot = try BrowserSyncOutboxProjection.snapshot(
-            baseline: baseline, pending: readSyncQueue(db), local: local,
+            baseline: baseline, pending: rows.map(\.mutation), local: local,
             folderSyncEnabled: folderSyncEnabled(in: db),
+            reusing: (rows.map(\.identity), syncReplayMemo),
         )
         try writeSyncBaseline(baseline, to: db)
         // An ACK of a change already shown locally projects the stored snapshot

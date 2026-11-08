@@ -75,3 +75,24 @@ Same probe, Xcode 27.1, Debug. A sample of the 100-row drain put most of each AC
 The drain is still quadratic: every ACK replays the rest of the queue. An incremental projection remains the next step. A per-call index of container members, built from `values` at the start of `apply`, was tried and measured slower (drain 6,114 ms, pull with 100 rows at 1,000 tabs 99.8 ms): hashing every key costs more than the plain scan once the scan builds no keys.
 
 An incremental projection cannot reuse the previous ACK's result as it stands: `BrowserSyncOutboxProjection.effectiveChanges` starts from the baseline's tombstones minus every delete still in the queue (`pendingDeletes`), so replaying the whole queue is not replaying its head and then its tail. Reusing work across ACKs first needs that tombstone rule restated per operation, with deletion dominance (S01, S02, S12) proved again.
+
+## Incremental drain, 2026-11-08
+
+Same probe, Xcode 27.2, Debug, code at `4217e1e` before. The store now keeps a replay memo (`BrowserSyncOutboxReplayMemo`): for the queue it last replayed, the state after the first row and the state after all rows. An ACK removes the head row. If the new start state, built from the updated baseline and the remaining rows, equals the remembered state after the head, the replay of the remaining rows would repeat the remembered one, so its end state is reused. The ACK then replays one row, the next head, instead of the whole queue.
+
+The tombstone rule stays as it was. The start state already applies it, including the `pendingDeletes` of exactly the remaining rows, so comparing start states covers it. The comparison is byte-exact: strings by UTF-8 bytes, ranks by bit pattern, queue rows by stored payload bytes. `==` on `String` would accept two Unicode normalizations of one title.
+
+The memo holds only facts about the pure replay. A rolled-back transaction, a pull, a capture, another account, or a server answer that differs from the local replay can make it miss, never wrong; a miss replays the whole queue as before. Legacy v2 rows always miss: they hide entities without a tombstone value. The first ACK after the store opens also replays the whole queue.
+
+Tests in `BrowserSyncIncrementalReplayTests.swift` compare the memo path with full replay after every step of 180 seeded drains of semantic, folder and mixed queues (creates, re-creates, patches, moves, folder moves, cross-Space moves, deletes, Space deletes), with pulls, appended rows and divergent server answers between ACKs. They check the deletion-dominance rows S01, S02 (move-out in its own row and in the same row) and S12 through the memo, and that a store drain, including a rolled-back ACK, writes what fresh stores write. Queue fingerprints match before and after. Medians in milliseconds:
+
+| Operation | Tabs | Pending rows | Before | After |
+| --- | ---: | ---: | ---: | ---: |
+| empty_pull | 1,000 | 100 | 82.9 | 84.0 |
+| empty_pull | 5,000 | 100 | 425.8 | 432.8 |
+| first_ack | 1,000 | 100 | 81.0 | 82.5 |
+| first_ack | 5,000 | 100 | 426.5 | 437.7 |
+| drain | 1,000 | 10 | 294.5 | 282.8 |
+| drain | 1,000 | 100 | 5,621.8 | 2,935.6 |
+
+The drain is now linear in queue length: about 29 ms per ACK for both 10 and 100 rows. The rest of each ACK is reading and writing the baseline and snapshot, which still scales with tab count. Pull and first ACK still replay the whole queue. Raw reports: `/tmp/openarc-sync-perf-incremental-before.json`, `/tmp/openarc-sync-perf-incremental.json` (local only).

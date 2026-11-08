@@ -144,6 +144,70 @@ struct BrowserSyncOutboxBaseline: Codable {
     }
 }
 
+// MARK: - BrowserSyncQueuedRowIdentity
+
+/// One stored queue row as bytes. Rows that decode to equal values can still
+/// differ in bytes, for example in Unicode normalization.
+struct BrowserSyncQueuedRowIdentity: Equatable {
+    let protocolVersion: Int
+    let payload: Data
+}
+
+// MARK: - BrowserSyncOutboxReplayState
+
+/// Queue replay state: canonical values with the replayed rows applied, and the
+/// keys hidden so far.
+struct BrowserSyncOutboxReplayState {
+    var values: [String: BrowserSyncChange]
+    var deleted: Set<String>
+
+    /// Equal down to string bytes and rank bits, so replaying the same rows
+    /// from either state yields the same bytes. `==` would accept strings that
+    /// differ only in Unicode normalization.
+    func isIdentical(to other: Self) -> Bool {
+        guard values.count == other.values.count, deleted.count == other.deleted.count else { return false }
+        for key in deleted {
+            guard let index = other.deleted.firstIndex(of: key), identical(other.deleted[index], key) else {
+                return false
+            }
+        }
+        for (key, value) in values {
+            guard let index = other.values.index(forKey: key) else { return false }
+            let entry = other.values[index]
+            guard identical(entry.key, key), identical(entry.value, value) else { return false }
+        }
+        return true
+    }
+}
+
+// MARK: - BrowserSyncOutboxReplayMemo
+
+/// The last queue replay, kept so an ACK need not replay the rest of the queue.
+/// It holds only facts about the pure replay: for the exact rows in `rows`, the
+/// state after the first row and the state after all of them, reached from one
+/// start. A rolled-back transaction, another account or another writer can
+/// make it useless, never wrong: reuse also requires a byte-identical start.
+final class BrowserSyncOutboxReplayMemo {
+    // MARK: Internal
+
+    /// How many replays this memo skipped.
+    fileprivate(set) var reuses = 0
+
+    fileprivate private(set) var rows = [BrowserSyncQueuedRowIdentity]()
+    fileprivate private(set) var head: BrowserSyncOutboxReplayState?
+    fileprivate private(set) var end: BrowserSyncOutboxReplayState?
+
+    fileprivate func remember(
+        rows: [BrowserSyncQueuedRowIdentity], head: BrowserSyncOutboxReplayState?,
+        end: BrowserSyncOutboxReplayState,
+    ) {
+        // An empty queue has nothing to skip; drop the states.
+        self.rows = rows
+        self.head = rows.isEmpty ? nil : head
+        self.end = rows.isEmpty ? nil : end
+    }
+}
+
 // MARK: - BrowserSyncOutboxProjection
 
 enum BrowserSyncOutboxProjection {
@@ -267,8 +331,14 @@ enum BrowserSyncOutboxProjection {
         pending: [BrowserSyncQueuedMutation],
         local: BrowserTabSessionSnapshot?,
         folderSyncEnabled: Bool = false,
+        reusing reuse: (rows: [BrowserSyncQueuedRowIdentity], memo: BrowserSyncOutboxReplayMemo)? = nil,
     ) -> BrowserTabSessionSnapshot {
-        let values = effectiveChanges(baseline: baseline, pending: pending)
+        let values =
+            if let reuse {
+                effectiveChanges(baseline: baseline, pending: pending, rows: reuse.rows, memo: reuse.memo)
+            } else {
+                effectiveChanges(baseline: baseline, pending: pending)
+            }
         if folderSyncEnabled {
             return BrowserSyncFolderProjection.snapshot(values: values, local: local)
         }
@@ -359,11 +429,55 @@ enum BrowserSyncOutboxProjection {
     static func effectiveChanges(
         baseline: BrowserSyncOutboxBaseline, pending: [BrowserSyncQueuedMutation],
     ) -> [String: BrowserSyncChange] {
-        var values = baseline.entities.mapValues(\.change)
-        let activityDates = BrowserSyncActivityDates()
-        // Local tombstones are recorded before debounce, including deletes later in
-        // this FIFO. Replay their preceding creates/move-outs first. Authoritative
-        // server tombstones remain effective from the start.
+        var state = replayStart(baseline: baseline, pending: pending)
+        for mutation in pending {
+            replay(mutation, into: &state)
+        }
+        return replayResult(state, baseline: baseline)
+    }
+
+    /// The same result as `effectiveChanges(baseline:pending:)`. When the start
+    /// state equals, byte for byte, the state `memo` reached after the first
+    /// row of a queue whose remaining rows are `rows`, the replay of those rows
+    /// would repeat the remembered one, so its end state is reused. The start
+    /// state already holds the tombstone rule for exactly those rows, so the
+    /// comparison covers deletes that are still queued.
+    static func effectiveChanges(
+        baseline: BrowserSyncOutboxBaseline, pending: [BrowserSyncQueuedMutation],
+        rows: [BrowserSyncQueuedRowIdentity], memo: BrowserSyncOutboxReplayMemo,
+    ) -> [String: BrowserSyncChange] {
+        precondition(rows.count == pending.count)
+        let start = replayStart(baseline: baseline, pending: pending)
+        if let head = memo.head, let end = memo.end, memo.rows.count == rows.count + 1,
+           memo.rows.dropFirst().elementsEqual(rows), head.isIdentical(to: start)
+        {
+            memo.reuses += 1
+            memo.remember(rows: rows, head: pending.first.map { first in
+                var next = start
+                replay(first, into: &next)
+                return next
+            }, end: end)
+            return replayResult(end, baseline: baseline)
+        }
+        var state = start
+        var head: BrowserSyncOutboxReplayState?
+        for (index, mutation) in pending.enumerated() {
+            replay(mutation, into: &state)
+            if index == 0 {
+                head = state
+            }
+        }
+        memo.remember(rows: rows, head: head, end: state)
+        return replayResult(state, baseline: baseline)
+    }
+
+    /// Local tombstones are recorded before debounce, including deletes later in
+    /// this FIFO. Replay their preceding creates/move-outs first. Authoritative
+    /// server tombstones remain effective from the start.
+    static func replayStart(
+        baseline: BrowserSyncOutboxBaseline, pending: [BrowserSyncQueuedMutation],
+    ) -> BrowserSyncOutboxReplayState {
+        let values = baseline.entities.mapValues(\.change)
         let pendingDeletes = Set(pending.flatMap { mutation -> [String] in
             switch mutation {
             case .legacy(let row): row.changes.filter { $0.op == .delete }.map(key)
@@ -389,51 +503,60 @@ enum BrowserSyncOutboxProjection {
         })
         var deleted = baseline.deletedKeys.subtracting(pendingDeletes)
         deleted.formUnion(values.filter { $0.value.op == .delete }.keys)
-        for mutation in pending {
-            switch mutation {
-            case .legacy(let row):
-                for change in row.changes where change.op == .upsert && !deleted.contains(key(change)) {
-                    if let tab = change.tabData, tab.placement != .app,
-                       deleted.contains(key(type: .space, id: tab.spaceID))
+        return BrowserSyncOutboxReplayState(values: values, deleted: deleted)
+    }
+
+    /// Applies one queued row. The result depends only on `state` and the row.
+    static func replay(_ mutation: BrowserSyncQueuedMutation, into state: inout BrowserSyncOutboxReplayState) {
+        switch mutation {
+        case .legacy(let row):
+            let activityDates = BrowserSyncActivityDates()
+            for change in row.changes where change.op == .upsert && !state.deleted.contains(key(change)) {
+                if let tab = change.tabData, tab.placement != .app,
+                   state.deleted.contains(key(type: .space, id: tab.spaceID))
+                {
+                    // A stale full record cannot move a canonical survivor back
+                    // into a deleted parent. New stale children are deleted.
+                    if let current = state.values[key(change)]?.tabData,
+                       current.spaceID != tab.spaceID || current.placement == .app
                     {
-                        // A stale full record cannot move a canonical survivor back
-                        // into a deleted parent. New stale children are deleted.
-                        if let current = values[key(change)]?.tabData,
-                           current.spaceID != tab.spaceID || current.placement == .app
-                        {
-                            continue
-                        }
-                        deleted.insert(key(change))
                         continue
                     }
-                    values[key(change)] = preservingActivity(
-                        of: change, from: values[key(change)], dates: activityDates,
-                    )
+                    state.deleted.insert(key(change))
+                    continue
                 }
-                // The v2 server applies upserts first, then deletions, without
-                // semantic rank normalization. Its parent cascade is permanent.
-                for change in row.changes where change.op == .delete {
-                    deleted.insert(key(change))
-                    if change.entityType == .space {
-                        for child in values.values {
-                            if let tab = child.tabData, tab.placement != .app, tab.spaceID == change.entityID {
-                                deleted.insert(key(child))
-                            }
+                state.values[key(change)] = preservingActivity(
+                    of: change, from: state.values[key(change)], dates: activityDates,
+                )
+            }
+            // The v2 server applies upserts first, then deletions, without
+            // semantic rank normalization. Its parent cascade is permanent.
+            for change in row.changes where change.op == .delete {
+                state.deleted.insert(key(change))
+                if change.entityType == .space {
+                    for child in state.values.values {
+                        if let tab = child.tabData, tab.placement != .app, tab.spaceID == change.entityID {
+                            state.deleted.insert(key(child))
                         }
                     }
                 }
-            case .semantic(let row):
-                BrowserSyncSemanticProjection.apply(row.operations, to: &values, deleted: &deleted)
-            case .folders(let row):
-                BrowserSyncFolderProjection.apply(row.operations, to: &values, deleted: &deleted)
-            case .expiry:
-                // Conditional requests leave live state untouched until the
-                // server returns its accepted delete or canonical rejection.
-                break
             }
+        case .semantic(let row):
+            BrowserSyncSemanticProjection.apply(row.operations, to: &state.values, deleted: &state.deleted)
+        case .folders(let row):
+            BrowserSyncFolderProjection.apply(row.operations, to: &state.values, deleted: &state.deleted)
+        case .expiry:
+            // Conditional requests leave live state untouched until the
+            // server returns its accepted delete or canonical rejection.
+            break
         }
-        deleted.formUnion(baseline.deletedKeys)
-        return values.filter { $0.value.op == .upsert && !deleted.contains($0.key) }
+    }
+
+    static func replayResult(
+        _ state: BrowserSyncOutboxReplayState, baseline: BrowserSyncOutboxBaseline,
+    ) -> [String: BrowserSyncChange] {
+        let deleted = state.deleted.union(baseline.deletedKeys)
+        return state.values.filter { $0.value.op == .upsert && !deleted.contains($0.key) }
     }
 
     static func replacingRank(of change: BrowserSyncChange, with rank: Double?) -> BrowserSyncChange {
@@ -551,5 +674,61 @@ enum BrowserSyncOutboxProjection {
             }
         }
         return result
+    }
+}
+
+// MARK: - Byte identity
+
+private func identical(_ left: String, _ right: String) -> Bool {
+    var left = left
+    var right = right
+    return left.withUTF8 { leftBytes in
+        right.withUTF8 { rightBytes in
+            leftBytes.count == rightBytes.count
+                && (leftBytes.isEmpty || memcmp(leftBytes.baseAddress!, rightBytes.baseAddress!, leftBytes.count) == 0)
+        }
+    }
+}
+
+private func identical(_ left: String?, _ right: String?) -> Bool {
+    switch (left, right) {
+    case (nil, nil): true
+    case (let left?, let right?): identical(left, right)
+    default: false
+    }
+}
+
+private func identical(_ left: Double, _ right: Double) -> Bool { left.bitPattern == right.bitPattern }
+
+private func identical(_ left: BrowserSyncChange, _ right: BrowserSyncChange) -> Bool {
+    guard left.entityType == right.entityType, left.op == right.op, identical(left.entityID, right.entityID)
+    else { return false }
+    switch (left.spaceData, right.spaceData) {
+    case (nil, nil): break
+    case (let left?, let right?):
+        guard identical(left.title, right.title), identical(left.systemImageName, right.systemImageName),
+              identical(left.rank, right.rank), left.isPinnedSectionCollapsed == right.isPinnedSectionCollapsed,
+              identical(left.selectedTabID, right.selectedTabID) else { return false }
+    default: return false
+    }
+    switch (left.tabData, right.tabData) {
+    case (nil, nil): break
+    case (let left?, let right?):
+        guard identical(left.spaceID, right.spaceID), left.placement == right.placement,
+              identical(left.rank, right.rank), identical(left.urlString, right.urlString),
+              identical(left.pinnedURLString, right.pinnedURLString), identical(left.title, right.title),
+              identical(left.userTitleOverride, right.userTitleOverride),
+              identical(left.faviconURLString, right.faviconURLString),
+              identical(left.lastActivityAt, right.lastActivityAt),
+              identical(left.pinnedFolderID, right.pinnedFolderID) else { return false }
+    default: return false
+    }
+    switch (left.folderData, right.folderData) {
+    case (nil, nil): return true
+    case (let left?, let right?):
+        return identical(left.spaceID, right.spaceID) && identical(left.parentFolderID, right.parentFolderID)
+            && identical(left.title, right.title) && identical(left.systemImageName, right.systemImageName)
+            && identical(left.rank, right.rank)
+    default: return false
     }
 }
