@@ -344,3 +344,26 @@ import Testing
         #expect(f.model.tabs.contains { $0.id == f.id("a") })
     }
 }
+
+// MARK: - BrowserFolderDropTargetIconTests
+
+@MainActor struct BrowserFolderDropTargetIconTests {
+    @Test func aClosedFolderOpensItsIconWhileATabIsHeldOverIt() {
+        let row = BrowserNativeSidebarRowNSView()
+        let folder = BrowserChromeModel.PinnedTabFolder(
+            id: "f", spaceID: "s", title: "Drop", isExpanded: false,
+        )
+        row.update(folder: folder, renaming: false, indentLevel: 0, dropTargeted: false, isResizing: false, resetID: 0)
+        #expect(!row.folderIcon.isTilted)
+        row.setDropHighlighted(true)
+        #expect(row.folderIcon.isTilted, "Held over, it opens")
+        row.setDropHighlighted(false)
+        #expect(!row.folderIcon.isTilted, "And closes again when the tab leaves")
+        var open = folder
+        open.isExpanded = true
+        row.update(folder: open, renaming: false, indentLevel: 0, dropTargeted: false, isResizing: false, resetID: 0)
+        row.setDropHighlighted(true)
+        row.setDropHighlighted(false)
+        #expect(row.folderIcon.isTilted, "An expanded folder stays open")
+    }
+}

@@ -112,6 +112,8 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
     private var selected = false
     private var multiSelected = false
     private var dropTargeted = false
+    /// A folder's own state; its icon also opens while something is held over it.
+    private var isFolderExpanded = false
     private var splitDropSide: BrowserSidebarDragState.SplitDropTarget.Side?
     private var indent: CGFloat = 0
     private var pinnedURLRow = false
@@ -445,6 +447,9 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
     func setDropHighlighted(_ value: Bool) {
         guard dropTargeted != value else { return }
         dropTargeted = value
+        if kind == .folder {
+            folderIcon.setTilted(isFolderExpanded || value, animated: window != nil)
+        }
         updateSurface()
         needsDisplay = true
     }
@@ -576,7 +581,11 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
             backFill: BrowserChromeColors.sidebarFolderBack,
             frontFill: BrowserChromeColors.sidebarFolderFill,
         )
-        folderIcon.setTilted(folder.isExpanded, animated: window != nil && folderIconID == folder.id)
+        isFolderExpanded = folder.isExpanded
+        folderIcon.setTilted(
+            folder.isExpanded || dropTargeted,
+            animated: window != nil && folderIconID == folder.id,
+        )
         // A folder with its own icon keeps it clear of the dots.
         folderIcon.setShowsDots(showsOpenTabs && !folder.isExpanded && folder.systemImageName == nil)
         folderIconID = folder.id
