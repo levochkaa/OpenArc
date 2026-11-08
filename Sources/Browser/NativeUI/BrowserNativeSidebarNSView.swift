@@ -2398,6 +2398,8 @@ private final class BrowserNativeSidebarClearDivider: NSView {
     private var clearTarget = false
     private let indicatorAnimation = BrowserNativeAnimation()
     private var indicatorProgress = 0.0
+    /// The arrow drops in from above when it appears and only fades when it goes.
+    private var indicatorDrops = false
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -2448,9 +2450,10 @@ private final class BrowserNativeSidebarClearDivider: NSView {
             height: 16,
         )
         // The arrow stands as tall as the title's capitals and centers on them.
+        let drop = indicatorDrops ? BrowserChromeLayout.sidebarClearArrowDropDistance * (1 - indicatorProgress) : 0
         indicator.frame = NSRect(
             x: BrowserChromeLayout.sidebarClearButtonHorizontalPadding - 0.5,
-            y: (bounds.height - 12) / 2 - 2,
+            y: (bounds.height - 12) / 2 - 2 - drop,
             width: 11,
             height: 12,
         )
@@ -2488,6 +2491,7 @@ private final class BrowserNativeSidebarClearDivider: NSView {
             self.includesActive = includesActive
             let from = indicatorProgress
             let to = includesActive ? 1.0 : 0.0
+            indicatorDrops = includesActive
             if window == nil {
                 setIndicatorProgress(to)
             } else {
