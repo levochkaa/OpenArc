@@ -256,7 +256,9 @@ import Combine
         hostLabel.delegate = self
         hostLabel.onFocus = { [weak self] in
             guard let self else { return }
-            guard canSearchAddress else {
+            // Only a click hands the address over; the window taking the keyboard
+            // focuses the field too.
+            guard canSearchAddress, NSApp.currentEvent?.type == .leftMouseDown else {
                 beginEditingAddress()
                 return
             }
