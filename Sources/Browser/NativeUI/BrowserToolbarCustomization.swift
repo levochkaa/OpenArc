@@ -39,7 +39,7 @@ extension BrowserToolbarItem {
         case .flexibleSpace: "arrow.left.and.right"
         case .pinnedExtensions: "puzzlepiece.extension"
         case .splitView: "rectangle.split.2x1"
-        case .siteControls: "slider.horizontal.3"
+        case .siteControls: "slider.horizontal.2.square"
         case .command(let id): id.commandBarSystemImageName
         }
     }

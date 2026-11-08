@@ -55,7 +55,7 @@ final class BrowserSiteControlCenterViewController: NSViewController {
     private let security = BrowserNativeSurface()
     private let securityIcon = NSImageView()
     private let securityLabel = BrowserNativeControls.label("", size: 12, weight: .medium, color: .secondaryLabelColor)
-    private let more = BrowserSiteControlButton(symbol: "ellipsis")
+    private let more = BrowserSiteControlButton(symbol: "ellipsis", lightness: 0.21)
     private var actionButtons = [BrowserSiteControlButton]()
     private var tiles = [String: BrowserNativeExtensionButton]()
     private var settingViews = [BrowserSiteSettingRowView]()
@@ -141,6 +141,7 @@ final class BrowserSiteControlCenterViewController: NSViewController {
         security.addGestureRecognizer(NSClickGestureRecognizer(target: self, action: #selector(showCertificate)))
         security.setAccessibilityRole(.button)
         securityIcon.symbolConfiguration = .init(pointSize: 11, weight: .semibold)
+        more.cornerRadius = BrowserChromeLayout.siteControlItemHeight / 2
         more.tooltipTitle = BrowserStrings.siteControlMore
         more.setAccessibilityLabel(BrowserStrings.siteControlMore)
         more.setAccessibilityIdentifier("browser.site-control.more")
@@ -164,7 +165,8 @@ final class BrowserSiteControlCenterViewController: NSViewController {
         let width = BrowserChromeLayout.siteControlPopoverWidth
         let content = width - padding * 2
         let tab = model.currentTab
-        var y = padding
+        let itemHeight = BrowserChromeLayout.siteControlItemHeight
+        var y = padding - 1
 
         // Page actions, four across.
         let actionGap: CGFloat = 8
@@ -174,18 +176,18 @@ final class BrowserSiteControlCenterViewController: NSViewController {
                 x: padding + CGFloat(index) * (actionWidth + actionGap),
                 y: y,
                 width: actionWidth,
-                height: 36,
+                height: itemHeight,
             )
             button.isInteractionEnabled = tab != nil && pageActions[index].isAvailable(model)
             button.alphaValue = button.isInteractionEnabled ? 1 : 0.4
         }
-        y += 36 + spacing
+        y += itemHeight + spacing
 
         // Extensions, wrapping four to a row.
         extensionsHeading.frame = NSRect(x: padding, y: y, width: 170, height: 18)
         let manageWidth = ceil(manage.intrinsicContentSize.width)
         manage.frame = NSRect(x: width - padding - manageWidth, y: y - 2, width: manageWidth, height: 22)
-        y += 18 + spacing / 2
+        y += 18 + 8
         let items = BrowserExtensionControlCenterModel.gridItems(for: model.browserExtensions)
         let ids = Set(items.map(\.id))
         for id in Set(tiles.keys).subtracting(ids) {
@@ -212,13 +214,13 @@ final class BrowserSiteControlCenterViewController: NSViewController {
             }
             tile.frame = NSRect(
                 x: padding + CGFloat(index % columns) * (tileSize + tileGap),
-                y: y + CGFloat(index / columns) * (tileSize + tileGap),
+                y: y + CGFloat(index / columns) * (itemHeight + tileGap),
                 width: tileSize,
-                height: tileSize,
+                height: itemHeight,
             )
         }
         let rows = (items.count + columns - 1) / columns
-        y += CGFloat(rows) * tileSize + CGFloat(max(rows - 1, 0)) * tileGap
+        y += CGFloat(rows) * itemHeight + CGFloat(max(rows - 1, 0)) * tileGap
 
         // The site's settings that differ from the defaults.
         // The rows and their menus belong to one site; a page that moves to
@@ -231,12 +233,13 @@ final class BrowserSiteControlCenterViewController: NSViewController {
         settingsHeading.isHidden = siteSettings.isEmpty
         let rowViews = settingRows(for: siteSettings, urlString: siteSettingsURLString)
         if !siteSettings.isEmpty {
-            y += spacing
+            y += spacing + 6
             settingsHeading.frame = NSRect(x: padding, y: y, width: content, height: 18)
             y += 18 + 6
+            let rowHeight = BrowserChromeLayout.siteControlSettingRowHeight
             for row in rowViews {
-                row.frame = NSRect(x: padding - 6, y: y, width: content + 12, height: 44)
-                y += 44
+                row.frame = NSRect(x: padding - 4, y: y, width: content + 8, height: rowHeight)
+                y += rowHeight
             }
         }
 
@@ -255,14 +258,14 @@ final class BrowserSiteControlCenterViewController: NSViewController {
         securityIcon.contentTintColor = secure ? .secondaryLabelColor : .systemOrange
         securityLabel.stringValue = secure ? BrowserStrings.siteControlSecure : BrowserStrings.siteControlNotSecure
         let labelWidth = ceil(securityLabel.intrinsicContentSize.width)
-        security.frame = NSRect(x: padding, y: y, width: labelWidth + 34, height: 26)
-        securityIcon.frame = NSRect(x: 8, y: 6, width: 14, height: 14)
-        securityLabel.frame = NSRect(x: 26, y: 5, width: labelWidth, height: 16)
+        security.frame = NSRect(x: padding, y: y, width: labelWidth + 36, height: itemHeight)
+        securityIcon.frame = NSRect(x: 9, y: (itemHeight - 14) / 2, width: 14, height: 14)
+        securityLabel.frame = NSRect(x: 27, y: (itemHeight - 16) / 2, width: labelWidth, height: 16)
         security.setAccessibilityLabel(securityLabel.stringValue)
         isSecure = secure
-        more.frame = NSRect(x: width - padding - 26, y: y, width: 26, height: 26)
+        more.frame = NSRect(x: width - padding - itemHeight, y: y, width: itemHeight, height: itemHeight)
         more.isInteractionEnabled = tab != nil
-        y += 26 + padding
+        y += itemHeight + padding - 1
 
         preferredContentSize = NSSize(width: width, height: y)
         // The popover offsets its content past the arrow; only the size is ours.
@@ -364,10 +367,24 @@ final class BrowserSiteControlButton: BrowserNativePressableView {
     // MARK: Private
 
     private let icon = NSImageView()
+    private let restingFill: NSColor
 
-    init(symbol: String) {
+    /// Dark keys over the popover's color; "…" is a lighter one.
+    init(symbol: String, lightness: CGFloat = 0.1) {
+        self.restingFill = NSColor(white: lightness, alpha: 0.92)
         super.init(frame: .zero)
         cornerRadius = 8
+        // A keycap: a faint light rim and a short shadow below.
+        strokeColor = NSColor(white: 1, alpha: 0.09)
+        strokeWidth = 1
+        wantsLayer = true
+        shadow = {
+            let shadow = NSShadow()
+            shadow.shadowColor = NSColor.black.withAlphaComponent(0.35)
+            shadow.shadowOffset = NSSize(width: 0, height: -1)
+            shadow.shadowBlurRadius = 2
+            return shadow
+        }()
         addSubview(icon)
         icon.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
             .withSymbolConfiguration(.init(pointSize: 14, weight: .medium))
@@ -383,8 +400,8 @@ final class BrowserSiteControlButton: BrowserNativePressableView {
     override func interactionChanged() {
         super.interactionChanged()
         fillColor = isHovered && isInteractionEnabled
-            ? .tertiaryLabelColor.withAlphaComponent(0.25)
-            : .quaternaryLabelColor.withAlphaComponent(0.4)
+            ? restingFill.blended(withFraction: 0.12, of: .white) ?? restingFill
+            : restingFill
     }
 
     override func layout() {
@@ -408,7 +425,7 @@ final class BrowserSiteSettingRowView: BrowserNativePressableView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         cornerRadius = 8
-        badge.cornerRadius = 15
+        badge.cornerRadius = 16
         badge.fillColor = .quaternaryLabelColor
         badge.addSubview(icon)
         icon.symbolConfiguration = .init(pointSize: 13, weight: .medium)
@@ -430,10 +447,10 @@ final class BrowserSiteSettingRowView: BrowserNativePressableView {
 
     override func layout() {
         super.layout()
-        badge.frame = NSRect(x: 6, y: (bounds.height - 30) / 2, width: 30, height: 30)
-        icon.frame = NSRect(x: 6, y: 6, width: 18, height: 18)
-        title.frame = NSRect(x: 44, y: 6, width: bounds.width - 50, height: 17)
-        value.frame = NSRect(x: 44, y: 23, width: bounds.width - 50, height: 15)
+        badge.frame = NSRect(x: 4, y: (bounds.height - 32) / 2, width: 32, height: 32)
+        icon.frame = NSRect(x: 7, y: 7, width: 18, height: 18)
+        title.frame = NSRect(x: 44, y: bounds.height / 2 - 17, width: bounds.width - 48, height: 17)
+        value.frame = NSRect(x: 44, y: bounds.height / 2, width: bounds.width - 48, height: 15)
     }
 
     func update(_ row: BrowserSiteSettingRow) {

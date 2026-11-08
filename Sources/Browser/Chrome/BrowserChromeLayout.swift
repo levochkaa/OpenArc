@@ -59,13 +59,16 @@ enum BrowserChromeLayout {
     static let sidebarCurrentURLButtonCornerRadius: CGFloat = 9
     static let sidebarCurrentURLButtonSymbolSize: CGFloat = 14
     static let sidebarCurrentURLExtensionIconSize: CGFloat = 16
-    static let siteControlPopoverWidth: CGFloat = 284
-    static let siteControlPopoverPadding: CGFloat = 16
-    static let siteControlPopoverSpacing: CGFloat = 14
-    static let extensionGridSpacing: CGFloat = 10
-    static let extensionTileSize: CGFloat = 52
-    static let extensionTileCornerRadius: CGFloat = 12
-    static let extensionTileIconSize: CGFloat = 24
+    static let siteControlPopoverWidth: CGFloat = 236
+    static let siteControlPopoverPadding: CGFloat = 10
+    static let siteControlPopoverSpacing: CGFloat = 10
+    /// Page actions, extension tiles and the footer's chip share this height.
+    static let siteControlItemHeight: CGFloat = 32
+    static let siteControlSettingRowHeight: CGFloat = 43
+    static let extensionGridSpacing: CGFloat = 8
+    static let extensionTileSize: CGFloat = 48
+    static let extensionTileCornerRadius: CGFloat = 8
+    static let extensionTileIconSize: CGFloat = 16
     /// The size until the page reports its own.
     static let extensionActionPopupWidth: CGFloat = 320
     static let extensionActionPopupHeight: CGFloat = 200

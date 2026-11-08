@@ -115,7 +115,7 @@ final class BrowserSiteControlsNSView: NSView {
             action: {},
         )
         self.siteButton = BrowserNativeChromeButton(
-            symbol: "slider.horizontal.3",
+            symbol: "slider.horizontal.2.square",
             title: BrowserStrings.siteControlCenterAction,
             style: mode == .sidebar ? .currentURL : .chrome,
             pressEffect: .compress,
@@ -508,11 +508,10 @@ final class BrowserSiteControlsNSView: NSView {
         if anchor == nil {
             siteButton.isHidden = false
         }
-        // In the sidebar it opens over the page, away from the window's edge.
-        let beside: NSRectEdge = model.userPreferencesStore.sidebarPosition == .right ? .minX : .maxX
+        // It hangs below the button, in the sidebar as in the toolbar.
         extensionPopovers.showControlCenter(
             relativeTo: anchor ?? siteButton,
-            preferredEdge: preferredEdge ?? (mode == .toolbar ? .minY : beside),
+            preferredEdge: preferredEdge ?? .minY,
         )
     }
 

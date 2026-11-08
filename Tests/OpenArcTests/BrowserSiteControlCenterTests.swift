@@ -138,6 +138,10 @@ import Testing
     #expect(tiles.count == 7)
     #expect(Set(tiles.map(\.frame.minY)).count == 2)
     #expect(tiles.allSatisfy { $0.frame.maxX <= BrowserChromeLayout.siteControlPopoverWidth })
+    // Tiles and page actions are the same 48 x 32 keys, four across a 236 pt popover.
+    #expect(tiles.allSatisfy { $0.frame.size == CGSize(width: 48, height: 32) })
+    #expect(buttons.allSatisfy { $0.frame.size == CGSize(width: 48, height: 32) })
+    #expect(controller.preferredContentSize.width == 236)
     let camera = try #require(siteControlView("browser.site-control.setting.camera", in: view))
     let location = try #require(siteControlView("browser.site-control.setting.location", in: view))
     #expect(camera.frame.maxY <= location.frame.minY)
