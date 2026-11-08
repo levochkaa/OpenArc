@@ -347,3 +347,28 @@ import Testing
         #expect(f.driver.closePeeksCount == 1, "Cards and small windows close once with their window")
     }
 }
+
+// MARK: - BrowserDevToolsDockMenuTests
+
+@Suite(.serialized)
+@MainActor struct BrowserDevToolsDockMenuTests {
+    @Test func theToolsEdgeMenuDocksThemToAnotherSideAndKeepsIt() throws {
+        let key = BrowserDevToolsDockSide.defaultsKey
+        let saved = UserDefaults.standard.object(forKey: key)
+        defer { UserDefaults.standard.set(saved, forKey: key) }
+        UserDefaults.standard.removeObject(forKey: key)
+        #expect(BrowserDevToolsDockMenu.currentSide == .right, "At the right by default")
+        var notified = 0
+        let observer = NotificationCenter.default.addObserver(
+            forName: BrowserDevToolsDockSide.didChangeNotification, object: nil, queue: nil,
+        ) { _ in notified += 1 }
+        defer { NotificationCenter.default.removeObserver(observer) }
+        let menu = BrowserDevToolsDockMenu.menu()
+        #expect(menu.items.map(\.title) == BrowserDevToolsDockSide.allCases.map(\.title))
+        #expect(menu.items.first?.state == .on)
+        let bottom = try #require(menu.items.first { $0.title == BrowserDevToolsDockSide.bottom.title })
+        _ = bottom.target?.perform(bottom.action, with: bottom)
+        #expect(BrowserDevToolsDockMenu.currentSide == .bottom)
+        #expect(notified == 1)
+    }
+}

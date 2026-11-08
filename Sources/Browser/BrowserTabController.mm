@@ -1911,6 +1911,36 @@ CGFloat DockedDevToolsWidth(CGFloat paneWidth) {
   return MIN(MAX(width, minimum), paneWidth - minimum);
 }
 
+// Where docked tools sit in a pane: at its right, bottom or left, as the
+// edge menu of the tools chose.
+NSRect DockedDevToolsRectInPane(NSRect pane, BOOL flipped) {
+  switch (BrowserDevToolsDockMenu.currentSide) {
+    case BrowserDevToolsDockSideBottom: {
+      const CGFloat height = DockedDevToolsWidth(NSHeight(pane));
+      return NSMakeRect(NSMinX(pane), flipped ? NSMaxY(pane) - height : NSMinY(pane), NSWidth(pane), height);
+    }
+    case BrowserDevToolsDockSideLeft:
+      return NSMakeRect(NSMinX(pane), NSMinY(pane), DockedDevToolsWidth(NSWidth(pane)), NSHeight(pane));
+    default: {
+      const CGFloat width = DockedDevToolsWidth(NSWidth(pane));
+      return NSMakeRect(NSMaxX(pane) - width, NSMinY(pane), width, NSHeight(pane));
+    }
+  }
+}
+
+NSRect PageRectBesideDockedDevTools(NSRect pane, BOOL flipped) {
+  const NSRect tools = DockedDevToolsRectInPane(pane, flipped);
+  switch (BrowserDevToolsDockMenu.currentSide) {
+    case BrowserDevToolsDockSideBottom:
+      return NSMakeRect(NSMinX(pane), flipped ? NSMinY(pane) : NSMaxY(tools), NSWidth(pane),
+                        NSHeight(pane) - NSHeight(tools));
+    case BrowserDevToolsDockSideLeft:
+      return NSMakeRect(NSMaxX(tools), NSMinY(pane), NSWidth(pane) - NSWidth(tools), NSHeight(pane));
+    default:
+      return NSMakeRect(NSMinX(pane), NSMinY(pane), NSWidth(pane) - NSWidth(tools), NSHeight(pane));
+  }
+}
+
 // The layer corner at a visual corner; MinY is the bottom unless the layer
 // renders flipped.
 CACornerMask LayerCornerAt(CALayer *layer, BOOL top, BOOL right) {
@@ -4149,6 +4179,8 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
   NSMutableDictionary<NSString *, NSWindow *> *_dockedDevTools;
   NSMutableDictionary<NSString *, NSArray *> *_dockedDevToolsObservers;
   NSMutableDictionary<NSString *, BrowserSplitDividerView *> *_dockedDevToolsHandles;
+  // Lays the tools out again when their edge menu docks them to another side.
+  id _dockSideObserver;
   NSString *_pendingDevToolsTabID;
   NSSet<NSWindow *> *_windowsBeforeDevTools;
   NSUInteger _devToolsRequest;
@@ -4605,6 +4637,34 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
   [self syncBrowserFrames];
 }
 
+// The handle lies along the tools' edge that faces the page.
+- (void)placeDockedDevToolsHandleForTabID:(NSString *)tabID inWindow:(NSWindow *)devTools {
+  BrowserSplitDividerView *handle = _dockedDevToolsHandles[tabID];
+  NSView *frameView = devTools.contentView.superview;
+  if (handle == nil || frameView == nil) {
+    return;
+  }
+  const NSRect bounds = frameView.bounds;
+  const CGFloat size = kDockedDevToolsHandleWidth;
+  switch (BrowserDevToolsDockMenu.currentSide) {
+    case BrowserDevToolsDockSideBottom:
+      handle.isVerticalSplit = YES;
+      handle.frame = NSMakeRect(0, frameView.isFlipped ? 0 : NSHeight(bounds) - size, NSWidth(bounds), size);
+      handle.autoresizingMask = NSViewWidthSizable | (frameView.isFlipped ? NSViewMaxYMargin : NSViewMinYMargin);
+      break;
+    case BrowserDevToolsDockSideLeft:
+      handle.isVerticalSplit = NO;
+      handle.frame = NSMakeRect(NSWidth(bounds) - size, 0, size, NSHeight(bounds));
+      handle.autoresizingMask = NSViewHeightSizable | NSViewMinXMargin;
+      break;
+    default:
+      handle.isVerticalSplit = NO;
+      handle.frame = NSMakeRect(0, 0, size, NSHeight(bounds));
+      handle.autoresizingMask = NSViewHeightSizable | NSViewMaxXMargin;
+      break;
+  }
+}
+
 // Dragging the tools' edge sets their share of every pane; a double click
 // gives them their first share again.
 - (BrowserSplitDividerView *)dockedDevToolsHandleForTabID:(NSString *)tabID {
@@ -4623,6 +4683,19 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
     gDockedDevToolsFraction = kDockedDevToolsDefaultFraction;
     [weakSelf syncBrowserFrames];
   };
+  // A right click on the edge docks the tools to another side.
+  handle.contextMenuProvider = ^NSMenu * {
+    return [BrowserDevToolsDockMenu menu];
+  };
+  if (_dockSideObserver == nil) {
+    _dockSideObserver = [NSNotificationCenter.defaultCenter
+        addObserverForName:@"BrowserDevToolsDockSideDidChange"
+                    object:nil
+                     queue:NSOperationQueue.mainQueue
+                usingBlock:^(NSNotification *) {
+      [weakSelf syncBrowserFrames];
+    }];
+  }
   _dockedDevToolsHandles[tabID] = handle;
   return handle;
 }
@@ -4645,12 +4718,37 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
   const NSPoint onScreen = [devTools convertPointToScreen:[handle.superview convertPoint:point toView:nil]];
   point = [hostView convertPoint:[parent convertPointFromScreen:onScreen] fromView:nil];
   const NSRect toolsInWindow = [parent convertRectFromScreen:devTools.frame];
-  const CGFloat paneMaxX = NSMaxX([hostView convertRect:toolsInWindow fromView:nil]);
-  const CGFloat paneWidth = paneMaxX - NSMinX(pageView.frame);
-  if (paneWidth <= 0) {
-    return;
+  const NSRect tools = [hostView convertRect:toolsInWindow fromView:nil];
+  const NSRect page = pageView.frame;
+  // The pane runs from the page's far edge to the tools' far edge.
+  CGFloat fraction = 0;
+  switch (BrowserDevToolsDockMenu.currentSide) {
+    case BrowserDevToolsDockSideBottom: {
+      const CGFloat paneHeight = NSHeight(NSUnionRect(tools, page));
+      if (paneHeight <= 0) {
+        return;
+      }
+      fraction = hostView.isFlipped ? (NSMaxY(tools) - point.y) / paneHeight : (point.y - NSMinY(tools)) / paneHeight;
+      break;
+    }
+    case BrowserDevToolsDockSideLeft: {
+      const CGFloat paneWidth = NSMaxX(page) - NSMinX(tools);
+      if (paneWidth <= 0) {
+        return;
+      }
+      fraction = (point.x - NSMinX(tools)) / paneWidth;
+      break;
+    }
+    default: {
+      const CGFloat paneWidth = NSMaxX(tools) - NSMinX(page);
+      if (paneWidth <= 0) {
+        return;
+      }
+      fraction = (NSMaxX(tools) - point.x) / paneWidth;
+      break;
+    }
   }
-  gDockedDevToolsFraction = MIN(MAX((paneMaxX - point.x) / paneWidth, 0.0), 1.0);
+  gDockedDevToolsFraction = MIN(MAX(fraction, 0.0), 1.0);
   [self layoutVisiblePanes:keys];
 }
 
@@ -4659,8 +4757,7 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
 }
 
 - (NSRect)pageFrameBesideDevToolsInPane:(NSRect)pane {
-  const CGFloat width = DockedDevToolsWidth(NSWidth(pane));
-  return NSMakeRect(NSMinX(pane), NSMinY(pane), NSWidth(pane) - width, NSHeight(pane));
+  return PageRectBesideDockedDevTools(pane, _hostView.isFlipped);
 }
 
 // Shows the tools of tabs on screen at the right of their pane and puts the
@@ -4687,8 +4784,7 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
       continue;
     }
     const NSRect paneFrame = pane->second;
-    const CGFloat width = DockedDevToolsWidth(NSWidth(paneFrame));
-    NSRect inHost = NSMakeRect(NSMaxX(paneFrame) - width, NSMinY(paneFrame), width, NSHeight(paneFrame));
+    NSRect inHost = DockedDevToolsRectInPane(paneFrame, hostView.isFlipped);
     const CGFloat ring = BrowserSplitPaneLayout.focusRingWidth;
     if (split && [tabID isEqualToString:_activeTabID]) {
       inHost.size.width -= ring;
@@ -4703,6 +4799,7 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
       [devTools setFrame:onScreen display:YES];
     }
     [self roundDockedDevTools:devTools frameInWindow:inWindow split:split];
+    [self placeDockedDevToolsHandleForTabID:tabID inWindow:devTools];
     if (devTools.parentWindow != parent) {
       [devTools.parentWindow removeChildWindow:devTools];
       [parent addChildWindow:devTools ordered:NSWindowAbove];

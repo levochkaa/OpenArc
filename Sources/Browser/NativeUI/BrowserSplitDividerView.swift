@@ -3,6 +3,8 @@
 import AppKit
 import QuartzCore
 
+// MARK: - BrowserSplitDividerView
+
 /// Handle in the gap between two Split View panes. Dragging resizes the
 /// neighbors live and commits once on release; a double click makes the two
 /// neighbors equal. A small grip fades in while the handle is hovered or
@@ -34,6 +36,9 @@ import QuartzCore
             }
         }
     }
+
+    /// A right-click menu, as the docked Developer Tools' edge offers.
+    @objc var contextMenuProvider: (() -> NSMenu?)?
 
     // MARK: Private
 
@@ -110,6 +115,10 @@ import QuartzCore
         isHovered = false
     }
 
+    override func menu(for event: NSEvent) -> NSMenu? {
+        contextMenuProvider?() ?? super.menu(for: event)
+    }
+
     override func mouseDown(with event: NSEvent) {
         if event.clickCount == 2 {
             onReset?()
@@ -142,5 +151,50 @@ import QuartzCore
         fade.timingFunction = CAMediaTimingFunction(name: .easeOut)
         grip.add(fade, forKey: "opacity")
         grip.opacity = opacity
+    }
+}
+
+// MARK: - BrowserDevToolsDockSide
+
+/// Which side of the page docked Developer Tools take, kept across launches.
+@objc enum BrowserDevToolsDockSide: Int, CaseIterable {
+    case right
+    case bottom
+    case left
+
+    static let defaultsKey = "browser.devtools.dockSide"
+    static let didChangeNotification = Notification.Name("BrowserDevToolsDockSideDidChange")
+
+    static var current: BrowserDevToolsDockSide {
+        BrowserDevToolsDockSide(rawValue: UserDefaults.standard.integer(forKey: defaultsKey)) ?? .right
+    }
+
+    var title: String {
+        switch self {
+        case .right: BrowserStrings.devToolsDockRight
+        case .bottom: BrowserStrings.devToolsDockBottom
+        case .left: BrowserStrings.devToolsDockLeft
+        }
+    }
+}
+
+// MARK: - BrowserDevToolsDockMenu
+
+/// The docked tools' edge menu: Dock to Right, Bottom or Left.
+@MainActor @objc final class BrowserDevToolsDockMenu: NSObject {
+    /// For the engine, which lays the tools out on this side.
+    @objc static var currentSide: BrowserDevToolsDockSide { BrowserDevToolsDockSide.current }
+
+    @objc static func menu() -> NSMenu {
+        let menu = BrowserNativeMenus.menu()
+        let current = BrowserDevToolsDockSide.current
+        for side in BrowserDevToolsDockSide.allCases {
+            let item = BrowserNativeMenus.add(side.title, to: menu) {
+                UserDefaults.standard.set(side.rawValue, forKey: BrowserDevToolsDockSide.defaultsKey)
+                NotificationCenter.default.post(name: BrowserDevToolsDockSide.didChangeNotification, object: nil)
+            }
+            item.state = side == current ? .on : .off
+        }
+        return menu
     }
 }

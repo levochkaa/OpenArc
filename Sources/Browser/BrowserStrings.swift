@@ -2257,6 +2257,15 @@ enum BrowserStrings {
     static let menuExpandPinnedTabs = NSLocalizedString("browser.menu.expand_pinned", comment: "View menu item.")
     static let menuCast = NSLocalizedString("browser.menu.cast", comment: "View menu item.")
     static let menuDeveloper = NSLocalizedString("browser.menu.developer", comment: "View submenu.")
+    static let devToolsDockRight = NSLocalizedString(
+        "browser.devtools.dock_right", comment: "Docked Developer Tools edge menu: put them at the page's right.",
+    )
+    static let devToolsDockBottom = NSLocalizedString(
+        "browser.devtools.dock_bottom", comment: "Docked Developer Tools edge menu: put them below the page.",
+    )
+    static let devToolsDockLeft = NSLocalizedString(
+        "browser.devtools.dock_left", comment: "Docked Developer Tools edge menu: put them at the page's left.",
+    )
     static let menuNetworkInspector = NSLocalizedString(
         "browser.menu.network_inspector",
         comment: "Developer menu item.",

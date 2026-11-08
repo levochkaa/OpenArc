@@ -966,3 +966,6 @@
 "browser.library.media_source.screenshots" = "Screenshots";
 "browser.library.media_source.downloads" = "Downloads";
 "browser.peek.search_spaces" = "Search Spaces...";
+"browser.devtools.dock_right" = "Dock to Right";
+"browser.devtools.dock_bottom" = "Dock to Bottom";
+"browser.devtools.dock_left" = "Dock to Left";
