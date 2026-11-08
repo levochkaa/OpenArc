@@ -1813,8 +1813,9 @@ NSMenuDelegate, NSUserInterfaceValidations {
         )
         castItem.target = self
         viewMenu.addItem(castItem)
-        addDeveloperMenu(to: viewMenu)
+        // Groups: Cast | Developer | Enter Full Screen.
         viewMenu.addItem(.separator())
+        addDeveloperMenu(to: viewMenu)
         viewMenu.addItem(makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .openExtensions),
             action: #selector(openExtensions(_:)),
