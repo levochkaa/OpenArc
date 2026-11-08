@@ -910,6 +910,15 @@ enum BrowserWindowMode: Equatable {
         (currentTab?.title ?? "", currentTab?.urlString ?? "")
     }
 
+    /// The Library sections this window offers. An incognito window keeps Media and
+    /// Downloads; it has no Spaces or Archive.
+    var librarySections: [BrowserLibrarySection] {
+        if supportsSpaces { return BrowserLibrarySection.allCases }
+        return isIncognito ? [.media, .downloads] : []
+    }
+
+    var hasLibrary: Bool { !librarySections.isEmpty }
+
     private var canAdmitLocalAutomaticArchive: Bool {
         isContextReady && windowMode.persistsSession && isPersistenceEnabled && !isShuttingDown &&
             !hasDiscardedSessionForClosure && !hasUncommittedSessionWrites && !isRestoringSession &&
@@ -1841,7 +1850,7 @@ enum BrowserWindowMode: Equatable {
     }
 
     func openLibrary(section: BrowserLibrarySection = .archive) {
-        guard supportsSpaces else { return }
+        guard librarySections.contains(section) else { return }
         librarySection = section
     }
 
@@ -1852,7 +1861,7 @@ enum BrowserWindowMode: Equatable {
     /// Opens the Library on the section used last, or closes it.
     func toggleLibrary() {
         if librarySection == nil {
-            openLibrary(section: lastLibrarySection)
+            openLibrary(section: librarySections.contains(lastLibrarySection) ? lastLibrarySection : .downloads)
         } else {
             closeLibrary()
         }

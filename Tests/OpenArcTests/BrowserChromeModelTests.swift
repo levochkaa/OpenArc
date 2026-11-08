@@ -265,6 +265,25 @@ import Testing
 }
 
 @Test
+@MainActor func incognitoWindowHasALibraryOfMediaAndDownloads() {
+    let model = makeModel(
+        driver: FakeBrowserTabDriver(),
+        snapshotStore: InMemorySessionSnapshotStore(),
+        preferencesStore: InMemorySessionPreferencesStore(),
+        windowMode: .incognito,
+    )
+    model.handleContextReady()
+    #expect(model.hasLibrary)
+    #expect(model.librarySections == [.media, .downloads])
+    model.toggleLibrary()
+    #expect(model.librarySection == .downloads, "It opens on Downloads, having no Archive")
+    model.openLibrary(section: .archive)
+    #expect(model.librarySection == .downloads, "Archive and Spaces stay out")
+    model.openLibrary(section: .media)
+    #expect(model.librarySection == .media)
+}
+
+@Test
 @MainActor func incognitoWindowKeepsSingleSpaceAndRejectsAppTabs() throws {
     let driver = FakeBrowserTabDriver()
     let model = makeModel(

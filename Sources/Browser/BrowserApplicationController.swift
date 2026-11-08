@@ -1188,7 +1188,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
                     ? BrowserStrings.menuOpenLibrary
                     : BrowserStrings.menuCloseLibrary
             }
-            return activeChromeModel?.supportsSpaces ?? false
+            return activeChromeModel?.hasLibrary ?? false
         case #selector(goToLastSidebarItem(_:)),
              #selector(selectNextTab(_:)),
              #selector(selectPreviousTab(_:)):

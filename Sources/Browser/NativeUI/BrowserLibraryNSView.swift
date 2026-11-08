@@ -205,9 +205,13 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
     override func layout() {
         super.layout()
         let height = bounds.height
-        let group = CGFloat(BrowserLibrarySection.allCases.count) * BrowserLibraryLayout.sectionStride
+        let sections = model.librarySections
+        for (section, button) in sectionButtons {
+            button.isHidden = !sections.contains(section)
+        }
+        let group = CGFloat(sections.count) * BrowserLibraryLayout.sectionStride
         var y = (height - group) / 2
-        for section in BrowserLibrarySection.allCases {
+        for section in sections {
             sectionButtons[section]?.frame = NSRect(
                 x: 4,
                 y: y,

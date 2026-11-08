@@ -96,7 +96,15 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate, Browser
         }
         createButton.setAccessibilityIdentifier("browser.sidebar.create-space")
         createButton.tooltipPlacement = .aboveCapsule
-        createButton.onAction = { [weak self] in self?.toggleCreateMenu() }
+        createButton.onAction = { [weak self] in
+            guard let self else { return }
+            // Without Spaces, as in an incognito window, the button opens a tab.
+            if state.model.supportsSpaces {
+                toggleCreateMenu()
+            } else {
+                state.model.presentCommandBar()
+            }
+        }
         // The menu opens on the press; a long press closes it again on release.
         createButton.sendAction(on: .leftMouseDown)
         createButton.onRelease = { [weak self] in self?.closeCreateMenuIfHeld() }
@@ -274,16 +282,19 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate, Browser
         spacesContainer.onMove = { id, index in
             model.moveSpace(id: id, toIndex: index)
         }
-        let hidden = !state.model.supportsSpaces
-        downloadsButton.isHidden = hidden
-        createButton.isHidden = hidden
-        scroll.isHidden = hidden
+        downloadsButton.isHidden = !model.hasLibrary
+        createButton.isHidden = !model.hasLibrary
+        if !model.supportsSpaces {
+            createButton.tooltipTitle = BrowserStrings.menuNewTab
+            createButton.setAccessibilityLabel(BrowserStrings.menuNewTab)
+        }
+        scroll.isHidden = !model.supportsSpaces
         refreshDownloadsButton()
         needsLayout = true
     }
 
     func height(for _: CGFloat) -> CGFloat {
-        guard state.model.supportsSpaces else {
+        guard state.model.hasLibrary else {
             return reservedToastHeight + BrowserChromeLayout.sidebarSectionSpacing
         }
         return reservedToastHeight + BrowserChromeLayout.sidebarDockTopInset
@@ -414,7 +425,7 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate, Browser
             .shortcutStore
             .shortcut(for: active ? .viewDownloads : .viewLibrary)
         downloadsButton.isSelected = popover.isShown || active
-        downloadDot.isHidden = !active || !state.model.supportsSpaces
+        downloadDot.isHidden = !active || !state.model.hasLibrary
     }
 }
 
