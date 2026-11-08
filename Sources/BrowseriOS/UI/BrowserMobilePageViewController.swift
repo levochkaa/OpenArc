@@ -140,6 +140,16 @@ final class BrowserMobilePageViewController: UIViewController, UITextFieldDelega
                 self, selector: #selector(sceneBecameInactive(_:)), name: name, object: nil,
             )
         }
+        // The system's find bar rides above the keyboard; the toolbar steps
+        // aside while it is up, so the two never overlap.
+        for name in [
+            UIResponder.keyboardWillShowNotification, UIResponder.keyboardWillHideNotification,
+            UIResponder.keyboardDidShowNotification, UIResponder.keyboardDidHideNotification,
+        ] {
+            NotificationCenter.default.addObserver(
+                self, selector: #selector(keyboardChanged), name: name, object: nil,
+            )
+        }
         // Find in Page waits for an active scene; the page may draw before that.
         NotificationCenter.default.addObserver(
             self, selector: #selector(sceneBecameActive(_:)), name: UIScene.didActivateNotification, object: nil,
@@ -206,7 +216,8 @@ final class BrowserMobilePageViewController: UIViewController, UITextFieldDelega
             ? String(localized: "Stop Loading", table: "Mobile")
             : String(localized: "Reload", table: "Mobile")
         progress.progress = Float(tab?.state.progress ?? 0)
-        progress.isHidden = !loading
+        progress.isHidden = !loading || workspace.isFindInPageVisible
+        chrome.isHidden = workspace.isFindInPageVisible
         shareButton.isEnabled = shareURL != nil
         downloadsButton.isEnabled = workspace.isReady && workspace.downloads != nil
         let activeDownload = workspace.downloads?
@@ -300,6 +311,17 @@ final class BrowserMobilePageViewController: UIViewController, UITextFieldDelega
             guard let textField, textField.isFirstResponder else { return }
             textField.selectAll(nil)
         }
+    }
+
+    @objc private func keyboardChanged() {
+        DispatchQueue.main.async { [weak self] in self?.updateChromeForFind() }
+    }
+
+    private func updateChromeForFind() {
+        let finding = workspace.isFindInPageVisible
+        guard chrome.isHidden != finding else { return }
+        chrome.isHidden = finding
+        progress.isHidden = finding || workspace.selectedTab?.state.isLoading != true
     }
 
     @objc private func sceneBecameActive(_ notification: Notification) {

@@ -49,6 +49,8 @@ enum BrowserMobileEngineEvent {
     func canFindInPage(id: String) -> Bool
     @discardableResult func presentFindInPage(id: String) -> Bool
     func dismissFindInPage()
+    /// Whether the system's find bar is up over the selected page.
+    var isFindInPageVisible: Bool { get }
     func setJavaScriptDialogPresentationActive(_ active: Bool)
     func resolveJavaScriptDialog(id: UUID, response: BrowserMobileJavaScriptDialogResponse)
     func resolveHTTPAuthentication(id: UUID, response: BrowserMobileHTTPAuthenticationResponse)
@@ -61,4 +63,5 @@ extension BrowserMobileEngine {
     func canFindInPage(id _: String) -> Bool { false }
     @discardableResult func presentFindInPage(id _: String) -> Bool { false }
     func dismissFindInPage() {}
+    var isFindInPageVisible: Bool { false }
 }

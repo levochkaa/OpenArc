@@ -93,6 +93,8 @@ struct BrowserMobileTab: Identifiable, Equatable {
         return engine.canFindInPage(id: tab.runtimeID)
     }
 
+    var isFindInPageVisible: Bool { engine.isFindInPageVisible }
+
     private var canEdit: Bool {
         isReady && !isClosed && !isRestoring && (profileDocument?.canEdit ?? true)
     }

@@ -106,6 +106,10 @@ import WebKit
     private let actionDownloads = NSMapTable<WKNavigationAction, DownloadHandoff>.weakToStrongObjects()
     private let responseDownloads = NSMapTable<WKNavigationResponse, DownloadHandoff>.weakToStrongObjects()
 
+    var isFindInPageVisible: Bool {
+        mountedWebView?.findInteraction?.isFindNavigatorVisible == true
+    }
+
     init(dataStore: WKWebsiteDataStore = .default()) {
         self.dataStore = dataStore
         super.init()
@@ -242,12 +246,10 @@ import WebKit
             case .url(let url): navigate(record: record, url: url)
             case .html(let html, let baseURL): loadHTMLString(html, baseURL: baseURL, id: id)
             }
-        } else {
-            if let webView = record.webView {
-                begin(record, url: record.state.url) { webView.reload() }
-            } else if let url = record.state.url {
-                navigate(record: record, url: url)
-            }
+        } else if let webView = record.webView {
+            begin(record, url: record.state.url) { webView.reload() }
+        } else if let url = record.state.url {
+            navigate(record: record, url: url)
         }
     }
 
