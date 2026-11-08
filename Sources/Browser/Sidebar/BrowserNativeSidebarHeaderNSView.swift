@@ -128,31 +128,34 @@ final class BrowserNativeSidebarHeaderNSView: NSView {
         let controlsWidth = windowControls.intrinsicContentSize.width
         let menuWidth: CGFloat = model.isDeveloperModeOn ? 14 : 0
         // A sidebar on the right mirrors the row: window controls and the
-        // toggle at the right edge, navigation at the left with Reload outermost.
+        // toggle at the right edge, Back, Forward and Reload at the left.
         if isMirrored {
+            // The controls' trailing room goes on the toggle's side, so both
+            // gaps match the row on the left.
+            let room = controlsWidth > 0 ? BrowserWindowControlsLayout.trailingSpacing : 0
             windowControls.frame = NSRect(
-                x: bounds.width - BrowserChromeLayout.sidebarWindowControlsLeading - controlsWidth,
+                x: bounds.width - BrowserChromeLayout.sidebarWindowControlsLeading - controlsWidth + room,
                 y: 0,
                 width: controlsWidth,
                 height: size,
             )
             toggle.frame = NSRect(
                 x: controlsWidth > 0
-                    ? windowControls.frame.minX - BrowserChromeLayout.sidebarWindowControlsToggleGap - size
+                    ? windowControls.frame.minX - room - BrowserChromeLayout.sidebarWindowControlsToggleGap - size
                     : bounds.width - size,
                 y: buttonY,
                 width: size,
                 height: size,
             )
-            reload.frame = NSRect(
+            back.frame = NSRect(
                 x: -BrowserChromeLayout.sidebarHeaderTrailingOverhang,
                 y: buttonY,
                 width: size,
                 height: size,
             )
-            reloadMenu.frame = NSRect(x: reload.frame.maxX - 4, y: buttonY, width: menuWidth + 4, height: size)
-            back.frame = reload.frame.offsetBy(dx: size + spacing + menuWidth, dy: 0)
             forward.frame = back.frame.offsetBy(dx: size + spacing, dy: 0)
+            reload.frame = forward.frame.offsetBy(dx: size + spacing, dy: 0)
+            reloadMenu.frame = NSRect(x: reload.frame.maxX - 4, y: buttonY, width: menuWidth + 4, height: size)
         } else {
             windowControls.frame = NSRect(
                 x: BrowserChromeLayout.sidebarWindowControlsLeading,
