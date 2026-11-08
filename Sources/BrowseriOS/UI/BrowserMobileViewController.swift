@@ -1100,7 +1100,9 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         case .tab(let id, let depth):
             guard let tab = renderedTabs[id] else { return }
             content.text = displayTitle(tab)
-            content.secondaryText = tab.urlString == "about:blank" ? nil : tab.urlString
+            // The site, as the address field shows it outside editing.
+            let site = BrowserMobilePageViewController.displayAddress(tab.urlString)
+            content.secondaryText = site.isEmpty ? nil : site
             content.secondaryTextProperties.numberOfLines = 1
             content.secondaryTextProperties.lineBreakMode = .byTruncatingMiddle
             content.image = UIImage(systemName: tab.state.error == nil ? "globe" : "exclamationmark.circle")
