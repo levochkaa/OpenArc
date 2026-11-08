@@ -75,3 +75,20 @@ import Testing
         #expect(entries.map(\.date) == entries.map(\.date).sorted(), "The newest by the button, at the bottom")
     }
 }
+
+// MARK: - BrowserLibraryMediaSourceTests
+
+@MainActor struct BrowserLibraryMediaSourceTests {
+    @Test func everyFolderShowsUntilItIsTurnedOffAndTheChoiceIsKept() throws {
+        let defaults = try #require(UserDefaults(suiteName: BrowserTestDefaults.suiteName("MediaSources")))
+        let store = BrowserUserPreferencesStore(userDefaults: defaults)
+        #expect(store.hiddenMediaSources.isEmpty, "All folders by default")
+        store.hiddenMediaSources.insert(.desktop)
+        #expect(BrowserUserPreferencesStore(userDefaults: defaults).hiddenMediaSources == [.desktop])
+        let custom = FileManager.default.temporaryDirectory.standardizedFileURL.path
+        #expect(BrowserLibraryMediaSource.downloads
+            .folder(downloadDirectoryPath: custom)?
+            .standardizedFileURL
+            .path == custom)
+    }
+}

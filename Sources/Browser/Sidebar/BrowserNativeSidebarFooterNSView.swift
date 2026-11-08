@@ -167,6 +167,13 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate, Browser
         if event.trackingArea === libraryTracking { onLibraryHoverChanged(false) }
     }
 
+    /// The Library button's menu: which folders Media shows pictures from.
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let point = convert(event.locationInWindow, from: nil)
+        guard downloadsButton.frame.contains(point) else { return super.menu(for: event) }
+        return Self.mediaSourcesMenu(preferences: state.model.userPreferencesStore)
+    }
+
     override func mouseDown(with event: NSEvent) {
         state.dismissRenamingIfNeeded()
         if !state.isSidebarResizing, !state.isDraggingSidebarItem {
@@ -179,6 +186,22 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate, Browser
         if window == nil {
             popover.performClose(nil)
         }
+    }
+
+    static func mediaSourcesMenu(preferences: BrowserUserPreferencesStore) -> NSMenu {
+        let menu = BrowserNativeMenus.menu()
+        BrowserNativeMenus.add(BrowserStrings.libraryMediaSourcesTitle, to: menu, enabled: false) {}
+        for source in BrowserLibraryMediaSource.allCases {
+            let item = BrowserNativeMenus.add(source.title, to: menu) {
+                if preferences.hiddenMediaSources.contains(source) {
+                    preferences.hiddenMediaSources.remove(source)
+                } else {
+                    preferences.hiddenMediaSources.insert(source)
+                }
+            }
+            item.state = preferences.hiddenMediaSources.contains(source) ? .off : .on
+        }
+        return menu
     }
 
     func update(snapshot: BrowserSidebarSnapshot, isResizing: Bool) {

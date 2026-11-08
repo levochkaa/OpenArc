@@ -199,6 +199,7 @@ final class BrowserUserPreferencesStore: ObservableObject {
         static let passwordNeverOrigins = "browser.settings.passwordNeverOrigins"
         static let soundEffectsEnabled = "browser.settings.soundEffectsEnabled"
         static let gitHubLiveFolderIDs = "browser.settings.gitHubLiveFolderIDs"
+        static let hiddenMediaSources = "browser.settings.hiddenMediaSources"
         static let recentPagesPreviewsEnabled = "browser.settings.recentPagesPreviewsEnabled"
         static let mailPreviewsEnabled = "browser.settings.mailPreviewsEnabled"
         static let appIcon = "browser.settings.appIcon"
@@ -312,6 +313,11 @@ final class BrowserUserPreferencesStore: ObservableObject {
 
     @Published var gitHubLiveFolderIDs: Set<String> {
         didSet { userDefaults.set(Array(gitHubLiveFolderIDs), forKey: Key.gitHubLiveFolderIDs) }
+    }
+
+    /// Folders the Library's Media leaves out; all of them show by default.
+    @Published var hiddenMediaSources: Set<BrowserLibraryMediaSource> {
+        didSet { userDefaults.set(hiddenMediaSources.map(\.rawValue), forKey: Key.hiddenMediaSources) }
     }
 
     @Published var soundEffectsEnabled: Bool {
@@ -472,6 +478,9 @@ final class BrowserUserPreferencesStore: ObservableObject {
             defaultValue: true,
         )
         self.gitHubLiveFolderIDs = Set(userDefaults.stringArray(forKey: Key.gitHubLiveFolderIDs) ?? [])
+        self.hiddenMediaSources = Set(
+            (userDefaults.stringArray(forKey: Key.hiddenMediaSources) ?? []).compactMap(BrowserLibraryMediaSource.init),
+        )
         self.soundEffectsEnabled = Self.loadBool(userDefaults, key: Key.soundEffectsEnabled, defaultValue: true)
         self.passwordNeverOrigins = Set(userDefaults.stringArray(forKey: Key.passwordNeverOrigins) ?? [])
         self.developerModeHosts = userDefaults.data(forKey: Key.developerModeHosts)
@@ -1246,5 +1255,44 @@ struct BrowserQuitWarningPolicy {
 
     var shouldWarn: Bool {
         warnsBeforeQuitting && openTabCount > 0
+    }
+}
+
+// MARK: - BrowserLibraryMediaSource
+
+/// A folder the Library's Media shows pictures from.
+enum BrowserLibraryMediaSource: String, CaseIterable {
+    case documents
+    case desktop
+    case screenshots
+    case downloads
+
+    var title: String {
+        switch self {
+        case .documents: BrowserStrings.libraryMediaDocuments
+        case .desktop: BrowserStrings.libraryMediaDesktop
+        case .screenshots: BrowserStrings.libraryMediaScreenshots
+        case .downloads: BrowserStrings.libraryMediaDownloads
+        }
+    }
+
+    /// Screenshots go where the system's screenshot setting points, the Desktop by default.
+    func folder(downloadDirectoryPath: String?) -> URL? {
+        let files = FileManager.default
+        switch self {
+        case .documents:
+            return files.urls(for: .documentDirectory, in: .userDomainMask).first
+        case .desktop:
+            return files.urls(for: .desktopDirectory, in: .userDomainMask).first
+        case .screenshots:
+            if let location = UserDefaults(suiteName: "com.apple.screencapture")?.string(forKey: "location"),
+               !location.isEmpty
+            {
+                return URL(fileURLWithPath: (location as NSString).expandingTildeInPath, isDirectory: true)
+            }
+            return files.urls(for: .desktopDirectory, in: .userDomainMask).first
+        case .downloads:
+            return BrowserDownloadLocation.directory(customPath: downloadDirectoryPath)
+        }
     }
 }

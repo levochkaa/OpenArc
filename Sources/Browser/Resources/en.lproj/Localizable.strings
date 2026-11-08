@@ -960,3 +960,8 @@
 "browser.command_bar.close" = "Close";
 "browser.library.download_kind_from_host" = "%1$@ from %2$@";
 "browser.downloads.cancel" = "Cancel Download";
+"browser.library.media_sources" = "Show media from:";
+"browser.library.media_source.documents" = "Documents";
+"browser.library.media_source.desktop" = "Desktop";
+"browser.library.media_source.screenshots" = "Screenshots";
+"browser.library.media_source.downloads" = "Downloads";

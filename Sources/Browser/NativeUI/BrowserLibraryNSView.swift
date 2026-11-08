@@ -541,16 +541,10 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
 
     /// Pictures and videos in the download folder, newest first.
     private func mediaRows() -> [Row] {
-        let downloads = BrowserDownloadLocation.directory(
-            customPath: model.userPreferencesStore.downloadDirectoryPath,
-        )
-        let home = FileManager.default
-        let folders = [downloads]
-            + [
-                home.urls(for: .desktopDirectory, in: .userDomainMask),
-                home.urls(for: .documentDirectory, in: .userDomainMask),
-            ]
-            .compactMap(\.first)
+        let preferences = model.userPreferencesStore
+        let folders = BrowserLibraryMediaSource.allCases
+            .filter { !preferences.hiddenMediaSources.contains($0) }
+            .compactMap { $0.folder(downloadDirectoryPath: preferences.downloadDirectoryPath) }
         return Self.mediaFiles(in: folders, query: query).map { .tile($0) }
     }
 

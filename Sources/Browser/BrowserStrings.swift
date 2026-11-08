@@ -2325,6 +2325,22 @@ enum BrowserStrings {
         comment: "Detail of an empty Library section.",
     )
 
+    static let libraryMediaSourcesTitle = NSLocalizedString(
+        "browser.library.media_sources",
+        comment: "Disabled header of the Library button's menu, above the folders Media shows.",
+    )
+    static let libraryMediaDocuments = NSLocalizedString(
+        "browser.library.media_source.documents", comment: "Media folder: the user's Documents folder.",
+    )
+    static let libraryMediaDesktop = NSLocalizedString(
+        "browser.library.media_source.desktop", comment: "Media folder: the user's Desktop.",
+    )
+    static let libraryMediaScreenshots = NSLocalizedString(
+        "browser.library.media_source.screenshots", comment: "Media folder: where screenshots are saved.",
+    )
+    static let libraryMediaDownloads = NSLocalizedString(
+        "browser.library.media_source.downloads", comment: "Media folder: the download folder.",
+    )
     static let libraryEmptyMedia = NSLocalizedString(
         "browser.library.empty_media",
         comment: "Detail of the empty Media section of the Library.",
