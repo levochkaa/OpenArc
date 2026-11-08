@@ -14,6 +14,8 @@ final class BrowserSidebarChromeView: NSView, BrowserSpaceThemedChrome {
     let footer: BrowserNativeSidebarFooterNSView
     var showsWindowControls = false
     var isOverlayPresentation = false
+    /// The overlay border fades out instead of staying until the overlay ends.
+    var fadesOverlayBorder = false
     var onToggleSidebar: () -> Void = {}
     var onDragInteractionChange: () -> Void = {}
     var onURLFrameChange: (CGRect?) -> Void = { _ in }
@@ -131,7 +133,16 @@ final class BrowserSidebarChromeView: NSView, BrowserSpaceThemedChrome {
         applySpaceTheme()
         layer?.cornerRadius = isOverlayPresentation ? BrowserChromeLayout.sidebarOverlayCornerRadius : 0
         layer?.borderWidth = isOverlayPresentation ? BrowserChromeLayout.sidebarOverlayBorderWidth : 0
-        layer?.borderColor = BrowserChromeColors.sidebarOverlayBorder.cgColor
+        let borderColor = fadesOverlayBorder ? NSColor.clear.cgColor : BrowserChromeColors.sidebarOverlayBorder.cgColor
+        if fadesOverlayBorder, let layer, layer.borderColor != borderColor {
+            let fade = CABasicAnimation(keyPath: "borderColor")
+            fade.fromValue = layer.presentation()?.borderColor ?? layer.borderColor
+            fade.toValue = borderColor
+            fade.duration = BrowserChromeLayout.sidebarOverlayBorderFadeDuration
+            fade.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            layer.add(fade, forKey: "borderColor")
+        }
+        layer?.borderColor = borderColor
         resize.hapticsEnabled = model.userPreferencesStore.hapticFeedbackEnabled
         needsLayout = true
     }

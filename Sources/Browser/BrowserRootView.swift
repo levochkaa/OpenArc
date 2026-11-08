@@ -7,6 +7,12 @@ import QuartzCore
 // MARK: - BrowserRootView
 
 final class BrowserRootView: NSView {
+    /// What `refresh()` compares to choose how the next layout moves.
+    private enum LayoutFlag: CaseIterable {
+        case pageFullscreen, sidebarVisible, hoverSidebar, bookmarksBar, siteToolbar, developerToolbar
+        case extensionPanel, sidebarOnRight
+    }
+
     private static let captureHintSeenKey = "browser.capture.hintSeen"
 
     private static let minimumPageBesideLibrary: CGFloat = 320
@@ -67,7 +73,7 @@ final class BrowserRootView: NSView {
     private let extensionVisibility = BrowserNativeVisibilityAnimation()
     private var observations = Set<AnyCancellable>()
     private var revealTask: Task<Void, Never>?
-    private var previousLayoutState: [Bool]?
+    private var previousLayoutState: [LayoutFlag: Bool]?
     private let presentationMotion = BrowserNativeFrameTransitions()
     private var animateNextLayout = false
     private var nextLayoutCurve = BrowserNativeAnimation.Curve.sidebar
@@ -1040,30 +1046,29 @@ final class BrowserRootView: NSView {
     private func refresh() {
         sessionRecovery.update(model.sessionPersistenceFailure)
         followPageFullscreen()
-        let state = [
-            isPageFullscreen,
-            model.isSidebarVisible,
-            isSidebarHoverOverlayPresented,
-            showsBookmarksBar,
-            showsSiteToolbar,
-            showsDeveloperToolbar,
-            isExtensionSidePanelPresented,
-            preferences.sidebarPosition == .right,
-        ]
+        var state = [LayoutFlag: Bool]()
+        state[.pageFullscreen] = isPageFullscreen
+        state[.sidebarVisible] = model.isSidebarVisible
+        state[.hoverSidebar] = isSidebarHoverOverlayPresented
+        state[.bookmarksBar] = showsBookmarksBar
+        state[.siteToolbar] = showsSiteToolbar
+        state[.developerToolbar] = showsDeveloperToolbar
+        state[.extensionPanel] = isExtensionSidePanelPresented
+        state[.sidebarOnRight] = preferences.sidebarPosition == .right
         if let previousLayoutState, previousLayoutState != state {
             animateNextLayout = true
+            let changed = Set(LayoutFlag.allCases.filter { previousLayoutState[$0] != state[$0] })
             // Only the floating sidebar slides with its own spring; everything else
             // moves the page and keeps the shared ease.
-            let changed = zip(previousLayoutState, state).enumerated().filter { $0.element.0 != $0.element.1 }
-            nextLayoutCurve = changed.map(\.offset) == [1] ? .floatingSidebar : .sidebar
-            if changed.map(\.offset) == [0] {
+            nextLayoutCurve = changed == [.hoverSidebar] ? .floatingSidebar : .sidebar
+            if changed == [.sidebarVisible] {
                 nextLayoutDelay = model.isSidebarVisible ? 0.075 : 0.015
             }
             // The toolbar and bookmarks bar appear and leave at once.
-            if Set(changed.map(\.offset)).isSubset(of: [2, 3]) {
+            if changed.isSubset(of: [.bookmarksBar, .siteToolbar]) {
                 animateNextLayout = false
             }
-            if model.isSidebarVisible,!previousLayoutState[0] {
+            if model.isSidebarVisible, previousLayoutState[.sidebarVisible] == false {
                 isSidebarOverlayPinning = isSidebarHoverOverlayChromeVisible
                 finishSidebarHoverOverlayPromotionIfNeeded()
             }
@@ -1127,6 +1132,8 @@ final class BrowserRootView: NSView {
         sidebar.sidebarPosition = preferences.sidebarPosition
         sidebar.showsWindowControls = showsWindowControlsInSidebarChrome
         sidebar.isOverlayPresentation = isSidebarOverlayPresentation
+        // A floating sidebar being pinned loses its border while it moves into place.
+        sidebar.fadesOverlayBorder = isSidebarOverlayPinning
         sidebar.refresh()
         toolbarVisibility.setVisible(showsSiteToolbar, view: toolbar, curve: .sidebar)
         developerToolbar.refresh()
@@ -1190,6 +1197,7 @@ final class BrowserRootView: NSView {
         showsSidebarWindowControls = model.isSidebarVisible || isSidebarPresented
         sidebar.showsWindowControls = showsWindowControlsInSidebarChrome
         sidebar.isOverlayPresentation = isSidebarOverlayPresentation
+        sidebar.fadesOverlayBorder = false
         sidebar.refresh()
     }
 

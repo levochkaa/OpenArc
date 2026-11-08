@@ -122,6 +122,8 @@ enum BrowserChromeLayout {
     static let sidebarHoverOverlayEdgeInset: CGFloat = 5
     static let detachedSidebarWindowBorderInset: CGFloat = 1
     static let sidebarOverlayBorderWidth: CGFloat = 1
+    /// A pinned floating sidebar's border fades over the pin's delay and slide.
+    static let sidebarOverlayBorderFadeDuration: CFTimeInterval = 0.16
     static let sidebarOverlayCornerRadius: CGFloat = 12
     /// The sidebar edge snaps to the default width within 14 pt.
     static let sidebarSnapThreshold: CGFloat = 14
