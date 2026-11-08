@@ -1838,8 +1838,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
             descriptor: shortcutStore.descriptor(for: .newTab),
             action: #selector(createNewTab(_:)),
         ))
+        // Pin Tab and New Folder…, then the other tab actions.
         for (commandID, action) in [
             (BrowserCommandID.togglePinTab, #selector(togglePinTab(_:))),
+            (.newFolder, #selector(createFolderFromSelectedTab(_:))),
             (.duplicateTab, #selector(duplicateTab(_:))),
             (.renameTab, #selector(renameTab(_:))),
             (.resetTabToPinnedURL, #selector(resetTabToPinnedURL(_:))),
@@ -1892,10 +1894,6 @@ NSMenuDelegate, NSUserInterfaceValidations {
         lastSidebarItem.allowsKeyEquivalentWhenHidden = true
         tabsMenu.addItem(lastSidebarItem)
         tabsMenu.addItem(.separator())
-        tabsMenu.addItem(makeMenuItem(
-            descriptor: shortcutStore.descriptor(for: .newFolder),
-            action: #selector(createFolderFromSelectedTab(_:)),
-        ))
         tabsMenu.addItem(makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .collapseAllFolders),
             action: #selector(collapseAllFolders(_:)),
