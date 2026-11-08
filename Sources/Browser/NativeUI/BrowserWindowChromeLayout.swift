@@ -19,6 +19,7 @@ struct BrowserWindowChromeLayout {
     var developerToolbarHeight: CGFloat = 0
 
     var edgeInset: CGFloat { isFullscreen ? 0 : BrowserChromeLayout.browserContentEdgeInset }
+
     var sidebarReservedWidth: CGFloat { isSidebarVisible ? sidebarWidth : 0 }
     var leadingInset: CGFloat { isSidebarVisible && sidebarPosition == .left ? 0 : edgeInset }
     var trailingInset: CGFloat { isSidebarVisible && sidebarPosition == .right ? 0 : edgeInset }
@@ -122,5 +123,11 @@ struct BrowserWindowChromeLayout {
             width: BrowserChromeLayout.sidebarResizeHitWidth,
             height: contentFrame.height,
         )
+    }
+
+    /// A full screen page fills the screen; a full screen window does only without its
+    /// sidebar, and beside the sidebar keeps the page inset and rounded as in a window.
+    static func pageFillsScreen(isWindowFullscreen: Bool, isPageFullscreen: Bool, isSidebarShown: Bool) -> Bool {
+        isPageFullscreen || (isWindowFullscreen && !isSidebarShown)
     }
 }

@@ -101,11 +101,10 @@ final class BrowserRootView: NSView {
         .init(
             windowSize: bounds.size,
             sidebarWidth: reservedSidebarWidth(swipeProgress: librarySwipeProgress),
-            isSidebarVisible: !isPageFullscreen
-                && (model.isSidebarVisible || model.librarySection != nil || libraryFollowsSwipe),
+            isSidebarVisible: isSidebarShownInLayout,
             isHoverSidebarPresented: isSidebarHoverOverlayPresented,
             isOverlayChromeVisible: isSidebarHoverOverlayChromeVisible,
-            isFullscreen: isWindowFullscreen || isPageFullscreen,
+            isFullscreen: pageFillsScreen,
             showsSiteToolbar: showsSiteToolbar,
             showsBookmarksBar: showsBookmarksBar,
             extensionSidePanelWidth: isExtensionSidePanelPresented ? model.extensionSidePanelWidth : nil,
@@ -170,7 +169,19 @@ final class BrowserRootView: NSView {
         model.currentTab.map(BrowserCommandBarFaviconCandidate.init(tab:))
     }
 
-    private var usesWindowContentInsets: Bool { !isWindowFullscreen && !isPageFullscreen }
+    private var usesWindowContentInsets: Bool { !pageFillsScreen }
+    private var isSidebarShownInLayout: Bool {
+        !isPageFullscreen && (model.isSidebarVisible || model.librarySection != nil || libraryFollowsSwipe)
+    }
+
+    private var pageFillsScreen: Bool {
+        BrowserWindowChromeLayout.pageFillsScreen(
+            isWindowFullscreen: isWindowFullscreen,
+            isPageFullscreen: isPageFullscreen,
+            isSidebarShown: isSidebarShownInLayout,
+        )
+    }
+
     private var browserContentLeadingInset: CGFloat { windowGeometry.leadingInset }
     private var browserContentTopInset: CGFloat { windowGeometry.edgeInset }
     private var browserContentTrailingInset: CGFloat { windowGeometry.trailingInset }

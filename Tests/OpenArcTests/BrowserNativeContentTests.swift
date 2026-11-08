@@ -48,6 +48,14 @@ import Testing
         #expect(right.corners == [.layerMaxXMinYCorner, .layerMaxXMaxYCorner])
     }
 
+    @Test func aFullScreenWindowKeepsThePageInsetBesideTheSidebar() {
+        let fills = BrowserWindowChromeLayout.pageFillsScreen
+        #expect(!fills(true, false, true), "Beside the sidebar the page stays a rounded card")
+        #expect(fills(true, false, false), "Without the sidebar it meets the screen edges")
+        #expect(fills(false, true, true), "A full screen page always fills the screen")
+        #expect(!fills(false, false, false), "A window keeps its insets")
+    }
+
     @Test func aRightSidebarMirrorsTheWindowChrome() {
         func layout(position: BrowserSidebarPosition, visible: Bool, hover: Bool = false) -> BrowserWindowChromeLayout {
             BrowserWindowChromeLayout(
