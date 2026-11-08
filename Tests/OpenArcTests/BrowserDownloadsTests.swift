@@ -73,3 +73,26 @@ import Testing
 
     #expect(model.items.map(\.id) == ["active"])
 }
+
+@Test
+@MainActor func onlyARunningDownloadCanBeCanceled() {
+    let model = BrowserDownloadsModel()
+    var canceled = [String]()
+    model.onCancel = { canceled.append($0) }
+    for (id, state) in [("running", BrowserDownloadState.inProgress), ("done", .completed)] {
+        model.apply(BrowserDownloadUpdate(
+            id: id,
+            fileName: "\(id).zip",
+            urlString: "https://example.com/\(id).zip",
+            fullPath: nil,
+            receivedBytes: 1,
+            totalBytes: 2,
+            currentSpeedBytesPerSecond: 1,
+            state: state,
+        ))
+    }
+    for item in model.items {
+        model.cancel(item)
+    }
+    #expect(canceled == ["running"])
+}

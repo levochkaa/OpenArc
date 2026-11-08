@@ -68,7 +68,7 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
               didCloseTabWithID:(NSString *)tabID;
 
 @optional
-// A tab that never showed a page only started a download.
+// A tab that never showed a page only started a download, which has now ended.
 - (void)browserTabController:(BrowserTabController *)controller
     didDownloadWithoutPageInTabWithID:(NSString *)tabID;
 - (void)browserTabController:(BrowserTabController *)controller
@@ -358,6 +358,8 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
 - (void)captureFullPageActiveTabToPasteboard;
 /// The visible page as PNG data, for the caller instead of the clipboard.
 - (void)captureActiveTabPictureWithCompletion:(void (^)(NSData *_Nullable png))completion;
+// Stops a running download; the engine then reports it canceled.
+- (void)cancelDownloadWithID:(NSString *)downloadID;
 /// Sends a Cocoa action such as `copyToFindPboard:` to the active page's
 /// Chromium view, wherever the window's focus is. NO without such a view.
 - (BOOL)sendActionToActivePage:(SEL)action NS_SWIFT_NAME(sendActionToActivePage(_:));

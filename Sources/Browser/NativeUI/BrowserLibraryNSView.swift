@@ -527,6 +527,10 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
                 onOpen: { [weak downloads] in downloads?.open(item) },
                 menu: { [weak downloads] in
                     let menu = BrowserNativeMenus.menu()
+                    if item.state == .inProgress {
+                        BrowserNativeMenus
+                            .add(BrowserStrings.downloadsCancelAction, to: menu) { downloads?.cancel(item) }
+                    }
                     BrowserNativeMenus.add(BrowserStrings.libraryRevealInFinder, to: menu) { downloads?.reveal(item) }
                     return menu
                 },

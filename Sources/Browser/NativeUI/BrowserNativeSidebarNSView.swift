@@ -3,6 +3,7 @@
 import AppKit
 import Combine
 import QuartzCore
+import UniformTypeIdentifiers
 
 // MARK: - BrowserNativeSidebarNSView
 
@@ -1959,12 +1960,29 @@ final class BrowserNativeSidebarNSView: NSView {
         DispatchQueue.main.asyncAfter(deadline: .now() + (shows ? 0.3 : 0.2), execute: work)
     }
 
+    /// The folder's newest items, then the downloads still running, newest last.
+    private func downloadsTrayEntries() -> [BrowserDownloadsTrayView.Entry] {
+        let downloads = state.model.downloadsModel
+        let running = downloads.items.filter { $0.state == .inProgress }.map { item in
+            BrowserDownloadsTrayView.Entry(
+                url: item.fileURL ?? URL(fileURLWithPath: item.fileName),
+                date: item.startedAt,
+                progress: downloads.detailText(for: item),
+                title: item.fileName,
+                onCancel: { [weak downloads] in downloads?.cancel(item) },
+            )
+        }
+        let files = BrowserDownloadsTrayView.recentEntries(in: BrowserDownloadLocation.directory(
+            customPath: state.model.userPreferencesStore.downloadDirectoryPath,
+        ))
+        // A running download's file is already on disk; it shows once, with its progress.
+        let runningPaths = Set(running.map(\.url.standardizedFileURL.path))
+        let settled = files.filter { !runningPaths.contains($0.url.standardizedFileURL.path) }
+        return Array((settled + running).suffix(BrowserDownloadsTrayView.maximumEntries))
+    }
+
     private func setDownloadsTrayShown(_ shown: Bool) {
-        let entries = shown && !state.isDraggingSidebarItem
-            ? BrowserDownloadsTrayView.recentEntries(in: BrowserDownloadLocation.directory(
-                customPath: state.model.userPreferencesStore.downloadDirectoryPath,
-            ))
-            : []
+        let entries = shown && !state.isDraggingSidebarItem ? downloadsTrayEntries() : []
         guard !entries.isEmpty else {
             downloadsTrayTimer?.invalidate()
             downloadsTrayTimer = nil
@@ -2712,9 +2730,14 @@ enum BrowserSidebarLinkDrop {
 /// The newest files of the download folder, over the bottom of the sidebar while
 /// the Library button is hovered: oldest at the top, the newest by the button.
 final class BrowserDownloadsTrayView: NSView {
-    struct Entry: Equatable {
+    struct Entry {
         let url: URL
         let date: Date
+        /// A running download's progress, in place of when it arrived.
+        var progress: String?
+        var title: String?
+        /// Stops a running download.
+        var onCancel: (() -> Void)?
     }
 
     static let rowHeight: CGFloat = 56
@@ -2801,6 +2824,12 @@ private final class BrowserDownloadsTrayRow: NSView {
     private let icon = NSImageView()
     private let title = NSTextField(labelWithString: "")
     private let detail = NSTextField(labelWithString: "")
+    private let cancelButton = BrowserNativeChromeButton(
+        symbol: "xmark",
+        title: BrowserStrings.downloadsCancelAction,
+        style: .sidebarClose,
+        action: {},
+    )
     private var tracking: NSTrackingArea?
 
     init(entry: BrowserDownloadsTrayView.Entry) {
@@ -2810,16 +2839,21 @@ private final class BrowserDownloadsTrayRow: NSView {
         highlight.strokeWidth = 0
         highlight.fillColor = BrowserChromeColors.rowHover
         highlight.isHidden = true
-        icon.image = NSWorkspace.shared.icon(forFile: entry.url.path)
+        icon.image = entry.progress == nil
+            ? NSWorkspace.shared.icon(forFile: entry.url.path)
+            : NSWorkspace.shared.icon(for: UTType(filenameExtension: entry.url.pathExtension) ?? .data)
         icon.imageScaling = .scaleProportionallyUpOrDown
-        title.stringValue = entry.url.lastPathComponent
+        title.stringValue = entry.title ?? entry.url.lastPathComponent
         title.font = .systemFont(ofSize: 14)
         title.textColor = BrowserChromeColors.primaryText
         title.lineBreakMode = .byTruncatingTail
-        detail.stringValue = RelativeDateTimeFormatter().localizedString(for: entry.date, relativeTo: Date())
+        detail.stringValue = entry.progress
+            ?? RelativeDateTimeFormatter().localizedString(for: entry.date, relativeTo: Date())
+        cancelButton.isHidden = entry.onCancel == nil
+        cancelButton.onAction = { [entry] in entry.onCancel?() }
         detail.font = .systemFont(ofSize: 12)
         detail.textColor = BrowserChromeColors.secondaryText
-        for view in [highlight, icon, title, detail] as [NSView] {
+        for view in [highlight, icon, title, detail, cancelButton] as [NSView] {
             addSubview(view)
         }
         setAccessibilityRole(.button)
@@ -2833,7 +2867,14 @@ private final class BrowserDownloadsTrayRow: NSView {
         highlight.frame = bounds.insetBy(dx: 4, dy: 2)
         icon.frame = NSRect(x: 9, y: (bounds.height - 38) / 2, width: 38, height: 38)
         let textX: CGFloat = 60
-        let width = max(bounds.width - textX - 10, 0)
+        let size = cancelButton.intrinsicContentSize.width > 0 ? BrowserChromeLayout.sidebarCloseButtonSize : 24
+        cancelButton.frame = NSRect(
+            x: bounds.width - 12 - size,
+            y: (bounds.height - size) / 2,
+            width: size,
+            height: size,
+        )
+        let width = max((cancelButton.isHidden ? bounds.width - 10 : cancelButton.frame.minX - 6) - textX, 0)
         title.frame = NSRect(x: textX, y: bounds.height / 2 - 18, width: width, height: 18)
         detail.frame = NSRect(x: textX, y: bounds.height / 2 + 1, width: width, height: 16)
     }
@@ -2852,7 +2893,10 @@ private final class BrowserDownloadsTrayRow: NSView {
 
     override func mouseEntered(with _: NSEvent) { highlight.isHidden = false }
     override func mouseExited(with _: NSEvent) { highlight.isHidden = true }
-    override func mouseUp(with _: NSEvent) { NSWorkspace.shared.open(entry.url) }
+    override func mouseUp(with _: NSEvent) {
+        guard entry.progress == nil else { return }
+        NSWorkspace.shared.open(entry.url)
+    }
 
     override func menu(for _: NSEvent) -> NSMenu? {
         let menu = BrowserNativeMenus.menu()

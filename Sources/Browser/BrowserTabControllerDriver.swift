@@ -164,6 +164,10 @@ import Foundation
         controller.saveActiveTab(withSuggestedName: suggestedName)
     }
 
+    func cancelDownload(id: String) {
+        controller.cancelDownload(withID: id)
+    }
+
     func captureActiveTabPicture(completion: @escaping @MainActor (Data?) -> Void) {
         controller.captureActiveTabPicture { data in
             MainActor.assumeIsolated { completion(data) }

@@ -178,6 +178,8 @@ import Foundation
 
     var certificateChain = [Data]()
 
+    private(set) var canceledDownloadIDs = [String]()
+
     private var pendingCreateRequests = [CreatedTabRequest]()
     private var nextTabNumber = 0
     private var activeTabID: String?
@@ -361,6 +363,10 @@ import Foundation
 
     func saveActiveTab(withSuggestedName suggestedName: String?) {
         saveSuggestedNames.append(suggestedName)
+    }
+
+    func cancelDownload(id: String) {
+        canceledDownloadIDs.append(id)
     }
 
     func captureActiveTabPicture(completion: @escaping @MainActor (Data?) -> Void) {

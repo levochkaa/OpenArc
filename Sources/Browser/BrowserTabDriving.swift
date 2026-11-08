@@ -84,7 +84,7 @@ enum BrowserPageTranslationState: Int {
     var onTabCloseRequestFinished: ((String, String, BrowserTabCloseOutcome) -> Void)? { get set }
     var onTabCloseConfirmationPresented: ((String) -> Void)? { get set }
     var onTabClosed: ((String) -> Void)? { get set }
-    /// A tab that never showed a page only started a download.
+    /// A tab that never showed a page only started a download, which has now ended.
     var onDownloadWithoutPage: ((String) -> Void)? { get set }
     var onStatusChanged: ((String, String) -> Void)? { get set }
     var onNavigationStateChanged: ((String, Bool, Bool) -> Void)? { get set }
@@ -176,6 +176,7 @@ enum BrowserPageTranslationState: Int {
     func saveActiveTab(withSuggestedName suggestedName: String?)
     func captureFullPageActiveTabToPasteboard()
     func captureActiveTabPicture(completion: @escaping @MainActor (Data?) -> Void)
+    func cancelDownload(id: String)
     /// A Cocoa action for the active page's own view; false without one.
     @discardableResult func sendActionToActivePage(_ action: Selector) -> Bool
     func focusActivePage()

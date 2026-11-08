@@ -956,6 +956,10 @@ enum BrowserStrings {
         comment: "Detail text for a completed download.",
     )
 
+    static let downloadsCancelAction = NSLocalizedString(
+        "browser.downloads.cancel",
+        comment: "Button or menu item that stops a running download.",
+    )
     static let downloadsCanceledDetail = NSLocalizedString(
         "browser.downloads.detail.canceled",
         comment: "Detail text for a canceled download.",

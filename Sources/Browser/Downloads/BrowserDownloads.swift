@@ -96,6 +96,9 @@ struct BrowserDownloadItem: Identifiable, Equatable {
 
     @Published private(set) var items = [BrowserDownloadItem]()
 
+    /// Stops a running download in the engine; set by the window's model.
+    var onCancel: ((String) -> Void)?
+
     private let dateProvider: () -> Date
     private let workspace: NSWorkspace
 
@@ -160,6 +163,11 @@ struct BrowserDownloadItem: Identifiable, Equatable {
 
     func clearFinishedDownloads() {
         items.removeAll { $0.state.isFinished }
+    }
+
+    func cancel(_ item: BrowserDownloadItem) {
+        guard item.state == .inProgress else { return }
+        onCancel?(item.id)
     }
 
     func open(_ item: BrowserDownloadItem) {

@@ -4130,6 +4130,10 @@ std::string BrowserMediaVolumeScript(double volume) {
 
 }  // namespace
 
+namespace {
+std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks();
+}  // namespace
+
 @implementation BrowserTabController {
   NSMutableDictionary<NSString *, NSNumber *> *_mediaVolumes;
   __weak BrowserTabHostView *_hostView;
@@ -5392,6 +5396,19 @@ std::string BrowserMediaVolumeScript(double volume) {
                             observer->Start(host);
                           },
                           host, fraction)));
+}
+
+- (void)cancelDownloadWithID:(NSString *)downloadID {
+  const uint32_t identifier = static_cast<uint32_t>(downloadID.longLongValue);
+  CefPostTask(TID_UI, CefCreateClosureTask(base::BindOnce(
+                          [](uint32_t identifier) {
+                            auto &callbacks = RunningDownloadCallbacks();
+                            auto it = callbacks.find(identifier);
+                            if (it != callbacks.end()) {
+                              it->second->Cancel();
+                            }
+                          },
+                          identifier)));
 }
 
 - (void)captureActiveTabPictureWithCompletion:(void (^)(NSData *))completion {
@@ -7444,9 +7461,44 @@ bool HandleBeforeDownload(BrowserTabController *controller,
   return true;
 }
 
+// The engine's handles for running downloads, by ID, so that a download can be canceled.
+std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks() {
+  static std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> callbacks;
+  return callbacks;
+}
+
+// Tabs that only started a download, by the download's ID.
+std::map<uint32_t, std::string> &DownloadOnlyTabIDs() {
+  static std::map<uint32_t, std::string> tabs;
+  return tabs;
+}
+
+void RememberDownloadCallback(CefRefPtr<CefDownloadItem> download_item,
+                              CefRefPtr<CefDownloadItemCallback> callback) {
+  if (!download_item || !download_item->IsValid()) {
+    return;
+  }
+  if (callback && download_item->IsInProgress()) {
+    RunningDownloadCallbacks()[download_item->GetId()] = callback;
+  } else {
+    RunningDownloadCallbacks().erase(download_item->GetId());
+  }
+}
+
 void HandleDownloadUpdated(BrowserTabController *controller, CefRefPtr<CefDownloadItem> download_item) {
   if (!download_item || !download_item->IsValid() || controller == nil) {
     return;
+  }
+  auto download_only = DownloadOnlyTabIDs().find(download_item->GetId());
+  if (download_only != DownloadOnlyTabIDs().end() && !download_item->IsInProgress()) {
+    NSString *tabID = ToNSString(download_only->second);
+    DownloadOnlyTabIDs().erase(download_only);
+    dispatch_async(dispatch_get_main_queue(), ^{
+      id<BrowserTabControllerDelegate> delegate = controller.delegate;
+      if ([delegate respondsToSelector:@selector(browserTabController:didDownloadWithoutPageInTabWithID:)]) {
+        [delegate browserTabController:controller didDownloadWithoutPageInTabWithID:tabID];
+      }
+    });
   }
 
   NSString *fullPath = ToNSString(download_item->GetFullPath().ToString());
@@ -7471,17 +7523,11 @@ bool BrowserTabClient::OnBeforeDownload(
     CefRefPtr<CefBeforeDownloadCallback> callback) {
   CEF_REQUIRE_UI_THREAD();
 
-  // A new tab whose first address is a download has no page to keep.
+  // A new tab whose first address is a download has no page to keep. It closes
+  // once the download ends: the engine cancels a closed browser's downloads.
   const std::string frame_url = browser->GetMainFrame() ? browser->GetMainFrame()->GetURL().ToString() : "";
-  if (!browser->CanGoBack() && (frame_url.empty() || frame_url == "about:blank")) {
-    BrowserTabController *controller = controller_;
-    NSString *tabID = ToNSString(tab_id_);
-    dispatch_async(dispatch_get_main_queue(), ^{
-      id<BrowserTabControllerDelegate> delegate = controller.delegate;
-      if ([delegate respondsToSelector:@selector(browserTabController:didDownloadWithoutPageInTabWithID:)]) {
-        [delegate browserTabController:controller didDownloadWithoutPageInTabWithID:tabID];
-      }
-    });
+  if (!browser->CanGoBack() && (frame_url.empty() || frame_url == "about:blank") && download_item) {
+    DownloadOnlyTabIDs()[download_item->GetId()] = tab_id_;
   }
   return HandleBeforeDownload(controller_, download_item, suggested_name, callback);
 }
@@ -7492,6 +7538,7 @@ void BrowserTabClient::OnDownloadUpdated(
     CefRefPtr<CefDownloadItemCallback> callback) {
   CEF_REQUIRE_UI_THREAD();
 
+  RememberDownloadCallback(download_item, callback);
   HandleDownloadUpdated(controller_, download_item);
 }
 
@@ -8313,8 +8360,9 @@ bool BrowserPeekClient::OnBeforeDownload(CefRefPtr<CefBrowser> browser,
 
 void BrowserPeekClient::OnDownloadUpdated(CefRefPtr<CefBrowser>,
                                           CefRefPtr<CefDownloadItem> download_item,
-                                          CefRefPtr<CefDownloadItemCallback>) {
+                                          CefRefPtr<CefDownloadItemCallback> callback) {
   CEF_REQUIRE_UI_THREAD();
+  RememberDownloadCallback(download_item, callback);
   HandleDownloadUpdated(controller_, download_item);
 }
 

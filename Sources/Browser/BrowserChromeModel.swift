@@ -1182,6 +1182,9 @@ enum BrowserWindowMode: Equatable {
         tabDriver.onDownloadUpdated = { [weak self] update in
             self?.handleDownloadUpdate(update)
         }
+        self.downloadsModel.onCancel = { [weak self] id in
+            self?.tabDriver.cancelDownload(id: id)
+        }
         extensionSidePanelDriver?.onPanelClosed = { [weak self] panelID in
             self?.handleExtensionSidePanelClosed(panelID: panelID)
         }
