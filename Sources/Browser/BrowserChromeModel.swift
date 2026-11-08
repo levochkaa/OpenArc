@@ -2866,7 +2866,7 @@ enum BrowserWindowMode: Equatable {
         bookmarksModel.reload()
         dismissFindBar()
         commandBarModel.dismiss()
-        currentPageCommandBarModel.present(initialQuery: selectedTab.urlString)
+        currentPageCommandBarModel.present(initialQuery: selectedTab.urlString, pageTitle: selectedTab.displayTitle)
         BrowserTelemetry.captureUsage(.currentPageCommandBarPresented, properties: telemetryProperties)
     }
 

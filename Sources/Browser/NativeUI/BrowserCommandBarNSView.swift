@@ -18,6 +18,9 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
     /// The selected row's fill, from the Space's theme.
     var themeSelectionColor: NSColor?
 
+    /// Selects the text the bar opens with, in place of the style's choice.
+    var selectsTextOnFocus: Bool?
+
     /// The widest the bar gets, below the usual width, as over a small window.
     var panelWidthLimit: CGFloat? {
         didSet { needsLayout = true }
@@ -354,7 +357,7 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
             shouldFocus: model.isPresented,
             focusRequestID: model.focusRequestID,
             fontSize: style.fontSize,
-            selectAllOnFocus: style.selectsTextOnFocus,
+            selectAllOnFocus: selectsTextOnFocus ?? style.selectsTextOnFocus,
         )
         if changed {
             scrollAnimation.cancel()

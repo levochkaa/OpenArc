@@ -619,6 +619,21 @@ private struct RejectingDomainParser: BrowserDomainParsing {
     #expect(model.previewDisplayText == nil)
 }
 
+@MainActor @Test func anOpenedAddressListsItsPageThenRecentPagesUntilEdited() {
+    let recent = BrowserCommandSuggestion(kind: .history, displayText: "Org", resolvedURLString: "https://example.org/")
+    let model = BrowserCommandBarModel(
+        suggestionProvider: BrowserEmptySuggestionProviderForTests(),
+        recentPagesProvider: { _ in [recent] },
+        submitHandler: { _ in },
+    )
+    model.present(initialQuery: "https://example.com/", pageTitle: "Example Domain")
+    #expect(model.suggestions.map(\.displayText) == ["Example Domain", "Org"])
+    #expect(model.selectedSuggestion?.resolvedURLString == "https://example.com/")
+    #expect(model.previewDisplayText == nil, "The field keeps the address")
+    model.query = "https://example.com/a"
+    #expect(!model.suggestions.contains { $0.displayText == "Example Domain" }, "Typing searches again")
+}
+
 @MainActor @Test func aCommandThatAnswersTheQueryComesBeforeTheSearch() {
     let command = BrowserCommandSuggestion(
         kind: .command,

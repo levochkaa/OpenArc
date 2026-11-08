@@ -206,6 +206,8 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
 
     // MARK: Private
 
+    /// The page the bar opened on, with its address as the query.
+    private var presentedPage: BrowserCommandSuggestion?
     private let suggestionProvider: BrowserSuggestionProviding
     private let navigationResolver: BrowserNavigationResolver
     private let submitHandler: (String) -> Void
@@ -338,18 +340,36 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
         return true
     }
 
-    func present(initialQuery: String = "") {
+    /// `pageTitle` names the page whose address `initialQuery` is: until the
+    /// address is edited, that page comes first, then the latest pages.
+    func present(initialQuery: String = "", pageTitle: String? = nil) {
         suggestionLoadTask?.cancel()
         activeSiteSearch = nil
         siteSearchTriggerQuery = nil
         focusRequestID += 1
         isPresented = true
-        query = initialQuery
+        presentedPage = pageTitle.flatMap { title in
+            guard !initialQuery.isEmpty else { return nil }
+            var page = BrowserCommandSuggestion(
+                kind: .url,
+                displayText: title.isEmpty ? initialQuery : title,
+                resolvedURLString: initialQuery,
+            )
+            // The field keeps the address while the page is selected.
+            page.completionText = initialQuery
+            return page
+        }
+        if query == initialQuery {
+            handleQueryChange()
+        } else {
+            query = initialQuery
+        }
     }
 
     func dismiss() {
         suggestionLoadTask?.cancel()
         suggestionLoadTask = nil
+        presentedPage = nil
         isPresented = false
         activeSiteSearch = nil
         siteSearchTriggerQuery = nil
@@ -439,6 +459,14 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
                     )]
             } ?? []
             selectedSuggestionIndex = suggestions.isEmpty ? nil : 0
+            return
+        }
+        // The address the bar opened with, unedited: that page, then the latest ones.
+        if let page = presentedPage, query == page.resolvedURLString {
+            let recent = recentPagesProvider(Self.maximumRecentPages)
+                .filter { $0.resolvedURLString != page.resolvedURLString }
+            suggestions = [page] + recent.prefix(Self.maximumRecentPages - 1)
+            selectedSuggestionIndex = 0
             return
         }
         // Before anything is typed, the latest pages are one key away.

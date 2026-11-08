@@ -1158,17 +1158,32 @@ NSMenuDelegate, NSUserInterfaceValidations {
         }
     }
 
+    /// Command-L or a click on the small window's address: the search over its
+    /// page, opening with the address selected.
+    func searchSmallWindowAddress(_ sender: Any?) {
+        guard let panel = (sender as? BrowserPeekPanel) ?? focusedSmallWindow else { return }
+        _ = presentSmallWindowSearch(in: panel, initialQuery: panel.addressForEditing)
+    }
+
     /// New Tab in a small window asks where to go over its page and goes there in it.
     private func presentSmallWindowSearch() -> Bool {
+        guard let panel = focusedSmallWindow else { return false }
+        return presentSmallWindowSearch(in: panel)
+    }
+
+    private func presentSmallWindowSearch(in panel: BrowserPeekPanel, initialQuery: String = "") -> Bool {
         guard
-            let panel = focusedSmallWindow,
+            panel.isStandalone,
             let chromeModel = activeProfileWindowSession?.chromeModel ?? profileWindowSessions.first?.chromeModel
         else {
             return false
         }
-        panel.presentSearch(model: chromeModel.makeLittleWindowSearchModel { [weak panel] urlString in
-            panel?.onNavigate?(urlString)
-        })
+        panel.presentSearch(
+            model: chromeModel.makeLittleWindowSearchModel { [weak panel] urlString in
+                panel?.onNavigate?(urlString)
+            },
+            initialQuery: initialQuery,
+        )
         return true
     }
 

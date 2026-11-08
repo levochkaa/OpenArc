@@ -40,6 +40,8 @@ import Combine
 
     private static let closeDelay: TimeInterval = 0.035
 
+    private static let searchAddressAction = Selector(("searchSmallWindowAddress:"))
+
     override var canBecomeKey: Bool { true }
 
     /// A small window rather than a Peek card.
@@ -128,6 +130,7 @@ import Combine
     private var findActiveOrdinal: Int?
     private var findFocusRequest = 0
     private var searchObservation: AnyCancellable?
+    private var isHandingAddressToSearch = false
 
     /// The engine keeps a loading page from taking the keys meanwhile.
     @objc var isEditingAddress: Bool { hostLabel.currentEditor() != nil }
@@ -148,6 +151,16 @@ import Combine
 
     /// The page has an address to copy.
     @objc var canCopyLink: Bool { !currentURLString.isEmpty && currentURLString != "about:blank" }
+
+    /// The page's address, for the search to open with.
+    var addressForEditing: String {
+        currentURLString == "about:blank" ? "" : currentURLString
+    }
+
+    /// The app answers with a search over the page; without it the field edits inline.
+    private var canSearchAddress: Bool {
+        isStandalone && NSApp.target(forAction: Self.searchAddressAction, to: nil, from: self) != nil
+    }
 
     private init(contentRect: NSRect, standalone: Bool) {
         self.isStandalone = standalone
@@ -241,7 +254,22 @@ import Combine
         hostLabel.isSelectable = standalone
         hostLabel.placeholderString = standalone ? BrowserStrings.peekAddressPlaceholder : nil
         hostLabel.delegate = self
-        hostLabel.onFocus = { [weak self] in self?.beginEditingAddress() }
+        hostLabel.onFocus = { [weak self] in
+            guard let self else { return }
+            guard canSearchAddress else {
+                beginEditingAddress()
+                return
+            }
+            // The address opens in the search over the page, selected.
+            DispatchQueue.main.async {
+                // The search takes the keyboard, not the page.
+                self.isHandingAddressToSearch = true
+                self.makeFirstResponder(nil)
+                self.isHandingAddressToSearch = false
+                self.update(urlString: self.currentURLString)
+                self.searchAddress()
+            }
+        }
         hostLabel.setAccessibilityIdentifier("browser.peek.address")
         closeButton.onAction = { [weak self] in self?.onClose?() }
         openButton.onAction = { [weak self] in self?.onOpenInTab?() }
@@ -380,7 +408,11 @@ import Combine
     /// The small window's address field takes the keyboard with the address selected.
     @objc func focusAddressField() {
         guard isStandalone else { return }
-        makeFirstResponder(hostLabel)
+        if canSearchAddress {
+            searchAddress()
+        } else {
+            makeFirstResponder(hostLabel)
+        }
     }
 
     /// `⌘L` edits the small window's address, `⌘O` opens the page as a tab and
@@ -567,11 +599,12 @@ import Combine
     }
 
     /// New Tab: a command bar over the page, closed by Escape, × or a result.
-    func presentSearch(model: BrowserCommandBarModel) {
+    func presentSearch(model: BrowserCommandBarModel, initialQuery: String = "") {
         dismissSearch()
         let bar = BrowserCommandBarNSView(model: model)
         bar.configure(blockedLeadingInset: 0, style: .standard, faviconCandidate: nil)
         bar.showsCloseButton = true
+        bar.selectsTextOnFocus = !initialQuery.isEmpty
         // As wide as the small window bar, centered on the whole window.
         bar.panelWidthLimit = BrowserLittleWindowLauncher.barWidth
         bar.frame = card.bounds
@@ -584,7 +617,7 @@ import Combine
             .sink { [weak self] _ in
                 DispatchQueue.main.async { self?.dismissSearch() }
             }
-        model.present()
+        model.present(initialQuery: initialQuery, pageTitle: initialQuery.isEmpty ? nil : title)
     }
 
     /// Copy Link and Copy URL: the page's address, with the same note as in a
@@ -621,6 +654,10 @@ import Combine
         )
         linkStatus.cornerRadius = Self.linkStatusHeight / 2
         linkStatus.autoresizingMask = [.maxXMargin, .maxYMargin]
+    }
+
+    private func searchAddress() {
+        NSApp.sendAction(Self.searchAddressAction, to: nil, from: self)
     }
 
     private func dismissSearch() {
@@ -845,6 +882,7 @@ import Combine
     }
 
     private func endEditingAddress() {
+        guard !isHandingAddressToSearch else { return }
         focusPage()
         update(urlString: currentURLString)
     }
