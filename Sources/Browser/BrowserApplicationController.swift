@@ -118,6 +118,14 @@ NSMenuDelegate, NSUserInterfaceValidations {
         return activeProfileWindowSession?.chromeModel ?? profileWindowSessions.first?.chromeModel
     }
 
+    /// Where an import lands: the active profile window, or the first one, never
+    /// a small, incognito or web app window, which have no Spaces to import into.
+    private var importTargetModel: BrowserChromeModel? {
+        ([activeProfileWindowSession].compactMap(\.self) + profileWindowSessions)
+            .first { $0.chromeModel.supportsSpaces }?
+            .chromeModel
+    }
+
     private var archiveContextModel: BrowserChromeModel? {
         focusedArchiveWindowController?.model ?? activeChromeModel
     }
@@ -1363,7 +1371,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
     private func showOnboarding(importOnly: Bool = false) {
         let controller = BrowserOnboardingWindowController(preferences: userPreferencesStore, importOnly: importOnly)
         controller.importItems = { [weak self] items, profile in
-            await self?.activeChromeModel?.importProfile(profile, items: items) ?? ""
+            await self?.importTargetModel?.importProfile(profile, items: items) ?? ""
         }
         controller.setAsDefault = { [weak self] in self?.setAsDefaultBrowser(nil) }
         controller.isDefaultBrowser = { [weak self] in self?.defaultBrowserService.isDefaultBrowser ?? false }

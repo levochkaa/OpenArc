@@ -1618,6 +1618,10 @@ enum BrowserStrings {
         comment: "Alert shown when Arc's sidebar has nothing to import.",
     )
 
+    static let arcImportAlreadyImported = NSLocalizedString(
+        "browser.arc_import.already_imported",
+        comment: "Shown when every Space in Arc's sidebar is already in OpenArc.",
+    )
     static let arcImportUnavailable = NSLocalizedString(
         "browser.arc_import.unavailable",
         comment: "Alert shown when the window cannot take an import right now.",

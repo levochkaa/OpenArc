@@ -1429,28 +1429,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
     private func arcSidebarImportRow() -> NSView {
         let model = model
         let button = BrowserActionButton(BrowserStrings.settingsImportArcSidebar) { [weak self] in
-            let message: String
-            if !model.canImportArcSidebar {
-                message = BrowserStrings.arcImportUnavailable
-            } else if let url = BrowserArcSidebar.defaultFileURL {
-                do {
-                    let result = try model.importArcSidebar(BrowserArcSidebar.load(from: url))
-                    message = result.isEmpty
-                        ? BrowserStrings.arcImportNothing
-                        : BrowserStrings.arcImportResult(
-                            spaces: result.spaceCount,
-                            pinnedTabs: result.pinnedTabCount,
-                            folders: result.folderCount,
-                            favorites: result.favoriteCount,
-                        )
-                } catch BrowserArcSidebar.ImportError.missing {
-                    message = BrowserStrings.arcImportMissing
-                } catch {
-                    message = BrowserStrings.arcImportUnreadable
-                }
-            } else {
-                message = BrowserStrings.arcImportMissing
-            }
+            let message = model.importArcSidebarFromDisk()
             let alert = NSAlert()
             alert.messageText = BrowserStrings.settingsImportArcSidebar
             alert.informativeText = message

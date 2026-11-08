@@ -335,6 +335,7 @@
 "browser.arc_import.unreadable" = "Arc's sidebar could not be read.";
 "browser.arc_import.nothing" = "Arc's sidebar has no Spaces or Favorites to import.";
 "browser.arc_import.unavailable" = "Try again when the window has finished loading.";
+"browser.arc_import.already_imported" = "Arc's Spaces are already in OpenArc.";
 "browser.arc_import.result" = "Imported %d Spaces with %d pinned tabs and %d folders, and %d Favorites.";
 "browser.menu.developer_tools" = "Developer Tools";
 "browser.menu.view_source" = "View Source";

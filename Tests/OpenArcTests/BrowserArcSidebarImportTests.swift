@@ -92,6 +92,39 @@ import Testing
         #expect(f.model.selectedTabID == f.model.tabs.first { $0.syncID == mail.syncID }?.id)
     }
 
+    @Test func importFromDiskReportsTheResultThenThatItIsAlreadyImported() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("StorableSidebar.json")
+        let sidebar = """
+        {"sidebar": {"containers": [{"global": {}}, {
+          "spaces": ["S1", {"id": "S1", "title": "Work", "containerIDs": ["pinned", "P1"]}],
+          "topAppsContainerIDs": [],
+          "items": [
+            "P1", {"id": "P1", "childrenIds": ["T1"], "data": {"itemContainer": {}}},
+            "T1", {"id": "T1", "childrenIds": [], "data": {"tab": {"savedURL": "https://mail.example"}}}
+          ]}]}}
+        """
+        try Data(sidebar.utf8).write(to: url)
+        let f = SidebarDragFixture(temporary: ["x"])
+        let spaces = f.model.spaces.count
+        #expect(f.model.importArcSidebarFromDisk(at: url) != BrowserStrings.arcImportAlreadyImported)
+        #expect(f.model.spaces.count > spaces)
+        #expect(f.model.importArcSidebarFromDisk(at: url) == BrowserStrings.arcImportAlreadyImported)
+    }
+
+    @Test func importFromDiskSaysWhyNothingCameIn() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let f = SidebarDragFixture(temporary: ["x"])
+        let missing = directory.appendingPathComponent("StorableSidebar.json")
+        #expect(f.model.importArcSidebarFromDisk(at: missing) == BrowserStrings.arcImportMissing)
+        try Data("{}".utf8).write(to: missing)
+        #expect(f.model.importArcSidebarFromDisk(at: missing) == BrowserStrings.arcImportUnreadable)
+    }
+
     @Test func everyArcSpaceIconMapsToASymbolThatExists() throws {
         // Every icon name Arc's sidebar can store.
         let arcIcons = """
