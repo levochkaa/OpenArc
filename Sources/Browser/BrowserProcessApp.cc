@@ -14,6 +14,7 @@ constexpr char kDisableBackgroundingOccludedWindowsSwitch[] =
 constexpr char kDisableChromeLoginPromptSwitch[] = "disable-chrome-login-prompt";
 constexpr char kDisableFeaturesSwitch[] = "disable-features";
 constexpr char kImmersiveReadAnythingFeature[] = "ImmersiveReadAnything";
+constexpr char kJourneysFeature[] = "Journeys";
 bool FeatureListContains(const std::string& features,
                          const std::string& feature) {
   size_t start = 0;
@@ -66,6 +67,10 @@ class BrowserProcessApp : public CefApp, public CefBrowserProcessHandler {
     // Immersive Read Anything currently assumes they are during soft navigation
     // metrics, which crashes CEF-hosted pages before its null check can run.
     DisableChromiumFeature(command_line, kImmersiveReadAnythingFeature);
+
+    // History lists visits by date only; its "By group" tab needs Chrome's
+    // history clustering, which CEF pages do not feed.
+    DisableChromiumFeature(command_line, kJourneysFeature);
 
     // Keep visible CEF WebContents composited when macOS reports the app window
     // as occluded. Chromium otherwise evicts the surface and Mission Control can
