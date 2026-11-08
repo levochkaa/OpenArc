@@ -470,6 +470,23 @@ extension BrowserMobileUITests {
         }
     }
 
+    @Test func anEmptyArchiveHasNothingToClear() async throws {
+        try await withMobileArchiveFixture { f in
+            let engine = MobileArchiveEngine()
+            let workspace = await f.workspace(engine: engine, scene: "empty-clear")
+            let host = try MobileArchivePresentation(workspace: workspace, contentView: engine.hostView)
+            defer { host.close() }
+            let archive = try await host.open(expectingRows: false)
+            let clear = try #require(archive.toolbarItems?
+                .first { $0.accessibilityIdentifier == "browser.archive.clear" })
+            try #require(await mobileArchiveEventually {
+                (archive.contentUnavailableConfiguration as? UIContentUnavailableConfiguration)?.text
+                    == "No Archived Tabs"
+            })
+            #expect(!clear.isEnabled)
+        }
+    }
+
     @Test func nativeArchiveClearUsesCapturedConfirmationAndRetryKeepsLaterArchive() async throws {
         try await withMobileArchiveFixture { f in
             let engine = MobileArchiveEngine()
@@ -715,7 +732,7 @@ extension BrowserMobileUITests {
         root.view.layoutIfNeeded()
     }
 
-    func open() async throws -> BrowserMobileArchiveViewController {
+    func open(expectingRows: Bool = true) async throws -> BrowserMobileArchiveViewController {
         let sidebar = root.tabsController
         let bars = (sidebar.navigationItem.leftBarButtonItems ?? []) +
             (sidebar.navigationItem.rightBarButtonItems ?? [])
@@ -725,7 +742,9 @@ extension BrowserMobileUITests {
         try #require(await mobileArchiveEventually { mobileArchiveController(in: root) != nil })
         let archive = try #require(mobileArchiveController(in: root))
         try #require(await mobileArchiveEventually { archive.view.window === self.window && !archive.isBeingPresented })
-        try #require(await mobileArchiveEventually { archive.tableView.numberOfRows(inSection: 0) > 0 })
+        if expectingRows {
+            try #require(await mobileArchiveEventually { archive.tableView.numberOfRows(inSection: 0) > 0 })
+        }
         archive.view.layoutIfNeeded()
         return archive
     }

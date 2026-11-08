@@ -411,7 +411,10 @@ final class BrowserMobileArchiveViewController: UITableViewController, UISearchR
         updateTimingMenu()
         newerButton.isEnabled = cursors.count > 1 && !isLoading && !isChangingArchive && !isRetrying
         olderButton.isEnabled = nextCursor != nil && !isLoading && !isChangingArchive && !isRetrying
-        clearButton.isEnabled = mayManage && failedRemoval == nil
+        // An archive known to be empty, unfiltered and fully loaded has nothing to clear.
+        let knownEmpty = entries.isEmpty && query.isEmpty && cursors.count == 1 && nextCursor == nil
+            && !isLoading && loadError == nil
+        clearButton.isEnabled = mayManage && failedRemoval == nil && !knownEmpty
         errorLabel.text = workspace.sessionError ?? actionError ?? loadError ?? interactionError ?? workspace
             .automaticTabArchivalError ?? workspace.archiveError
         retryButton.isHidden = workspace.sessionError == nil && (loadError == nil || isQueryInvalid)
