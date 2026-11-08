@@ -190,6 +190,12 @@ NSMenuDelegate, NSUserInterfaceValidations {
         NSApp.changeWindowsItem(window, title: title, filename: false)
     }
 
+    /// The engine's own windows are Developer Tools; docked ones are children of
+    /// a browser window.
+    private static func isSeparateDeveloperToolsWindow(_ window: NSWindow) -> Bool {
+        window.parent == nil && NSStringFromClass(type(of: window)) == "CefNSWindow"
+    }
+
     // MARK: Public
 
     public func createApplication() {
@@ -455,6 +461,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
     }
 
     public func showDeveloperTools(_: Any?) {
+        if toggleDeveloperToolsOutsideBrowserWindows() { return }
         activeChromeModel?.showDeveloperTools()
     }
 
@@ -855,6 +862,12 @@ NSMenuDelegate, NSUserInterfaceValidations {
         case #selector(stopLoadingCurrentTab(_:)):
             return activeChromeModel?.canStopLoading ?? false
         case #selector(showDeveloperTools(_:)):
+            if let window = NSApp.keyWindow,
+               (window as? BrowserPeekPanel)?.onToggleDeveloperTools != nil
+               || Self.isSeparateDeveloperToolsWindow(window)
+            {
+                return true
+            }
             return activeChromeModel?.canShowDeveloperTools ?? false
         case #selector(viewSource(_:)):
             return activeChromeModel?.canViewSource ?? false
@@ -1101,6 +1114,22 @@ NSMenuDelegate, NSUserInterfaceValidations {
         } else if openNewWindow(), let session = profileWindowSessions.last {
             scriptWindow.attach(window: session.window, model: session.chromeModel)
         }
+    }
+
+    /// A card or small window with the keyboard shows its own page's tools, and
+    /// their separate Developer Tools window closes itself, rather than the
+    /// command reaching a browser window behind them.
+    private func toggleDeveloperToolsOutsideBrowserWindows() -> Bool {
+        guard let window = NSApp.keyWindow else { return false }
+        if let panel = window as? BrowserPeekPanel, let toggle = panel.onToggleDeveloperTools {
+            toggle()
+            return true
+        }
+        if Self.isSeparateDeveloperToolsWindow(window) {
+            window.performClose(nil)
+            return true
+        }
+        return false
     }
 
     /// View Archive opens the Library on Archived Tabs beside the window's page;
@@ -2801,6 +2830,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         case .shareTab:
             return activeChromeModel?.shareSelectedTab() ?? false
         case .developerTools:
+            if toggleDeveloperToolsOutsideBrowserWindows() { return true }
             return activeChromeModel?.showDeveloperTools() ?? false
         case .viewSource:
             return activeChromeModel?.viewSourceOfSelectedTab() ?? false

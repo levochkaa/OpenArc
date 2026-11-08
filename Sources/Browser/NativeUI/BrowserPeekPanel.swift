@@ -39,6 +39,8 @@ import AppKit
     @objc let hostView = NSView()
     @objc var onClose: (() -> Void)?
     @objc var onOpenInTab: (() -> Void)?
+    /// Opens the page's Developer Tools, or closes them when they are open.
+    @objc var onToggleDeveloperTools: (() -> Void)?
     /// A typed address or search, resolved to the URL the page should load.
     @objc var onNavigate: ((String) -> Void)?
     /// The card's page joins the page behind it in a Split View.

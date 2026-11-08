@@ -5586,6 +5586,20 @@ std::string BrowserMediaVolumeScript(double volume) {
       focused->_browser->GetHost()->SetFocus(true);
     }
   };
+  // Developer Tools of a card or small window open in their own window.
+  session.panel.onToggleDeveloperTools = ^{
+    BrowserTabController *strongSelf = weakSelf;
+    BrowserPeekSession *shown = strongSelf != nil ? strongSelf->_peekSessions[@(sessionID)] : nil;
+    CefRefPtr<CefBrowserHost> host = shown != nil && shown->_browser ? shown->_browser->GetHost() : nullptr;
+    if (!host) {
+      return;
+    }
+    if (host->HasDevTools()) {
+      host->CloseDevTools();
+    } else {
+      ShowBrowserDevToolsOnUI(shown->_browser);
+    }
+  };
   session.panel.onOpenInTab = ^{
     BrowserTabController *strongSelf = weakSelf;
     if (strongSelf == nil) {
