@@ -199,7 +199,7 @@ final class BrowserNativeWindowMargins: NSView {
     }
 
     override func acceptsFirstMouse(for _: NSEvent?) -> Bool { true }
-    override func mouseDown(with event: NSEvent) { window?.performDrag(with: event) }
+    override func mouseDown(with event: NSEvent) { window?.dragOrActOnBarClick(with: event) }
     override func menu(for _: NSEvent) -> NSMenu? { menuProvider?() }
 
     func configure(

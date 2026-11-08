@@ -159,3 +159,20 @@ import Testing
     #expect(plain == "OpenArc Window Default")
     #expect(Set([plain, test, work]).count == 3, "A test run never moves the real window")
 }
+
+@MainActor @Test func aBarDoubleClickFollowsTheSystemSetting() throws {
+    let defaults = try #require(UserDefaults(suiteName: BrowserTestDefaults.suiteName("BarDoubleClick")))
+    let window = NSWindow(
+        contentRect: NSRect(x: 100, y: 100, width: 600, height: 400),
+        styleMask: [.titled, .resizable, .miniaturizable],
+        backing: .buffered,
+        defer: true,
+    )
+    let before = window.frame
+    defaults.set("None", forKey: "AppleActionOnDoubleClick")
+    window.performBarDoubleClickAction(defaults: defaults)
+    #expect(window.frame == before, "Do Nothing leaves the window")
+    defaults.set("Maximize", forKey: "AppleActionOnDoubleClick")
+    window.performBarDoubleClickAction(defaults: defaults)
+    #expect(window.frame != before, "Zoom fills the screen")
+}

@@ -161,7 +161,7 @@ final class BrowserNativeSidebarHeaderNSView: NSView {
         }
     }
 
-    override func mouseDown(with event: NSEvent) { window?.performDrag(with: event) }
+    override func mouseDown(with event: NSEvent) { window?.dragOrActOnBarClick(with: event) }
 
     func configure(
         showsWindowControls: Bool,
