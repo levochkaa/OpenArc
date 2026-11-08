@@ -1968,6 +1968,7 @@ final class BrowserNativeSidebarNSView: NSView {
                 url: item.fileURL ?? URL(fileURLWithPath: item.fileName),
                 date: item.startedAt,
                 progress: downloads.detailText(for: item),
+                fraction: item.progressFraction,
                 title: item.fileName,
                 onCancel: { [weak downloads] in downloads?.cancel(item) },
             )
@@ -2735,6 +2736,8 @@ final class BrowserDownloadsTrayView: NSView {
         let date: Date
         /// A running download's progress, in place of when it arrived.
         var progress: String?
+        /// How much of it has arrived, from 0 to 1, when the size is known.
+        var fraction: Double?
         var title: String?
         /// Stops a running download.
         var onCancel: (() -> Void)?
@@ -2822,6 +2825,7 @@ private final class BrowserDownloadsTrayRow: NSView {
     private let entry: BrowserDownloadsTrayView.Entry
     private let highlight = BrowserNativeSurface()
     private let icon = NSImageView()
+    private let ring = BrowserDownloadsTrayProgressRing()
     private let title = NSTextField(labelWithString: "")
     private let detail = NSTextField(labelWithString: "")
     private let cancelButton = BrowserNativeChromeButton(
@@ -2850,10 +2854,14 @@ private final class BrowserDownloadsTrayRow: NSView {
         detail.stringValue = entry.progress
             ?? RelativeDateTimeFormatter().localizedString(for: entry.date, relativeTo: Date())
         cancelButton.isHidden = entry.onCancel == nil
+        // A running download is a ring that fills, with an arrow, in place of its file's icon.
+        ring.isHidden = entry.progress == nil
+        icon.isHidden = entry.progress != nil
+        ring.fraction = entry.fraction ?? 0
         cancelButton.onAction = { [entry] in entry.onCancel?() }
         detail.font = .systemFont(ofSize: 12)
         detail.textColor = BrowserChromeColors.secondaryText
-        for view in [highlight, icon, title, detail, cancelButton] as [NSView] {
+        for view in [highlight, icon, ring, title, detail, cancelButton] as [NSView] {
             addSubview(view)
         }
         setAccessibilityRole(.button)
@@ -2866,6 +2874,7 @@ private final class BrowserDownloadsTrayRow: NSView {
         super.layout()
         highlight.frame = bounds.insetBy(dx: 4, dy: 2)
         icon.frame = NSRect(x: 9, y: (bounds.height - 38) / 2, width: 38, height: 38)
+        ring.frame = NSRect(x: 14, y: (bounds.height - 28) / 2, width: 28, height: 28)
         let textX: CGFloat = 60
         let size = cancelButton.intrinsicContentSize.width > 0 ? BrowserChromeLayout.sidebarCloseButtonSize : 24
         cancelButton.frame = NSRect(
@@ -2904,5 +2913,54 @@ private final class BrowserDownloadsTrayRow: NSView {
             NSWorkspace.shared.activateFileViewerSelecting([entry.url])
         }
         return menu
+    }
+}
+
+// MARK: - BrowserDownloadsTrayProgressRing
+
+/// A running download in the tray: an accent ring that fills with it, around a down arrow.
+private final class BrowserDownloadsTrayProgressRing: NSView {
+    var fraction: Double = 0 { didSet { needsDisplay = true } }
+
+    override func hitTest(_: NSPoint) -> NSView? { nil }
+
+    override func draw(_: NSRect) {
+        let lineWidth: CGFloat = 2.5
+        let rect = bounds.insetBy(dx: lineWidth / 2, dy: lineWidth / 2)
+        NSColor.controlAccentColor.withAlphaComponent(0.25).setStroke()
+        let track = NSBezierPath(ovalIn: rect)
+        track.lineWidth = lineWidth
+        track.stroke()
+        if fraction > 0 {
+            let center = NSPoint(x: bounds.midX, y: bounds.midY)
+            let arc = NSBezierPath()
+            arc.appendArc(
+                withCenter: center,
+                radius: rect.width / 2,
+                startAngle: 90,
+                endAngle: 90 - 360 * CGFloat(min(fraction, 1)),
+                clockwise: true,
+            )
+            arc.lineWidth = lineWidth
+            arc.lineCapStyle = .round
+            NSColor.controlAccentColor.setStroke()
+            arc.stroke()
+        }
+        let arrow = NSImage(systemSymbolName: "arrow.down", accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 12, weight: .bold))
+        if let arrow {
+            let tinted = NSImage(size: arrow.size, flipped: false) { rect in
+                arrow.draw(in: rect)
+                NSColor.controlAccentColor.set()
+                rect.fill(using: .sourceAtop)
+                return true
+            }
+            tinted.draw(in: NSRect(
+                x: bounds.midX - arrow.size.width / 2,
+                y: bounds.midY - arrow.size.height / 2,
+                width: arrow.size.width,
+                height: arrow.size.height,
+            ))
+        }
     }
 }
