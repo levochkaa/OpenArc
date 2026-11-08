@@ -17,6 +17,9 @@ import AppKit
     /// The small window's bar: an address pill and the Open in button.
     static let standaloneBarHeight: CGFloat = 48
     static let cornerRadius: CGFloat = 12
+    /// A small window's share of the screen's visible area: 1185 x 832 pt on a
+    /// 1728 x 1084 pt one.
+    static let standaloneScreenFraction = CGSize(width: 1185.0 / 1728.0, height: 832.0 / 1084.0)
     static let linkStatusHeight: CGFloat = 24
     static let linkStatusInset: CGFloat = 10.5
     /// The card covers this share of the window and leaves the page
@@ -298,7 +301,10 @@ import AppKit
     /// A small window sits in the top right corner of the screen, where its address bar appeared.
     static func standaloneFrame(in screen: NSRect) -> NSRect {
         let margin = BrowserLittleWindowLauncher.screenMargin
-        let size = NSSize(width: min(820, screen.width - 80), height: min(640, screen.height - 80))
+        let size = NSSize(
+            width: min(max((screen.width * standaloneScreenFraction.width).rounded(), 820), screen.width - 80),
+            height: min(max((screen.height * standaloneScreenFraction.height).rounded(), 640), screen.height - 80),
+        )
         return NSRect(
             x: screen.maxX - margin - size.width,
             y: screen.maxY - margin - size.height,
