@@ -3155,7 +3155,13 @@ NSMenuDelegate, NSUserInterfaceValidations {
             )
             return true
         }
-        model.onMoveTabsToWindow = { [weak self, weak model] ids, window in
+        model.onMoveTabsToWindow = { [weak self, weak model] ids, dropWindow in
+            // A drop on a child window, such as docked Developer Tools or a Peek card,
+            // goes to the browser window it belongs to.
+            var window = dropWindow
+            while let parent = window.parent {
+                window = parent
+            }
             guard let self, let model,
                   let target = profileWindowSessions.first(where: { $0.window === window })?.chromeModel
                   ?? incognitoWindowSessions.first(where: { $0.window === window })?.chromeModel,
