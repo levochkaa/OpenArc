@@ -5624,6 +5624,13 @@ std::string BrowserMediaVolumeScript(double volume) {
       shown->_browser->GetHost()->Find(ToStdString(text), forward, false, findNext);
     }
   };
+  session.panel.onSetZoomLevel = ^(double level) {
+    BrowserTabController *strongSelf = weakSelf;
+    BrowserPeekSession *shown = strongSelf != nil ? strongSelf->_peekSessions[@(sessionID)] : nil;
+    if (shown != nil && shown->_browser) {
+      shown->_browser->GetHost()->SetZoomLevel(level);
+    }
+  };
   session.panel.onStopFinding = ^{
     BrowserTabController *strongSelf = weakSelf;
     BrowserPeekSession *shown = strongSelf != nil ? strongSelf->_peekSessions[@(sessionID)] : nil;

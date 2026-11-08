@@ -160,6 +160,11 @@ NSMenuDelegate, NSUserInterfaceValidations {
     }
 
     /// A card or small window with the keyboard finds in its own page.
+    /// A small window or Peek card in front, whose page the zoom commands change.
+    private var focusedZoomablePanel: BrowserPeekPanel? {
+        (NSApp.keyWindow as? BrowserPeekPanel).flatMap { $0.canZoom ? $0 : nil }
+    }
+
     /// The small window in front, which New Tab searches in.
     private var focusedSmallWindow: BrowserPeekPanel? {
         (NSApp.keyWindow as? BrowserPeekPanel).flatMap { $0.isStandalone ? $0 : nil }
@@ -488,14 +493,26 @@ NSMenuDelegate, NSUserInterfaceValidations {
     }
 
     public func zoomIn(_: Any?) {
+        if let panel = focusedZoomablePanel {
+            panel.zoom(step: 1)
+            return
+        }
         activeChromeModel?.zoomIn()
     }
 
     public func zoomOut(_: Any?) {
+        if let panel = focusedZoomablePanel {
+            panel.zoom(step: -1)
+            return
+        }
         activeChromeModel?.zoomOut()
     }
 
     public func resetZoom(_: Any?) {
+        if let panel = focusedZoomablePanel {
+            panel.zoom(step: 0)
+            return
+        }
         activeChromeModel?.resetZoom()
     }
 
@@ -911,10 +928,17 @@ NSMenuDelegate, NSUserInterfaceValidations {
         case #selector(viewSource(_:)):
             return activeChromeModel?.canViewSource ?? false
         case #selector(zoomIn(_:)):
+            if let panel = focusedZoomablePanel {
+                return panel.zoomPercent < (BrowserChromeModel.zoomPercentages.last ?? 100)
+            }
             return activeChromeModel?.canZoomIn ?? false
         case #selector(zoomOut(_:)):
+            if let panel = focusedZoomablePanel {
+                return panel.zoomPercent > (BrowserChromeModel.zoomPercentages.first ?? 100)
+            }
             return activeChromeModel?.canZoomOut ?? false
         case #selector(resetZoom(_:)):
+            if let panel = focusedZoomablePanel { return panel.zoomPercent != 100 }
             return activeChromeModel?.canResetZoom ?? false
         case #selector(restoreLastClosedTab(_:)):
             return activeChromeModel?.canRestoreLastClosedTab ?? false
@@ -2923,14 +2947,26 @@ NSMenuDelegate, NSUserInterfaceValidations {
         case .viewSource:
             return activeChromeModel?.viewSourceOfSelectedTab() ?? false
         case .zoomIn:
+            if let panel = focusedZoomablePanel {
+                panel.zoom(step: 1)
+                return true
+            }
             guard let model = activeChromeModel, model.canZoomIn else { return false }
             model.zoomIn()
             return true
         case .zoomOut:
+            if let panel = focusedZoomablePanel {
+                panel.zoom(step: -1)
+                return true
+            }
             guard let model = activeChromeModel, model.canZoomOut else { return false }
             model.zoomOut()
             return true
         case .resetZoom:
+            if let panel = focusedZoomablePanel {
+                panel.zoom(step: 0)
+                return true
+            }
             guard let model = activeChromeModel, model.canResetZoom else { return false }
             model.resetZoom()
             return true

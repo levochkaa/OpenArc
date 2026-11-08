@@ -152,6 +152,21 @@ import Testing
         #expect(panel.searchBar == nil && bar.superview == nil, "A result closes the search")
     }
 
+    @Test func theSmallWindowZoomsItsPageInStepsWithANote() {
+        let panel = BrowserPeekPanel.presentStandalone()
+        defer { panel.dismiss() }
+        var levels = [Double]()
+        panel.onSetZoomLevel = { levels.append($0) }
+        panel.zoom(step: 1)
+        #expect(panel.zoomPercent == 110 && abs(levels[0] - log(1.1) / log(1.2)) < 0.0001)
+        #expect(!panel.copiedToast.isHidden, "The new zoom shows at the top right")
+        panel.zoom(step: -1)
+        panel.zoom(step: -1)
+        #expect(panel.zoomPercent == 90)
+        panel.zoom(step: 0)
+        #expect(panel.zoomPercent == 100 && levels.last == 0)
+    }
+
     @Test func smallWindowIsOptInAndOpensAStandaloneWindow() throws {
         let f = SidebarDragFixture(temporary: ["x"])
         #expect(!f.model.opensExternalLinksInLittleWindow, "Links keep opening as tabs by default")

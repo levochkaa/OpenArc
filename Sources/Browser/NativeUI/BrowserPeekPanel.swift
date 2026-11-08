@@ -53,6 +53,8 @@ import Combine
     @objc var onToggleDeveloperTools: (() -> Void)?
     /// Finds text in the page: the text, forward, and whether to select a match.
     @objc var onFind: ((String, Bool, Bool) -> Void)?
+    /// Sets the page's zoom level, Chromium's log base 1.2 of the scale.
+    @objc var onSetZoomLevel: ((Double) -> Void)?
     @objc var onStopFinding: (() -> Void)?
     /// Find in the card's page, over its top trailing corner as in a tab.
     let findBar = BrowserFindBarNSView()
@@ -111,6 +113,9 @@ import Combine
     /// The bar New Tab shows over the small window's page, if any.
     private(set) var searchBar: BrowserCommandBarNSView?
 
+    /// The page's zoom in percent, one of the browser's steps.
+    private(set) var zoomPercent = 100
+
     private let addressSymbol = NSImageView()
 
     private var parentMonitor: Any?
@@ -156,6 +161,8 @@ import Combine
     var addressForEditing: String {
         currentURLString == "about:blank" ? "" : currentURLString
     }
+
+    var canZoom: Bool { onSetZoomLevel != nil }
 
     /// The app answers with a search over the page; without it the field edits inline.
     private var canSearchAddress: Bool {
@@ -620,6 +627,27 @@ import Combine
                 DispatchQueue.main.async { self?.dismissSearch() }
             }
         model.present(initialQuery: initialQuery, pageTitle: initialQuery.isEmpty ? nil : title)
+    }
+
+    /// Zoom In, Zoom Out (`step` 1 and -1) and Actual Size (0) for the card's
+    /// page, with the same note as in a browser window at the window's top right.
+    func zoom(step: Int) {
+        guard let onSetZoomLevel else { return }
+        let steps = BrowserChromeModel.zoomPercentages
+        let next: Int? =
+            switch step {
+            case 0: 100
+            case 1...: steps.first { $0 > zoomPercent }
+            default: steps.last { $0 < zoomPercent }
+            }
+        guard let next else { return }
+        zoomPercent = next
+        onSetZoomLevel(log(Double(next) / 100) / log(1.2))
+        let dark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        copiedToast.isDark = dark
+        copiedToast.fill = dark ? NSColor(white: 0.17, alpha: 1) : NSColor(white: 0.93, alpha: 1)
+        copiedToast.showZoom(percent: next)
+        layoutCopiedToast()
     }
 
     /// Copy Link and Copy URL: the page's address, with the same note as in a
