@@ -274,7 +274,7 @@ enum BrowserWindowMode: Equatable {
     }
 
     /// The bar New Small Window shows first: what it opens goes to a small window.
-    lazy var littleWindowCommandBarModel = makeCommandBarModel { [weak self] resolvedURLString in
+    lazy var littleWindowCommandBarModel = makeCommandBarModel(forLittleWindow: true) { [weak self] resolvedURLString in
         if let url = URL(string: resolvedURLString) {
             self?.openInLittleWindow(url)
         }
@@ -1219,6 +1219,19 @@ enum BrowserWindowMode: Equatable {
             .sorted { $0.lastActivityAt > $1.lastActivityAt }
             .prefix(4)
             .map(\.id)
+    }
+
+    /// An open tab as a page to open, with its icon and without its Space.
+    static func pageSuggestion(forTabSuggestion suggestion: BrowserCommandSuggestion) -> BrowserCommandSuggestion {
+        guard suggestion.kind == .openTab else { return suggestion }
+        var page = BrowserCommandSuggestion(
+            kind: .history,
+            displayText: suggestion.displayText,
+            detailText: BrowserURLDisplayFormatter.displayString(for: suggestion.resolvedURLString),
+            resolvedURLString: suggestion.resolvedURLString,
+        )
+        page.faviconURL = suggestion.faviconURL
+        return page
     }
 
     /// Use Selection to Find: the page copies its selection to the find
@@ -4498,14 +4511,18 @@ enum BrowserWindowMode: Equatable {
         return nil
     }
 
+    /// The small window's bar opens every result in the small window, so its
+    /// tabs are pages to open there, not tabs to switch to.
     private func makeCommandBarModel(
+        forLittleWindow: Bool = false,
         submit: @escaping (String) -> Void,
     ) -> BrowserCommandBarModel {
         BrowserCommandBarModel(
             suggestionProvider: commandBarSuggestionProvider,
             navigationResolver: navigationResolver,
             localSuggestionProvider: { [weak self] query, maximumCount in
-                self?.localCommandSuggestions(for: query, maximumCount: maximumCount) ?? []
+                let suggestions = self?.localCommandSuggestions(for: query, maximumCount: maximumCount) ?? []
+                return forLittleWindow ? suggestions.map(Self.pageSuggestion(forTabSuggestion:)) : suggestions
             },
             remoteSuggestionsEnabledProvider: { [weak self] in
                 self?.canLoadRemoteSearchSuggestions ?? false
@@ -4517,7 +4534,9 @@ enum BrowserWindowMode: Equatable {
                 self?.userPreferencesStore.showsAISearchSuggestion ?? false
             },
             recentPagesProvider: { [weak self] maximumCount in
-                self?.recentCommandBarPages(maximumCount: maximumCount) ?? []
+                forLittleWindow
+                    ? self?.recentLittleWindowPages(maximumCount: maximumCount) ?? []
+                    : self?.recentCommandBarPages(maximumCount: maximumCount) ?? []
             },
             siteSearchesProvider: { [weak self] in
                 self?.userPreferencesStore.siteSearches ?? []
@@ -5953,6 +5972,20 @@ enum BrowserWindowMode: Equatable {
         var urls = Set(recentTabs.map(\.resolvedURLString))
         if let current = selectedTab?.urlString { urls.insert(current) }
         let history = historyStore.recentSuggestions(maximumCount: maximumCount + 1)
+            .filter { !urls.contains($0.resolvedURLString) }
+        return Array((recentTabs + history).prefix(maximumCount))
+    }
+
+    /// The small window's bar before typing: the latest tabs of every Space,
+    /// the one on screen too, as pages to open there, then recent history.
+    private func recentLittleWindowPages(maximumCount: Int) -> [BrowserCommandSuggestion] {
+        let recentTabs = tabs
+            .filter { !$0.urlString.isEmpty && $0.placement != .app }
+            .sorted { $0.lastActivityAt > $1.lastActivityAt }
+            .prefix(maximumCount)
+            .map { Self.pageSuggestion(forTabSuggestion: commandBarSuggestion(forTab: $0)) }
+        let urls = Set(recentTabs.map(\.resolvedURLString))
+        let history = historyStore.recentSuggestions(maximumCount: maximumCount)
             .filter { !urls.contains($0.resolvedURLString) }
         return Array((recentTabs + history).prefix(maximumCount))
     }

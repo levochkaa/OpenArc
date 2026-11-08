@@ -276,3 +276,30 @@ import Testing
         #expect(!suggestions.contains { $0.tabID == f.id("x") }, "Not the tab on screen")
     }
 }
+
+// MARK: - BrowserLittleWindowBarSuggestionsTests
+
+@Suite(.serialized)
+@MainActor struct BrowserLittleWindowBarSuggestionsTests {
+    @Test func theSmallWindowBarOffersTabsAsPagesToOpenThere() throws {
+        let f = SidebarDragFixture(temporary: ["x", "y"])
+        f.model.selectTab(id: f.id("x"))
+        let bar = f.model.littleWindowCommandBarModel
+
+        bar.present()
+        let urls = bar.suggestions.map(\.resolvedURLString)
+        let onScreen = try #require(f.model.tabs.first { $0.id == f.id("x") })
+        #expect(urls.contains(onScreen.urlString), "The tab on screen is offered too")
+        #expect(bar.suggestions.allSatisfy { $0.kind != .openTab && $0.tabIDs.isEmpty }, "Nothing switches tabs")
+
+        let page = BrowserChromeModel.pageSuggestion(forTabSuggestion: BrowserCommandSuggestion(
+            kind: .openTab,
+            displayText: "Example Domain",
+            resolvedURLString: "https://example.com/",
+            tabIDs: ["t"],
+        ))
+        #expect(page.kind == .history && page.tabIDs.isEmpty && page.resolvedURLString == "https://example.com/")
+        #expect(page.detailText == BrowserURLDisplayFormatter.displayString(for: "https://example.com/"))
+        bar.dismiss()
+    }
+}
