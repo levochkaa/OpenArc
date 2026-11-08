@@ -474,6 +474,7 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
         var result = [Row]()
         var lastHeader: String?
         let model = model
+        let icons = model.pageIcons(for: archiveEntries.map(\.tab.urlString))
         for entry in archiveEntries {
             if let filter, entry.tab.spaceID != filter { continue }
             let date = Date(timeIntervalSince1970: entry.archivedAt)
@@ -489,6 +490,8 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
                 title: entry.title ?? host ?? urlString,
                 detail: Self.archiveDetail(for: urlString),
                 faviconPageURL: urlString,
+                faviconImage: icons[urlString]
+                    .flatMap { BrowserImageThumbnailer.image(data: $0, maximumPixelSize: 32) },
                 fileIcon: nil,
                 progress: nil,
                 onOpen: { [weak model] in
@@ -775,6 +778,8 @@ struct BrowserLibraryRowContent {
     let title: String
     let detail: String
     let faviconPageURL: String?
+    /// The page's saved icon, in place of the square.
+    var faviconImage: NSImage?
     let fileIcon: NSImage?
     let progress: Double?
     let onOpen: () -> Void
@@ -788,6 +793,7 @@ private final class BrowserLibraryRow: BrowserNativePressableView {
 
     private let content: BrowserLibraryRowContent
     private let favicon = BrowserFaviconNSView()
+    private let pageIcon = NSImageView()
     private let title = NSTextField(labelWithString: "")
     private let detail = NSTextField(labelWithString: "")
 
@@ -800,7 +806,11 @@ private final class BrowserLibraryRow: BrowserNativePressableView {
         onClick = { [content] _ in content.onOpen() }
         menuProvider = { [content] in content.menu() }
         pressedScale = 1
-        if let page = content.faviconPageURL {
+        if let image = content.faviconImage {
+            pageIcon.image = image
+            pageIcon.imageScaling = .scaleProportionallyUpOrDown
+            addSubview(pageIcon)
+        } else if let page = content.faviconPageURL {
             // A page without its icon is a plain square, as in the sidebar.
             favicon.fallback = .square
             favicon.update(url: nil, pageURLString: page)
@@ -828,6 +838,7 @@ private final class BrowserLibraryRow: BrowserNativePressableView {
     override func layout() {
         super.layout()
         favicon.frame = NSRect(x: 12, y: 13, width: 16, height: 16)
+        pageIcon.frame = favicon.frame
         title.frame = NSRect(x: 38, y: 6, width: max(bounds.width - 46, 0), height: 16)
         detail.frame = NSRect(x: 38, y: 22, width: max(bounds.width - 46, 0), height: 14)
     }

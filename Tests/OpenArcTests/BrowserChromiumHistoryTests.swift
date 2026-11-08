@@ -60,6 +60,30 @@ import Testing
     )
 }
 
+@Test func chromiumHistoryGivesSavedIconsOfPagesThatAreNotOpen() throws {
+    let harness = try ChromiumHistoryHarness()
+    defer { harness.cleanup() }
+    try harness.insertHistory(
+        urlString: "https://a.example/",
+        title: "A",
+        visitCount: 1,
+        typedCount: 0,
+        lastVisitTime: 1,
+    )
+    let favicons = try DatabaseQueue(path: harness.profileDirectoryURL.appendingPathComponent("Favicons").path)
+    let png = Data([0x89, 0x50, 0x4E, 0x47])
+    try favicons.write { db in
+        try db.execute(sql: "CREATE TABLE icon_mapping (page_url LONGVARCHAR, icon_id INTEGER)")
+        try db.execute(sql: "CREATE TABLE favicon_bitmaps (icon_id INTEGER, image_data BLOB, width INTEGER)")
+        try db.execute(sql: "INSERT INTO icon_mapping VALUES ('https://a.example/', 1)")
+        try db.execute(sql: "INSERT INTO favicon_bitmaps VALUES (1, ?, 16)", arguments: [png])
+    }
+    try favicons.close()
+    let store = BrowserChromiumHistoryStore(profileDirectoryCandidates: [harness.profileDirectoryURL])
+    let icons = store.pageIcons(for: ["https://a.example/", "https://b.example/"])
+    #expect(icons == ["https://a.example/": png], "A page without a saved icon is left out")
+}
+
 // MARK: - ChromiumHistoryHarness
 
 private struct ChromiumHistoryHarness {

@@ -1852,6 +1852,11 @@ enum BrowserWindowMode: Equatable {
         persistCurrentSessionIfAllowed()
     }
 
+    /// Saved icons of pages that are not open, as the Library's archive lists them.
+    func pageIcons(for urlStrings: [String]) -> [String: Data] {
+        historyStore.pageIcons(for: urlStrings)
+    }
+
     func openLibrary(section: BrowserLibrarySection = .archive) {
         guard librarySections.contains(section) else { return }
         librarySection = section

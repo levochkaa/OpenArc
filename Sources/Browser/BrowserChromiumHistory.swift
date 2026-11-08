@@ -19,6 +19,12 @@ protocol BrowserHistorySearching {
     /// A page this session showed. The engine writes its history database
     /// only now and then, so the newest pages are kept here meanwhile.
     func noteVisit(title: String, urlString: String)
+    /// The engine's saved icons of these pages, by address; pages without one are left out.
+    func pageIcons(for urlStrings: [String]) -> [String: Data]
+}
+
+extension BrowserHistorySearching {
+    func pageIcons(for _: [String]) -> [String: Data] { [:] }
 }
 
 extension BrowserHistorySearching {
@@ -270,6 +276,13 @@ final class BrowserChromiumHistoryStore: BrowserHistorySearching, @unchecked Sen
         sessionIndex = BrowserSearchIndex(documents: sessionDocuments)
     }
 
+    func pageIcons(for urlStrings: [String]) -> [String: Data] {
+        loadIcons(for: urlStrings)
+        return urlStrings.reduce(into: [:]) { icons, urlString in
+            if let data = iconCache[urlString] ?? nil { icons[urlString] = data }
+        }
+    }
+
     private func storedRecentSuggestions(maximumCount: Int) -> [BrowserCommandSuggestion] {
         guard maximumCount > 0, let historyURL = existingHistoryURL else { return [] }
         do {
@@ -454,7 +467,16 @@ final class BrowserChromiumHistoryStore: BrowserHistorySearching, @unchecked Sen
 
     /// Chromium keeps page icons beside the history, so a row's icon needs no network.
     private func withIcons(_ suggestions: [BrowserCommandSuggestion]) -> [BrowserCommandSuggestion] {
-        let missing = suggestions.map(\.resolvedURLString).filter { iconCache[$0] == nil }
+        loadIcons(for: suggestions.map(\.resolvedURLString))
+        return suggestions.map { suggestion in
+            var suggestion = suggestion
+            suggestion.iconData = iconCache[suggestion.resolvedURLString] ?? nil
+            return suggestion
+        }
+    }
+
+    private func loadIcons(for urlStrings: [String]) {
+        let missing = urlStrings.filter { iconCache[$0] == nil }
         if !missing.isEmpty, let historyURL = existingHistoryURL {
             let path = historyURL.deletingLastPathComponent().appendingPathComponent("Favicons").path
             var configuration = Configuration()
@@ -481,11 +503,6 @@ final class BrowserChromiumHistoryStore: BrowserHistorySearching, @unchecked Sen
                     })
                 }
             }
-        }
-        return suggestions.map { suggestion in
-            var suggestion = suggestion
-            suggestion.iconData = iconCache[suggestion.resolvedURLString] ?? nil
-            return suggestion
         }
     }
 
