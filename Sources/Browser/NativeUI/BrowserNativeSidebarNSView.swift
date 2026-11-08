@@ -502,8 +502,21 @@ final class BrowserNativeSidebarNSView: NSView {
         landingAnimation.cancel()
         dragEvents.stop()
         state.clearTabDragState()
+        // Only the tab on screen has a drawn page to picture; another one shows
+        // as a card with its icon and title, even once the drag selects it.
+        let hadPage: Bool =
+            if case .tab(let id) = item {
+                state.model.selectedTabID == id
+            } else {
+                false
+            }
         activateSingleDraggedTab(item)
-        captureDraggedPageThumbnail(item)
+        if hadPage {
+            captureDraggedPageThumbnail(item)
+        } else {
+            draggedPageThumbnail = nil
+            draggedPageThumbnailTabID = nil
+        }
         state.update(snapshot: state.model.sidebarSnapshot, sidebarWidth: state.sidebarWidth, isResizing: false)
         let tree = BrowserSidebarTabTree(snapshot: state.snapshot)
         let ids: Set<String>
@@ -1947,6 +1960,11 @@ final class BrowserNativeSidebarNSView: NSView {
         } else if outsideWindow, let thumbnail = draggedPageThumbnail {
             // Past the window, the tab is the window it will open in.
             container.showThumbnail(thumbnail)
+        } else if outsideWindow, case .tab(let id)? = state.drag.payload?.primary,
+                  let tab = state.snapshot.tab(withID: id)
+        {
+            // Without a picture of its page, a card with its icon and title.
+            container.showCard(for: tab, asWindow: true)
         } else if !container.showsRow || !panel.isVisible {
             dragPreview.alphaValue = 1
             let image = NSImage(size: dragPreview.bounds.size)
@@ -2422,13 +2440,21 @@ private final class BrowserDragOutsidePreview: NSView {
     // MARK: Internal
 
     static let cardSize = CGSize(width: 146, height: 249)
-    static let thumbnailWidth: CGFloat = 220
+    /// A tab without a page picture, outside the window: the window it will open as.
+    static let windowCardSize = CGSize(width: 180, height: 180)
+    /// The page picture's width inside a 4 pt frame in the window's color.
+    static let thumbnailWidth: CGFloat = 216
+    static let thumbnailFrameWidth: CGFloat = 4
 
     override var isFlipped: Bool { true }
 
     private(set) var showsRow = true
 
     private(set) var showsThumbnail = false
+
+    private var currentCardSize = BrowserDragOutsidePreview.cardSize
+    private var iconCenterFraction: CGFloat = 0.42
+    private var titleCenterFraction: CGFloat = 0.58
 
     // MARK: Private
 
@@ -2441,11 +2467,11 @@ private final class BrowserDragOutsidePreview: NSView {
     var preferredSize: CGSize {
         if showsThumbnail, let size = thumbnail.image?.size, size.width > 0 {
             return CGSize(
-                width: Self.thumbnailWidth,
-                height: (Self.thumbnailWidth * size.height / size.width).rounded(),
+                width: Self.thumbnailWidth + Self.thumbnailFrameWidth * 2,
+                height: (Self.thumbnailWidth * size.height / size.width).rounded() + Self.thumbnailFrameWidth * 2,
             )
         }
-        return showsRow ? rowImage.image?.size ?? .zero : Self.cardSize
+        return showsRow ? rowImage.image?.size ?? .zero : currentCardSize
     }
 
     override init(frame: NSRect) {
@@ -2465,11 +2491,10 @@ private final class BrowserDragOutsidePreview: NSView {
         card.addSubview(title)
         thumbnail.imageScaling = .scaleProportionallyUpOrDown
         thumbnail.wantsLayer = true
-        thumbnail.layer?.cornerRadius = 8
+        thumbnail.layer?.cornerRadius = 10
         thumbnail.layer?.cornerCurve = .continuous
         thumbnail.layer?.masksToBounds = true
-        thumbnail.layer?.borderWidth = 1
-        thumbnail.layer?.borderColor = NSColor.black.withAlphaComponent(0.12).cgColor
+        thumbnail.layer?.borderWidth = Self.thumbnailFrameWidth
         addSubview(rowImage)
         addSubview(card)
         addSubview(thumbnail)
@@ -2484,17 +2509,22 @@ private final class BrowserDragOutsidePreview: NSView {
         rowImage.frame = bounds
         card.frame = bounds
         thumbnail.frame = bounds
+        var frameColor = NSColor.clear.cgColor
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            frameColor = BrowserChromeColors.solidBackground.cgColor
+        }
+        thumbnail.layer?.borderColor = frameColor
         let icon: CGFloat = 16
         favicon.frame = CGRect(
             x: (bounds.width - icon) / 2,
-            y: bounds.height * 0.42 - icon / 2,
+            y: bounds.height * iconCenterFraction - icon / 2,
             width: icon,
             height: icon,
         )
         let titleHeight = title.sizeThatFits(CGSize(width: bounds.width - 24, height: 40)).height
         title.frame = CGRect(
             x: 12,
-            y: bounds.height * 0.58 - titleHeight / 2,
+            y: bounds.height * titleCenterFraction - titleHeight / 2,
             width: bounds.width - 24,
             height: titleHeight,
         )
@@ -2510,7 +2540,15 @@ private final class BrowserDragOutsidePreview: NSView {
         show(row: false, card: false, thumbnail: true)
     }
 
-    func showCard(for tab: BrowserChromeModel.Tab) {
+    /// The card of a split pane, or with `asWindow` the window a tab without a
+    /// page picture will open as.
+    func showCard(for tab: BrowserChromeModel.Tab, asWindow: Bool = false) {
+        currentCardSize = asWindow ? Self.windowCardSize : Self.cardSize
+        iconCenterFraction = asWindow ? 0.383 : 0.42
+        titleCenterFraction = asWindow ? 0.614 : 0.58
+        card.layer?.cornerRadius = asWindow ? 20 : 19
+        card.layer?.backgroundColor = NSColor(white: 0.01, alpha: asWindow ? 0.92 : 1).cgColor
+        title.font = .systemFont(ofSize: asWindow ? 14 : 13, weight: asWindow ? .bold : .semibold)
         title.stringValue = tab.displayTitle
         favicon.update(url: tab.faviconURLString.flatMap(URL.init(string:)), pageURLString: tab.urlString)
         show(row: false, card: true, thumbnail: false)
