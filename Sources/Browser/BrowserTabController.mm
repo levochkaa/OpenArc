@@ -3054,8 +3054,8 @@ class CopyImageCallback final : public CefDownloadImageCallback {
 
 /// Builds the menu from what lies under the pointer: a link, an image or video,
 /// selected text, an editable field, or the page itself.
-void BuildPageContextMenu(CefRefPtr<CefContextMenuParams> params, CefRefPtr<CefMenuModel> model, bool allowsLinkTargets,
-                          NSString *searchEngineName = nil) {
+void BuildPageContextMenu(CefRefPtr<CefBrowser> browser, CefRefPtr<CefContextMenuParams> params,
+                          CefRefPtr<CefMenuModel> model, bool allowsLinkTargets, NSString *searchEngineName = nil) {
   model->Clear();
   const auto flags = params->GetTypeFlags();
   const bool hasLink = (flags & CM_TYPEFLAG_LINK) != 0;
@@ -3212,6 +3212,9 @@ void BuildPageContextMenu(CefRefPtr<CefContextMenuParams> params, CefRefPtr<CefM
     model->AddItem(MENU_ID_BACK, LocalizedMenuTitle(@"browser.context.back"));
     model->AddItem(MENU_ID_FORWARD, LocalizedMenuTitle(@"browser.context.forward"));
     model->AddItem(MENU_ID_RELOAD, LocalizedMenuTitle(@"browser.context.reload"));
+    // Back and Forward stay dimmed where the page has nowhere to go.
+    model->SetEnabled(MENU_ID_BACK, browser && browser->CanGoBack());
+    model->SetEnabled(MENU_ID_FORWARD, browser && browser->CanGoForward());
     model->AddSeparator();
     if (allowsLinkTargets) {
       model->AddItem(kContextSavePage, LocalizedMenuTitle(@"browser.context.save_page"));
@@ -3427,13 +3430,13 @@ class BrowserTabClient final : public CefClient,
                             bool /*isLoading*/,
                             bool canGoBack,
                             bool canGoForward) override;
-  void OnBeforeContextMenu(CefRefPtr<CefBrowser>,
+  void OnBeforeContextMenu(CefRefPtr<CefBrowser> browser,
                            CefRefPtr<CefFrame>,
                            CefRefPtr<CefContextMenuParams> params,
                            CefRefPtr<CefMenuModel> model) override {
     BrowserTabController *controller = controller_;
     NSString *engine = controller.searchEngineNameProvider != nil ? controller.searchEngineNameProvider() : nil;
-    BuildPageContextMenu(params, model, true, engine);
+    BuildPageContextMenu(browser, params, model, true, engine);
   }
   bool OnContextMenuCommand(CefRefPtr<CefBrowser> browser,
                             CefRefPtr<CefFrame> frame,
@@ -3616,11 +3619,11 @@ class BrowserPeekClient final : public CefClient,
                           CefRefPtr<CefAuthCallback> callback) override;
   void OnResetDialogState(CefRefPtr<CefBrowser> browser) override;
 
-  void OnBeforeContextMenu(CefRefPtr<CefBrowser>,
+  void OnBeforeContextMenu(CefRefPtr<CefBrowser> browser,
                            CefRefPtr<CefFrame>,
                            CefRefPtr<CefContextMenuParams> params,
                            CefRefPtr<CefMenuModel> model) override {
-    BuildPageContextMenu(params, model, false);
+    BuildPageContextMenu(browser, params, model, false);
   }
   bool OnContextMenuCommand(CefRefPtr<CefBrowser> browser,
                             CefRefPtr<CefFrame>,
