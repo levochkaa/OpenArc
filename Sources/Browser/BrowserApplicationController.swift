@@ -160,6 +160,11 @@ NSMenuDelegate, NSUserInterfaceValidations {
     }
 
     /// A card or small window with the keyboard finds in its own page.
+    /// A small window or Peek card in front, whose page Back, Forward and Reload move.
+    private var focusedNavigablePanel: BrowserPeekPanel? {
+        (NSApp.keyWindow as? BrowserPeekPanel).flatMap { $0.onNavigationCommand != nil ? $0 : nil }
+    }
+
     /// A small window or Peek card in front, whose page the zoom commands change.
     private var focusedZoomablePanel: BrowserPeekPanel? {
         (NSApp.keyWindow as? BrowserPeekPanel).flatMap { $0.canZoom ? $0 : nil }
@@ -750,18 +755,34 @@ NSMenuDelegate, NSUserInterfaceValidations {
     }
 
     public func goBack(_: Any?) {
+        if let panel = focusedNavigablePanel {
+            panel.navigate(.back)
+            return
+        }
         activeChromeModel?.goBack()
     }
 
     public func goForward(_: Any?) {
+        if let panel = focusedNavigablePanel {
+            panel.navigate(.forward)
+            return
+        }
         activeChromeModel?.goForward()
     }
 
     public func reloadCurrentTab(_: Any?) {
+        if let panel = focusedNavigablePanel {
+            panel.navigate(.reload)
+            return
+        }
         activeChromeModel?.reloadCurrentTab()
     }
 
     public func forceReloadCurrentTab(_: Any?) {
+        if let panel = focusedNavigablePanel {
+            panel.navigate(.forceReload)
+            return
+        }
         activeChromeModel?.forceReloadCurrentTab()
     }
 
@@ -965,13 +986,20 @@ NSMenuDelegate, NSUserInterfaceValidations {
             return !isTerminationRequested && archiveContextModel?.canBrowseArchive == true &&
                 archiveContextModel?.isArchiveOperationInFlight == false
         case #selector(goBack(_:)):
+            if let panel = focusedNavigablePanel { return panel.canGoBack }
             return activeChromeModel?.canGoBack ?? false
         case #selector(goForward(_:)):
+            if let panel = focusedNavigablePanel { return panel.canGoForward }
             return activeChromeModel?.canGoForward ?? false
         case #selector(clearCacheAndRefreshCurrentTab(_:)),
              #selector(clearCookiesAndRefreshCurrentTab(_:)),
              #selector(forceReloadCurrentTab(_:)),
              #selector(reloadCurrentTab(_:)):
+            if focusedNavigablePanel != nil, [#selector(forceReloadCurrentTab(_:)), #selector(reloadCurrentTab(_:))]
+                .contains(action)
+            {
+                return true
+            }
             return activeChromeModel?.canReload ?? false
         case #selector(saveCurrentPage(_:)):
             return activeChromeModel?.canSavePage ?? false
@@ -3092,28 +3120,28 @@ NSMenuDelegate, NSUserInterfaceValidations {
             clearTemporaryTabs(nil)
             return true
         case .goBack:
-            guard activeChromeModel?.canGoBack ?? false else {
+            guard focusedNavigablePanel != nil || activeChromeModel?.canGoBack ?? false else {
                 return false
             }
 
             goBack(nil)
             return true
         case .goForward:
-            guard activeChromeModel?.canGoForward ?? false else {
+            guard focusedNavigablePanel != nil || activeChromeModel?.canGoForward ?? false else {
                 return false
             }
 
             goForward(nil)
             return true
         case .reload:
-            guard activeChromeModel?.canReload ?? false else {
+            guard focusedNavigablePanel != nil || activeChromeModel?.canReload ?? false else {
                 return false
             }
 
             reloadCurrentTab(nil)
             return true
         case .forceReload:
-            guard activeChromeModel?.canReload ?? false else {
+            guard focusedNavigablePanel != nil || activeChromeModel?.canReload ?? false else {
                 return false
             }
 

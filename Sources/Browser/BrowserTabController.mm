@@ -3543,6 +3543,14 @@ class BrowserPeekClient final : public CefClient,
   CefRefPtr<CefPermissionHandler> GetPermissionHandler() override { return this; }
   CefRefPtr<CefFindHandler> GetFindHandler() override { return this; }
 
+  // Back and Forward in the menu follow the card's history.
+  void OnLoadingStateChange(CefRefPtr<CefBrowser>, bool, bool canGoBack, bool canGoForward) override {
+    CEF_REQUIRE_UI_THREAD();
+    BrowserPeekPanel *panel = [controller_ peekPanelForSessionID:session_id_];
+    panel.canGoBack = canGoBack;
+    panel.canGoForward = canGoForward;
+  }
+
   // Find in the card's own page reports to its find bar.
   void OnFindResult(CefRefPtr<CefBrowser>,
                     int,
@@ -5622,6 +5630,30 @@ std::string BrowserMediaVolumeScript(double volume) {
     BrowserPeekSession *shown = strongSelf != nil ? strongSelf->_peekSessions[@(sessionID)] : nil;
     if (shown != nil && shown->_browser) {
       shown->_browser->GetHost()->Find(ToStdString(text), forward, false, findNext);
+    }
+  };
+  // Back, Forward, Reload and Reload Ignoring Cache, as BrowserPeekPanel numbers them.
+  session.panel.onNavigationCommand = ^(NSInteger command) {
+    BrowserTabController *strongSelf = weakSelf;
+    BrowserPeekSession *shown = strongSelf != nil ? strongSelf->_peekSessions[@(sessionID)] : nil;
+    if (shown == nil || !shown->_browser) {
+      return;
+    }
+    switch (command) {
+      case 0:
+        shown->_browser->GoBack();
+        break;
+      case 1:
+        shown->_browser->GoForward();
+        break;
+      case 2:
+        shown->_browser->Reload();
+        break;
+      case 3:
+        shown->_browser->ReloadIgnoreCache();
+        break;
+      default:
+        break;
     }
   };
   session.panel.onSetZoomLevel = ^(double level) {

@@ -12,6 +12,14 @@ import Combine
 /// field (`⌘L`). `⌘O` opens either as a tab. The engine puts its page in
 /// `hostView`.
 @objc final class BrowserPeekPanel: NSPanel, NSTextFieldDelegate, NSMenuDelegate {
+    /// Back, Forward, Reload and Reload Ignoring Cache for the card's page.
+    enum NavigationCommand: Int {
+        case back
+        case forward
+        case reload
+        case forceReload
+    }
+
     // MARK: Internal
 
     static let barHeight: CGFloat = 36
@@ -53,6 +61,12 @@ import Combine
     @objc var onToggleDeveloperTools: (() -> Void)?
     /// Finds text in the page: the text, forward, and whether to select a match.
     @objc var onFind: ((String, Bool, Bool) -> Void)?
+    /// Gets a `NavigationCommand` raw value.
+    @objc var onNavigationCommand: ((Int) -> Void)?
+    /// Whether the page has somewhere to go back or forward to, from the engine.
+    @objc var canGoBack = false
+    @objc var canGoForward = false
+
     /// Sets the page's zoom level, Chromium's log base 1.2 of the scale.
     @objc var onSetZoomLevel: ((Double) -> Void)?
     @objc var onStopFinding: (() -> Void)?
@@ -396,6 +410,10 @@ import Combine
             BrowserInternalURLNormalizer.canonicalURLString(for: resolution.resolvedURLString)
                 ?? resolution.resolvedURLString
         }
+    }
+
+    func navigate(_ command: NavigationCommand) {
+        onNavigationCommand?(command.rawValue)
     }
 
     /// The small window, centered on the main screen.

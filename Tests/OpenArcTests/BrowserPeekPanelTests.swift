@@ -152,6 +152,18 @@ import Testing
         #expect(panel.searchBar == nil && bar.superview == nil, "A result closes the search")
     }
 
+    @Test func backForwardAndReloadGoToTheCardsPage() {
+        let panel = BrowserPeekPanel.presentStandalone()
+        defer { panel.dismiss() }
+        var commands = [Int]()
+        panel.onNavigationCommand = { commands.append($0) }
+        panel.navigate(.back)
+        panel.navigate(.forward)
+        panel.navigate(.reload)
+        panel.navigate(.forceReload)
+        #expect(commands == [0, 1, 2, 3], "The engine's numbering")
+    }
+
     @Test func theSmallWindowZoomsItsPageInStepsWithANote() {
         let panel = BrowserPeekPanel.presentStandalone()
         defer { panel.dismiss() }
