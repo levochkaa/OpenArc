@@ -120,6 +120,8 @@ enum BrowserPageTranslationState: Int {
     var onCaptureChanged: ((String, Bool) -> Void)? { get set }
     /// A tab's page entered or left fullscreen through the Fullscreen API.
     var onPageFullscreenChanged: ((String, Bool) -> Void)? { get set }
+    /// A link in a tab's page opened a new tab: the new tab's ID, then the opener's.
+    var onTabOpenedFromTab: ((String, String) -> Void)? { get set }
     /// Tabs with a Peek card, open or put away, and the address in each.
     var onPeekPagesChanged: (([String: String]) -> Void)? { get set }
     /// Tab, frame and the frame's address: the page has an address form.

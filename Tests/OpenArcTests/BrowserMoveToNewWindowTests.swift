@@ -93,6 +93,18 @@ import Testing
         #expect(f.model.pageFullscreenTabID == nil)
     }
 
+    @Test func tabsALinkOpensGoBelowTheirOpenerInOrder() throws {
+        let f = SidebarDragFixture(pinned: [], temporary: ["x", "y", "z"])
+        let x = f.id("x")
+        let one = try #require(URL(string: "https://one.example"))
+        let two = try #require(URL(string: "https://two.example"))
+        let first = try #require(f.model.openURLInBackgroundTab(one))
+        f.driver.onTabOpenedFromTab?(first, x)
+        let second = try #require(f.model.openURLInBackgroundTab(two))
+        f.driver.onTabOpenedFromTab?(second, x)
+        #expect(f.model.temporaryTabs.map(\.id) == [x, first, second, f.id("y"), f.id("z")])
+    }
+
     @Test func aWindowNeverTakesItsOwnTabs() {
         let f = SidebarDragFixture()
         #expect(!f.model.moveTabs(ids: [f.id("x")], toWindowOf: f.model))

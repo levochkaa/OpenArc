@@ -34,6 +34,7 @@ import Foundation
     var onMediaStateChanged: ((String, BrowserTabMediaState?) -> Void)?
     var onCaptureChanged: ((String, Bool) -> Void)?
     var onPageFullscreenChanged: ((String, Bool) -> Void)?
+    var onTabOpenedFromTab: ((String, String) -> Void)?
     var onPeekPagesChanged: (([String: String]) -> Void)?
     var onAddressFormFound: ((String, String, String) -> Void)?
     var onCardFormFound: ((String, String, String) -> Void)?
@@ -640,6 +641,17 @@ extension BrowserTabControllerDriver: BrowserTabControllerDelegate {
         audio: Bool,
     ) {
         MainActor.assumeIsolated { onCaptureChanged?(tabID, video || audio) }
+    }
+
+    nonisolated func browserTabController(
+        _: BrowserTabController,
+        didOpenTabWithID tabID: String,
+        fromTabWithID openerTabID: String,
+    ) {
+        // After the creation callback, which also waits for the main queue.
+        DispatchQueue.main.async { [weak self] in
+            self?.onTabOpenedFromTab?(tabID, openerTabID)
+        }
     }
 
     nonisolated func browserTabController(

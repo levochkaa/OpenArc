@@ -495,6 +495,9 @@ enum BrowserWindowMode: Equatable {
     /// The section the Library opens on again, however it was closed.
     private(set) var lastLibrarySection = BrowserLibrarySection.archive
 
+    /// Tabs a link opened, with the tab it came from, to keep them together below it.
+    private var tabOpenerIDs = [String: String]()
+
     /// Answers this window's waiting requests that another window's answer covers.
     private var sitePermissionDecisionsObservation: AnyCancellable?
     private var extensionTabsObservation: AnyCancellable?
@@ -1002,6 +1005,9 @@ enum BrowserWindowMode: Equatable {
             self?.handleClosedTab(id: tabID)
         }
         tabDriver.searchEngineName = { [weak self] in self?.userPreferencesStore.searchEngine.title }
+        tabDriver.onTabOpenedFromTab = { [weak self] tabID, openerTabID in
+            self?.placeTabOpened(id: tabID, fromTabID: openerTabID)
+        }
         tabDriver.onPageFullscreenChanged = { [weak self] tabID, fullscreen in
             guard let self else { return }
             if fullscreen {
@@ -4316,6 +4322,24 @@ enum BrowserWindowMode: Equatable {
             let receiver = group.models.first { $0 !== self && $0.showsMovedPage(syncID: tab.syncID) } ?? oldest
             receiver.keepPageOfClosingWindow(syncID: tab.syncID)
         }
+    }
+
+    /// A tab a link opened goes right below its Today opener, after the tabs opened
+    /// from it before.
+    func placeTabOpened(id: String, fromTabID openerID: String) {
+        guard let openerIndex = tabs.firstIndex(where: { $0.id == openerID }),
+              let index = tabs.firstIndex(where: { $0.id == id }),
+              tabs[openerIndex].placement == .temporary, tabs[index].placement == .temporary,
+              tabs[openerIndex].spaceID == tabs[index].spaceID, index > openerIndex
+        else { return }
+        var target = openerIndex + 1
+        while target < index, tabOpenerIDs[tabs[target].id] == openerID {
+            target += 1
+        }
+        tabOpenerIDs[id] = openerID
+        guard target < index else { return }
+        moveTab(id: id, toGlobalIndex: target)
+        persistCurrentSessionIfAllowed()
     }
 
     /// Asks the page in fullscreen to leave it.

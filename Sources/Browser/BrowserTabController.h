@@ -186,6 +186,10 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
 - (void)browserTabController:(BrowserTabController *)controller
     didChangePageFullscreenForTabWithID:(NSString *)tabID
                              fullscreen:(BOOL)fullscreen;
+// A link in one tab's page opened another tab, which was just created.
+- (void)browserTabController:(BrowserTabController *)controller
+            didOpenTabWithID:(NSString *)tabID
+               fromTabWithID:(NSString *)openerTabID;
 
 @end
 

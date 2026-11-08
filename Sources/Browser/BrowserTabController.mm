@@ -3784,6 +3784,7 @@ struct TabRecord {
 - (void)handleTitleChange:(NSString *)title forTabID:(NSString *)tabID;
 - (void)handlePageFullscreen:(BOOL)fullscreen forTabID:(NSString *)tabID;
 - (void)captureVideoFrameForTabID:(NSString *)tabID sourceURL:(NSString *)sourceURL save:(BOOL)save;
+- (NSString *)openTabWithURLString:(NSString *)urlString fromTabID:(NSString *)openerTabID makeActive:(BOOL)makeActive;
 - (void)applyMediaVolumeForTabID:(NSString *)tabID toFrame:(CefRefPtr<CefFrame>)frame;
 - (void)handleAddressChange:(NSString *)urlString forTabID:(NSString *)tabID;
 - (void)handleFaviconURLChange:(nullable NSString *)faviconURLString
@@ -6651,7 +6652,7 @@ std::string BrowserMediaVolumeScript(double volume) {
       return YES;
     }
     case CEF_WOD_NEW_BACKGROUND_TAB:
-      [self createTabWithURLString:resolvedURLString makeActive:NO];
+      [self openTabWithURLString:resolvedURLString fromTabID:sourceTabID makeActive:NO];
       return YES;
     case CEF_WOD_IGNORE_ACTION:
       return YES;
@@ -6660,7 +6661,7 @@ std::string BrowserMediaVolumeScript(double volume) {
     case CEF_WOD_NEW_POPUP:
     case CEF_WOD_NEW_WINDOW:
     case CEF_WOD_OFF_THE_RECORD:
-      [self createTabWithURLString:resolvedURLString makeActive:YES];
+      [self openTabWithURLString:resolvedURLString fromTabID:sourceTabID makeActive:YES];
       return YES;
     case CEF_WOD_SAVE_TO_DISK:
     case CEF_WOD_NEW_PICTURE_IN_PICTURE:
@@ -6669,6 +6670,17 @@ std::string BrowserMediaVolumeScript(double volume) {
   }
 
   return NO;
+}
+
+/// A tab a page opens; the window learns which tab it came from, to place it there.
+- (NSString *)openTabWithURLString:(NSString *)urlString fromTabID:(NSString *)openerTabID makeActive:(BOOL)makeActive {
+  NSString *tabID = [self createTabWithURLString:urlString makeActive:makeActive];
+  id<BrowserTabControllerDelegate> delegate = self.delegate;
+  if (openerTabID.length > 0 &&
+      [delegate respondsToSelector:@selector(browserTabController:didOpenTabWithID:fromTabWithID:)]) {
+    [delegate browserTabController:self didOpenTabWithID:tabID fromTabWithID:openerTabID];
+  }
+  return tabID;
 }
 
 - (void)updateBrowserVisibility {
@@ -7051,7 +7063,7 @@ bool BrowserTabClient::OnContextMenuCommand(CefRefPtr<CefBrowser> browser,
   NSString *link = ToNSString(params->GetLinkUrl().ToString());
   switch (command_id) {
     case kContextOpenLinkInNewTab:
-      [controller createTabWithURLString:link makeActive:NO];
+      [controller openTabWithURLString:link fromTabID:ToNSString(tab_id_) makeActive:NO];
       return true;
     case kContextOpenLinkInSplitView:
       [delegate browserTabController:controller performPageContextCommand:@"openInSplitView" argument:link];
