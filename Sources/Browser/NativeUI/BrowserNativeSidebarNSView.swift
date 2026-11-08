@@ -2396,6 +2396,8 @@ private final class BrowserNativeSidebarClearDivider: NSView {
     private let hoverAnimation = BrowserNativeAnimation()
     private var clearProgress = 0.0
     private var clearTarget = false
+    private let indicatorAnimation = BrowserNativeAnimation()
+    private var indicatorProgress = 0.0
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -2412,6 +2414,8 @@ private final class BrowserNativeSidebarClearDivider: NSView {
                 weight: .heavy,
             ))
         indicator.imageScaling = .scaleNone
+        indicator.isHidden = true
+        indicator.alphaValue = 0
         button.onClick = { [weak self] _ in self?.onClear() }
         button.onHoverChanged = { [weak self] hovered in
             guard let self else { return }
@@ -2434,7 +2438,7 @@ private final class BrowserNativeSidebarClearDivider: NSView {
         let textWidth = ceil((title.stringValue as NSString)
             .size(withAttributes: [.font: title.font ?? NSFont.systemFont(ofSize: 11)])
             .width) + 4
-        let indicatorWidth: CGFloat = includesActive ? 10 : 0
+        let indicatorWidth = 10 * indicatorProgress
         let width = textWidth + indicatorWidth + BrowserChromeLayout.sidebarClearButtonHorizontalPadding * 2
         button.frame = NSRect(x: bounds.width - width, y: 0, width: width, height: bounds.height)
         title.frame = NSRect(
@@ -2475,12 +2479,30 @@ private final class BrowserNativeSidebarClearDivider: NSView {
         }
         button.tooltipTitle = descriptor.helpTitle
         button.tooltipShortcut = descriptor.shortcut
-        self.includesActive = includesActive
-        indicator.isHidden = !includesActive
+        if self.includesActive != includesActive {
+            self.includesActive = includesActive
+            let from = indicatorProgress
+            let to = includesActive ? 1.0 : 0.0
+            if window == nil {
+                setIndicatorProgress(to)
+            } else {
+                indicatorAnimation.start(.sidebar) { [weak self] progress in
+                    self?.setIndicatorProgress(from + (to - from) * progress)
+                }
+            }
+        }
         title.textColor = button.isHovered
             ? BrowserChromeColors.secondaryText
             : BrowserChromeColors.sidebarClearButtonForeground
         indicator.contentTintColor = title.textColor
+        needsLayout = true
+    }
+
+    /// The arrow fades and slides in as the title moves aside for it.
+    private func setIndicatorProgress(_ progress: Double) {
+        indicatorProgress = progress
+        indicator.alphaValue = progress
+        indicator.isHidden = progress == 0
         needsLayout = true
     }
 }

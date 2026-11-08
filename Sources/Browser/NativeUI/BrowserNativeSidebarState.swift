@@ -162,6 +162,14 @@ import QuartzCore
         {
             activeTemporaryTabClearConfirmationTabID = nil
         }
+        // A tab that comes back, through Undo of Clear for one, or a new tab
+        // ends the step where Clear would take the active tab too.
+        if let confirmed = activeTemporaryTabClearConfirmationTabID {
+            let shown = Set(snapshot.temporaryTabs.map(\.id))
+            if newSnapshot.temporaryTabs.contains(where: { $0.id != confirmed && !shown.contains($0.id) }) {
+                activeTemporaryTabClearConfirmationTabID = nil
+            }
+        }
         snapshot = newSnapshot
         updateRevealedPinnedFolderTabs(for: snapshot)
         drag.modelDidChange()

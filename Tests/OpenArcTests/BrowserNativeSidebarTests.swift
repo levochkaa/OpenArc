@@ -24,6 +24,25 @@ import Testing
         #expect(state.activeTemporaryTabClearConfirmationTabID == nil)
     }
 
+    @Test func undoingClearRevokesClearConfirmation() throws {
+        let (model, driver) = makeModel()
+        let active = try #require(model.temporaryTabs.last)
+        model.selectTab(id: active.id)
+        let before = model.temporaryTabs.count
+        let state = BrowserNativeSidebarState(model: model, snapshot: snapshot(model), sidebarWidth: 240)
+        try state.clearTemporaryTabs(in: #require(model.selectedSpaceID))
+        state.update(snapshot: snapshot(model), sidebarWidth: 240, isResizing: false)
+        #expect(state.activeTemporaryTabClearConfirmationTabID == active.id)
+        for request in driver.closedTabRequests {
+            driver.emitClose(id: request.id)
+        }
+        model.undoManager.undo()
+        driver.flushPendingCreateEvents()
+        state.update(snapshot: snapshot(model), sidebarWidth: 240, isResizing: false)
+        #expect(model.temporaryTabs.count > 1 && model.temporaryTabs.count <= before)
+        #expect(state.activeTemporaryTabClearConfirmationTabID == nil)
+    }
+
     @Test func changingActiveTabRevokesClearConfirmation() throws {
         let (model, _) = makeModel()
         let active = try #require(model.temporaryTabs.last)
