@@ -167,7 +167,11 @@ extension BrowserChromeModel {
     /// The latest closed tab, or a closed Peek card or small window.
     var canRestoreLastClosedTab: Bool {
         undoManager.canUndo
-            && [BrowserStrings.tabArchiveAction, BrowserStrings.peekCloseAction].contains(undoManager.undoTabActionName)
+            && [
+                BrowserStrings.tabArchiveAction,
+                BrowserStrings.sidebarClearTemporaryTabs,
+                BrowserStrings.peekCloseAction,
+            ].contains(undoManager.undoTabActionName)
     }
 
     @discardableResult func restoreLastClosedTab() -> Bool {

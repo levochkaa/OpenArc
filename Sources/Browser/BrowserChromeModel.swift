@@ -267,6 +267,8 @@ enum BrowserWindowMode: Equatable {
     let undoManager = BrowserTabUndoManager()
     /// Nesting of arrangement edits; only the outermost registers Undo.
     var arrangementUndoDepth = 0
+    /// Tabs Clear is closing, each with that Clear's Undo batch.
+    var tabCloseUndoBatches = [String: UUID]()
     var isApplyingArrangementUndo = false
     lazy var commandBarModel: BrowserCommandBarModel = {
         let model = makeCommandBarModel { [weak self] resolvedURLString in
@@ -2747,8 +2749,13 @@ enum BrowserWindowMode: Equatable {
         let temporaryTabIDs = temporaryTabs
             .map(\.id)
             .filter { $0 != activeTemporaryTabID }
+        // One Undo brings back every tab this Clear closes.
+        let batch = UUID()
         for tabID in temporaryTabIDs {
-            closeTab(id: tabID)
+            tabCloseUndoBatches[tabID] = batch
+            if !closeTab(id: tabID, undoActionName: BrowserStrings.sidebarClearTemporaryTabs) {
+                tabCloseUndoBatches.removeValue(forKey: tabID)
+            }
         }
     }
 
@@ -4938,6 +4945,7 @@ enum BrowserWindowMode: Equatable {
         historyKind: TabHistoryKind = .archive,
         completion: ((HistoryCloseResult) -> Void)? = nil,
     ) -> Bool {
+        let undoBatch = tabCloseUndoBatches.removeValue(forKey: id)
         guard let closingIndex = tabs.firstIndex(where: { $0.id == id }) else { return false }
         let closingTab = tabs[closingIndex]
         tabsLeavingSidebar.remove(id)
@@ -5003,6 +5011,7 @@ enum BrowserWindowMode: Equatable {
         if registersUndo, let undoSnapshot {
             registerTabCloseUndo(
                 undoSnapshot, archiveID: archiveEntry?.id, kind: historyKind, actionName: undoActionName,
+                batch: undoBatch,
             )
         }
         let didCommit: () -> Void = { [weak self] in
@@ -6469,11 +6478,12 @@ enum BrowserWindowMode: Equatable {
 
     private func registerTabCloseUndo(
         _ snapshot: TabUndoSnapshot, archiveID: String?, kind: TabHistoryKind, actionName: String,
+        batch: UUID? = nil,
     ) {
         guard canRegisterTabUndo else { return }
-        undoManager.registerTabAction(historyRestoreAction(
-            snapshot, archiveID: archiveID, kind: kind, actionName: actionName,
-        ))
+        var action = historyRestoreAction(snapshot, archiveID: archiveID, kind: kind, actionName: actionName)
+        action.batch = batch
+        undoManager.registerTabAction(action)
     }
 
     private func creationUndoAction(
@@ -7483,6 +7493,7 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
         closingTabIDs.remove(id)
         tabsLeavingSidebar.remove(id)
         defer {
+            tabCloseUndoBatches.removeValue(forKey: id)
             if request.localAutomaticCandidate != nil {
                 continueLocalAutomaticArchiveSweep()
             }

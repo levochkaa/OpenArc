@@ -10,6 +10,52 @@ import Foundation
     struct Action {
         let name: String
         let perform: @MainActor (@escaping @MainActor (Outcome) -> Void) -> Void
+        /// Actions of one command, such as Clear, that one Undo takes back.
+        var batch: UUID?
+        /// The batch's actions in registration order; empty for a single action.
+        fileprivate(set) var parts = [Action]()
+
+        init(
+            name: String,
+            batch: UUID? = nil,
+            perform: @escaping @MainActor (@escaping @MainActor (Outcome) -> Void) -> Void,
+        ) {
+            self.name = name
+            self.batch = batch
+            self.perform = perform
+        }
+
+        /// Performs `parts` last first, one after another, and commits with
+        /// the inverses that committed, which run in the original order.
+        static func batch(_ parts: [Action], id: UUID?) -> Action {
+            var action = Action(name: parts.last?.name ?? "", batch: id) { completion in
+                performParts(parts, from: parts.count - 1, inverses: [], completion: completion)
+            }
+            action.parts = parts
+            return action
+        }
+
+        @MainActor private static func performParts(
+            _ parts: [Action], from index: Int, inverses: [Action],
+            completion: @escaping @MainActor (Outcome) -> Void,
+        ) {
+            guard index >= 0 else {
+                completion(.committed(inverse: inverses.isEmpty ? nil : .batch(inverses, id: nil)))
+                return
+            }
+            parts[index].perform { outcome in
+                switch outcome {
+                case .cancelled:
+                    // Parts already taken back stay taken back; their inverses remain.
+                    completion(inverses.isEmpty ? .cancelled : .committed(inverse: .batch(inverses, id: nil)))
+                case .committed(let inverse):
+                    performParts(
+                        parts, from: index - 1, inverses: inverses + (inverse.map { [$0] } ?? []),
+                        completion: completion,
+                    )
+                }
+            }
+        }
     }
 
     enum Outcome {
@@ -123,6 +169,13 @@ import Foundation
         guard groupingLevel == 0, !isInvokingFoundation else {
             deferredActions.append(action)
             return
+        }
+        var action = action
+        // A later action of the same batch joins the entry on top of Undo.
+        if let batch = action.batch, pending == nil, let top = marker(on: .undo), top.action.batch == batch {
+            let parts = (top.action.parts.isEmpty ? [top.action] : top.action.parts) + [action]
+            super.removeAllActions(withTarget: top)
+            action = .batch(parts, id: batch)
         }
         beginUndoGrouping()
         installMarker(action)

@@ -143,6 +143,59 @@ import Testing
         #expect(f.model.spaces.map(\.id) == ["s", "t"])
     }
 
+    @Test func oneUndoBringsBackEveryTabClearClosed() {
+        let f = SidebarDragFixture(temporary: ["x", "y", "z", "w"])
+        f.model.selectTab(id: f.id("w"))
+        f.model.clearTemporaryTabs(includingActiveTab: false)
+        #expect(f.names(f.model.temporaryTabs) == ["w"])
+        #expect(f.model.undoManager.undoActionName == BrowserStrings.sidebarClearTemporaryTabs)
+
+        f.model.undoManager.undo()
+        f.driver.flushPendingCreateEvents()
+        #expect(f.names(f.model.temporaryTabs) == ["x", "y", "z", "w"])
+        #expect(f.model.undoManager.canRedo)
+
+        f.model.undoManager.redo()
+        #expect(f.names(f.model.temporaryTabs) == ["w"])
+        f.model.undoManager.undo()
+        f.driver.flushPendingCreateEvents()
+        #expect(f.names(f.model.temporaryTabs) == ["x", "y", "z", "w"])
+    }
+
+    @Test func clearClosesConfirmedOutOfOrderStillUndoTogether() {
+        let f = SidebarDragFixture(temporary: ["x", "y", "z"])
+        f.driver.automaticallyConfirmsCloseRequests = false
+        f.model.selectTab(id: f.id("z"))
+        f.model.clearTemporaryTabs(includingActiveTab: false)
+        let requests = f.driver.confirmedCloseRequests
+        #expect(requests.count == 2)
+        for request in requests.reversed() {
+            f.driver.emitCloseRequestOutcome(id: request.id, requestID: request.requestID, outcome: .closed)
+        }
+        #expect(f.names(f.model.temporaryTabs) == ["z"])
+        f.driver.automaticallyConfirmsCloseRequests = true
+
+        f.model.undoManager.undo()
+        f.driver.flushPendingCreateEvents()
+        #expect(f.names(f.model.temporaryTabs) == ["x", "y", "z"])
+        #expect(!f.model.undoManager.canUndo)
+    }
+
+    @Test func aClosedTabAfterClearIsItsOwnUndo() {
+        let f = SidebarDragFixture(temporary: ["x", "y", "z"])
+        f.model.selectTab(id: f.id("z"))
+        f.model.clearTemporaryTabs(includingActiveTab: false)
+        f.model.closeTab(id: f.id("z"))
+        #expect(f.model.undoManager.undoActionName == BrowserStrings.tabArchiveAction)
+
+        f.model.undoManager.undo()
+        f.driver.flushPendingCreateEvents()
+        #expect(f.names(f.model.temporaryTabs) == ["z"])
+        f.model.undoManager.undo()
+        f.driver.flushPendingCreateEvents()
+        #expect(f.names(f.model.temporaryTabs) == ["x", "y", "z"])
+    }
+
     @Test func movedItemsAreTheFewestThatChangedPlace() {
         typealias Arrangement = BrowserChromeModel.SidebarArrangement
         func arrangement(_ names: [String]) -> Arrangement {
