@@ -5930,21 +5930,21 @@ enum BrowserWindowMode: Equatable {
     }
 
     /// What an empty command bar lists: this Space's latest tabs, then history.
+    /// Before anything is typed: the latest tabs, this Space's first and then
+    /// the other Spaces' named by their Space, then recent history.
     private func recentCommandBarPages(maximumCount: Int) -> [BrowserCommandSuggestion] {
-        let recentTabs = activeSpaceTabs
-            .filter { $0.id != selectedTabID && !$0.urlString.isEmpty && $0.creationState == .ready }
+        let candidates = tabs
+            .filter { $0.id != selectedTabID && !$0.urlString.isEmpty && $0.placement != .app }
             .sorted { $0.lastActivityAt > $1.lastActivityAt }
+        let here = candidates.filter { $0.spaceID == selectedSpaceID }
+        let elsewhere = candidates.filter { $0.spaceID != selectedSpaceID }
+        let recentTabs = (here + elsewhere)
             .prefix(maximumCount)
-            .map { tab in
-                BrowserCommandSuggestion(
-                    kind: .openTab,
-                    displayText: tab.displayTitle,
-                    resolvedURLString: tab.urlString,
-                    tabIDs: [tab.id],
-                )
-            }
-        let urls = Set(recentTabs.map(\.resolvedURLString))
-        let history = historyStore.recentSuggestions(maximumCount: maximumCount)
+            .map(commandBarSuggestion(forTab:))
+        // The page on screen is already here, so its visit is not offered either.
+        var urls = Set(recentTabs.map(\.resolvedURLString))
+        if let current = selectedTab?.urlString { urls.insert(current) }
+        let history = historyStore.recentSuggestions(maximumCount: maximumCount + 1)
             .filter { !urls.contains($0.resolvedURLString) }
         return Array((recentTabs + history).prefix(maximumCount))
     }
@@ -5958,14 +5958,21 @@ enum BrowserWindowMode: Equatable {
             .init(title: $0.displayTitle, urlString: $0.urlString)
         })
         return index.search(query, limit: maximumCount).map { position in
-            let tab = candidates[position]
-            return BrowserCommandSuggestion(
-                kind: .openTab,
-                displayText: tab.displayTitle,
-                resolvedURLString: tab.urlString,
-                tabIDs: [tab.id],
-            )
+            commandBarSuggestion(forTab: candidates[position])
         }
+    }
+
+    private func commandBarSuggestion(forTab tab: Tab) -> BrowserCommandSuggestion {
+        var suggestion = BrowserCommandSuggestion(
+            kind: .openTab,
+            displayText: tab.displayTitle,
+            resolvedURLString: tab.urlString,
+            tabIDs: [tab.id],
+        )
+        if tab.spaceID != selectedSpaceID {
+            suggestion.spaceTitle = spaces.first { $0.id == tab.spaceID }?.title
+        }
+        return suggestion
     }
 
     private func normalizedCommandSearchText(_ text: String) -> String {

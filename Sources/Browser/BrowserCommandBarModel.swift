@@ -26,6 +26,8 @@ struct BrowserCommandSuggestion: Identifiable, Equatable {
     let commandID: BrowserCommandID?
     let shortcut: BrowserKeyboardShortcut?
     var tabIDs: [String]
+    /// The Space of a tab in another Space, named in place of "Switch to Tab".
+    var spaceTitle: String?
     /// The page's icon from the browser's own records.
     var iconData: Data?
 

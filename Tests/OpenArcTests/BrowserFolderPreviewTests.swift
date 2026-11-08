@@ -253,3 +253,26 @@ import Testing
         #expect(f.model.selectedTabID == x)
     }
 }
+
+// MARK: - BrowserCommandBarRecentTabsTests
+
+@Suite(.serialized)
+@MainActor struct BrowserCommandBarRecentTabsTests {
+    @Test func anEmptyCommandBarListsRecentTabsOfEverySpaceNamingTheOthers() throws {
+        let f = SidebarDragFixture(temporary: ["x", "y"])
+        let otherSpaceTab = f.id("y")
+        let firstSpace = try #require(f.model.selectedSpaceID)
+        f.model.createNewSpace()
+        let secondSpace = try #require(f.model.selectedSpaceID)
+        #expect(secondSpace != firstSpace)
+        f.model.selectSpace(id: firstSpace)
+        f.model.selectTab(id: f.id("x"))
+        #expect(f.model.moveTabToSpace(id: otherSpaceTab, spaceID: secondSpace))
+
+        f.model.presentCommandBar()
+        let suggestions = f.model.commandBarModel.suggestions
+        let other = try #require(suggestions.first { $0.tabID == otherSpaceTab })
+        #expect(other.spaceTitle == f.model.spaces.first { $0.id == secondSpace }?.title)
+        #expect(!suggestions.contains { $0.tabID == f.id("x") }, "Not the tab on screen")
+    }
+}

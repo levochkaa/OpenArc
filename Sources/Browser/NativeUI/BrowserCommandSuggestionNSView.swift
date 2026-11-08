@@ -175,6 +175,7 @@ final class BrowserCommandSuggestionNSView: NSButton {
         badgeLabel.stringValue = suggestion.shortcut?.displayText ?? ""
         badge.isHidden = suggestion.shortcut == nil
         let isTab = suggestion.kind == .openTab
+        switchLabel.stringValue = suggestion.spaceTitle ?? BrowserStrings.commandBarSwitchToTab
         switchLabel.isHidden = !isTab
         switchTile.isHidden = !isTab
         switchLabel.textColor = tinted ? .white : BrowserChromeColors.secondaryText
