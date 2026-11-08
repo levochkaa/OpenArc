@@ -1913,6 +1913,7 @@ enum BrowserWindowMode: Equatable {
         selectedSpaceID = spaceID
         selectActiveTabForSelectedSpace()
         recordExplicitViewingActivity(ids: [selectedTabID])
+        updateWindowTitle()
         BrowserTelemetry.captureUsage(.spaceSelected, properties: telemetryProperties)
         persistCurrentSessionIfAllowed()
     }
@@ -4374,6 +4375,14 @@ enum BrowserWindowMode: Equatable {
         }
     }
 
+    /// The window is named after its shown tab, or its Space without one.
+    func updateWindowTitle() {
+        let title = tabs.first(where: { $0.id == selectedTabID })?.displayTitle
+            ?? spaces.first(where: { $0.id == selectedSpaceID })?.title
+            ?? BrowserStrings.applicationName
+        windowTitleHandler(title)
+    }
+
     private func showsMovedPage(syncID: String) -> Bool {
         tabs.first { $0.syncID == syncID }.map { movedPageTabIDs.contains($0.id) && hasNoPage($0.id) } ?? false
     }
@@ -5574,11 +5583,6 @@ enum BrowserWindowMode: Equatable {
             },
             splitGroups: splitGroupSessionSnapshots(),
         )
-    }
-
-    private func updateWindowTitle() {
-        let title = tabs.first(where: { $0.id == selectedTabID })?.displayTitle ?? BrowserStrings.applicationName
-        windowTitleHandler(title)
     }
 
     /// A new temporary tab of the selected Space; a background one keeps the

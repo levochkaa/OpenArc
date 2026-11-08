@@ -2613,6 +2613,10 @@ enum BrowserStrings {
         "browser.tab.move_to_new_window_action",
         comment: "Undo name after tabs were dragged out of the window into a new one.",
     )
+    static let menuCloseTab = NSLocalizedString(
+        "browser.menu.close_tab",
+        comment: "File menu item for Command-W, which archives the shown tab.",
+    )
     static let movedPageShowHere = NSLocalizedString(
         "browser.content.moved_page_show_here",
         comment: "Accessibility label of a faded picture of a page another window shows; a click brings it back.",

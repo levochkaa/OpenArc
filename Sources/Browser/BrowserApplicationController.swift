@@ -171,6 +171,12 @@ NSMenuDelegate, NSUserInterfaceValidations {
         NSEvent.removeMonitor(layoutIndependentKeyMonitor)
     }
 
+    /// The window's name in the Window menu, Mission Control and scripts.
+    private static func showWindowTitle(_ title: String, of window: NSWindow) {
+        window.title = title
+        NSApp.changeWindowsItem(window, title: title, filename: false)
+    }
+
     // MARK: Public
 
     public func createApplication() {
@@ -294,6 +300,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
             return
         }
 
+        NSApp.removeWindowsItem(closedWindow)
         if let index = profileWindowSessions.firstIndex(where: { $0.window === closedWindow }) {
             let session = profileWindowSessions.remove(at: index)
             archiveWindowControllers.removeValue(forKey: ObjectIdentifier(session.chromeModel))?.close()
@@ -1405,20 +1412,12 @@ NSMenuDelegate, NSUserInterfaceValidations {
 
         let fileMenu = NSMenu(title: BrowserStrings.menuFile)
         fileMenu.delegate = self
+        // More items follow Print… below.
         let newTabItem = makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .newTab),
             action: #selector(createNewTab(_:)),
         )
         fileMenu.addItem(newTabItem)
-        fileMenu.addItem(makeMenuItem(
-            descriptor: shortcutStore.descriptor(for: .openLocation),
-            action: #selector(openLocation(_:)),
-        ))
-        fileMenu.addItem(makeMenuItem(
-            descriptor: shortcutStore.descriptor(for: .restoreLastClosedTab),
-            action: #selector(restoreLastClosedTab(_:)),
-        ))
-
         fileMenu.addItem(makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .newWindow),
             action: #selector(createNewWindow(_:)),
@@ -1436,6 +1435,18 @@ NSMenuDelegate, NSUserInterfaceValidations {
             descriptor: shortcutStore.descriptor(for: .newLittleWindow),
             action: #selector(createNewLittleWindow(_:)),
         ))
+        fileMenu.addItem(makeMenuItem(
+            descriptor: shortcutStore.descriptor(for: .restoreLastClosedTab),
+            action: #selector(restoreLastClosedTab(_:)),
+        ))
+        fileMenu.addItem(makeMenuItem(
+            descriptor: shortcutStore.descriptor(for: .openLocation),
+            action: #selector(openLocation(_:)),
+        ))
+        fileMenu.addItem(BrowserNativeMenuItem(BrowserStrings.menuNewProfile) { [weak self] in
+            self?.presentSettingsWindow(pane: .profiles)
+        })
+        fileMenu.addItem(.separator())
         // Command-W archives the tab, so the window closes with Shift-Command-W.
         fileMenu.addItem(makeStandardMenuItem(
             title: BrowserStrings.webAppCloseWindowAction,
@@ -1443,32 +1454,18 @@ NSMenuDelegate, NSUserInterfaceValidations {
             keyEquivalent: standardKey("w", [.command, .shift]),
             modifiers: [.command, .shift],
         ))
-        fileMenu.addItem(.separator())
-
-        let toggleBookmarkItem = makeMenuItem(
-            descriptor: shortcutStore.descriptor(for: .toggleBookmark),
-            action: #selector(toggleCurrentPageBookmark(_:)),
-        )
-        fileMenu.addItem(toggleBookmarkItem)
-
+        // The File menu calls Command-W Close Tab; it archives the tab all the same.
         let archiveTabItem = makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .archiveTab),
             action: #selector(archiveCurrentTab(_:)),
         )
+        archiveTabItem.title = BrowserStrings.menuCloseTab
         fileMenu.addItem(archiveTabItem)
+        fileMenu.addItem(.separator())
         fileMenu.addItem(makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .shareTab),
             action: #selector(shareCurrentTab(_:)),
         ))
-        fileMenu.addItem(BrowserNativeMenuItem(BrowserStrings.menuNewProfile) { [weak self] in
-            self?.presentSettingsWindow(pane: .profiles)
-        })
-
-        let savePageItem = makeMenuItem(
-            descriptor: shortcutStore.descriptor(for: .savePage),
-            action: #selector(saveCurrentPage(_:)),
-        )
-        fileMenu.addItem(savePageItem)
         fileMenu.addItem(makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .captureArea),
             action: #selector(captureArea(_:)),
@@ -1481,6 +1478,23 @@ NSMenuDelegate, NSUserInterfaceValidations {
             descriptor: shortcutStore.descriptor(for: .capturePortrait),
             action: #selector(capturePortrait(_:)),
         ))
+        fileMenu.addItem(.separator())
+        let savePageItem = makeMenuItem(
+            descriptor: shortcutStore.descriptor(for: .savePage),
+            action: #selector(saveCurrentPage(_:)),
+        )
+        fileMenu.addItem(savePageItem)
+        let printItem = makeMenuItem(
+            descriptor: shortcutStore.descriptor(for: .printPage),
+            action: #selector(printCurrentPage(_:)),
+        )
+        fileMenu.addItem(printItem)
+        fileMenu.addItem(.separator())
+        let toggleBookmarkItem = makeMenuItem(
+            descriptor: shortcutStore.descriptor(for: .toggleBookmark),
+            action: #selector(toggleCurrentPageBookmark(_:)),
+        )
+        fileMenu.addItem(toggleBookmarkItem)
 
         let installWebAppItem = NSMenuItem(
             title: BrowserStrings.webAppInstallAction,
@@ -1491,12 +1505,6 @@ NSMenuDelegate, NSUserInterfaceValidations {
         installWebAppItem.target = self
         updateInstallWebAppMenuItem(installWebAppItem)
         fileMenu.addItem(installWebAppItem)
-
-        let printItem = makeMenuItem(
-            descriptor: shortcutStore.descriptor(for: .printPage),
-            action: #selector(printCurrentPage(_:)),
-        )
-        fileMenu.addItem(printItem)
         fileMenuItem.submenu = fileMenu
 
         let editMenu = NSMenu(title: BrowserStrings.menuEdit)
@@ -3540,6 +3548,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
             } else {
                 BrowserSessionPreferencesStore()
             }
+        weak var windowReference: NSWindow?
         let chromeModel = BrowserChromeModel(
             tabDriver: BrowserTabControllerDriver(profileCachePath: profileDirectoryURL.path),
             sessionSnapshotStore: sessionStore,
@@ -3558,7 +3567,9 @@ NSMenuDelegate, NSUserInterfaceValidations {
             commandHandler: { [weak self] commandID, owner in
                 self?.performCommandBarCommand(commandID, from: owner)
             },
-            windowTitleHandler: { _ in },
+            windowTitleHandler: { title in
+                windowReference.map { Self.showWindowTitle(title, of: $0) }
+            },
             allTabsClosedHandler: {},
         )
         syncCoordinator?.setSnapshotApplier(chromeModel)
@@ -3597,6 +3608,9 @@ NSMenuDelegate, NSUserInterfaceValidations {
             backing: .buffered,
             defer: false,
         )
+        windowReference = window
+        // A window without a title bar joins the Window menu by hand.
+        NSApp.addWindowsItem(window, title: windowTitle(for: profile), filename: false)
         window.title = windowTitle(for: profile)
         window.delegate = self
         window.browserUndoManager = chromeModel.undoManager
@@ -3734,7 +3748,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         for session in profileWindowSessions {
             let profile = profileStore?.profile(withID: session.profile.id) ?? session.profile
             session.chromeModel.updateProfilePresentation(profile: profile, availableProfileCount: profileCount)
-            session.window.title = windowTitle(for: profile)
+            session.chromeModel.updateWindowTitle()
         }
     }
 
@@ -3781,6 +3795,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         let ephemeralSessionStore = BrowserEphemeralSessionStore()
         // A blank window browses as its profile; an incognito one leaves nothing behind.
         let blankProfilePath = blank ? profileDirectoryCandidates.first?.path : nil
+        weak var windowReference: NSWindow?
         let chromeModel = BrowserChromeModel(
             tabDriver: blankProfilePath.map { BrowserTabControllerDriver(profileCachePath: $0) }
                 ?? BrowserTabControllerDriver(usesEphemeralRequestContext: true),
@@ -3797,7 +3812,9 @@ NSMenuDelegate, NSUserInterfaceValidations {
             commandHandler: { [weak self] commandID, owner in
                 self?.performCommandBarCommand(commandID, from: owner)
             },
-            windowTitleHandler: { _ in },
+            windowTitleHandler: { title in
+                windowReference.map { Self.showWindowTitle(title, of: $0) }
+            },
             allTabsClosedHandler: {},
         )
         chromeModel.firstTabURLString = firstURL?.absoluteString
@@ -3818,6 +3835,12 @@ NSMenuDelegate, NSUserInterfaceValidations {
             styleMask: [.borderless, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false,
+        )
+        windowReference = window
+        NSApp.addWindowsItem(
+            window,
+            title: blank ? BrowserStrings.menuBlankWindow : BrowserStrings.menuNewIncognitoWindow,
+            filename: false,
         )
         window.title = blank ? BrowserStrings.menuBlankWindow : BrowserStrings.menuNewIncognitoWindow
         window.delegate = self
