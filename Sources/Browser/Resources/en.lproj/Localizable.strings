@@ -722,6 +722,11 @@
 "browser.context.search_google_for_image" = "Search Google for Image";
 "browser.context.look_up" = "Look Up “%@”";
 "browser.context.emoji_symbols" = "Emoji & Symbols";
+"browser.context.language_settings" = "Language Settings";
+"browser.context.writing_direction" = "Writing Direction";
+"browser.context.direction_default" = "Default";
+"browser.context.direction_ltr" = "Left to Right";
+"browser.context.direction_rtl" = "Right to Left";
 "browser.context.copy_media_address" = "Copy Video Address";
 "browser.context.undo" = "Undo";
 "browser.context.redo" = "Redo";

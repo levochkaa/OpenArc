@@ -2932,6 +2932,11 @@ enum PageContextMenuCommand {
   kContextMediaControls,
   kContextSaveVideoFrame,
   kContextCopyVideoFrame,
+  kContextLanguageSettings,
+  kContextDirectionDefault,
+  kContextDirectionLeftToRight,
+  kContextDirectionRightToLeft,
+  kContextWritingDirection,
 };
 
 /// Speech › Start Speaking reads the selection aloud, as macOS apps do.
@@ -3107,6 +3112,15 @@ void BuildPageContextMenu(CefRefPtr<CefContextMenuParams> params, CefRefPtr<CefM
     if (hasSelection) {
       model->AddSeparator();
       model->AddItem(kContextPrint, LocalizedMenuTitle(@"browser.context.print"));
+    }
+    if (allowsLinkTargets) {
+      model->AddSeparator();
+      model->AddItem(kContextLanguageSettings, LocalizedMenuTitle(@"browser.context.language_settings"));
+      CefRefPtr<CefMenuModel> direction =
+          model->AddSubMenu(kContextWritingDirection, LocalizedMenuTitle(@"browser.context.writing_direction"));
+      direction->AddItem(kContextDirectionDefault, LocalizedMenuTitle(@"browser.context.direction_default"));
+      direction->AddItem(kContextDirectionLeftToRight, LocalizedMenuTitle(@"browser.context.direction_ltr"));
+      direction->AddItem(kContextDirectionRightToLeft, LocalizedMenuTitle(@"browser.context.direction_rtl"));
     }
   } else if (hasSelection) {
     // Outside links the search comes first; on a link it follows Copy.
@@ -6988,6 +7002,21 @@ bool BrowserTabClient::OnContextMenuCommand(CefRefPtr<CefBrowser> browser,
                                             int command_id,
                                             EventFlags) {
   CEF_REQUIRE_UI_THREAD();
+  if (command_id == kContextLanguageSettings) {
+    [controller_ createTabWithURLString:@"openarc://settings/languages" makeActive:YES];
+    return true;
+  }
+  if ((command_id == kContextDirectionDefault || command_id == kContextDirectionLeftToRight ||
+       command_id == kContextDirectionRightToLeft) && frame) {
+    // The field being edited takes the direction, as Chrome's Writing Direction does.
+    const char *script = command_id == kContextDirectionDefault
+        ? "document.activeElement && document.activeElement.removeAttribute('dir');"
+        : command_id == kContextDirectionLeftToRight
+            ? "document.activeElement && (document.activeElement.dir = 'ltr');"
+            : "document.activeElement && (document.activeElement.dir = 'rtl');";
+    frame->ExecuteJavaScript(script, frame->GetURL(), 0);
+    return true;
+  }
   if (command_id == kContextSaveVideoFrame || command_id == kContextCopyVideoFrame) {
     [controller_ captureVideoFrameForTabID:ToNSString(tab_id_)
                                  sourceURL:ToNSString(params->GetSourceUrl().ToString())
