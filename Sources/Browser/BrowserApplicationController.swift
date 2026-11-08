@@ -171,6 +171,18 @@ NSMenuDelegate, NSUserInterfaceValidations {
         NSEvent.removeMonitor(layoutIndependentKeyMonitor)
     }
 
+    private static func applyFullScreenShortcut(in menu: NSMenu) {
+        for item in menu.items {
+            if item.action == #selector(NSWindow.toggleFullScreen(_:)) {
+                item.keyEquivalent = "f"
+                item.keyEquivalentModifierMask = [.control, .command]
+            }
+            if let submenu = item.submenu {
+                applyFullScreenShortcut(in: submenu)
+            }
+        }
+    }
+
     /// The window's name in the Window menu, Mission Control and scripts.
     private static func showWindowTitle(_ title: String, of window: NSWindow) {
         window.title = title
@@ -1364,6 +1376,12 @@ NSMenuDelegate, NSUserInterfaceValidations {
         addLibraryItems(toWindowMenuOf: app)
         addHelpMenu(to: menubar, app: app)
         app.mainMenu = menubar
+        // AppKit gives full screen items Globe-F when a menu bar is set; ours is
+        // Control-Command-F, so it goes back once AppKit is done.
+        DispatchQueue.main.async { [weak menubar] in
+            guard let menubar else { return }
+            Self.applyFullScreenShortcut(in: menubar)
+        }
 
         let appMenu = NSMenu()
         let appName = ProcessInfo.processInfo.processName
@@ -1685,17 +1703,18 @@ NSMenuDelegate, NSUserInterfaceValidations {
         )
         viewMenu.addItem(forceRefreshItem)
 
-        let clearCacheAndRefreshItem = makeMenuItem(
-            descriptor: shortcutStore.descriptor(for: .clearCacheAndRefresh),
-            action: #selector(clearCacheAndRefreshCurrentTab(_:)),
-        )
-        viewMenu.addItem(clearCacheAndRefreshItem)
-
+        // Cookies first.
         let clearCookiesAndRefreshItem = makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .clearCookiesAndRefresh),
             action: #selector(clearCookiesAndRefreshCurrentTab(_:)),
         )
         viewMenu.addItem(clearCookiesAndRefreshItem)
+
+        let clearCacheAndRefreshItem = makeMenuItem(
+            descriptor: shortcutStore.descriptor(for: .clearCacheAndRefresh),
+            action: #selector(clearCacheAndRefreshCurrentTab(_:)),
+        )
+        viewMenu.addItem(clearCacheAndRefreshItem)
 
         viewMenu.addItem(.separator())
 
@@ -1736,6 +1755,17 @@ NSMenuDelegate, NSUserInterfaceValidations {
             descriptor: shortcutStore.descriptor(for: .openExtensions),
             action: #selector(openExtensions(_:)),
         ))
+        // Full screen is Control-Command-F; AppKit adds its own item
+        // with Globe-F unless an item with this action is already there, and keeps
+        // the title in step (Enter or Exit).
+        viewMenu.addItem(.separator())
+        let fullScreenItem = NSMenuItem(
+            title: BrowserStrings.menuEnterFullScreen,
+            action: #selector(NSWindow.toggleFullScreen(_:)),
+            keyEquivalent: "f",
+        )
+        fullScreenItem.keyEquivalentModifierMask = [.control, .command]
+        viewMenu.addItem(fullScreenItem)
         viewMenuItem.submenu = viewMenu
 
         // Tabs menu with OpenArc's tab actions, led by New Tab with ⌘T.

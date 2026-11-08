@@ -2613,6 +2613,10 @@ enum BrowserStrings {
         "browser.tab.move_to_new_window_action",
         comment: "Undo name after tabs were dragged out of the window into a new one.",
     )
+    static let menuEnterFullScreen = NSLocalizedString(
+        "browser.menu.enter_full_screen",
+        comment: "View menu item that puts the window in full screen; AppKit retitles it Exit Full Screen there.",
+    )
     static let menuCloseTab = NSLocalizedString(
         "browser.menu.close_tab",
         comment: "File menu item for Command-W, which archives the shown tab.",
