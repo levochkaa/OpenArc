@@ -14,6 +14,8 @@ import AppKit
     // MARK: Internal
 
     static let barHeight: CGFloat = 36
+    /// The small window's bar: an address pill and the Open in button.
+    static let standaloneBarHeight: CGFloat = 48
     static let cornerRadius: CGFloat = 12
     /// The card covers this share of the window and leaves the page
     /// visible around it.
@@ -83,6 +85,18 @@ import AppKit
         action: {},
     )
     let hostLabel = BrowserPeekAddressField(string: "")
+    /// The small window's address background, with a magnifier and Copy Link.
+    let addressPill = BrowserNativeSurface()
+    let copyLinkButton = BrowserNativeChromeButton(
+        symbol: "link",
+        title: BrowserStrings.tabCopyURLAction,
+        style: .currentURL,
+        action: {},
+    )
+    /// "Open in <Space> ⌘O" and a chevron for the other Spaces.
+    let openInButton = BrowserPeekOpenInButton()
+
+    private let addressSymbol = NSImageView()
 
     private var parentMonitor: Any?
     private var currentURLString = ""
@@ -168,6 +182,25 @@ import AppKit
         for view in [closeButton, hostLabel, splitButton, openButton, hostView, findBar, permissionPrompt] {
             card.addSubview(view)
         }
+        if standalone {
+            addressPill.fillColor = NSColor.labelColor.withAlphaComponent(0.08)
+            addressPill.strokeWidth = 0
+            addressPill.cornerRadius = 8
+            card.addSubview(addressPill, positioned: .below, relativeTo: hostLabel)
+            addressSymbol.image = NSImage(systemSymbolName: "magnifyingglass", accessibilityDescription: nil)?
+                .withSymbolConfiguration(.init(pointSize: 13, weight: .medium))
+            addressSymbol.contentTintColor = BrowserChromeColors.secondaryText
+            addressSymbol.setAccessibilityElement(false)
+            addressPill.addSubview(addressSymbol)
+            addressPill.addSubview(copyLinkButton)
+            copyLinkButton.onAction = { [weak self] in self?.copyLink() }
+            copyLinkButton.setAccessibilityIdentifier("browser.peek.copy-link")
+            card.addSubview(openInButton)
+            openInButton.onOpen = { [weak self] in self?.onOpenInTab?() }
+            openInButton.onShowMenu = { [weak self] in self?.showOpenInMenu() }
+            openInButton.setAccessibilityIdentifier("browser.peek.open-in")
+            openButton.isHidden = true
+        }
         findBar.queryField.focusPermission = { [weak self] in self?.isFindPresented == true }
         findBar.onQueryChanged = { [weak self] in self?.findQueryDidChange($0) }
         findBar.onNext = { [weak self] in self?.findNext() }
@@ -205,6 +238,18 @@ import AppKit
         hostView.setAccessibilityIdentifier("browser.peek.page")
         setAccessibilityIdentifier("browser.peek")
         layoutCard()
+    }
+
+    override func setFrame(_ frameRect: NSRect, display flag: Bool) {
+        super.setFrame(frameRect, display: flag)
+        centerWindowButtons()
+    }
+
+    override func becomeKey() {
+        super.becomeKey()
+        centerWindowButtons()
+        // The window's Space may have changed while this one was in the back.
+        refreshOpenInTitle()
     }
 
     override func keyDown(with event: NSEvent) {
@@ -340,7 +385,18 @@ import AppKit
     }
 
     func showOpenInMenu() {
-        openInMenu.popUp(positioning: nil, at: NSPoint(x: 0, y: openButton.bounds.height + 4), in: openButton)
+        let anchor: NSView = isStandalone ? openInButton : openButton
+        // Below the anchor, whichever way its coordinates run.
+        let below = anchor.isFlipped ? anchor.bounds.height + 4 : -4
+        openInMenu.popUp(positioning: nil, at: NSPoint(x: 0, y: below), in: anchor)
+    }
+
+    /// Names the Space a page opens in from the small window.
+    @objc func refreshOpenInTitle() {
+        guard isStandalone else { return }
+        let spaces = spacesProvider?() ?? []
+        openInButton.spaceTitle = (spaces.first(where: \.isSelected) ?? spaces.first)?.title
+        layoutCard()
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
@@ -487,6 +543,13 @@ import AppKit
             findActiveOrdinal = activeOrdinal
         }
         refreshFind()
+    }
+
+    private func copyLink() {
+        guard !currentURLString.isEmpty, currentURLString != "about:blank" else { return }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(currentURLString, forType: .string)
     }
 
     private func placeCard(screenFrame: NSRect) {
@@ -737,6 +800,10 @@ import AppKit
     /// The bar keeps its place on resize; the small window leaves room for the
     /// traffic lights instead of a Close button.
     private func layoutCard() {
+        if isStandalone {
+            layoutStandaloneBar()
+            return
+        }
         let bounds = card.bounds
         let size = BrowserChromeLayout.sidebarCurrentURLButtonSize
         let y = bounds.height - Self.barHeight + ((Self.barHeight - size) / 2).rounded()
@@ -759,6 +826,74 @@ import AppKit
         splitButton.autoresizingMask = [.minXMargin, .minYMargin]
         hostLabel.autoresizingMask = [.width, .minYMargin]
         hostView.autoresizingMask = [.width, .height]
+    }
+
+    /// Traffic lights, the address pill, then Open in at the trailing edge.
+    private func layoutStandaloneBar() {
+        let bounds = card.bounds
+        let bar = Self.standaloneBarHeight
+        let top = bounds.height - bar
+        let buttonWidth = openInButton.preferredWidth
+        openInButton.frame = NSRect(x: bounds.width - 8 - buttonWidth, y: top + 10, width: buttonWidth, height: 29)
+        openInButton.autoresizingMask = [.minXMargin, .minYMargin]
+        let pillX: CGFloat = 83
+        addressPill.frame = NSRect(
+            x: pillX,
+            y: top + 9,
+            width: max(openInButton.frame.minX - 9 - pillX, 0),
+            height: 31,
+        )
+        addressPill.autoresizingMask = [.width, .minYMargin]
+        addressSymbol.frame = NSRect(x: 9, y: 7.5, width: 16, height: 16)
+        let linkSize = BrowserChromeLayout.sidebarCurrentURLButtonSize
+        copyLinkButton.frame = NSRect(
+            x: addressPill.bounds.width - 4 - linkSize,
+            y: (31 - linkSize) / 2,
+            width: linkSize,
+            height: linkSize,
+        )
+        copyLinkButton.autoresizingMask = [.minXMargin]
+        hostLabel.frame = NSRect(
+            x: pillX + 34,
+            y: top + 9 + 7.5,
+            width: max(addressPill.frame.width - 68, 0),
+            height: 16,
+        )
+        hostLabel.autoresizingMask = [.width, .minYMargin]
+        hostView.frame = NSRect(x: 0, y: 0, width: bounds.width, height: max(top, 0))
+        hostView.autoresizingMask = [.width, .height]
+        for view in [closeButton, splitButton, openButton] {
+            view.frame = .zero
+        }
+        centerWindowButtons()
+    }
+
+    /// The traffic lights sit in the middle of the taller bar, level with the
+    /// address. AppKit lays them out again on resize, so this follows it.
+    private func centerWindowButtons() {
+        guard isStandalone, let close = standardWindowButton(.closeButton), let titlebar = close.superview,
+              let container = titlebar.superview
+        else { return }
+        let bar = Self.standaloneBarHeight
+        let containerFrame = NSRect(
+            x: container.frame.minX,
+            y: frame.height - bar,
+            width: container.frame.width,
+            height: bar,
+        )
+        if container.frame != containerFrame {
+            container.frame = containerFrame
+        }
+        if titlebar.frame.height != bar {
+            titlebar.frame = NSRect(x: 0, y: 0, width: containerFrame.width, height: bar)
+        }
+        for type in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
+            guard let button = standardWindowButton(type) else { continue }
+            let y = ((bar - button.frame.height) / 2).rounded(.down)
+            if button.frame.minY != y {
+                button.setFrameOrigin(NSPoint(x: button.frame.minX, y: y))
+            }
+        }
     }
 
     /// A click on the page behind closes the card. The sidebar stays usable: a
@@ -796,11 +931,14 @@ import AppKit
     @objc let id: String
     @objc let title: String
     @objc let systemImageName: String
+    /// The Space the window shows, where Open as Tab puts the page.
+    @objc let isSelected: Bool
 
-    init(id: String, title: String, systemImageName: String) {
+    init(id: String, title: String, systemImageName: String, isSelected: Bool = false) {
         self.id = id
         self.title = title
         self.systemImageName = systemImageName
+        self.isSelected = isSelected
     }
 }
 
@@ -837,5 +975,133 @@ final class BrowserPeekAddressField: NSTextField {
     /// Option-Command-click into the small window, off unless turned on.
     @objc static var opensOptionCommandClicksInLittleWindow: Bool {
         UserDefaults.standard.bool(forKey: BrowserUserPreferencesStore.littleWindowOptionCommandClickKey)
+    }
+}
+
+// MARK: - BrowserPeekOpenInButton
+
+/// The small window's "Open in <Space> ⌘O", with a chevron that lists the
+/// other Spaces.
+final class BrowserPeekOpenInButton: NSView {
+    override var mouseDownCanMoveWindow: Bool { false }
+
+    // MARK: Internal
+
+    var onOpen: () -> Void = {}
+    var onShowMenu: () -> Void = {}
+
+    var spaceTitle: String? {
+        didSet { updateTitle() }
+    }
+
+    // MARK: Private
+
+    private let surface = BrowserNativeSurface()
+    private let title = NSTextField(labelWithString: "")
+    private let badge = BrowserNativeSurface()
+    private let badgeLabel = NSTextField(labelWithString: "⌘O")
+    private let divider = BrowserNativeSurface()
+    private let chevron = NSImageView()
+
+    /// Fits the title, the key badge and the chevron.
+    var preferredWidth: CGFloat {
+        // The label's cell draws its text a few points inside its frame.
+        ceil(title.attributedStringValue.size().width) + 6 + 12 + 8 + badgeWidth + 8 + 1 + 28
+    }
+
+    private var badgeWidth: CGFloat { ceil(badgeLabel.attributedStringValue.size().width) + 10 }
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        surface.fillColor = NSColor.black.withAlphaComponent(0.35)
+        surface.strokeWidth = 0
+        surface.cornerRadius = 8
+        addSubview(surface)
+        title.lineBreakMode = .byTruncatingTail
+        badge.fillColor = NSColor.labelColor.withAlphaComponent(0.1)
+        badge.strokeWidth = 0
+        badge.cornerRadius = 5
+        badgeLabel.font = .systemFont(ofSize: 12, weight: .semibold)
+        badgeLabel.textColor = BrowserChromeColors.secondaryText
+        badge.addSubview(badgeLabel)
+        divider.fillColor = NSColor.labelColor.withAlphaComponent(0.12)
+        divider.strokeWidth = 0
+        chevron.image = NSImage(
+            systemSymbolName: "chevron.down",
+            accessibilityDescription: BrowserStrings.peekOpenInMenuTitle,
+        )?
+            .withSymbolConfiguration(.init(pointSize: 11, weight: .semibold))
+        chevron.contentTintColor = BrowserChromeColors.secondaryText
+        for view in [title, badge, divider, chevron] as [NSView] {
+            surface.addSubview(view)
+        }
+        setAccessibilityElement(true)
+        setAccessibilityRole(.button)
+        updateTitle()
+    }
+
+    @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func layout() {
+        super.layout()
+        surface.frame = bounds
+        let height = bounds.height
+        let chevronWidth: CGFloat = 28
+        chevron.frame = NSRect(x: bounds.width - chevronWidth, y: (height - 14) / 2, width: chevronWidth, height: 14)
+        divider.frame = NSRect(x: chevron.frame.minX - 1, y: 6, width: 1, height: max(height - 12, 0))
+        badge.frame = NSRect(
+            x: divider.frame.minX - 8 - badgeWidth,
+            y: (height - 20) / 2,
+            width: badgeWidth,
+            height: 20,
+        )
+        badgeLabel.frame = NSRect(x: 5, y: 2, width: badgeWidth - 10, height: 16)
+        title.frame = NSRect(x: 12, y: (height - 17) / 2, width: max(badge.frame.minX - 8 - 12, 0), height: 17)
+    }
+
+    override func acceptsFirstMouse(for _: NSEvent?) -> Bool { true }
+
+    override func mouseUp(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        guard bounds.contains(point) else { return }
+        if point.x >= divider.frame.minX {
+            onShowMenu()
+        } else {
+            onOpen()
+        }
+    }
+
+    override func accessibilityPerformPress() -> Bool {
+        onOpen()
+        return true
+    }
+
+    private func updateTitle() {
+        let text = NSMutableAttributedString(
+            string: BrowserStrings.peekOpenInPrefix,
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 13, weight: .medium),
+                .foregroundColor: BrowserChromeColors.secondaryText,
+            ],
+        )
+        text.append(NSAttributedString(
+            string: spaceTitle ?? BrowserStrings.peekOpenInTabAction,
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
+                .foregroundColor: BrowserChromeColors.primaryText,
+            ],
+        ))
+        title.attributedStringValue = spaceTitle == nil
+            ? NSAttributedString(
+                string: BrowserStrings.peekOpenInTabAction,
+                attributes: [
+                    .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
+                    .foregroundColor: BrowserChromeColors.primaryText,
+                ],
+            )
+            : text
+        setAccessibilityLabel(title.stringValue)
+        needsLayout = true
+        superview?.needsLayout = true
     }
 }

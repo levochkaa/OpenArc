@@ -5568,6 +5568,7 @@ std::string BrowserMediaVolumeScript(double volume) {
     }
     return [delegate peekSpacesForBrowserTabController:strongSelf];
   };
+  [session.panel refreshOpenInTitle];
   session.panel.onOpenInSplitView = ^{
     BrowserTabController *strongSelf = weakSelf;
     if (strongSelf == nil) {

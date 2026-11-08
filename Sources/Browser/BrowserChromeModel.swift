@@ -1056,7 +1056,14 @@ enum BrowserWindowMode: Equatable {
         }
         tabDriver.peekSpaces = { [weak self] in
             guard let self, supportsSpaces, canCreateTab else { return [] }
-            return spaces.map { BrowserPeekSpace(id: $0.id, title: $0.title, systemImageName: $0.systemImageName) }
+            return spaces.map {
+                BrowserPeekSpace(
+                    id: $0.id,
+                    title: $0.title,
+                    systemImageName: $0.systemImageName,
+                    isSelected: $0.id == selectedSpaceID,
+                )
+            }
         }
         tabDriver.onPeekClosedByUser = { [weak self] urlString, standalone in
             self?.registerPeekReopenUndo(urlString: urlString, standalone: standalone)

@@ -86,6 +86,35 @@ import Testing
         #expect(!panel.canStepThroughFindMatches)
     }
 
+    @Test func theSmallWindowBarNamesTheSpaceItOpensIn() {
+        let panel = BrowserPeekPanel.presentStandalone()
+        defer { panel.dismiss() }
+        panel.spacesProvider = {
+            [
+                BrowserPeekSpace(id: "a", title: "Home", systemImageName: "house"),
+                BrowserPeekSpace(id: "b", title: "Work", systemImageName: "briefcase", isSelected: true),
+            ]
+        }
+        panel.refreshOpenInTitle()
+        #expect(panel.openInButton.accessibilityLabel() == BrowserStrings.peekOpenInPrefix + "Work")
+        var opened = 0
+        panel.onOpenInTab = { opened += 1 }
+        #expect(panel.openInButton.accessibilityPerformPress())
+        #expect(opened == 1)
+        #expect(panel.openButton.isHidden, "The labeled button replaces the icon")
+        #expect(!panel.addressPill.isHidden && panel.addressPill.frame.maxX < panel.openInButton.frame.minX)
+
+        panel.update(urlString: "https://example.com/a")
+        let pasteboard = NSPasteboard.general
+        let saved = pasteboard.string(forType: .string)
+        defer {
+            pasteboard.clearContents()
+            if let saved { pasteboard.setString(saved, forType: .string) }
+        }
+        panel.copyLinkButton.performClick(nil)
+        #expect(pasteboard.string(forType: .string) == "https://example.com/a")
+    }
+
     @Test func smallWindowIsOptInAndOpensAStandaloneWindow() throws {
         let f = SidebarDragFixture(temporary: ["x"])
         #expect(!f.model.opensExternalLinksInLittleWindow, "Links keep opening as tabs by default")

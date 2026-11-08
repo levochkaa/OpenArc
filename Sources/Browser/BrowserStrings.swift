@@ -1147,6 +1147,11 @@ enum BrowserStrings {
         comment: "File menu item and command that opens a small window of its own.",
     )
 
+    static let peekOpenInPrefix = NSLocalizedString(
+        "browser.peek.open_in_prefix",
+        comment: "Start of the small window's button, followed by the Space's name: \"Open in Work\". Keep the trailing space.",
+    )
+
     static let peekOpenInMenuTitle = NSLocalizedString(
         "browser.peek.open_in",
         comment: "Header of the menu that moves a Peek card or small window into a Space as a tab.",

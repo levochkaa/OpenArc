@@ -249,6 +249,7 @@
 "browser.menu.reset_space_tabs" = "Reset all tabs in this Space";
 "browser.peek.address_placeholder" = "Search or enter address";
 "browser.peek.open_in" = "Open In";
+"browser.peek.open_in_prefix" = "Open in ";
 "browser.incognito.banner.title" = "Incognito";
 "browser.incognito.tabs.title" = "Incognito Tabs";
 "browser.menu.history" = "View History";
