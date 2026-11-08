@@ -29,6 +29,7 @@ import UIKit
     private let preferences: UserDefaults
     private let authSessionStore: any BrowserSyncAuthSessionStoring
     private let identityProvider: any BrowserAppleIdentityProviding
+    private let webSignInService: any BrowserWebSignInPresenting
     private let clientFactory: (BrowserSyncConfiguration) -> any BrowserMobileSyncRemoteServing
     private let pushDebounce: Duration
     private let pollInterval: Duration?
@@ -51,6 +52,7 @@ import UIKit
         preferences: UserDefaults = .standard,
         authSessionStore: any BrowserSyncAuthSessionStoring = BrowserAuthSessionStore(namespace: .profile("mobile")),
         identityProvider: any BrowserAppleIdentityProviding = BrowserMobileAppleSignInService(),
+        webSignInService: any BrowserWebSignInPresenting = BrowserMobileWebSignInService(),
         environment: [String: String] = ProcessInfo.processInfo.environment,
         packagedServerURL: String? = Bundle.main.object(forInfoDictionaryKey: "OpenArcSyncBaseURL") as? String,
         clientFactory: @escaping (BrowserSyncConfiguration) -> any BrowserMobileSyncRemoteServing = {
@@ -66,6 +68,7 @@ import UIKit
         self.preferences = preferences
         self.authSessionStore = authSessionStore
         self.identityProvider = identityProvider
+        self.webSignInService = webSignInService
         self.clientFactory = clientFactory
         self.pushDebounce = pushDebounce
         self.pollInterval = pollInterval
@@ -75,7 +78,8 @@ import UIKit
         self.dateProvider = dateProvider
         self.account = BrowserAccountStore(
             syncClient: nil, authSessionStore: authSessionStore, syncCoordinator: nil,
-            appleSignInService: identityProvider, deviceIdentity: Self.deviceIdentity,
+            appleSignInService: identityProvider, webSignInService: webSignInService,
+            deviceIdentity: Self.deviceIdentity,
         )
         super.init()
         document.syncSession = self
@@ -148,7 +152,8 @@ import UIKit
         // applier is attached and the aggregate scene gate is known.
         account = BrowserAccountStore(
             syncClient: client, authSessionStore: authSessionStore, syncCoordinator: service,
-            appleSignInService: identityProvider, deviceIdentity: Self.deviceIdentity,
+            appleSignInService: identityProvider, webSignInService: webSignInService,
+            deviceIdentity: Self.deviceIdentity,
         )
         observeAccount()
         service.setRuntimeActive(isForeground)
@@ -166,21 +171,30 @@ import UIKit
         }
     }
 
+    /// Native Sign in with Apple.
     func signIn(from window: UIWindow, attemptID: UUID = UUID()) async {
-        guard !Task.isCancelled, !account.isSigningIn else { return }
-        guard !window.isHidden, window.windowScene?.activationState == .foregroundActive else {
-            lastSyncError = BrowserMobileAppleSignInError.inactiveWindow.localizedDescription
-            return
-        }
-        let attempt = attemptID
-        signInAttempt = attempt
-        signInWindow = window
-        (identityProvider as? BrowserMobileAppleSignInService)?.setPresentationWindow(window)
-        await account.signInWithApple()
-        guard signInAttempt == attempt else { return }
-        signInAttempt = nil
-        signInWindow = nil
-        (identityProvider as? BrowserMobileAppleSignInService)?.setPresentationWindow(nil)
+        await runSignIn(from: window, attemptID: attemptID) { await $0.signInWithApple() }
+    }
+
+    /// A provider's sign-in page, presented over `window`.
+    func signIn(with provider: BrowserAccountProvider, from window: UIWindow, attemptID: UUID = UUID()) async {
+        await runSignIn(from: window, attemptID: attemptID) { await $0.signIn(with: provider) }
+    }
+
+    func requestEmailCode(_ email: String, from window: UIWindow, attemptID: UUID = UUID()) async {
+        await runSignIn(from: window, attemptID: attemptID) { await $0.requestEmailCode(email: email) }
+    }
+
+    func signIn(email: String, code: String, from window: UIWindow, attemptID: UUID = UUID()) async {
+        await runSignIn(from: window, attemptID: attemptID) { await $0.signIn(email: email, code: code) }
+    }
+
+    func loadProviders() async { await account.loadProviders() }
+
+    /// Back to entering an email; a running request belongs to its caller.
+    func cancelEmailSignIn() {
+        guard !account.isSigningIn else { return }
+        account.cancelEmailSignIn()
     }
 
     func cancelSignIn() {
@@ -188,7 +202,7 @@ import UIKit
         signInWindow = nil
         account.cancelSignIn()
         (identityProvider as? BrowserMobileAppleSignInService)?.cancel()
-        (identityProvider as? BrowserMobileAppleSignInService)?.setPresentationWindow(nil)
+        setPresentationWindow(nil)
     }
 
     func cancelSignIn(attemptID: UUID) {
@@ -212,6 +226,34 @@ import UIKit
         lastErrorPhase = nil
         syncService?.schedulePull()
         syncService?.schedulePush(snapshot: document.snapshot)
+    }
+
+    /// Every sign-in method follows the caller window: it must be in the
+    /// foreground to start, and its scene leaving ends the attempt. Only the
+    /// current attempt clears the shared state when it finishes.
+    private func runSignIn(
+        from window: UIWindow,
+        attemptID: UUID,
+        _ body: (BrowserAccountStore) async -> Void,
+    ) async {
+        guard !Task.isCancelled, !account.isSigningIn else { return }
+        guard !window.isHidden, window.windowScene?.activationState == .foregroundActive else {
+            lastSyncError = BrowserMobileAppleSignInError.inactiveWindow.localizedDescription
+            return
+        }
+        signInAttempt = attemptID
+        signInWindow = window
+        setPresentationWindow(window)
+        await body(account)
+        guard signInAttempt == attemptID else { return }
+        signInAttempt = nil
+        signInWindow = nil
+        setPresentationWindow(nil)
+    }
+
+    private func setPresentationWindow(_ window: UIWindow?) {
+        (identityProvider as? any BrowserMobileSignInWindowAnchoring)?.setPresentationWindow(window)
+        (webSignInService as? any BrowserMobileSignInWindowAnchoring)?.setPresentationWindow(window)
     }
 
     private func observeAccount() {

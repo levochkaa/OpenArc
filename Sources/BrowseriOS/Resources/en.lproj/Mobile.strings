@@ -76,6 +76,15 @@
 "Sync shares your Spaces, folders, and tab addresses with your other devices through this server." = "Sync shares your Spaces, folders, and tab addresses with your other devices through this server.";
 "Open this window to sign in." = "Open this window to sign in.";
 "Sign-in is already in progress." = "Sign-in is already in progress.";
+"Continue with Google" = "Continue with Google";
+"Continue with GitHub" = "Continue with GitHub";
+"Show Sign-In Options" = "Show Sign-In Options";
+"Email" = "Email";
+"Email Me a Code" = "Email Me a Code";
+"6-digit code" = "6-digit code";
+"Enter the 6-digit code sent to %@." = "Enter the 6-digit code sent to %@.";
+"Send Again" = "Send Again";
+"Use a Different Email" = "Use a Different Email";
 
 "Account" = "Account";
 "Select" = "Select";

@@ -13,6 +13,11 @@ import UIKit
     var changePublisher: AnyPublisher<Void, Never> { get }
     func configureServer(_ raw: String) throws
     func signIn(from window: UIWindow, attemptID: UUID) async
+    func signIn(with provider: BrowserAccountProvider, from window: UIWindow, attemptID: UUID) async
+    func requestEmailCode(_ email: String, from window: UIWindow, attemptID: UUID) async
+    func signIn(email: String, code: String, from window: UIWindow, attemptID: UUID) async
+    func loadProviders() async
+    func cancelEmailSignIn()
     func cancelSignIn(attemptID: UUID)
     func enableSync()
     func pauseSync()
@@ -44,6 +49,18 @@ extension BrowserMobileSyncSession: BrowserMobileAccountSessionPresenting {
         authorizationButtonType: .signIn,
         authorizationButtonStyle: .black,
     )
+    private let providerButtons: [BrowserAccountProvider: UIButton] = [
+        .google: UIButton(type: .system),
+        .github: UIButton(type: .system),
+    ]
+    private let loadProvidersButton = UIButton(type: .system)
+    private let emailField = UITextField()
+    private let sendCodeButton = UIButton(type: .system)
+    private let codeSentLabel = UILabel()
+    private let codeField = UITextField()
+    private let signInWithCodeButton = UIButton(type: .system)
+    private let sendAgainButton = UIButton(type: .system)
+    private let differentEmailButton = UIButton(type: .system)
     private let enableButton = UIButton(type: .system)
     private let pauseButton = UIButton(type: .system)
     private let resumeButton = UIButton(type: .system)
@@ -56,6 +73,10 @@ extension BrowserMobileSyncSession: BrowserMobileAccountSessionPresenting {
     private var signInAttempt: UUID?
     private var localError: String?
     private var renderedServerURL: URL?
+    /// The account whose sign-in methods this screen asked for; a new server
+    /// brings a new account.
+    private weak var providersAccount: BrowserAccountStore?
+    private var isShowingCodeEntry = false
 
     init(session: any BrowserMobileAccountSessionPresenting) {
         self.session = session
@@ -96,8 +117,14 @@ extension BrowserMobileSyncSession: BrowserMobileAccountSessionPresenting {
 
     func presentationControllerDidDismiss(_: UIPresentationController) { cancelOwnedSignIn() }
 
-    func textFieldShouldReturn(_: UITextField) -> Bool {
-        configureServer()
+    func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+        if textField === emailField {
+            requestEmailCode()
+        } else if textField === codeField {
+            signInWithCode()
+        } else {
+            configureServer()
+        }
         return true
     }
 
@@ -163,6 +190,7 @@ extension BrowserMobileSyncSession: BrowserMobileAccountSessionPresenting {
         signInButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 50).isActive = true
         signInButton.addTarget(self, action: #selector(signIn), for: .touchUpInside)
         stack.addArrangedSubview(signInButton)
+        makeOtherSignInMethods(in: stack)
         stack.addArrangedSubview(progress)
         configure(enableButton, title: "Enable Sync", id: "account.enable") { [weak self] in
             self?.session.enableSync()
@@ -181,6 +209,78 @@ extension BrowserMobileSyncSession: BrowserMobileAccountSessionPresenting {
         }
         for button in [enableButton, pauseButton, resumeButton, retryButton, signOutButton, cancelButton] {
             stack.addArrangedSubview(button)
+        }
+    }
+
+    /// The server's other sign-in methods: a button per web provider, then a
+    /// code sent by email.
+    private func makeOtherSignInMethods(in stack: UIStackView) {
+        let titles: [(BrowserAccountProvider, String)] = [
+            (.google, "Continue with Google"),
+            (.github, "Continue with GitHub"),
+        ]
+        for (provider, title) in titles {
+            guard let button = providerButtons[provider] else { continue }
+            configure(button, title: title, id: "account.continue.\(provider.rawValue)") { [weak self] in
+                self?.beginOwnedSignIn { session, window, attempt in
+                    await session.signIn(with: provider, from: window, attemptID: attempt)
+                }
+            }
+            stack.addArrangedSubview(button)
+        }
+        configure(loadProvidersButton, title: "Show Sign-In Options", id: "account.loadProviders") { [weak self] in
+            guard let session = self?.session else { return }
+            Task { await session.loadProviders() }
+        }
+        stack.addArrangedSubview(loadProvidersButton)
+        for (field, placeholder, id) in [
+            (emailField, "Email", "account.email"),
+            (codeField, "6-digit code", "account.code"),
+        ] {
+            field.borderStyle = .roundedRect
+            field.font = .preferredFont(forTextStyle: .body)
+            field.adjustsFontForContentSizeCategory = true
+            field.autocapitalizationType = .none
+            field.autocorrectionType = .no
+            field.placeholder = Self.localized(placeholder)
+            field.accessibilityLabel = field.placeholder
+            field.accessibilityIdentifier = id
+            field.delegate = self
+            field.heightAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
+        }
+        emailField.keyboardType = .emailAddress
+        emailField.textContentType = .emailAddress
+        emailField.returnKeyType = .send
+        codeField.keyboardType = .numberPad
+        codeField.textContentType = .oneTimeCode
+        codeField.returnKeyType = .done
+        configure(sendCodeButton, title: "Email Me a Code", id: "account.sendCode") { [weak self] in
+            self?.requestEmailCode()
+        }
+        codeSentLabel.numberOfLines = 0
+        codeSentLabel.font = .preferredFont(forTextStyle: .body)
+        codeSentLabel.adjustsFontForContentSizeCategory = true
+        codeSentLabel.textColor = .secondaryLabel
+        codeSentLabel.accessibilityIdentifier = "account.codeSent"
+        configure(signInWithCodeButton, title: "Sign In", id: "account.signInWithCode") { [weak self] in
+            self?.signInWithCode()
+        }
+        configure(sendAgainButton, title: "Send Again", id: "account.sendAgain") { [weak self] in
+            guard let self, let request = session.account.emailSignIn else { return }
+            beginOwnedSignIn { session, window, attempt in
+                await session.requestEmailCode(request.email, from: window, attemptID: attempt)
+            }
+        }
+        configure(differentEmailButton, title: "Use a Different Email", id: "account.differentEmail") { [weak self] in
+            self?.codeField.text = nil
+            self?.session.cancelEmailSignIn()
+        }
+        let views: [UIView] = [
+            emailField, sendCodeButton, codeSentLabel, codeField, signInWithCodeButton, sendAgainButton,
+            differentEmailButton,
+        ]
+        for view in views {
+            stack.addArrangedSubview(view)
         }
     }
 
@@ -204,8 +304,11 @@ extension BrowserMobileSyncSession: BrowserMobileAccountSessionPresenting {
         }
         serverField.isEnabled = !account.isAuthenticated && !account.isSigningIn
         serverButton.isEnabled = serverField.isEnabled
+        // Native Sign in with Apple works whether or not the server lists
+        // its web flow among the providers.
         signInButton.isHidden = account.isAuthenticated
         signInButton.isEnabled = account.isConfigured && !account.isSigningIn
+        renderOtherSignInMethods(account)
         enableButton.isHidden = !account.isAuthenticated || account.bindingState != .needsConsent
         consentLabel.isHidden = enableButton.isHidden
         pauseButton.isHidden = !account.isAuthenticated || account.bindingState != .enabled
@@ -243,6 +346,71 @@ extension BrowserMobileSyncSession: BrowserMobileAccountSessionPresenting {
         }
     }
 
+    private func renderOtherSignInMethods(_ account: BrowserAccountStore) {
+        let offersSignIn = account.isConfigured && !account.isAuthenticated
+        if offersSignIn, account.providers == nil, providersAccount !== account {
+            providersAccount = account
+            Task { [session] in await session.loadProviders() }
+        }
+        let providers = offersSignIn ? account.providers ?? [] : []
+        let isEnabled = !account.isSigningIn
+        for (provider, button) in providerButtons {
+            button.isHidden = !providers.contains(provider)
+            button.isEnabled = isEnabled
+        }
+        loadProvidersButton.isHidden = !offersSignIn || account.providers != nil || account.lastError == nil
+        loadProvidersButton.isEnabled = isEnabled
+        let request = providers.contains(.email) ? account.emailSignIn : nil
+        let showsEmail = providers.contains(.email) && request == nil
+        let showsCode = request != nil
+        let emailViews: [UIView] = [emailField, sendCodeButton]
+        for view in emailViews {
+            view.isHidden = !showsEmail
+        }
+        let codeViews: [UIView] = [
+            codeSentLabel,
+            codeField,
+            signInWithCodeButton,
+            sendAgainButton,
+            differentEmailButton,
+        ]
+        for view in codeViews {
+            view.isHidden = !showsCode
+        }
+        emailField.isEnabled = isEnabled
+        sendCodeButton.isEnabled = isEnabled
+        codeField.isEnabled = isEnabled
+        signInWithCodeButton.isEnabled = isEnabled
+        sendAgainButton.isEnabled = isEnabled && account.canResendEmailCode
+        differentEmailButton.isEnabled = isEnabled
+        if let request {
+            codeSentLabel.text = String(format: Self.localized("Enter the 6-digit code sent to %@."), request.email)
+        }
+        if showsCode, !isShowingCodeEntry {
+            codeField.text = nil
+            if view.window != nil {
+                codeField.becomeFirstResponder()
+            }
+        }
+        isShowingCodeEntry = showsCode
+    }
+
+    private func requestEmailCode() {
+        guard session.account.emailSignIn == nil else { return }
+        let email = emailField.text ?? ""
+        beginOwnedSignIn { session, window, attempt in
+            await session.requestEmailCode(email, from: window, attemptID: attempt)
+        }
+    }
+
+    private func signInWithCode() {
+        guard let request = session.account.emailSignIn else { return }
+        let code = codeField.text ?? ""
+        beginOwnedSignIn { session, window, attempt in
+            await session.signIn(email: request.email, code: code, from: window, attemptID: attempt)
+        }
+    }
+
     private func configureServer() {
         do {
             try session.configureServer(serverField.text ?? "")
@@ -255,12 +423,21 @@ extension BrowserMobileSyncSession: BrowserMobileAccountSessionPresenting {
     }
 
     @objc private func signIn() {
+        beginOwnedSignIn { session, window, attempt in
+            await session.signIn(from: window, attemptID: attempt)
+        }
+    }
+
+    /// Starts a sign-in this screen owns, so closing it cancels only that one.
+    private func beginOwnedSignIn(
+        _ body: @escaping @MainActor (any BrowserMobileAccountSessionPresenting, UIWindow, UUID) async -> Void,
+    ) {
         guard signInTask == nil, !session.account.isSigningIn, let window = view.window else { return }
         localError = nil
         let attempt = UUID()
         signInAttempt = attempt
         signInTask = Task { [weak self, session] in
-            await session.signIn(from: window, attemptID: attempt)
+            await body(session, window, attempt)
             guard let self, signInAttempt == attempt else { return }
             signInAttempt = nil
             signInTask = nil

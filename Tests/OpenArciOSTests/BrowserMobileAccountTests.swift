@@ -285,6 +285,24 @@ import UIKit
         }
     }
 
+    func signIn(with provider: BrowserAccountProvider, from _: UIWindow, attemptID: UUID) async {
+        signInAttempt = attemptID
+        await account.signIn(with: provider)
+    }
+
+    func requestEmailCode(_ email: String, from _: UIWindow, attemptID: UUID) async {
+        signInAttempt = attemptID
+        await account.requestEmailCode(email: email)
+    }
+
+    func signIn(email: String, code: String, from _: UIWindow, attemptID: UUID) async {
+        signInAttempt = attemptID
+        await account.signIn(email: email, code: code)
+    }
+
+    func loadProviders() async { await account.loadProviders() }
+    func cancelEmailSignIn() { account.cancelEmailSignIn() }
+
     func cancelSignIn(attemptID: UUID) {
         guard signInAttempt == attemptID else { return }
         signInAttempt = nil
