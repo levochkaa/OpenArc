@@ -4,8 +4,9 @@ import AppKit
 
 // MARK: - BrowserCaptureToastView
 
-/// A small note at the page's top right after a capture, before the first one, or
-/// after Copy URL. It takes the Space's pale color and leaves by itself.
+/// A small note at the page's top right after a capture, before the first one,
+/// after Copy URL or a zoom change. It takes the Space's pale color and leaves
+/// by itself.
 final class BrowserCaptureToastView: NSView {
     // MARK: Internal
 
@@ -13,8 +14,13 @@ final class BrowserCaptureToastView: NSView {
 
     static let height: CGFloat = 42
     static let copiedURLHeight: CGFloat = 46
+    static let zoomHeight: CGFloat = 41.5
 
     override var isFlipped: Bool { true }
+
+    /// Where the note sits against the page's top trailing corner, or nil for
+    /// the window's.
+    private(set) var pageCornerInset: CGSize?
 
     /// The height of what it shows now.
     private(set) var preferredHeight = BrowserCaptureToastView.height
@@ -32,6 +38,9 @@ final class BrowserCaptureToastView: NSView {
     private let keysLabel = NSTextField(labelWithString: "")
     private let trailingLabel = NSTextField(labelWithString: "")
     private var hideWork: DispatchWorkItem?
+    private var fadesOut = false
+    private var labelLeading: CGFloat = 12
+    private var labelOffset: CGFloat = 0
     private var png: Data?
     private var copiedURL: URL?
 
@@ -66,8 +75,8 @@ final class BrowserCaptureToastView: NSView {
         surface.frame = bounds
         let height = bounds.height
         let y = (height - 18) / 2
-        var x: CGFloat = 12
-        label.frame = NSRect(x: x, y: y, width: textWidth(label), height: 18)
+        var x = labelLeading
+        label.frame = NSRect(x: x, y: y + labelOffset, width: textWidth(label), height: 18)
         x = label.frame.maxX + 6
         if !keys.isHidden {
             keys.frame = NSRect(x: x, y: (Self.height - 24) / 2, width: textWidth(keysLabel) + 12, height: 24)
@@ -83,8 +92,28 @@ final class BrowserCaptureToastView: NSView {
         }
     }
 
+    /// The page's new zoom, such as "110%", for five seconds.
+    func showZoom(percent: Int) {
+        png = nil
+        copiedURL = nil
+        preferredHeight = Self.zoomHeight
+        pageCornerInset = CGSize(width: 8.5, height: 8)
+        labelLeading = 10.5
+        labelOffset = 1
+        label.stringValue = "\(percent)%"
+        keys.isHidden = true
+        trailingLabel.isHidden = true
+        saveButton.isHidden = true
+        shareButton.isHidden = true
+        preferredWidth = labelLeading * 2 + textWidth(label)
+        show(for: 4.8, fading: true)
+    }
+
     /// "Copied Current URL" and Share, after Copy URL from the menu or its shortcut.
     func showCopiedURL(_ url: URL) {
+        pageCornerInset = CGSize(width: 9, height: 8)
+        labelLeading = 12
+        labelOffset = 0
         png = nil
         copiedURL = url
         preferredHeight = Self.copiedURLHeight
@@ -99,6 +128,9 @@ final class BrowserCaptureToastView: NSView {
 
     /// "Screenshot Copied to Clipboard", Save and Share.
     func showCopied(png: Data) {
+        pageCornerInset = nil
+        labelLeading = 12
+        labelOffset = 0
         copiedURL = nil
         preferredHeight = Self.height
         self.png = png
@@ -113,6 +145,9 @@ final class BrowserCaptureToastView: NSView {
 
     /// The way to capture without the menu.
     func showHint(keysText: String) {
+        pageCornerInset = nil
+        labelLeading = 12
+        labelOffset = 0
         png = nil
         copiedURL = nil
         preferredHeight = Self.height
@@ -127,15 +162,34 @@ final class BrowserCaptureToastView: NSView {
         show(for: 4)
     }
 
-    private func show(for seconds: TimeInterval) {
+    private func show(for seconds: TimeInterval, fading: Bool = false) {
         hideWork?.cancel()
+        layer?.removeAllAnimations()
         isHidden = false
         alphaValue = 1
+        fadesOut = fading
         superview?.needsLayout = true
         needsLayout = true
-        let work = DispatchWorkItem { [weak self] in self?.isHidden = true }
+        let work = DispatchWorkItem { [weak self] in self?.hide() }
         hideWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: work)
+    }
+
+    private func hide() {
+        guard fadesOut else {
+            isHidden = true
+            return
+        }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.2
+            animator().alphaValue = 0
+        } completionHandler: { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, self.alphaValue == 0 else { return }
+                self.isHidden = true
+                self.alphaValue = 1
+            }
+        }
     }
 
     private func textWidth(_ field: NSTextField) -> CGFloat {

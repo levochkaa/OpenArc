@@ -2969,6 +2969,8 @@ import Testing
     )
     model.handleContextReady()
     driver.flushPendingCreateEvents()
+    var shown = [Int]()
+    model.onZoomChanged = { shown.append($0) }
 
     model.zoomIn()
     #expect(model.zoomPercent == 110)
@@ -2986,6 +2988,17 @@ import Testing
 
     model.resetZoom()
     #expect(model.zoomPercent == 100)
+    #expect(shown == [110, 100, 175, 100], "Each change shows its value; a refused one shows nothing")
+}
+
+@Test
+@MainActor func zoomNoteShowsThePercentAtThePageCorner() {
+    let toast = BrowserCaptureToastView(frame: .zero)
+    toast.showZoom(percent: 125)
+    #expect(!toast.isHidden)
+    #expect(toast.preferredHeight == BrowserCaptureToastView.zoomHeight)
+    #expect(toast.pageCornerInset != nil, "It sits at the page's corner like the Copy URL note")
+    #expect(toast.preferredWidth > 40 && toast.preferredWidth < 80)
 }
 
 @MainActor private func makeModel(

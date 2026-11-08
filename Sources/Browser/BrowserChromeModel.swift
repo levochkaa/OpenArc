@@ -399,6 +399,8 @@ enum BrowserWindowMode: Equatable {
     var onOpenLinkInNewWindow: ((URL) -> Bool)?
     /// UI-only: Copy URL from the menu or its shortcut copied this address.
     var onCopiedCurrentURL: ((URL) -> Void)?
+    /// The page's zoom changed through a command; the window shows the new value.
+    var onZoomChanged: ((Int) -> Void)?
     /// Hands tabs dropped on another window of this app to that window; false when it takes none.
     var onMoveTabsToWindow: ((Set<String>, NSWindow) -> Bool)?
     /// Pages a new window opens after its first one, in the background.
@@ -3519,6 +3521,7 @@ enum BrowserWindowMode: Equatable {
         zoomPercent = percent
         let zoomLevel = log(Double(percent) / 100) / log(1.2)
         tabDriver.setActiveTabZoomLevel(zoomLevel)
+        onZoomChanged?(percent)
     }
 
     func castCurrentPage() {

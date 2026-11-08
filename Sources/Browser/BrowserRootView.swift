@@ -261,6 +261,9 @@ final class BrowserRootView: NSView {
         model.onCopiedCurrentURL = { [weak self] url in
             self?.showCaptureToast { $0.showCopiedURL(url) }
         }
+        model.onZoomChanged = { [weak self] percent in
+            self?.showCaptureToast { $0.showZoom(percent: percent) }
+        }
         installCaptureDragMonitor()
         addSubview(libraryScrollObserver)
         bindLibrarySwipes()
@@ -834,7 +837,7 @@ final class BrowserRootView: NSView {
 
     private func layoutCaptureToast() {
         let width = captureToast.preferredWidth
-        guard captureToast.preferredHeight == BrowserCaptureToastView.copiedURLHeight else {
+        guard let inset = captureToast.pageCornerInset else {
             captureToast.frame = CGRect(
                 x: bounds.width - width - 8,
                 y: 8,
@@ -843,11 +846,11 @@ final class BrowserRootView: NSView {
             )
             return
         }
-        // Copy URL's note sits at the page's top right.
+        // Copy URL's and zoom's notes sit at the page's top right.
         let page = windowGeometry.contentFrame
         captureToast.frame = CGRect(
-            x: page.maxX - width - 9,
-            y: page.minY + 8,
+            x: page.maxX - width - inset.width,
+            y: page.minY + inset.height,
             width: width,
             height: captureToast.preferredHeight,
         )
