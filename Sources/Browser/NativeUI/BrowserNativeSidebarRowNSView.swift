@@ -100,7 +100,12 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
 
     private let selectionSurface = BrowserNativeSidebarSelectionSurface()
     private var folderIconID: String?
-    private let favicon = BrowserFaviconNSView()
+    private let favicon: BrowserFaviconNSView = {
+        let view = BrowserFaviconNSView()
+        view.fallback = .square
+        return view
+    }()
+
     private var splitChips = [BrowserNativeSidebarSplitChipView]()
     private let symbol = NSImageView()
     private let badge = NSImageView()
@@ -1085,7 +1090,12 @@ final class BrowserNativeSidebarSplitChipView: NSView {
     // MARK: Private
 
     private let selectionSurface = BrowserNativeSidebarSelectionSurface()
-    private let favicon = BrowserFaviconNSView()
+    private let favicon: BrowserFaviconNSView = {
+        let view = BrowserFaviconNSView()
+        view.fallback = .square
+        return view
+    }()
+
     private let symbol = NSImageView()
     private let titleLabel = BrowserNativeControls.label("", size: 12.5, weight: .medium)
 

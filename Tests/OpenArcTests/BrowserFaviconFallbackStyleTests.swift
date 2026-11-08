@@ -1,5 +1,6 @@
 // BrowserFaviconFallbackStyleTests.swift
 
+import AppKit
 import Foundation
 import Testing
 
@@ -72,4 +73,13 @@ private func makeFaviconTab(
         urlString: urlString,
         faviconURLString: faviconURLString,
     )
+}
+
+@MainActor @Test func sidebarIconsShowASquareForPagesWithoutAnIcon() {
+    let view = BrowserFaviconNSView(cache: BrowserFaviconCache())
+    view.update(url: nil, pageURLString: "https://example.com")
+    #expect(view.image !== BrowserFaviconNSView.squareImage, "Elsewhere a globe")
+    view.fallback = .square
+    #expect(view.image === BrowserFaviconNSView.squareImage)
+    #expect(BrowserFaviconNSView.squareImage.isTemplate, "Tinted with the row's text color")
 }

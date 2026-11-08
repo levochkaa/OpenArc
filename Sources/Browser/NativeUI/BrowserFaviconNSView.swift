@@ -4,6 +4,30 @@ import AppKit
 import Combine
 
 final class BrowserFaviconNSView: NSImageView {
+    /// What stands in for a page without an icon.
+    enum Fallback {
+        case globe
+        /// A plain rounded square, as in the sidebar.
+        case square
+    }
+
+    /// 14 pt with 3 pt corners inside a 16 pt icon, tinted by the view.
+    static let squareImage: NSImage = {
+        let image = NSImage(size: NSSize(width: 16, height: 16), flipped: false) { rect in
+            NSColor.black.setFill()
+            NSBezierPath(roundedRect: rect.insetBy(dx: 1, dy: 1), xRadius: 3, yRadius: 3).fill()
+            return true
+        }
+        image.isTemplate = true
+        return image
+    }()
+
+    // MARK: Internal
+
+    var fallback = Fallback.globe {
+        didSet { if fallback != oldValue { refreshImage() } }
+    }
+
     // MARK: Private
 
     private let cache: BrowserFaviconCache
@@ -22,8 +46,6 @@ final class BrowserFaviconNSView: NSImageView {
 
     @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
     isolated deinit { loadTask?.cancel() }
-
-    // MARK: Internal
 
     func update(url: URL?, pageURLString: String?) {
         let changed = self.url != url || self.pageURLString != pageURLString
@@ -47,6 +69,9 @@ final class BrowserFaviconNSView: NSImageView {
         } else if let cached = cache.image(for: url) {
             image = cached
             contentTintColor = nil
+        } else if fallback == .square {
+            image = Self.squareImage
+            contentTintColor = NSColor.labelColor.withAlphaComponent(0.13)
         } else {
             image = NSImage(systemSymbolName: "globe", accessibilityDescription: nil)
             contentTintColor = BrowserChromeColors.secondaryText
