@@ -63,7 +63,11 @@ final class BrowserFaviconNSView: NSImageView {
     }
 
     private func refreshImage() {
-        if BrowserFaviconFallbackStyle.style(forPageURLString: pageURLString) == .chromiumWebUI {
+        if let symbol = BrowserFaviconFallbackStyle.webUISymbol(forPageURLString: pageURLString) {
+            image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
+                .withSymbolConfiguration(.init(pointSize: 13, weight: .semibold))
+            contentTintColor = BrowserChromeColors.internalPageIcon
+        } else if BrowserFaviconFallbackStyle.style(forPageURLString: pageURLString) == .chromiumWebUI {
             image = NSImage(named: "ChromiumWebUIFavicon")
             contentTintColor = nil
         } else if let cached = cache.image(for: url) {

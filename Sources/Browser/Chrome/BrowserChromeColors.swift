@@ -11,6 +11,7 @@ enum BrowserChromeColors {
     static let incognitoBackground = rgb(13, 16, 19)
     static let incognitoEmptyPage = rgb(39, 39, 42)
     static let commandBarNeutralSelection = rgb(66, 72, 207)
+    static let internalPageIcon = rgb(56, 113, 224)
     static let contentBackground = adaptive(light: rgb(255, 255, 255), dark: rgb(20, 20, 22))
     static let rowHover = adaptive(light: rgba(0, 0, 0, 0.06), dark: rgba(255, 255, 255, 0.1))
     static let rowSelected = adaptive(light: rgba(0, 0, 0, 0.11), dark: rgba(255, 255, 255, 0.2))

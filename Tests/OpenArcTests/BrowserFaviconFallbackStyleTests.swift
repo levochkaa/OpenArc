@@ -83,3 +83,20 @@ private func makeFaviconTab(
     #expect(view.image === BrowserFaviconNSView.squareImage)
     #expect(BrowserFaviconNSView.squareImage.isTemplate, "Tinted with the row's text color")
 }
+
+@Test func internalPagesShowTheirOwnIcons() {
+    #expect(BrowserFaviconFallbackStyle.webUISymbol(forPageURLString: "openarc://history/") == "clock.arrow.circlepath")
+    #expect(BrowserFaviconFallbackStyle.webUISymbol(forPageURLString: "openarc://settings") == "gearshape.fill")
+    #expect(
+        BrowserFaviconFallbackStyle.webUISymbol(forPageURLString: "openarc://extensions") == nil,
+        "The generic icon",
+    )
+    #expect(BrowserFaviconFallbackStyle.webUISymbol(forPageURLString: "https://example.com/history") == nil)
+}
+
+@MainActor @Test func theHistoryTabShowsABlueClock() {
+    let view = BrowserFaviconNSView(cache: BrowserFaviconCache())
+    view.update(url: nil, pageURLString: "openarc://history/")
+    #expect(view.contentTintColor == BrowserChromeColors.internalPageIcon)
+    #expect(view.image != nil)
+}
