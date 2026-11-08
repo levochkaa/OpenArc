@@ -61,6 +61,20 @@ final class BrowserSplitPaneBarsView: NSView {
     /// Tab IDs of the bars on screen, in pane order.
     var paneTabIDs: [String] { model?.splitPaneLayoutTabIDs.filter { bars[$0] != nil } ?? [] }
 
+    /// The half the page leaves for the dragged tab, in this view's coordinates.
+    private var pageAsideDropPlace: CGRect? {
+        guard let edge = pageAsideEdge, let page = restingPageFrame else { return nil }
+        let gap = BrowserSplitPaneLayout.paneGap
+        let halfWidth = (page.width - gap) / 2
+        let halfHeight = (page.height - gap) / 2
+        return switch edge {
+        case .leading: CGRect(x: page.minX, y: page.minY, width: halfWidth, height: page.height)
+        case .trailing: CGRect(x: page.maxX - halfWidth, y: page.minY, width: halfWidth, height: page.height)
+        case .top: CGRect(x: page.minX, y: page.minY, width: page.width, height: halfHeight)
+        case .bottom: CGRect(x: page.minX, y: page.maxY - halfHeight, width: page.width, height: halfHeight)
+        }
+    }
+
     override func hitTest(_ point: NSPoint) -> NSView? {
         let hit = super.hitTest(point)
         return hit === self ? nil : hit
@@ -69,6 +83,19 @@ final class BrowserSplitPaneBarsView: NSView {
     /// The landing pane is outlined while a pane is dragged by its grip, and
     /// the new pane's place while a sidebar tab is dragged over the page.
     override func draw(_: NSRect) {
+        if let place = pageAsideDropPlace {
+            // With the page aside, the place it left is outlined, light and empty.
+            let ring: CGFloat = 1.5
+            let path = NSBezierPath(
+                roundedRect: place.insetBy(dx: ring / 2, dy: ring / 2),
+                xRadius: BrowserSplitPaneLayout.paneCornerRadius,
+                yRadius: BrowserSplitPaneLayout.paneCornerRadius,
+            )
+            path.lineWidth = ring
+            NSColor.white.withAlphaComponent(0.45).setStroke()
+            path.stroke()
+            return
+        }
         guard pageAsideEdge == nil,
               let target = pageDropPreview ?? paneDropTargetTabID.flatMap({ paneRects[$0] })
         else { return }
@@ -223,6 +250,9 @@ final class BrowserSplitPaneBarsView: NSView {
             pageDropPreview = preview
         } else if asideChanged {
             onPageDropPreviewChange?()
+        }
+        if asideChanged {
+            needsDisplay = true
         }
     }
 
