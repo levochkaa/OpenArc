@@ -96,3 +96,49 @@ import Testing
     }
     #expect(canceled == ["running"])
 }
+
+@MainActor private func update(_ id: String, _ state: BrowserDownloadState) -> BrowserDownloadUpdate {
+    BrowserDownloadUpdate(
+        id: id,
+        fileName: "\(id).zip",
+        urlString: "https://example.com/\(id).zip",
+        fullPath: "/tmp/\(id).zip",
+        receivedBytes: 10,
+        totalBytes: 100,
+        currentSpeedBytesPerSecond: 5,
+        state: state,
+    )
+}
+
+@Test
+@MainActor func finishedDownloadsOutliveTheWindowAndReachTheProfilesOtherWindows() {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent("Downloads-\(UUID()).json")
+    defer { try? FileManager.default.removeItem(at: file) }
+    let history = BrowserDownloadHistory(fileURL: file)
+    let first = BrowserDownloadsModel(history: history)
+    let second = BrowserDownloadsModel(history: history)
+
+    first.apply(update("a", .inProgress))
+    #expect(history.items.isEmpty, "A running download is not history yet")
+    first.apply(update("a", .completed))
+    first.apply(update("b", .canceled))
+    #expect(Set(second.items.map(\.id)) == ["a", "b"], "The other window lists them at once")
+
+    let relaunched = BrowserDownloadsModel(history: BrowserDownloadHistory(fileURL: file))
+    #expect(Set(relaunched.items.map(\.fileName)) == ["a.zip", "b.zip"])
+    #expect(relaunched.items.first { $0.fileName == "a.zip" }?.state == .completed)
+    #expect(relaunched.items.allSatisfy { $0.currentSpeedBytesPerSecond == 0 })
+    relaunched.apply(update("a", .completed))
+    #expect(relaunched.items.count == 3, "The engine's new download 'a' is not the kept one")
+
+    second.clearFinishedDownloads()
+    #expect(first.items.isEmpty, "Clear Downloads clears every window")
+    #expect(BrowserDownloadHistory(fileURL: file).items.isEmpty)
+}
+
+@Test
+@MainActor func aWindowWithoutHistoryKeepsItsDownloadsToItself() {
+    let model = BrowserDownloadsModel()
+    model.apply(update("c", .completed))
+    #expect(model.items.map(\.id) == ["c"])
+}

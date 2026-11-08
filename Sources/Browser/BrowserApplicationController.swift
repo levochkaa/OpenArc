@@ -70,6 +70,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
     private var agentAccessObservation: AnyCancellable?
 
     private var smallWindowExtensionPresenters = [ObjectIdentifier: BrowserNativeExtensionPopoverPresenter]()
+    private var downloadHistories = [String: BrowserDownloadHistory]()
 
     /// Browser windows in front-to-back order.
     var appleScriptWindows: [BrowserScriptWindow] {
@@ -1271,6 +1272,14 @@ NSMenuDelegate, NSUserInterfaceValidations {
     func searchSmallWindowAddress(_ sender: Any?) {
         guard let panel = (sender as? BrowserPeekPanel) ?? focusedSmallWindow else { return }
         _ = presentSmallWindowSearch(in: panel, initialQuery: panel.addressForEditing)
+    }
+
+    /// One download history per profile, shared by its windows.
+    private func downloadHistory(forProfileID id: String, in directory: URL) -> BrowserDownloadHistory {
+        if let history = downloadHistories[id] { return history }
+        let history = BrowserDownloadHistory(fileURL: directory.appendingPathComponent("OpenArc Downloads.json"))
+        downloadHistories[id] = history
+        return history
     }
 
     private func smallWindowExtensionPresenter(for model: BrowserChromeModel)
@@ -3872,6 +3881,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
             shortcutStore: shortcutStore,
             bookmarksModel: source?.chromeModel.bookmarksModel ?? bookmarksModel,
             historyStore: historyStore,
+            downloadsModel: BrowserDownloadsModel(history: downloadHistory(
+                forProfileID: profile.id,
+                in: profileDirectoryURL,
+            )),
             extensionManager: BrowserChromiumExtensionManager(profileDirectoryURL: profileDirectoryURL),
             extensionSidePanelDriver: BrowserExtensionSidePanelController(profileCachePath: profileDirectoryURL.path),
             extensionActionPopupDriver: BrowserExtensionActionPopupController(profileCachePath: profileDirectoryURL
@@ -4122,6 +4135,12 @@ NSMenuDelegate, NSUserInterfaceValidations {
             historyStore: blank
                 ? BrowserChromiumHistoryStore(profileDirectoryCandidates: profileDirectoryCandidates)
                 : BrowserEmptyHistoryStore(),
+            // A blank window lists and keeps the profile's downloads; an incognito one only its own.
+            downloadsModel: BrowserDownloadsModel(history: blank
+                ? sourceProfile.flatMap { profile in
+                    profileDirectoryCandidates.first.map { downloadHistory(forProfileID: profile.id, in: $0) }
+                }
+                : nil),
             extensionManager: BrowserEmptyExtensionManager(),
             windowMode: blank ? .blank : .incognito,
             commandHandler: { [weak self] commandID, owner in

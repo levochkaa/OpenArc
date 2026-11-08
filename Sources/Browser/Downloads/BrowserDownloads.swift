@@ -6,7 +6,7 @@ import Foundation
 
 // MARK: - BrowserDownloadState
 
-enum BrowserDownloadState: String, Equatable {
+enum BrowserDownloadState: String, Codable, Equatable {
     case inProgress
     case completed
     case canceled
@@ -48,7 +48,7 @@ struct BrowserDownloadUpdate: Equatable {
 
 // MARK: - BrowserDownloadItem
 
-struct BrowserDownloadItem: Identifiable, Equatable {
+struct BrowserDownloadItem: Identifiable, Codable, Equatable {
     let id: String
     var fileName: String
     var urlString: String
@@ -76,6 +76,72 @@ struct BrowserDownloadItem: Identifiable, Equatable {
 
         return URL(fileURLWithPath: fullPath, isDirectory: false)
     }
+
+    func withID(_ id: String) -> Self {
+        Self(
+            id: id, fileName: fileName, urlString: urlString, fullPath: fullPath, receivedBytes: receivedBytes,
+            totalBytes: totalBytes, currentSpeedBytesPerSecond: currentSpeedBytesPerSecond, state: state,
+            startedAt: startedAt, updatedAt: updatedAt, finishedAt: finishedAt,
+        )
+    }
+}
+
+// MARK: - BrowserDownloadHistory
+
+/// A profile's finished downloads, kept in a file so that the Library and the
+/// sidebar's tray list them after a relaunch. Every window of the profile
+/// records into it and hears what the others record.
+@MainActor final class BrowserDownloadHistory {
+    static let didChangeNotification = Notification.Name("BrowserDownloadHistoryDidChange")
+    static let maximumItems = 300
+
+    private(set) var items: [BrowserDownloadItem]
+
+    private let fileURL: URL?
+
+    init(fileURL: URL?) {
+        self.fileURL = fileURL
+        let data = fileURL.flatMap { try? Data(contentsOf: $0) }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .secondsSince1970
+        // The engine numbers downloads anew at each launch; kept ones get ids of their own.
+        self.items = (data.flatMap { try? decoder.decode([BrowserDownloadItem].self, from: $0) } ?? [])
+            .filter(\.state.isFinished)
+            .map { $0.withID("kept-" + UUID().uuidString) }
+    }
+
+    func record(_ item: BrowserDownloadItem) {
+        guard item.state.isFinished else { return }
+        var item = item
+        item.currentSpeedBytesPerSecond = 0
+        items.removeAll { $0.id == item.id }
+        items.insert(item, at: 0)
+        items = Array(items.sorted { $0.startedAt > $1.startedAt }.prefix(Self.maximumItems))
+        changed()
+    }
+
+    func removeAll() {
+        guard !items.isEmpty else { return }
+        items = []
+        changed()
+    }
+
+    private func changed() {
+        save()
+        NotificationCenter.default.post(name: Self.didChangeNotification, object: self)
+    }
+
+    private func save() {
+        guard let fileURL else { return }
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .secondsSince1970
+        guard let data = try? encoder.encode(items) else { return }
+        try? FileManager.default.createDirectory(
+            at: fileURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true,
+        )
+        try? data.write(to: fileURL, options: .atomic)
+    }
 }
 
 // MARK: - BrowserDownloadsModel
@@ -101,6 +167,8 @@ struct BrowserDownloadItem: Identifiable, Equatable {
 
     private let dateProvider: () -> Date
     private let workspace: NSWorkspace
+    private let history: BrowserDownloadHistory?
+    private var historyObserver: NSObjectProtocol?
 
     var hasActiveDownloads: Bool {
         items.contains { !$0.state.isFinished }
@@ -113,9 +181,26 @@ struct BrowserDownloadItem: Identifiable, Equatable {
     init(
         dateProvider: @escaping () -> Date = Date.init,
         workspace: NSWorkspace = .shared,
+        history: BrowserDownloadHistory? = nil,
     ) {
         self.dateProvider = dateProvider
         self.workspace = workspace
+        self.history = history
+        guard let history else { return }
+        self.items = history.items
+        self.historyObserver = NotificationCenter.default.addObserver(
+            forName: BrowserDownloadHistory.didChangeNotification,
+            object: history,
+            queue: .main,
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.mergeHistory() }
+        }
+    }
+
+    isolated deinit {
+        if let historyObserver {
+            NotificationCenter.default.removeObserver(historyObserver)
+        }
     }
 
     func apply(_ update: BrowserDownloadUpdate) {
@@ -140,6 +225,7 @@ struct BrowserDownloadItem: Identifiable, Equatable {
             } else if !update.state.isFinished {
                 items[index].finishedAt = nil
             }
+            history?.record(items[index])
             return
         }
 
@@ -159,10 +245,12 @@ struct BrowserDownloadItem: Identifiable, Equatable {
             ),
             at: 0,
         )
+        history?.record(items[0])
     }
 
     func clearFinishedDownloads() {
         items.removeAll { $0.state.isFinished }
+        history?.removeAll()
     }
 
     func cancel(_ item: BrowserDownloadItem) {
@@ -209,6 +297,19 @@ struct BrowserDownloadItem: Identifiable, Equatable {
             BrowserStrings.downloadsInterruptedDetail
         case .inProgress:
             progressDetailText(for: item)
+        }
+    }
+
+    /// What other windows of the profile finished, and a clear made in one of them.
+    private func mergeHistory() {
+        guard let history else { return }
+        let recorded = Dictionary(history.items.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var merged = items.filter { !$0.state.isFinished || recorded[$0.id] != nil }
+        let known = Set(merged.map(\.id))
+        merged += history.items.filter { !known.contains($0.id) }
+        merged.sort { $0.startedAt > $1.startedAt }
+        if merged != items {
+            items = merged
         }
     }
 
