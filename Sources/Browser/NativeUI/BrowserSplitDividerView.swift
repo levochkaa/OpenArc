@@ -22,6 +22,9 @@ import QuartzCore
     @objc var onDragEnd: (() -> Void)?
     @objc var onReset: (() -> Void)?
 
+    /// The grip shows on hover; the edge of docked Developer Tools has none.
+    @objc var showsGrip = true
+
     /// Panes are stacked top to bottom, so the divider moves vertically.
     @objc var isVerticalSplit = false {
         didSet {
@@ -130,7 +133,7 @@ import QuartzCore
 
     /// The grip fades over 0.16 s.
     private func updateGrip() {
-        let opacity: Float = isHovered || isDragging ? 1 : 0
+        let opacity: Float = showsGrip && (isHovered || isDragging) ? 1 : 0
         guard grip.opacity != opacity else { return }
         let fade = CABasicAnimation(keyPath: "opacity")
         fade.fromValue = grip.presentation()?.opacity ?? grip.opacity

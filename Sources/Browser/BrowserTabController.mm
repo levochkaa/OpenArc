@@ -1882,6 +1882,45 @@ void SyncBrowserViewPaneFrame(CefRefPtr<CefBrowser> browser, NSRect frame) {
                              BottomCornersOfLayer(browserView.layer));
 }
 
+// A page beside docked Developer Tools takes only its part of the pane; the
+// viewport still rounds the outer corners.
+void SyncBrowserViewFrameInRect(CefRefPtr<CefBrowser> browser, NSRect frame) {
+  NSView *browserView = BrowserViewForBrowser(browser);
+  if (browserView == nil) {
+    return;
+  }
+  browserView.autoresizingMask = NSViewNotSizable;
+  if (!NSEqualRects(browserView.frame, frame)) {
+    browserView.frame = frame;
+  }
+  SetBrowserViewCornerRadius(browserView, 0, 0);
+}
+
+// Share of a pane that docked Developer Tools take, kept while the app runs
+// and changed by dragging their edge.
+constexpr CGFloat kDockedDevToolsDefaultFraction = 0.3235;
+CGFloat gDockedDevToolsFraction = kDockedDevToolsDefaultFraction;
+// The handle on the tools' inner edge, over their own window so the page's
+// scroll bar beside it stays free.
+constexpr CGFloat kDockedDevToolsHandleWidth = 5;
+constexpr CGFloat kDockedDevToolsMinimumWidth = 240;
+
+CGFloat DockedDevToolsWidth(CGFloat paneWidth) {
+  const CGFloat minimum = MIN(kDockedDevToolsMinimumWidth, floor(paneWidth / 2));
+  const CGFloat width = round(paneWidth * gDockedDevToolsFraction);
+  return MIN(MAX(width, minimum), paneWidth - minimum);
+}
+
+// The layer corner at a visual corner; MinY is the bottom unless the layer
+// renders flipped.
+CACornerMask LayerCornerAt(CALayer *layer, BOOL top, BOOL right) {
+  const BOOL maxY = layer.contentsAreFlipped ? !top : top;
+  if (maxY) {
+    return right ? kCALayerMaxXMaxYCorner : kCALayerMinXMaxYCorner;
+  }
+  return right ? kCALayerMaxXMinYCorner : kCALayerMinXMinYCorner;
+}
+
 NSView *BrowserViewForBrowser(CefRefPtr<CefBrowser> browser) {
   if (!browser) {
     return nil;
@@ -3810,6 +3849,7 @@ struct TabRecord {
                          sourceTabID:(NSString *)sourceTabID
                    targetDisposition:(cef_window_open_disposition_t)targetDisposition;
 - (void)syncBrowserFrames;
+- (void)expectDevToolsForTabID:(NSString *)tabID;
 - (void)updateBrowserVisibility;
 - (void)updateBrowserVisibilityFocusingActiveTab:(BOOL)focusActive;
 - (void)handleFocusForTabID:(NSString *)tabID;
@@ -4062,6 +4102,14 @@ std::string BrowserMediaVolumeScript(double volume) {
   NSString *_activeTabID;
   // The tab whose page is in fullscreen through the Fullscreen API.
   NSString *_pageFullscreenTabID;
+  // Developer Tools shown beside a tab's page, by tab: their own window made a
+  // borderless child of this one.
+  NSMutableDictionary<NSString *, NSWindow *> *_dockedDevTools;
+  NSMutableDictionary<NSString *, NSArray *> *_dockedDevToolsObservers;
+  NSMutableDictionary<NSString *, BrowserSplitDividerView *> *_dockedDevToolsHandles;
+  NSString *_pendingDevToolsTabID;
+  NSSet<NSWindow *> *_windowsBeforeDevTools;
+  NSUInteger _devToolsRequest;
   NSArray<NSString *> *_visibleLayoutTabIDs;
   BOOL _visibleLayoutVertical;
   NSArray<NSNumber *> *_visibleLayoutFractions;
@@ -4330,14 +4378,23 @@ std::string BrowserMediaVolumeScript(double volume) {
     [self hideSplitDividersFromIndex:0];
     [self reportSplitPaneTabIDs:@[] frames:@[]];
   }
+  std::map<std::string, NSRect> devToolsPanes;
   if (hostView == nil || keys.empty()) {
+    [self layoutDockedDevToolsInPanes:devToolsPanes split:NO];
     return;
   }
   if (keys.size() == 1) {
     auto it = _tabRecords.find(keys.front());
     if (it != _tabRecords.end()) {
-      SyncBrowserViewFrame(hostView, it->second.browser);
+      if ([self showsDockedDevToolsForKey:keys.front()]) {
+        const NSRect pane = hostView.bounds;
+        devToolsPanes[keys.front()] = pane;
+        SyncBrowserViewFrameInRect(it->second.browser, [self pageFrameBesideDevToolsInPane:pane]);
+      } else {
+        SyncBrowserViewFrame(hostView, it->second.browser);
+      }
     }
+    [self layoutDockedDevToolsInPanes:devToolsPanes split:NO];
     return;
   }
   NSMutableArray<NSNumber *> *fractions = [NSMutableArray array];
@@ -4365,10 +4422,13 @@ std::string BrowserMediaVolumeScript(double volume) {
     [paneTabIDs addObject:ToNSString(keys[index])];
     auto it = _tabRecords.find(keys[index]);
     if (it != _tabRecords.end()) {
-      SyncBrowserViewPaneFrame(
-          it->second.browser,
-          [BrowserSplitPaneLayout webContentFrameForPaneFrame:frames[index].rectValue
-                                                      flipped:hostView.isFlipped]);
+      NSRect pane = [BrowserSplitPaneLayout webContentFrameForPaneFrame:frames[index].rectValue
+                                                                flipped:hostView.isFlipped];
+      if ([self showsDockedDevToolsForKey:keys[index]]) {
+        devToolsPanes[keys[index]] = pane;
+        pane = [self pageFrameBesideDevToolsInPane:pane];
+      }
+      SyncBrowserViewPaneFrame(it->second.browser, pane);
     }
     if (keys[index] == activeKey) {
       [self showSplitFocusRingInHostView:hostView frame:frames[index].rectValue];
@@ -4378,7 +4438,279 @@ std::string BrowserMediaVolumeScript(double volume) {
   if (!showsFocusRing) {
     _splitFocusRing.hidden = YES;
   }
+  [self layoutDockedDevToolsInPanes:devToolsPanes split:YES];
   [self reportSplitPaneTabIDs:paneTabIDs frames:frames];
+}
+
+#pragma mark - Docked Developer Tools
+
+// CEF shows Developer Tools in a window of their own. The window that appears
+// after a request becomes a borderless child laid out beside the tab's page.
+- (void)expectDevToolsForTabID:(NSString *)tabID {
+  if (tabID == nil || _dockedDevTools[tabID] != nil) {
+    return;
+  }
+  _pendingDevToolsTabID = [tabID copy];
+  _windowsBeforeDevTools = [NSSet setWithArray:NSApp.windows];
+  [self findDevToolsWindowForRequest:++_devToolsRequest attempt:0];
+}
+
+- (void)findDevToolsWindowForRequest:(NSUInteger)request attempt:(int)attempt {
+  if (request != _devToolsRequest || _pendingDevToolsTabID == nil) {
+    return;
+  }
+  Class engineWindowClass = NSClassFromString(@"CefNSWindow");
+  for (NSWindow *window in NSApp.windows) {
+    if ([_windowsBeforeDevTools containsObject:window] || !window.isVisible ||
+        (engineWindowClass != Nil && ![window isKindOfClass:engineWindowClass])) {
+      continue;
+    }
+    NSString *tabID = _pendingDevToolsTabID;
+    _pendingDevToolsTabID = nil;
+    _windowsBeforeDevTools = nil;
+    [self dockDevToolsWindow:window forTabID:tabID];
+    return;
+  }
+  if (attempt >= 150) {
+    _pendingDevToolsTabID = nil;
+    _windowsBeforeDevTools = nil;
+    return;
+  }
+  __weak BrowserTabController *weakSelf = self;
+  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 20 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
+    [weakSelf findDevToolsWindowForRequest:request attempt:attempt + 1];
+  });
+}
+
+- (void)dockDevToolsWindow:(NSWindow *)window forTabID:(NSString *)tabID {
+  if (_tabRecords.find(ToStdString(tabID)) == _tabRecords.end() || _hostView.window == nil) {
+    return;
+  }
+  if (_dockedDevTools == nil) {
+    _dockedDevTools = [NSMutableDictionary dictionary];
+    _dockedDevToolsObservers = [NSMutableDictionary dictionary];
+    _dockedDevToolsHandles = [NSMutableDictionary dictionary];
+  }
+  // The engine's frame view always draws a title bar; a full-size content
+  // view under a hidden one leaves only the tools.
+  window.styleMask = NSWindowStyleMaskBorderless | NSWindowStyleMaskFullSizeContentView;
+  window.titlebarAppearsTransparent = YES;
+  window.titleVisibility = NSWindowTitleHidden;
+  for (NSView *view in window.contentView.superview.subviews) {
+    if ([NSStringFromClass(view.class) isEqualToString:@"NSTitlebarContainerView"]) {
+      view.hidden = YES;
+    }
+  }
+  window.hasShadow = NO;
+  window.opaque = NO;
+  window.backgroundColor = NSColor.clearColor;
+  window.excludedFromWindowsMenu = YES;
+  NSView *frameView = window.contentView.superview;
+  BrowserSplitDividerView *handle = [self dockedDevToolsHandleForTabID:tabID];
+  handle.frame = NSMakeRect(0, 0, kDockedDevToolsHandleWidth, NSHeight(frameView.bounds));
+  handle.autoresizingMask = NSViewHeightSizable | NSViewMaxXMargin;
+  [frameView addSubview:handle positioned:NSWindowAbove relativeTo:nil];
+
+  __weak BrowserTabController *weakSelf = self;
+  __weak NSWindow *weakWindow = window;
+  NSString *key = [tabID copy];
+  NSNotificationCenter *center = NSNotificationCenter.defaultCenter;
+  id closeObserver = [center addObserverForName:NSWindowWillCloseNotification
+                                         object:window
+                                          queue:nil
+                                     usingBlock:^(NSNotification *) {
+    [weakSelf forgetDockedDevToolsForTabID:key];
+  }];
+  // The browser window stays main while the tools have the keyboard, so it
+  // still looks active, as one window would.
+  id mainObserver = [center addObserverForName:NSWindowDidBecomeMainNotification
+                                        object:window
+                                         queue:nil
+                                    usingBlock:^(NSNotification *) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+      [weakWindow.parentWindow makeMainWindow];
+    });
+  }];
+  _dockedDevTools[key] = window;
+  _dockedDevToolsObservers[key] = @[ closeObserver, mainObserver ];
+  [self syncBrowserFrames];
+}
+
+- (void)forgetDockedDevToolsForTabID:(NSString *)tabID {
+  NSWindow *window = _dockedDevTools[tabID];
+  if (window == nil) {
+    return;
+  }
+  for (id observer in _dockedDevToolsObservers[tabID]) {
+    [NSNotificationCenter.defaultCenter removeObserver:observer];
+  }
+  // Closed tools hand the keyboard back to their page.
+  NSWindow *parent = window.parentWindow;
+  if (window.isKeyWindow && parent != nil) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+      [parent makeKeyAndOrderFront:nil];
+    });
+  }
+  [parent removeChildWindow:window];
+  [_dockedDevTools removeObjectForKey:tabID];
+  [_dockedDevToolsObservers removeObjectForKey:tabID];
+  [_dockedDevToolsHandles[tabID] removeFromSuperview];
+  [_dockedDevToolsHandles removeObjectForKey:tabID];
+  [self syncBrowserFrames];
+}
+
+// Dragging the tools' edge sets their share of every pane; a double click
+// gives them their first share again.
+- (BrowserSplitDividerView *)dockedDevToolsHandleForTabID:(NSString *)tabID {
+  BrowserSplitDividerView *handle = _dockedDevToolsHandles[tabID];
+  if (handle != nil) {
+    return handle;
+  }
+  handle = [[BrowserSplitDividerView alloc] initWithFrame:NSZeroRect];
+  handle.showsGrip = NO;
+  __weak BrowserTabController *weakSelf = self;
+  __weak BrowserSplitDividerView *weakHandle = handle;
+  handle.onDrag = ^(NSPoint point) {
+    [weakSelf dragDockedDevToolsHandle:weakHandle toPoint:point];
+  };
+  handle.onReset = ^{
+    gDockedDevToolsFraction = kDockedDevToolsDefaultFraction;
+    [weakSelf syncBrowserFrames];
+  };
+  _dockedDevToolsHandles[tabID] = handle;
+  return handle;
+}
+
+- (void)dragDockedDevToolsHandle:(BrowserSplitDividerView *)handle toPoint:(NSPoint)point {
+  NSString *tabID = [_dockedDevToolsHandles allKeysForObject:handle].firstObject;
+  NSWindow *devTools = handle.window;
+  BrowserTabHostView *hostView = _hostView;
+  NSWindow *parent = hostView.window;
+  if (tabID == nil || devTools == nil || parent == nil) {
+    return;
+  }
+  // The pane runs from the page's left edge to the tools' right edge.
+  const std::vector<std::string> keys = [self visiblePaneKeys];
+  auto it = _tabRecords.find(ToStdString(tabID));
+  NSView *pageView = it == _tabRecords.end() ? nil : BrowserViewForBrowser(it->second.browser);
+  if (pageView == nil) {
+    return;
+  }
+  const NSPoint onScreen = [devTools convertPointToScreen:[handle.superview convertPoint:point toView:nil]];
+  point = [hostView convertPoint:[parent convertPointFromScreen:onScreen] fromView:nil];
+  const NSRect toolsInWindow = [parent convertRectFromScreen:devTools.frame];
+  const CGFloat paneMaxX = NSMaxX([hostView convertRect:toolsInWindow fromView:nil]);
+  const CGFloat paneWidth = paneMaxX - NSMinX(pageView.frame);
+  if (paneWidth <= 0) {
+    return;
+  }
+  gDockedDevToolsFraction = MIN(MAX((paneMaxX - point.x) / paneWidth, 0.0), 1.0);
+  [self layoutVisiblePanes:keys];
+}
+
+- (BOOL)showsDockedDevToolsForKey:(const std::string &)key {
+  return _pageFullscreenTabID == nil && _dockedDevTools[ToNSString(key)] != nil;
+}
+
+- (NSRect)pageFrameBesideDevToolsInPane:(NSRect)pane {
+  const CGFloat width = DockedDevToolsWidth(NSWidth(pane));
+  return NSMakeRect(NSMinX(pane), NSMinY(pane), NSWidth(pane) - width, NSHeight(pane));
+}
+
+// Shows the tools of tabs on screen at the right of their pane and puts the
+// others away. A window not on screen yet, or minimized, keeps them as they are.
+// In a split they stay inside the focused pane's border and round its bottom
+// corner like the page.
+- (void)layoutDockedDevToolsInPanes:(const std::map<std::string, NSRect> &)panes split:(BOOL)split {
+  if (_dockedDevTools.count == 0) {
+    return;
+  }
+  BrowserTabHostView *hostView = _hostView;
+  NSWindow *parent = hostView.window;
+  if (parent != nil && !parent.isVisible) {
+    return;
+  }
+  for (NSString *tabID in _dockedDevTools.allKeys) {
+    NSWindow *devTools = _dockedDevTools[tabID];
+    auto pane = panes.find(ToStdString(tabID));
+    if (pane == panes.end() || parent == nil) {
+      [devTools.parentWindow removeChildWindow:devTools];
+      if (devTools.isVisible) {
+        [devTools orderOut:nil];
+      }
+      continue;
+    }
+    const NSRect paneFrame = pane->second;
+    const CGFloat width = DockedDevToolsWidth(NSWidth(paneFrame));
+    NSRect inHost = NSMakeRect(NSMaxX(paneFrame) - width, NSMinY(paneFrame), width, NSHeight(paneFrame));
+    const CGFloat ring = BrowserSplitPaneLayout.focusRingWidth;
+    if (split && [tabID isEqualToString:_activeTabID]) {
+      inHost.size.width -= ring;
+      inHost.size.height -= ring;
+      if (!hostView.isFlipped) {
+        inHost.origin.y += ring;
+      }
+    }
+    const NSRect inWindow = [hostView convertRect:inHost toView:nil];
+    const NSRect onScreen = [parent convertRectToScreen:inWindow];
+    if (!NSEqualRects(devTools.frame, onScreen)) {
+      [devTools setFrame:onScreen display:YES];
+    }
+    [self roundDockedDevTools:devTools frameInWindow:inWindow split:split];
+    if (devTools.parentWindow != parent) {
+      [devTools.parentWindow removeChildWindow:devTools];
+      [parent addChildWindow:devTools ordered:NSWindowAbove];
+    }
+    if (!devTools.isVisible) {
+      [devTools orderWindow:NSWindowAbove relativeTo:parent.windowNumber];
+    }
+  }
+}
+
+// The tools round the corners they share with the page viewport, which clips
+// the page but not another window.
+- (void)roundDockedDevTools:(NSWindow *)devTools frameInWindow:(NSRect)frame split:(BOOL)split {
+  CALayer *clipLayer = nil;
+  NSRect clip = NSZeroRect;
+  for (NSView *view = _hostView; view != nil; view = view.superview) {
+    if (view.layer.masksToBounds && view.layer.cornerRadius > 0) {
+      clipLayer = view.layer;
+      clip = [view convertRect:view.bounds toView:nil];
+      break;
+    }
+  }
+  NSView *frameView = devTools.contentView.superview;
+  frameView.wantsLayer = YES;
+  CALayer *layer = frameView.layer;
+  CACornerMask corners = 0;
+  CGFloat radius = clipLayer.cornerRadius;
+  if (split) {
+    corners = LayerCornerAt(layer, NO, YES);
+    radius = BrowserSplitPaneLayout.paneCornerRadius;
+  } else if (clipLayer != nil) {
+    for (int corner = 0; corner < 4; corner++) {
+      const BOOL top = corner < 2;
+      const BOOL right = corner % 2 == 1;
+      const BOOL alongX = right ? fabs(NSMaxX(frame) - NSMaxX(clip)) < 1 : fabs(NSMinX(frame) - NSMinX(clip)) < 1;
+      const BOOL alongY = top ? fabs(NSMaxY(frame) - NSMaxY(clip)) < 1 : fabs(NSMinY(frame) - NSMinY(clip)) < 1;
+      if (alongX && alongY && (clipLayer.maskedCorners & LayerCornerAt(clipLayer, top, right))) {
+        corners |= LayerCornerAt(layer, top, right);
+      }
+    }
+  }
+  if (corners == 0) {
+    radius = 0;
+  }
+  if (layer.cornerRadius == radius && layer.maskedCorners == corners) {
+    return;
+  }
+  [CATransaction begin];
+  [CATransaction setDisableActions:YES];
+  layer.cornerRadius = radius;
+  layer.cornerCurve = kCACornerCurveContinuous;
+  layer.maskedCorners = corners;
+  layer.masksToBounds = corners != 0;
+  [CATransaction commit];
 }
 
 // The pane bars follow every layout, including a live divider drag, so the
@@ -5406,6 +5738,7 @@ std::string BrowserMediaVolumeScript(double volume) {
     return;
   }
 
+  [self expectDevToolsForTabID:_activeTabID];
   ShowBrowserDevToolsOnUI(it->second.browser);
 }
 
@@ -5432,6 +5765,7 @@ std::string BrowserMediaVolumeScript(double volume) {
     return;
   }
   CefRefPtr<CefBrowser> browser = it->second.browser;
+  [self expectDevToolsForTabID:_activeTabID];
   ShowBrowserDevToolsOnUI(browser);
   CefRefPtr<CefBrowserHost> host = browser ? browser->GetHost() : nullptr;
   if (!host) {
@@ -5482,6 +5816,7 @@ std::string BrowserMediaVolumeScript(double volume) {
     CefString error;
     context->SetPreference("devtools.preferences", value, error);
   }
+  [self expectDevToolsForTabID:_activeTabID];
   ShowBrowserDevToolsOnUI(browser);
 }
 
@@ -6242,6 +6577,11 @@ std::string BrowserMediaVolumeScript(double volume) {
   }
 
   record.keptVisibleForPictureInPicture = false;
+  // Docked tools belong to this window; the page leaves without them.
+  if (_dockedDevTools[tabID] != nil) {
+    record.browser->GetHost()->CloseDevTools();
+    [self forgetDockedDevToolsForTabID:tabID];
+  }
   if ([_pageFullscreenTabID isEqualToString:tabID]) {
     record.browser->GetHost()->ExitFullscreen(true);
     [self forgetPageFullscreenForTabID:tabID];
@@ -6441,6 +6781,14 @@ std::string BrowserMediaVolumeScript(double volume) {
     [divider removeFromSuperview];
   }
   _splitDividers = nil;
+  for (NSString *tabID in _dockedDevTools.allKeys) {
+    for (id observer in _dockedDevToolsObservers[tabID]) {
+      [NSNotificationCenter.defaultCenter removeObserver:observer];
+    }
+  }
+  _dockedDevTools = nil;
+  _dockedDevToolsObservers = nil;
+  _pendingDevToolsTabID = nil;
   _hostView.controller = nil;
   _hostView = nil;
   _activeTabID = nil;
@@ -7048,6 +7396,9 @@ bool BrowserTabClient::OnContextMenuCommand(CefRefPtr<CefBrowser> browser,
         source, property, property];
     frame->ExecuteJavaScript(ToStdString(script), frame->GetURL(), 0);
     return true;
+  }
+  if (command_id == kContextInspect) {
+    [controller_ expectDevToolsForTabID:ToNSString(tab_id_)];
   }
   if (RunBasicPageContextCommand(browser, params, command_id)) {
     return true;
