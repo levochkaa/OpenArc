@@ -105,6 +105,14 @@ import Testing
         #expect(f.model.temporaryTabs.map(\.id) == [x, first, second, f.id("y"), f.id("z")])
     }
 
+    @Test func aLinkFromAPinnedTabOpensAtTheTopOfToday() throws {
+        let f = SidebarDragFixture(pinned: [("a", nil)], temporary: ["x", "y"])
+        let url = try #require(URL(string: "https://one.example"))
+        let opened = try #require(f.model.openURLInBackgroundTab(url))
+        f.driver.onTabOpenedFromTab?(opened, f.id("a"))
+        #expect(f.model.temporaryTabs.map(\.id) == [opened, f.id("x"), f.id("y")])
+    }
+
     @Test func aWindowNeverTakesItsOwnTabs() {
         let f = SidebarDragFixture()
         #expect(!f.model.moveTabs(ids: [f.id("x")], toWindowOf: f.model))

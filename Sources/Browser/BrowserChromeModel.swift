@@ -4324,15 +4324,26 @@ enum BrowserWindowMode: Equatable {
         }
     }
 
-    /// A tab a link opened goes right below its Today opener, after the tabs opened
-    /// from it before.
+    /// A tab a link opened goes right below its Today opener, or at the top of Today
+    /// when a pinned tab or Favorite opened it, after the tabs opened from the same
+    /// tab before.
     func placeTabOpened(id: String, fromTabID openerID: String) {
-        guard let openerIndex = tabs.firstIndex(where: { $0.id == openerID }),
-              let index = tabs.firstIndex(where: { $0.id == id }),
-              tabs[openerIndex].placement == .temporary, tabs[index].placement == .temporary,
-              tabs[openerIndex].spaceID == tabs[index].spaceID, index > openerIndex
+        guard let opener = tabs.first(where: { $0.id == openerID }),
+              let index = tabs.firstIndex(where: { $0.id == id }), tabs[index].placement == .temporary
         else { return }
-        var target = openerIndex + 1
+        let spaceID = tabs[index].spaceID
+        let start: Int
+        if opener.placement == .temporary {
+            guard opener.spaceID == spaceID,
+                  let openerIndex = tabs.firstIndex(where: { $0.id == openerID }) else { return }
+            start = openerIndex + 1
+        } else {
+            guard let firstToday = tabs.firstIndex(where: { $0.spaceID == spaceID && $0.placement == .temporary })
+            else { return }
+            start = firstToday
+        }
+        guard start <= index else { return }
+        var target = start
         while target < index, tabOpenerIDs[tabs[target].id] == openerID {
             target += 1
         }
