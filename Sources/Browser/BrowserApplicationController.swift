@@ -505,7 +505,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
 
     public func openLocation(_: Any?) {
         guard activeChromeModel?.canOpenLocation == true else { return }
-        activeChromeModel?.presentCurrentPageCommandBar()
+        activeChromeModel?.presentCurrentPageCommandBar(centered: true)
     }
 
     public func viewDownloads(_: Any?) {
@@ -2939,7 +2939,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
                 return false
             }
 
-            model.presentCurrentPageCommandBar()
+            model.presentCurrentPageCommandBar(centered: true)
             return true
         case .newWindow:
             return openNewWindow()

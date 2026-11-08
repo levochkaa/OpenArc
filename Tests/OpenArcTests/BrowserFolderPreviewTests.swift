@@ -303,3 +303,20 @@ import Testing
         bar.dismiss()
     }
 }
+
+// MARK: - BrowserOpenLocationPlacementTests
+
+@Suite(.serialized)
+@MainActor struct BrowserOpenLocationPlacementTests {
+    @Test func commandLCentersTheAddressBarAndAClickAnchorsIt() {
+        let f = SidebarDragFixture(temporary: ["x"])
+        f.model.selectTab(id: f.id("x"))
+        f.model.presentCurrentPageCommandBar(centered: true)
+        #expect(f.model.currentPageCommandBarModel.isPresented)
+        #expect(f.model.isCurrentPageCommandBarCentered, "Command-L: centered like New Tab")
+        f.model.currentPageCommandBarModel.dismiss()
+        f.model.presentCurrentPageCommandBar()
+        #expect(!f.model.isCurrentPageCommandBarCentered, "A click on the address: at the address")
+        f.model.currentPageCommandBarModel.dismiss()
+    }
+}

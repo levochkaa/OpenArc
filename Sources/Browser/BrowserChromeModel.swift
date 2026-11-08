@@ -269,6 +269,9 @@ enum BrowserWindowMode: Equatable {
         self?.openResolvedSelectionInNewTab(resolvedURLString)
     }
 
+    /// The address bar shows centered on the page, as from Command-L.
+    private(set) var isCurrentPageCommandBarCentered = false
+
     lazy var currentPageCommandBarModel = makeCommandBarModel { [weak self] resolvedURLString in
         self?.navigateSelectedTab(toURLString: resolvedURLString)
     }
@@ -2855,13 +2858,16 @@ enum BrowserWindowMode: Equatable {
         currentPageCommandBarModel.dismiss()
     }
 
-    func presentCurrentPageCommandBar() {
+    /// Command-L centers the address bar on the page like New Tab; a click on
+    /// the address opens it at the address.
+    func presentCurrentPageCommandBar(centered: Bool = false) {
         guard
             canCreateTab,
             let selectedTab
         else {
             return
         }
+        isCurrentPageCommandBarCentered = centered
 
         bookmarksModel.reload()
         dismissFindBar()

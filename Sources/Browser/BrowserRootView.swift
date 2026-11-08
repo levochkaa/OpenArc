@@ -1000,6 +1000,18 @@ final class BrowserRootView: NSView {
             style: .standard,
             faviconCandidate: nil,
         )
+        if model.isCurrentPageCommandBarCentered {
+            // Command-L: centered on the page like New Tab.
+            currentPageCommand.configure(
+                blockedLeadingInset: browserContentMinX,
+                blockedTrailingInset: blockedTrailingInset,
+                style: .standard,
+                faviconCandidate: currentPageCommandBarFaviconCandidate,
+            )
+            currentPageCommand.selectsTextOnFocus = true
+            return
+        }
+        currentPageCommand.selectsTextOnFocus = nil
         // A click on the sidebar dismisses this bar, as one on the page does.
         currentPageCommand.configure(
             blockedLeadingInset: 0,
