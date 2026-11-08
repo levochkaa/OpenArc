@@ -74,6 +74,31 @@ import Testing
         #expect(!entries.contains { $0.url.pathExtension == "crdownload" || $0.url.lastPathComponent.hasPrefix(".") })
         #expect(entries.map(\.date) == entries.map(\.date).sorted(), "The newest by the button, at the bottom")
     }
+
+    @Test func aCanceledDownloadTakesItsPlaceByDateAndSaysWhereItCameFrom() {
+        func entry(_ name: String, _ minute: Double, canceled: Bool = false) -> BrowserDownloadsTrayView.Entry {
+            BrowserDownloadsTrayView.Entry(
+                url: URL(fileURLWithPath: "/tmp/\(name)"),
+                date: Date(timeIntervalSince1970: minute * 60),
+                progress: canceled ? BrowserStrings.downloadsTrayCanceled(host: "httpbin.org") : nil,
+                isCanceled: canceled,
+            )
+        }
+        let running = BrowserDownloadsTrayView.Entry(
+            url: URL(fileURLWithPath: "/tmp/big.iso"),
+            date: Date(timeIntervalSince1970: 0),
+            progress: "1 MB of 2 MB",
+        )
+        let merged = BrowserDownloadsTrayView.merged(
+            files: [entry("a", 1), entry("b", 3), entry("big.iso", 0)],
+            canceled: [entry("2048", 2, canceled: true)],
+            running: [running],
+        )
+        #expect(merged.map(\.url.lastPathComponent) == ["a", "2048", "b", "big.iso"])
+        #expect(merged[1].isCanceled)
+        #expect(merged[1].progress == BrowserStrings.downloadsTrayCanceled(host: "httpbin.org"))
+        #expect(BrowserStrings.downloadsTrayCanceled(host: nil) == BrowserStrings.downloadsCanceledDetail)
+    }
 }
 
 // MARK: - BrowserLibraryMediaSourceTests

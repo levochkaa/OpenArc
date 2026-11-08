@@ -1976,10 +1976,19 @@ final class BrowserNativeSidebarNSView: NSView {
         let files = BrowserDownloadsTrayView.recentEntries(in: BrowserDownloadLocation.directory(
             customPath: state.model.userPreferencesStore.downloadDirectoryPath,
         ))
-        // A running download's file is already on disk; it shows once, with its progress.
-        let runningPaths = Set(running.map(\.url.standardizedFileURL.path))
-        let settled = files.filter { !runningPaths.contains($0.url.standardizedFileURL.path) }
-        return Array((settled + running).suffix(BrowserDownloadsTrayView.maximumEntries))
+        // A canceled download left no file; it shows by when it began, with where it came from.
+        let canceled = downloads.items.filter { $0.state == .canceled }.map { item in
+            BrowserDownloadsTrayView.Entry(
+                url: URL(fileURLWithPath: item.fileName),
+                date: item.startedAt,
+                progress: BrowserStrings.downloadsTrayCanceled(
+                    host: URL(string: item.urlString)?.host.map(BrowserURLDisplayFormatter.hostDisplayString(forHost:)),
+                ),
+                title: item.fileName,
+                isCanceled: true,
+            )
+        }
+        return BrowserDownloadsTrayView.merged(files: files, canceled: canceled, running: running)
     }
 
     private func setDownloadsTrayShown(_ shown: Bool) {
@@ -2746,6 +2755,8 @@ final class BrowserDownloadsTrayView: NSView {
         var title: String?
         /// Stops a running download.
         var onCancel: (() -> Void)?
+        /// A canceled download: no file to show, open or reveal.
+        var isCanceled = false
     }
 
     static let rowHeight: CGFloat = 56
@@ -2789,6 +2800,15 @@ final class BrowserDownloadsTrayView: NSView {
     override func mouseExited(with _: NSEvent) {
         isHovered = false
         onHoverChanged()
+    }
+
+    /// Files and canceled downloads by date, then the running downloads, newest last.
+    /// A running download's file is already on disk; it shows once, with its progress.
+    static func merged(files: [Entry], canceled: [Entry], running: [Entry]) -> [Entry] {
+        let runningPaths = Set(running.map(\.url.standardizedFileURL.path))
+        let settled = (files.filter { !runningPaths.contains($0.url.standardizedFileURL.path) } + canceled)
+            .sorted { $0.date < $1.date }
+        return Array((settled + running).suffix(maximumEntries))
     }
 
     /// The newest visible items of `directory`, newest last; unfinished downloads are left out.
@@ -2872,12 +2892,13 @@ private final class BrowserDownloadsTrayRow: NSView {
             ?? RelativeDateTimeFormatter().localizedString(for: entry.date, relativeTo: Date())
         cancelButton.isHidden = entry.onCancel == nil
         // A running download is a ring that fills, with an arrow, in place of its file's icon.
-        ring.isHidden = entry.progress == nil
+        ring.isHidden = entry.progress == nil || entry.isCanceled
         icon.isHidden = entry.progress != nil
         ring.fraction = entry.fraction ?? 0
         cancelButton.onAction = { [entry] in entry.onCancel?() }
         detail.font = .systemFont(ofSize: 12)
         detail.textColor = BrowserChromeColors.secondaryText
+        detail.lineBreakMode = .byTruncatingTail
         for view in [highlight, icon, ring, title, detail, cancelButton] as [NSView] {
             addSubview(view)
         }
@@ -2925,6 +2946,7 @@ private final class BrowserDownloadsTrayRow: NSView {
     }
 
     override func menu(for _: NSEvent) -> NSMenu? {
+        guard !entry.isCanceled else { return nil }
         let menu = BrowserNativeMenus.menu()
         BrowserNativeMenus.add(BrowserStrings.libraryRevealInFinder, to: menu) { [entry] in
             NSWorkspace.shared.activateFileViewerSelecting([entry.url])

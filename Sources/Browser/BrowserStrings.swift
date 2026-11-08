@@ -3616,6 +3616,18 @@ enum BrowserStrings {
         comment: "Window menu item that brings every app window to the front.",
     )
 
+    /// A canceled download in the sidebar's tray: "Canceled · from example.com".
+    static func downloadsTrayCanceled(host: String?) -> String {
+        guard let host, !host.isEmpty else { return downloadsCanceledDetail }
+        return String(
+            format: NSLocalizedString(
+                "browser.downloads.tray_canceled_from_host",
+                comment: "Tray row detail for a canceled download. %@ is the site.",
+            ),
+            host,
+        )
+    }
+
     static func colorLight(_ name: String) -> String {
         String(format: NSLocalizedString("browser.color.light", comment: "A light shade of a spoken color name."), name)
     }

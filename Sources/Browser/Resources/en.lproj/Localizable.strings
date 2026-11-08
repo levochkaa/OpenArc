@@ -187,6 +187,7 @@
 "browser.downloads.status.interrupted" = "Interrupted";
 "browser.downloads.detail.completed" = "Completed";
 "browser.downloads.detail.canceled" = "Canceled";
+"browser.downloads.tray_canceled_from_host" = "Canceled · from %@";
 "browser.downloads.detail.interrupted" = "Interrupted";
 "browser.downloads.progress.known_total" = "%@ of %@";
 "browser.downloads.progress.known_total_with_speed" = "%@ of %@ • %@/s";
