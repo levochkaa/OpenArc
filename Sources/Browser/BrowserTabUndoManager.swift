@@ -66,6 +66,10 @@ import Foundation
     /// Gates tab transitions only. Native text undo continues to use Foundation.
     var canPerformTabAction: (() -> Bool)?
 
+    /// When a tab action last reached either stack, so Undo can tell whether
+    /// typing in a page came after it.
+    private(set) var lastTabActionDate = Date.distantPast
+
     private var epoch = UUID()
     private var pending: Pending?
     private var prepared: Prepared?
@@ -192,6 +196,7 @@ import Foundation
     }
 
     private func installMarker(_ action: Action) {
+        lastTabActionDate = Date()
         let marker = Marker(action: action)
         // The block intentionally retains its unique marker target. The marker
         // does not retain this manager; it expires with its Foundation entry.

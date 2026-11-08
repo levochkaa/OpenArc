@@ -30,6 +30,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
 
     private var aboutWindow: NSWindow?
     private let windowCommandTarget = BrowserWindowCommandTarget()
+    private let undoCommandTarget = BrowserUndoCommandTarget()
     private var settingsWindowController: SettingsWindowController?
     private var lastLiveFolderRefresh = Date.distantPast
     private var archiveWindowControllers = [ObjectIdentifier: BrowserArchiveWindowController]()
@@ -1762,16 +1763,18 @@ NSMenuDelegate, NSUserInterfaceValidations {
         editMenu.addItem(
             makeStandardMenuItem(
                 title: BrowserStrings.menuUndo,
-                action: #selector(UndoManager.undo),
+                action: #selector(BrowserUndoCommandTarget.undo(_:)),
                 keyEquivalent: "z",
+                target: undoCommandTarget,
             ),
         )
         editMenu.addItem(
             makeStandardMenuItem(
                 title: BrowserStrings.menuRedo,
-                action: #selector(UndoManager.redo),
+                action: #selector(BrowserUndoCommandTarget.redo(_:)),
                 keyEquivalent: "z",
                 modifiers: [.command, .shift],
+                target: undoCommandTarget,
             ),
         )
         editMenu.addItem(.separator())
@@ -2599,16 +2602,18 @@ NSMenuDelegate, NSUserInterfaceValidations {
         editMenu.addItem(
             makeStandardMenuItem(
                 title: BrowserStrings.menuUndo,
-                action: #selector(UndoManager.undo),
+                action: #selector(BrowserUndoCommandTarget.undo(_:)),
                 keyEquivalent: "z",
+                target: undoCommandTarget,
             ),
         )
         editMenu.addItem(
             makeStandardMenuItem(
                 title: BrowserStrings.menuRedo,
-                action: #selector(UndoManager.redo),
+                action: #selector(BrowserUndoCommandTarget.redo(_:)),
                 keyEquivalent: "z",
                 modifiers: [.command, .shift],
+                target: undoCommandTarget,
             ),
         )
         editMenu.addItem(.separator())
@@ -2943,9 +2948,9 @@ NSMenuDelegate, NSUserInterfaceValidations {
     ) -> Bool {
         switch command {
         case .undo:
-            return NSApp.sendAction(#selector(UndoManager.undo), to: nil, from: self)
+            return undoCommandTarget.perform(.undo, sender: self)
         case .redo:
-            return NSApp.sendAction(#selector(UndoManager.redo), to: nil, from: self)
+            return undoCommandTarget.perform(.redo, sender: self)
         case .cut:
             return NSApp.sendAction(#selector(NSText.cut(_:)), to: nil, from: self)
         case .copy:
