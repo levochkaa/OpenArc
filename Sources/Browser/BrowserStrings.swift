@@ -2068,6 +2068,10 @@ enum BrowserStrings {
         "browser.capture.toast_save",
         comment: "Button that saves a capture.",
     )
+    static let fullScreenExitNote = NSLocalizedString(
+        "browser.fullscreen.exit_note",
+        comment: "Note shown on entering a full screen window.",
+    )
     static let captureToastHintLeading = NSLocalizedString(
         "browser.capture.toast_hint_leading",
         comment: "Text before the keys.",

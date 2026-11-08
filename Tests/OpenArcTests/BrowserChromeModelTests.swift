@@ -3007,6 +3007,17 @@ import Testing
     #expect(toast.preferredWidth > 40 && toast.preferredWidth < 80)
 }
 
+@Test
+@MainActor func fullScreenNoteSitsAtTheWindowCorner() {
+    let toast = BrowserCaptureToastView(frame: .zero)
+    toast.showNote(BrowserStrings.fullScreenExitNote)
+    #expect(!toast.isHidden)
+    #expect(toast.pageCornerInset == nil && toast.windowCornerInset == 4.5)
+    #expect(toast.preferredHeight == 41)
+    toast.showHint(keysText: "⇧⌘")
+    #expect(toast.windowCornerInset == 8, "Other window notes keep their gap")
+}
+
 @MainActor private func makeModel(
     driver: FakeBrowserTabDriver,
     snapshotStore: InMemorySessionSnapshotStore,

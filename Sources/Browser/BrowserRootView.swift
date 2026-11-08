@@ -849,9 +849,10 @@ final class BrowserRootView: NSView {
     private func layoutCaptureToast() {
         let width = captureToast.preferredWidth
         guard let inset = captureToast.pageCornerInset else {
+            let inset = captureToast.windowCornerInset
             captureToast.frame = CGRect(
-                x: bounds.width - width - 8,
-                y: 8,
+                x: bounds.width - width - inset,
+                y: inset,
                 width: width,
                 height: captureToast.preferredHeight,
             )
@@ -1232,8 +1233,13 @@ final class BrowserRootView: NSView {
             pageFullscreenEnteredWindowFullscreen = false
             model.exitPageFullscreen()
         }
+        let enteredFullscreen = state.isFullscreen && !state.isTransitioning && isWindowFullscreenTransitioning
         isWindowFullscreen = state.isFullscreen
         isWindowFullscreenTransitioning = state.isTransitioning
+        // A full screen window, not a page's, says once how to leave it.
+        if enteredFullscreen, !isPageFullscreen, window?.isKeyWindow == true {
+            showCaptureToast { $0.showNote(BrowserStrings.fullScreenExitNote) }
+        }
         if state.isTransitioning {
             preserveSidebarHoverOverlayDuringFullscreenTransitionIfNeeded()
         } else {

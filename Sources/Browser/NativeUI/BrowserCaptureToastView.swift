@@ -22,6 +22,9 @@ final class BrowserCaptureToastView: NSView {
     /// the window's.
     private(set) var pageCornerInset: CGSize?
 
+    /// The gap to the window's top trailing corner when it sits there.
+    private(set) var windowCornerInset: CGFloat = 8
+
     /// The height of what it shows now.
     private(set) var preferredHeight = BrowserCaptureToastView.height
 
@@ -132,6 +135,7 @@ final class BrowserCaptureToastView: NSView {
     /// "Screenshot Copied to Clipboard", Save and Share.
     func showCopied(png: Data) {
         pageCornerInset = nil
+        windowCornerInset = 8
         labelLeading = 12
         labelOffset = 0
         copiedURL = nil
@@ -146,9 +150,28 @@ final class BrowserCaptureToastView: NSView {
         show(for: 5)
     }
 
+    /// One line of text at the window's top right, such as how to leave full screen.
+    func showNote(_ text: String) {
+        pageCornerInset = nil
+        windowCornerInset = 4.5
+        labelLeading = 12
+        labelOffset = 0
+        png = nil
+        copiedURL = nil
+        preferredHeight = 41
+        label.stringValue = text
+        keys.isHidden = true
+        trailingLabel.isHidden = true
+        saveButton.isHidden = true
+        shareButton.isHidden = true
+        preferredWidth = labelLeading * 2 + textWidth(label)
+        show(for: 4, fading: true)
+    }
+
     /// The way to capture without the menu.
     func showHint(keysText: String) {
         pageCornerInset = nil
+        windowCornerInset = 8
         labelLeading = 12
         labelOffset = 0
         png = nil

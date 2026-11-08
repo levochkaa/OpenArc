@@ -858,6 +858,7 @@
 "browser.toast.copied_current_url" = "Copied Current URL";
 "browser.capture.toast_save" = "Save";
 "browser.capture.toast_hint_leading" = "Next time, hold";
+"browser.fullscreen.exit_note" = "To exit full screen, press ⌃⌘F.";
 "browser.capture.toast_hint_trailing" = "and drag your mouse to capture any time.";
 "browser.capture.file_name" = "OpenArc Capture";
 "browser.settings.icon_tab" = "Icon";
