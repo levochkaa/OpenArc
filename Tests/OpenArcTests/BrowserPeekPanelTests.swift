@@ -113,6 +113,8 @@ import Testing
         }
         panel.copyLinkButton.performClick(nil)
         #expect(pasteboard.string(forType: .string) == "https://example.com/a")
+        #expect(!panel.copiedToast.isHidden, "Copying shows the note")
+        #expect(panel.copiedToast.frame.maxX <= panel.contentView!.bounds.maxX)
     }
 
     @Test func smallWindowIsOptInAndOpensAStandaloneWindow() throws {

@@ -785,6 +785,11 @@ NSMenuDelegate, NSUserInterfaceValidations {
     }
 
     public func copySelectedTabLink(_: Any?) {
+        // A card or small window with the keyboard copies its own page.
+        if let panel = NSApp.keyWindow as? BrowserPeekPanel, panel.canCopyLink {
+            panel.copyLink()
+            return
+        }
         activeChromeModel?.copyCurrentURLWithNote()
     }
 
@@ -961,6 +966,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         case #selector(printCurrentPage(_:)):
             return activeChromeModel?.canPrintPage ?? false
         case #selector(copySelectedTabLink(_:)):
+            if (NSApp.keyWindow as? BrowserPeekPanel)?.canCopyLink == true { return true }
             return activeChromeModel?.canCopySelectedTabLink ?? false
         case #selector(findInPage(_:)):
             return focusedArchiveWindowController != nil || focusedFindablePanel != nil
@@ -2951,6 +2957,9 @@ NSMenuDelegate, NSUserInterfaceValidations {
             printCurrentPage(nil)
             return true
         case .copyLink:
+            if let panel = NSApp.keyWindow as? BrowserPeekPanel, panel.canCopyLink {
+                return panel.copyLink()
+            }
             guard activeChromeModel?.canCopySelectedTabLink ?? false else {
                 return false
             }

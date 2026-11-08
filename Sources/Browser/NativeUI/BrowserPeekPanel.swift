@@ -95,6 +95,8 @@ import AppKit
     )
     /// "Open in <Space> ⌘O" and a chevron for the other Spaces.
     let openInButton = BrowserPeekOpenInButton()
+    /// "Copied Current URL" with Share, after Copy Link.
+    let copiedToast = BrowserCaptureToastView()
 
     private let addressSymbol = NSImageView()
 
@@ -131,6 +133,9 @@ import AppKit
     @objc var canStepThroughFindMatches: Bool {
         isFindPresented && !findQuery.isEmpty && findMatchCount != 0
     }
+
+    /// The page has an address to copy.
+    @objc var canCopyLink: Bool { !currentURLString.isEmpty && currentURLString != "about:blank" }
 
     private init(contentRect: NSRect, standalone: Bool) {
         self.isStandalone = standalone
@@ -545,11 +550,32 @@ import AppKit
         refreshFind()
     }
 
-    private func copyLink() {
-        guard !currentURLString.isEmpty, currentURLString != "about:blank" else { return }
+    /// Copy Link and Copy URL: the page's address, with the same note as in a
+    /// browser window at the card's top right.
+    @discardableResult @objc func copyLink() -> Bool {
+        guard canCopyLink else { return false }
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(currentURLString, forType: .string)
+        if let url = URL(string: currentURLString) {
+            copiedToast.fill = NSColor(white: 0.93, alpha: 1)
+            copiedToast.showCopiedURL(url)
+            layoutCopiedToast()
+        }
+        return true
+    }
+
+    private func layoutCopiedToast() {
+        let bounds = card.bounds
+        let inset = copiedToast.pageCornerInset ?? CGSize(width: 9, height: 8)
+        copiedToast.frame = NSRect(
+            x: bounds.width - copiedToast.preferredWidth - inset.width,
+            y: bounds.height - inset.height - copiedToast.preferredHeight,
+            width: copiedToast.preferredWidth,
+            height: copiedToast.preferredHeight,
+        )
+        copiedToast.autoresizingMask = [.minXMargin, .minYMargin]
+        card.addSubview(copiedToast, positioned: .above, relativeTo: nil)
     }
 
     private func placeCard(screenFrame: NSRect) {
