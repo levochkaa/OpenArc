@@ -1544,7 +1544,12 @@ final class BrowserNativeSidebarNSView: NSView {
         }
         BrowserNativeMenus.add(BrowserStrings.tabRenameAction, to: menu, action: row.onBeginRename)
         let muted = model.isTabMuted(id: tab.id)
-        BrowserNativeMenus.add(muted ? BrowserStrings.tabUnmuteAction : BrowserStrings.tabMuteAction, to: menu) {
+        // Only a tab that plays sound, or one already silenced, has anything to mute.
+        BrowserNativeMenus.add(
+            muted ? BrowserStrings.tabMenuUnmuteAction : BrowserStrings.tabMenuMuteAction,
+            to: menu,
+            enabled: muted || state.snapshot.audibleTabIDs.contains(tab.id),
+        ) {
             model.setTabMuted(!muted, id: tab.id)
         }
         if tab.placement.keepsPinnedURL {
@@ -1592,12 +1597,6 @@ final class BrowserNativeSidebarNSView: NSView {
                     state?.renamingTabID = nil
                     state?.withSidebarAnimation { model.closeOtherTemporaryTabs(id: tab.id) }
                 }
-                let above = model.temporaryTabIDsAbove(id: tab.id)
-                BrowserNativeMenus.add(BrowserStrings.tabArchiveTabsAboveAction, to: menu, enabled: !above.isEmpty) {
-                    [weak state] in
-                    state?.renamingTabID = nil
-                    state?.withSidebarAnimation { model.closeTemporaryTabsAbove(id: tab.id) }
-                }
             }
             BrowserNativeMenus.add(
                 BrowserStrings.tabArchiveTabsBelowAction,
@@ -1606,6 +1605,15 @@ final class BrowserNativeSidebarNSView: NSView {
             ) { [weak state] in
                 state?.renamingTabID = nil
                 state?.withSidebarAnimation { model.closeTabsBelow(id: tab.id) }
+            }
+            // Below, then Above.
+            if section == .temporary {
+                let above = model.temporaryTabIDsAbove(id: tab.id)
+                BrowserNativeMenus.add(BrowserStrings.tabArchiveTabsAboveAction, to: menu, enabled: !above.isEmpty) {
+                    [weak state] in
+                    state?.renamingTabID = nil
+                    state?.withSidebarAnimation { model.closeTemporaryTabsAbove(id: tab.id) }
+                }
             }
         }
         return menu

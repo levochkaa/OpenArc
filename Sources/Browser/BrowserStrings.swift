@@ -2707,6 +2707,14 @@ enum BrowserStrings {
         comment: "Split View row menu item that archives every pane of the split.",
     )
 
+    static let tabMenuMuteAction = NSLocalizedString(
+        "browser.tab.menu_mute_action",
+        comment: "Tab row menu item that silences the tab.",
+    )
+    static let tabMenuUnmuteAction = NSLocalizedString(
+        "browser.tab.menu_unmute_action",
+        comment: "Tab row menu item that lets a silenced tab play sound again.",
+    )
     static let tabMuteAction = NSLocalizedString(
         "browser.tab.mute_action",
         comment: "Context menu title that silences a tab.",

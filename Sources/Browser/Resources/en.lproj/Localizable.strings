@@ -417,6 +417,8 @@
 "browser.tab.archive_tabs_below_action" = "Archive Tabs Below";
 "browser.tab.duplicate_action" = "Duplicate";
 "browser.tab.mute_action" = "Mute Tab";
+"browser.tab.menu_mute_action" = "Mute";
+"browser.tab.menu_unmute_action" = "Unmute";
 "browser.split.archive_action" = "Archive Split View";
 "browser.split.rename_action" = "Rename Split View…";
 "browser.split.change_icon_action" = "Change Icon";
