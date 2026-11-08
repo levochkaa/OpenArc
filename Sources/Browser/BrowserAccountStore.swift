@@ -182,6 +182,10 @@ enum BrowserAppleSignInError: Error {
     /// The scheme a web sign-in ends at: `openarc-auth://callback?code=…`.
     static let webSignInCallbackScheme = "openarc-auth"
 
+    /// The provider's sign-in page, which starts a web sign-in.
+    static let officialAPIHost = "api.openarc.su"
+    static let officialSignInHost = "openarc.su"
+
     @Published private(set) var session: BrowserAuthSession?
     @Published private(set) var isSigningIn = false
     @Published private(set) var lastError: String?
@@ -245,16 +249,18 @@ enum BrowserAppleSignInError: Error {
         }
     }
 
-    /// The provider's sign-in page, which starts a web sign-in.
     static func webSignInURL(
         baseURL: URL,
         provider: BrowserAccountProvider,
         challenge: BrowserSignInChallenge,
     ) -> URL? {
-        var components = URLComponents(
-            url: baseURL.appending(path: "v1/auth/web/\(provider.rawValue)/start"),
-            resolvingAgainstBaseURL: false,
-        )
+        // The system asks before opening a sign-in page and names its host:
+        // OpenArc's own server starts at openarc.su, which sends it on to the API.
+        let start = baseURL.host == officialAPIHost
+            ? URL(string: "https://\(officialSignInHost)/signin/\(provider.rawValue)")
+            : baseURL.appending(path: "v1/auth/web/\(provider.rawValue)/start")
+        guard let start else { return nil }
+        var components = URLComponents(url: start, resolvingAgainstBaseURL: false)
         components?.queryItems = [URLQueryItem(name: "code_challenge", value: challenge.challenge)]
         return components?.url
     }

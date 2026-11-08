@@ -29,6 +29,14 @@ import Testing
             ==
             "https://sync.example/v1/auth/web/github/start?code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM")
 
+        let official = try #require(BrowserAccountStore.webSignInURL(
+            baseURL: signInTestURL("https://api.openarc.su/"),
+            provider: .apple,
+            challenge: challenge,
+        ))
+        #expect(official.absoluteString
+            == "https://openarc.su/signin/apple?code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM")
+
         #expect(try BrowserAccountStore.code(fromWebSignInCallback: signInTestURL("openarc-auth://callback?code=abc"))
             == "abc")
         #expect(throws: BrowserWebSignInError.cancelled) {
