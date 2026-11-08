@@ -142,7 +142,9 @@ final class BrowserContentNSView: NSView {
         super.layout()
         cancelAreaCaptureIfStale()
         updatePageShadow()
-        viewport.frame = splitPaneBars.pageAsideFrame(in: bounds) ?? bounds
+        let aside = splitPaneBars.pageAsideFrame(in: bounds)
+        viewport.fixedHostedSize = aside == nil ? nil : bounds.size
+        viewport.frame = aside ?? bounds
         splitPaneBars.frame = bounds
         splitPaneBars.refresh()
         empty.frame = bounds
@@ -338,8 +340,11 @@ final class BrowserContentNSView: NSView {
     /// A tab dragged from the sidebar over a page not yet split: the page
     /// slides to the other half and the window shows through where the tab will go.
     private func movePageAsideForDrop() {
-        let target = splitPaneBars.pageAsideFrame(in: bounds) ?? bounds
+        let aside = splitPaneBars.pageAsideFrame(in: bounds)
+        let target = aside ?? bounds
         guard viewport.frame != target else { return }
+        // The page keeps its size and is clipped as it slides, rather than laying out again.
+        viewport.fixedHostedSize = aside == nil ? nil : bounds.size
         guard window != nil, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
             viewport.frame = target
             return

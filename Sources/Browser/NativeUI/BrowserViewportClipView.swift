@@ -14,6 +14,21 @@ final class BrowserViewportClipView: NSView {
 
     var hostedView: NSView
 
+    /// Keeps the page at this size, top-left aligned and clipped, while the
+    /// viewport is narrower, so that it does not lay out again.
+    var fixedHostedSize: CGSize? {
+        didSet {
+            guard fixedHostedSize != oldValue else { return }
+            attachHostedViewIfNeeded()
+        }
+    }
+
+    private var hostedFrame: CGRect {
+        fixedHostedSize.map { size in
+            CGRect(x: 0, y: isFlipped ? 0 : bounds.height - size.height, width: size.width, height: size.height)
+        } ?? bounds
+    }
+
     init(hostView: NSView) {
         self.hostedView = hostView
         super.init(frame: .zero)
@@ -32,8 +47,8 @@ final class BrowserViewportClipView: NSView {
 
     override func layout() {
         super.layout()
-        if hostedView.frame != bounds {
-            hostedView.frame = bounds
+        if hostedView.frame != hostedFrame {
+            hostedView.frame = hostedFrame
         }
     }
 
@@ -70,9 +85,10 @@ final class BrowserViewportClipView: NSView {
             addSubview(hostedView)
         }
 
-        hostedView.autoresizingMask = [.width, .height]
-        if hostedView.frame != bounds {
-            hostedView.frame = bounds
+        // A fixed page stays put at the top left while the viewport slides and narrows.
+        hostedView.autoresizingMask = fixedHostedSize == nil ? [.width, .height] : [.maxXMargin, .minYMargin]
+        if hostedView.frame != hostedFrame {
+            hostedView.frame = hostedFrame
         }
     }
 }
