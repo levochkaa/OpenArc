@@ -36,3 +36,19 @@ import Testing
             .map(\.lastPathComponent) == ["old.png"])
     }
 }
+
+// MARK: - BrowserLibraryDownloadRowTests
+
+@MainActor struct BrowserLibraryDownloadRowTests {
+    @Test func aFinishedDownloadNamesItsKindAndSite() {
+        let detail = BrowserLibraryNSView.downloadDetail(kind: "Disk Image", urlString: "https://www.userapi.com/a.iso")
+        #expect(detail == BrowserStrings.libraryDownloadKindFromHost(kind: "Disk Image", host: "userapi.com"))
+        #expect(BrowserLibraryNSView.downloadDetail(kind: nil, urlString: "https://example.com/x") == "example.com")
+    }
+
+    @Test func downloadsAreGroupedByDay() {
+        let now = Date()
+        #expect(BrowserLibraryNSView.dayHeader(for: now) == BrowserStrings.libraryToday)
+        #expect(BrowserLibraryNSView.dayHeader(for: now.addingTimeInterval(-86400)) == BrowserStrings.libraryYesterday)
+    }
+}

@@ -297,6 +297,31 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
         return media.sorted { $0.1 > $1.1 }.prefix(limit).map(\.0)
     }
 
+    /// "Today", "Yesterday" or the date, over the rows of that day.
+    static func dayHeader(for date: Date, calendar: Calendar = .current) -> String {
+        if calendar.isDateInToday(date) {
+            return BrowserStrings.libraryToday
+        }
+        if calendar.isDateInYesterday(date) {
+            return BrowserStrings.libraryYesterday
+        }
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .none
+        return formatter.string(from: date)
+    }
+
+    /// A finished download's kind as Finder names it and the site it came from,
+    /// such as "Disk Image from example.com".
+    static func downloadDetail(kind: String?, urlString: String) -> String? {
+        let host = URLComponents(string: urlString)?.host.map {
+            $0.hasPrefix("www.") ? String($0.dropFirst(4)) : $0
+        }
+        guard let kind, !kind.isEmpty else { return host }
+        guard let host, !host.isEmpty else { return kind }
+        return BrowserStrings.libraryDownloadKindFromHost(kind: kind, host: host)
+    }
+
     private static func matches(fileName: String, kind: String) -> Bool {
         let type = UTType(filenameExtension: (fileName as NSString).pathExtension)
         return switch kind {
@@ -428,24 +453,13 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
     }
 
     private func archiveRows() -> [Row] {
-        let calendar = Calendar.current
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .none
         var result = [Row]()
         var lastHeader: String?
         let model = model
         for entry in archiveEntries {
             if let filter, entry.tab.spaceID != filter { continue }
             let date = Date(timeIntervalSince1970: entry.archivedAt)
-            let header: String =
-                if calendar.isDateInToday(date) {
-                    BrowserStrings.libraryToday
-                } else if calendar.isDateInYesterday(date) {
-                    BrowserStrings.libraryYesterday
-                } else {
-                    formatter.string(from: date)
-                }
+            let header = Self.dayHeader(for: date)
             if header != lastHeader {
                 result.append(.header(header))
                 lastHeader = header
@@ -480,17 +494,32 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
 
     private func downloadRows() -> [Row] {
         let downloads = model.downloadsModel
-        return downloads.items.compactMap { item -> Row? in
+        var result = [Row]()
+        var lastHeader: String?
+        for item in downloads.items {
             let name = item.fileName
-            if !query.isEmpty, !name.lowercased().contains(query) { return nil }
-            if let filter, !Self.matches(fileName: name, kind: filter) { return nil }
+            if !query.isEmpty, !name.lowercased().contains(query) { continue }
+            if let filter, !Self.matches(fileName: name, kind: filter) { continue }
+            let header = Self.dayHeader(for: item.finishedAt ?? item.startedAt)
+            if header != lastHeader {
+                result.append(.header(header))
+                lastHeader = header
+            }
             let total = item.totalBytes
             let progress: Double? = item.state == .inProgress && total > 0
                 ? Double(item.receivedBytes) / Double(total)
                 : nil
-            return .item(BrowserLibraryRowContent(
+            let kind = item.state == .completed
+                ? item.fileURL
+                    .flatMap { try? $0.resourceValues(forKeys: [.localizedTypeDescriptionKey]) }?
+                    .localizedTypeDescription
+                : nil
+            let detail = item.state == .completed
+                ? Self.downloadDetail(kind: kind, urlString: item.urlString) ?? downloads.detailText(for: item)
+                : downloads.detailText(for: item)
+            result.append(.item(BrowserLibraryRowContent(
                 title: name,
-                detail: downloads.detailText(for: item),
+                detail: detail,
                 faviconPageURL: nil,
                 fileIcon: NSWorkspace.shared
                     .icon(for: UTType(filenameExtension: (name as NSString).pathExtension) ?? .data),
@@ -501,8 +530,9 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
                     BrowserNativeMenus.add(BrowserStrings.libraryRevealInFinder, to: menu) { downloads?.reveal(item) }
                     return menu
                 },
-            ))
+            )))
         }
+        return result
     }
 
     /// Pictures and videos in the download folder, newest first.

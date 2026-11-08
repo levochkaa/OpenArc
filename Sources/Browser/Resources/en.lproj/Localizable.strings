@@ -958,3 +958,4 @@
 "browser.pinned_tab.separate" = "Separate From Pinned Tab";
 "browser.library.more_actions" = "More";
 "browser.command_bar.close" = "Close";
+"browser.library.download_kind_from_host" = "%1$@ from %2$@";

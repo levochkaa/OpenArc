@@ -3656,6 +3656,17 @@ enum BrowserStrings {
             .joined(separator: ", ")
     }
 
+    static func libraryDownloadKindFromHost(kind: String, host: String) -> String {
+        String(
+            format: NSLocalizedString(
+                "browser.library.download_kind_from_host",
+                comment: "Library download row detail. First %@ is the file kind as Finder names it, second the site.",
+            ),
+            kind,
+            host,
+        )
+    }
+
     static func commandBarSiteSearchOffer(_ siteName: String) -> String {
         String(
             format: NSLocalizedString(
