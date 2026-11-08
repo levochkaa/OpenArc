@@ -121,6 +121,17 @@ import Testing
         #expect(try panel.copiedToast.frame.maxX <= #require(panel.contentView?.bounds.maxX))
     }
 
+    @Test func theSmallWindowBarHasAnExtensionsButtonClearOfTheAddress() {
+        let panel = BrowserPeekPanel.presentStandalone()
+        defer { panel.dismiss() }
+        let extensions = panel.extensionsButton
+        #expect(extensions.superview === panel.addressPill)
+        #expect(extensions.frame.maxX < panel.copyLinkButton.frame.minX, "Left of Copy Link")
+        let buttonInBar = extensions.convert(extensions.bounds, to: panel.hostLabel.superview)
+        #expect(panel.hostLabel.frame.maxX <= buttonInBar.minX, "The address does not cover it")
+        #expect(extensions.accessibilityIdentifier() == "browser.peek.extensions")
+    }
+
     @Test func theSmallWindowShowsTheLinkUnderThePointer() {
         let panel = BrowserPeekPanel.presentStandalone()
         defer { panel.dismiss() }

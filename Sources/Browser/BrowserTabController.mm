@@ -3878,6 +3878,7 @@ struct TabRecord {
 - (void)handlePeekClosed:(CefRefPtr<CefBrowser>)browser session:(int)sessionID;
 - (void)handlePeekAddressChange:(NSString *)urlString session:(int)sessionID;
 - (void)closePeekSession:(int)sessionID;
+- (void)reportSmallWindowExtensionTabForSession:(int)sessionID focused:(BOOL)focused;
 - (void)closePeekSessionByUser:(int)sessionID;
 - (void)closePeekBrowserForSession:(BrowserPeekSession *)session;
 - (BOOL)isPeekSessionStandalone:(int)sessionID;
@@ -3971,6 +3972,8 @@ struct TabRecord {
 @property(nonatomic, copy, nullable) NSString *ownerTabID;
 /// A card put away because its tab is not the one shown.
 @property(nonatomic) BOOL hiddenWithTab;
+/// Tells extensions the small window is a window whose one tab is its page.
+@property(nonatomic, strong, nullable) NSArray *extensionWindowObservers;
 @end
 
 @implementation BrowserPeekSession {
@@ -5738,6 +5741,22 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
   session.panel.onNavigate = ^(NSString *target) {
     [weakSelf navigatePeekSession:sessionID toURLString:target];
   };
+  // While a small window has the keyboard, extensions see it as the focused
+  // window and its page as the active tab.
+  if (standalone) {
+    NSMutableArray *observers = [NSMutableArray array];
+    for (NSNotificationName name in @[ NSWindowDidBecomeKeyNotification, NSWindowDidResignKeyNotification ]) {
+      [observers addObject:[NSNotificationCenter.defaultCenter
+                               addObserverForName:name
+                                           object:session.panel
+                                            queue:NSOperationQueue.mainQueue
+                                       usingBlock:^(NSNotification *note) {
+        [weakSelf reportSmallWindowExtensionTabForSession:sessionID
+                                                 focused:note.name == NSWindowDidBecomeKeyNotification];
+      }]];
+    }
+    session.extensionWindowObservers = observers;
+  }
   session.panel.spacesProvider = ^NSArray<BrowserPeekSpace *> * {
     BrowserTabController *strongSelf = weakSelf;
     id<BrowserTabControllerDelegate> delegate = strongSelf.delegate;
@@ -5890,12 +5909,30 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
 /// Hides the card or window at once and closes its page without a
 /// beforeunload prompt; a page still being created closes when it arrives.
 /// The session, and with it the panel, goes away in OnBeforeClose.
+- (void)reportSmallWindowExtensionTabForSession:(int)sessionID focused:(BOOL)focused {
+  BrowserPeekSession *session = _peekSessions[@(sessionID)];
+  NSString *key = [NSString stringWithFormat:@"small-window-%d", sessionID];
+  NSString *json = @"[]";
+  if (session != nil && !session.closing && session->_browser) {
+    json = [NSString stringWithFormat:@"[{\"active\":true,\"browserId\":%d,\"index\":0,\"pinned\":false}]",
+                                      session->_browser->GetIdentifier()];
+  }
+  BrowserSetExtensionTabs(key, focused && session != nil && !session.closing, json);
+}
+
 - (void)closePeekSession:(int)sessionID {
   BrowserPeekSession *session = _peekSessions[@(sessionID)];
   if (session == nil || session.closing) {
     return;
   }
   session.closing = YES;
+  for (id observer in session.extensionWindowObservers) {
+    [NSNotificationCenter.defaultCenter removeObserver:observer];
+  }
+  session.extensionWindowObservers = nil;
+  if (session.standalone) {
+    [self reportSmallWindowExtensionTabForSession:sessionID focused:NO];
+  }
   if (_peekCardSessionID == sessionID) {
     _peekCardSessionID = 0;
   }
@@ -5958,6 +5995,9 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
   if (![session.urlString isEqualToString:session.initialURLString] && browser->GetMainFrame()) {
     browser->GetMainFrame()->LoadURL(ToStdString(session.urlString));
   }
+  if (session.standalone && session.panel.isKeyWindow) {
+    [self reportSmallWindowExtensionTabForSession:sessionID focused:YES];
+  }
 }
 
 /// Also reached when the page closes itself or its renderer is gone.
@@ -5969,6 +6009,13 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
   [self cancelSitePermissionsForTabID:PeekSitePermissionTabID(sessionID)];
   [session.panel dismiss];
   session->_browser = nullptr;
+  if (session.standalone) {
+    for (id observer in session.extensionWindowObservers) {
+      [NSNotificationCenter.defaultCenter removeObserver:observer];
+    }
+    session.extensionWindowObservers = nil;
+    BrowserSetExtensionTabs([NSString stringWithFormat:@"small-window-%d", sessionID], NO, @"[]");
+  }
   [_peekSessions removeObjectForKey:@(sessionID)];
   if (_peekCardSessionID == sessionID) {
     _peekCardSessionID = 0;

@@ -121,6 +121,13 @@ import Combine
         style: .currentURL,
         action: {},
     )
+    /// The profile's extensions, run on this window's page.
+    let extensionsButton = BrowserNativeChromeButton(
+        symbol: "puzzlepiece.extension",
+        title: BrowserStrings.extensionsSectionTitle,
+        style: .currentURL,
+        action: {},
+    )
     /// "Open in <Space> ⌘O" and a chevron for the other Spaces.
     let openInButton = BrowserPeekOpenInButton()
     /// "Copied Current URL" with Share, after Copy Link.
@@ -257,6 +264,12 @@ import Combine
             addressSymbol.setAccessibilityElement(false)
             addressPill.addSubview(addressSymbol)
             addressPill.addSubview(copyLinkButton)
+            addressPill.addSubview(extensionsButton)
+            extensionsButton.onAction = { [weak self] in
+                guard let self else { return }
+                NSApp.sendAction(Selector(("showSmallWindowExtensions:")), to: nil, from: self)
+            }
+            extensionsButton.setAccessibilityIdentifier("browser.peek.extensions")
             copyLinkButton.onAction = { [weak self] in self?.copyLink() }
             copyLinkButton.setAccessibilityIdentifier("browser.peek.copy-link")
             copyLinkButton.tooltipShortcut = BrowserShortcutStore().shortcut(for: .copyLink)
@@ -423,6 +436,11 @@ import Combine
             BrowserInternalURLNormalizer.canonicalURLString(for: resolution.resolvedURLString)
                 ?? resolution.resolvedURLString
         }
+    }
+
+    /// Extensions act on the focused window's page, so this window takes the keyboard first.
+    @objc func focusPageForExtension() {
+        focusPage()
     }
 
     func navigate(_ command: NavigationCommand) {
@@ -1095,10 +1113,13 @@ import Combine
             height: linkSize,
         )
         copyLinkButton.autoresizingMask = [.minXMargin]
+        extensionsButton.frame = copyLinkButton.frame.offsetBy(dx: -linkSize - 2, dy: 0)
+        extensionsButton.autoresizingMask = [.minXMargin]
+        // Clear of the buttons at both ends, so the host stays centered and they take their clicks.
         hostLabel.frame = NSRect(
-            x: pillX + 34,
+            x: pillX + 66,
             y: top + 9 + 7.5,
-            width: max(addressPill.frame.width - 68, 0),
+            width: max(addressPill.frame.width - 132, 0),
             height: 16,
         )
         hostLabel.autoresizingMask = [.width, .minYMargin]

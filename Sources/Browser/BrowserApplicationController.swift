@@ -69,6 +69,8 @@ NSMenuDelegate, NSUserInterfaceValidations {
     private var onboardingController: BrowserOnboardingWindowController?
     private var agentAccessObservation: AnyCancellable?
 
+    private var smallWindowExtensionPresenters = [ObjectIdentifier: BrowserNativeExtensionPopoverPresenter]()
+
     /// Browser windows in front-to-back order.
     var appleScriptWindows: [BrowserScriptWindow] {
         let sessions: [(NSWindow, BrowserChromeModel)] = profileWindowSessions.map { ($0.window, $0.chromeModel) }
@@ -1234,11 +1236,49 @@ NSMenuDelegate, NSUserInterfaceValidations {
         }
     }
 
+    /// The small window's Extensions button: the profile's enabled extensions, each
+    /// run on the small window's page, which takes the keyboard first.
+    func showSmallWindowExtensions(_ sender: Any?) {
+        guard let panel = (sender as? BrowserPeekPanel) ?? focusedSmallWindow,
+              let chromeModel = activeProfileWindowSession?.chromeModel ?? profileWindowSessions.first?.chromeModel
+        else { return }
+        chromeModel.refreshBrowserExtensions()
+        let presenter = smallWindowExtensionPresenter(for: chromeModel)
+        let anchor = panel.extensionsButton
+        let menu = BrowserNativeMenus.menu()
+        let extensions = chromeModel.browserExtensions.filter(\.isEnabled)
+        for browserExtension in extensions {
+            let item = BrowserNativeMenus.add(browserExtension.name, to: menu) { [weak panel, weak anchor] in
+                panel?.focusPageForExtension()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                    guard let anchor else { return }
+                    presenter.openExtension(id: browserExtension.id, relativeTo: anchor, preferredEdge: .minY)
+                }
+            }
+            if let icon = browserExtension.iconImage {
+                icon.size = NSSize(width: 16, height: 16)
+                item.image = icon
+            }
+        }
+        if extensions.isEmpty {
+            BrowserNativeMenus.add(BrowserStrings.extensionsAddAction, to: menu) { chromeModel.openExtensionStore() }
+        }
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: anchor.isFlipped ? anchor.bounds.height + 4 : -4), in: anchor)
+    }
+
     /// Command-L or a click on the small window's address: the search over its
     /// page, opening with the address selected.
     func searchSmallWindowAddress(_ sender: Any?) {
         guard let panel = (sender as? BrowserPeekPanel) ?? focusedSmallWindow else { return }
         _ = presentSmallWindowSearch(in: panel, initialQuery: panel.addressForEditing)
+    }
+
+    private func smallWindowExtensionPresenter(for model: BrowserChromeModel)
+    -> BrowserNativeExtensionPopoverPresenter {
+        if let presenter = smallWindowExtensionPresenters[ObjectIdentifier(model)] { return presenter }
+        let presenter = BrowserNativeExtensionPopoverPresenter(model: model)
+        smallWindowExtensionPresenters[ObjectIdentifier(model)] = presenter
+        return presenter
     }
 
     /// New Tab in a small window asks where to go over its page and goes there in it.
