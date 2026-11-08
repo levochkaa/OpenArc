@@ -426,10 +426,11 @@ final class BrowserSiteSettingRowView: BrowserNativePressableView {
         super.init(frame: frame)
         cornerRadius = 8
         badge.cornerRadius = 16
-        badge.fillColor = .quaternaryLabelColor
+        badge.fillColor = Self.badgeFill(active: false)
         badge.addSubview(icon)
-        icon.symbolConfiguration = .init(pointSize: 13, weight: .medium)
-        icon.contentTintColor = .labelColor
+        icon.symbolConfiguration = .init(pointSize: 13, weight: .semibold)
+        // A dark glyph cut into a light badge, as the popover shows through.
+        icon.contentTintColor = NSColor(white: 0.13, alpha: 1)
         for view in [badge, title, value] as [NSView] {
             view.setAccessibilityElement(false)
             addSubview(view)
@@ -453,7 +454,14 @@ final class BrowserSiteSettingRowView: BrowserNativePressableView {
         value.frame = NSRect(x: 44, y: bounds.height / 2, width: bounds.width - 48, height: 15)
     }
 
+    /// A setting that is on or allowed has a white badge; one that is off or
+    /// blocked a faint one.
+    static func badgeFill(active: Bool) -> NSColor {
+        NSColor(white: 1, alpha: active ? 0.94 : 0.32)
+    }
+
     func update(_ row: BrowserSiteSettingRow) {
+        badge.fillColor = Self.badgeFill(active: [.on, .allow].contains(row.value))
         icon.image = NSImage(systemSymbolName: row.kind.systemImageName, accessibilityDescription: nil)
         title.stringValue = row.kind.title
         value.stringValue = row.value.title

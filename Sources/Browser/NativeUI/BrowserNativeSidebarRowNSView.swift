@@ -1216,8 +1216,8 @@ private final class BrowserDeveloperRowBorder: NSView {
             shape.lineWidth = 2
             layer?.addSublayer(shape)
         }
-        base.strokeColor = NSColor.black.cgColor
-        dashes.strokeColor = NSColor.systemYellow.cgColor
+        base.strokeColor = NSColor(srgbRed: 49 / 255, green: 41 / 255, blue: 14 / 255, alpha: 1).cgColor
+        dashes.strokeColor = NSColor(srgbRed: 247 / 255, green: 206 / 255, blue: 70 / 255, alpha: 1).cgColor
         dashes.lineDashPattern = [6, 6]
     }
 
