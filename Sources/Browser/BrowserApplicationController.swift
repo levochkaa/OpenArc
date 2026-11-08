@@ -241,6 +241,14 @@ NSMenuDelegate, NSUserInterfaceValidations {
     }
 
     public func menuNeedsUpdate(_ menu: NSMenu) {
+        if menu === NSApp.windowsMenu {
+            // View holds Enter Full Screen; AppKit adds another here because
+            // that one has a target of its own.
+            for item in menu.items where item.action == #selector(NSWindow.toggleFullScreen(_:)) && item.target == nil {
+                menu.removeItem(item)
+            }
+            return
+        }
         if menu.identifier == Self.spacesMenuIdentifier {
             updateSpacesMenu(menu)
             return
@@ -1511,10 +1519,12 @@ NSMenuDelegate, NSUserInterfaceValidations {
             descriptor: shortcutStore.descriptor(for: .restoreLastClosedTab),
             action: #selector(restoreLastClosedTab(_:)),
         ))
+        fileMenu.addItem(.separator())
         fileMenu.addItem(makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .openLocation),
             action: #selector(openLocation(_:)),
         ))
+        fileMenu.addItem(.separator())
         fileMenu.addItem(BrowserNativeMenuItem(BrowserStrings.menuNewProfile) { [weak self] in
             self?.presentSettingsWindow(pane: .profiles)
         })
@@ -1550,7 +1560,6 @@ NSMenuDelegate, NSUserInterfaceValidations {
             descriptor: shortcutStore.descriptor(for: .capturePortrait),
             action: #selector(capturePortrait(_:)),
         ))
-        fileMenu.addItem(.separator())
         let savePageItem = makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .savePage),
             action: #selector(saveCurrentPage(_:)),
@@ -1950,11 +1959,15 @@ NSMenuDelegate, NSUserInterfaceValidations {
         for (commandID, action) in [
             (BrowserCommandID.goBack, #selector(goBack(_:))),
             (.goForward, #selector(goForward(_:))),
-            (.openHistory, #selector(openHistory(_:))),
         ] {
             menu.addItem(makeMenuItem(descriptor: shortcutStore.descriptor(for: commandID), action: action))
         }
+        // History goes with the archive.
         menu.addItem(.separator())
+        menu.addItem(makeMenuItem(
+            descriptor: shortcutStore.descriptor(for: .openHistory),
+            action: #selector(openHistory(_:)),
+        ))
         for item in BrowserArchiveCommandRouting.menuItems(
             shortcutResolver: shortcutStore,
             viewAction: #selector(showArchive(_:)),
@@ -2006,6 +2019,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
     /// Stay On Top and the Library's sections, above the window list AppKit adds.
     private func addLibraryItems(toWindowMenuOf app: NSApplication) {
         guard let menu = app.windowsMenu else { return }
+        menu.delegate = self
         let stayOnTop = NSMenuItem(
             title: BrowserStrings.menuStayOnTop,
             action: #selector(toggleStayOnTop(_:)),
