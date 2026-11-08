@@ -3528,6 +3528,13 @@ enum BrowserWindowMode: Equatable {
         onZoomChanged?(percent)
     }
 
+    /// The selected page's certificate and its issuers, as DER, for the
+    /// certificate panel; empty without a secure connection.
+    func certificateChainOfSelectedTab() -> [Data] {
+        guard selectedTab.flatMap({ URL(string: $0.urlString)?.scheme?.lowercased() }) == "https" else { return [] }
+        return tabDriver.activeTabCertificateChain()
+    }
+
     func castCurrentPage() {
         guard canCastPage else {
             return

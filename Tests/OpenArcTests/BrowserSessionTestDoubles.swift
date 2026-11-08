@@ -175,6 +175,8 @@ import Foundation
     /// What a picture of a moving page comes back as.
     var movedPagePicture: Data?
 
+    var certificateChain = [Data]()
+
     private var pendingCreateRequests = [CreatedTabRequest]()
     private var nextTabNumber = 0
     private var activeTabID: String?
@@ -425,6 +427,10 @@ import Foundation
 
     func castActiveTab() {
         castCount += 1
+    }
+
+    func activeTabCertificateChain() -> [Data] {
+        certificateChain
     }
 
     func requestActiveTabWebAppManifest() -> String? {

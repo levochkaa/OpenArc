@@ -278,6 +278,10 @@ import Foundation
         controller.castActiveTab()
     }
 
+    func activeTabCertificateChain() -> [Data] {
+        controller.activeTabCertificateChain()
+    }
+
     func requestActiveTabWebAppManifest() async -> String? {
         await withCheckedContinuation { continuation in
             controller.requestActiveTabWebAppManifest { payloadJSON in

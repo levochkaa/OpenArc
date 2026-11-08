@@ -200,6 +200,8 @@ enum BrowserPageTranslationState: Int {
     func setPictureInPicture(_ active: Bool, forTabWithID tabID: String)
     func togglePictureInPictureInActiveTab()
     func castActiveTab()
+    /// The active page's certificate and its issuers, as DER; empty without one.
+    func activeTabCertificateChain() -> [Data]
     func requestActiveTabWebAppManifest() async -> String?
     /// The text selected in the active page; empty or nil without a selection.
     func requestActiveTabSelectedText() async -> String?

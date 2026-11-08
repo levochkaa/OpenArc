@@ -17,6 +17,8 @@ final class BrowserSiteControlCenterViewController: NSViewController {
         case clearCache
         case clearCookies
         case allSiteSettings
+        /// The connection's certificate in the system's certificate panel.
+        case showCertificate
     }
 
     // MARK: Private
@@ -60,6 +62,7 @@ final class BrowserSiteControlCenterViewController: NSViewController {
     private var siteSettings = [BrowserSiteSettingRow]()
     private var siteSettingsURLString = ""
     private var observation: AnyCancellable?
+    private var isSecure = false
 
     private let pageActions: [PageAction] = [
         PageAction(
@@ -134,6 +137,9 @@ final class BrowserSiteControlCenterViewController: NSViewController {
         security.cornerRadius = 8
         security.addSubview(securityIcon)
         security.addSubview(securityLabel)
+        // A secure connection's chip shows its certificate.
+        security.addGestureRecognizer(NSClickGestureRecognizer(target: self, action: #selector(showCertificate)))
+        security.setAccessibilityRole(.button)
         securityIcon.symbolConfiguration = .init(pointSize: 11, weight: .semibold)
         more.tooltipTitle = BrowserStrings.siteControlMore
         more.setAccessibilityLabel(BrowserStrings.siteControlMore)
@@ -253,6 +259,7 @@ final class BrowserSiteControlCenterViewController: NSViewController {
         securityIcon.frame = NSRect(x: 8, y: 6, width: 14, height: 14)
         securityLabel.frame = NSRect(x: 26, y: 5, width: labelWidth, height: 16)
         security.setAccessibilityLabel(securityLabel.stringValue)
+        isSecure = secure
         more.frame = NSRect(x: width - padding - 26, y: y, width: 26, height: 26)
         more.isInteractionEnabled = tab != nil
         y += 26 + padding
@@ -260,6 +267,11 @@ final class BrowserSiteControlCenterViewController: NSViewController {
         preferredContentSize = NSSize(width: width, height: y)
         // The popover offsets its content past the arrow; only the size is ours.
         view.setFrameSize(preferredContentSize)
+    }
+
+    @objc private func showCertificate() {
+        guard isSecure else { return }
+        onAction(.showCertificate)
     }
 
     private func settingRows(for rows: [BrowserSiteSettingRow], urlString: String) -> [BrowserSiteSettingRowView] {

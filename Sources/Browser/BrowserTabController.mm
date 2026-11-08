@@ -5869,6 +5869,35 @@ std::string BrowserMediaVolumeScript(double volume) {
   ShowBrowserDevToolsOnUI(browser);
 }
 
+- (NSArray<NSData *> *)activeTabCertificateChain {
+  auto it = _tabRecords.find(ToStdString(_activeTabID));
+  if (it == _tabRecords.end() || !it->second.browser) {
+    return @[];
+  }
+  CefRefPtr<CefNavigationEntry> entry = it->second.browser->GetHost()->GetVisibleNavigationEntry();
+  CefRefPtr<CefSSLStatus> status = entry ? entry->GetSSLStatus() : nullptr;
+  CefRefPtr<CefX509Certificate> certificate = status ? status->GetX509Certificate() : nullptr;
+  if (!certificate) {
+    return @[];
+  }
+  NSMutableArray<NSData *> *chain = [NSMutableArray array];
+  const auto append = [chain](CefRefPtr<CefBinaryValue> value) {
+    if (!value || value->GetSize() == 0) {
+      return;
+    }
+    NSMutableData *data = [NSMutableData dataWithLength:value->GetSize()];
+    value->GetData(data.mutableBytes, data.length, 0);
+    [chain addObject:data];
+  };
+  append(certificate->GetDEREncoded());
+  CefX509Certificate::IssuerChainBinaryList issuers;
+  certificate->GetDEREncodedIssuerChain(issuers);
+  for (const auto &issuer : issuers) {
+    append(issuer);
+  }
+  return chain;
+}
+
 - (void)castActiveTab {
   std::string activeKey = ToStdString(_activeTabID);
   auto it = _tabRecords.find(activeKey);

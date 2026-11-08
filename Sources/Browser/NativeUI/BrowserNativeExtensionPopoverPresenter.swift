@@ -1,6 +1,7 @@
 // BrowserNativeExtensionPopoverPresenter.swift
 
 import AppKit
+import SecurityInterface
 
 /// Shared extension popovers for browser chrome and installed web-app windows.
 @MainActor final class BrowserNativeExtensionPopoverPresenter: NSObject, NSPopoverDelegate, NSWindowDelegate {
@@ -52,11 +53,33 @@ import AppKit
             case .clearCache: model.clearCacheAndRefreshCurrentTab()
             case .clearCookies: model.clearCookiesAndRefreshCurrentTab()
             case .allSiteSettings: model.openAllSiteSettings(forURLString: urlString)
+            case .showCertificate:
+                Self.showCertificate(model.certificateChainOfSelectedTab(), for: self?.anchor?.window)
             }
         }
     }
 
     isolated deinit { popupController?.close() }
+
+    /// The system's certificate panel over the window, with the chain to its root
+    /// above the certificate.
+    private static func showCertificate(_ chain: [Data], for window: NSWindow?) {
+        let certificates = chain.compactMap { SecCertificateCreateWithData(nil, $0 as CFData) }
+        guard !certificates.isEmpty else { return }
+        let panel = SFCertificatePanel.shared() ?? SFCertificatePanel()
+        if let window {
+            panel.beginSheet(
+                for: window,
+                modalDelegate: nil,
+                didEnd: nil,
+                contextInfo: nil,
+                certificates: certificates,
+                showGroup: true,
+            )
+        } else {
+            panel.runModal(forCertificates: certificates, showGroup: true)
+        }
+    }
 
     private static func place(_ panel: NSPanel, contentSize: NSSize, in parent: NSWindow?, content: NSView?) {
         let bar = actionTitleBarHeight

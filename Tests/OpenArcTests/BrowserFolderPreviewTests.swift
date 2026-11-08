@@ -219,3 +219,18 @@ import Testing
         #expect(opened == 1)
     }
 }
+
+// MARK: - BrowserCertificateChainTests
+
+@Suite(.serialized)
+@MainActor struct BrowserCertificateChainTests {
+    @Test func onlyASecurePageHasACertificateToShow() throws {
+        let f = SidebarDragFixture(temporary: ["x"])
+        f.driver.certificateChain = [Data([0x30, 0x01])]
+        let id = try #require(f.model.selectedTabID)
+        f.driver.emitUpdate(id: id, urlString: "http://plain.example")
+        #expect(f.model.certificateChainOfSelectedTab().isEmpty, "A plain connection has no certificate")
+        f.driver.emitUpdate(id: id, urlString: "https://secure.example")
+        #expect(f.model.certificateChainOfSelectedTab() == [Data([0x30, 0x01])])
+    }
+}

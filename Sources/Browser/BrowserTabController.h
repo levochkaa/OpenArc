@@ -367,6 +367,9 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
 - (void)pasteAndMatchStyleActiveTab;
 - (void)printActiveTab;
 - (void)castActiveTab;
+/// The certificate of the active page's connection, then its issuers, as DER;
+/// empty without a secure connection.
+- (NSArray<NSData *> *)activeTabCertificateChain;
 - (void)requestActiveTabWebAppManifestWithCompletion:
     (void (^)(NSString * _Nullable payloadJSON))completion
     NS_SWIFT_NAME(requestActiveTabWebAppManifest(completion:));
