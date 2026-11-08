@@ -827,6 +827,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
     }
 
     public func printCurrentPage(_: Any?) {
+        if let panel = focusedNavigablePanel, let print = panel.onPrint {
+            print()
+            return
+        }
         activeChromeModel?.printCurrentPage()
     }
 
@@ -1025,6 +1029,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         case #selector(pasteAndMatchStyle(_:)):
             return activeChromeModel?.canPasteAndMatchStyle ?? true
         case #selector(printCurrentPage(_:)):
+            if focusedNavigablePanel?.onPrint != nil { return true }
             return activeChromeModel?.canPrintPage ?? false
         case #selector(copySelectedTabLink(_:)):
             if (NSApp.keyWindow as? BrowserPeekPanel)?.canCopyLink == true { return true }
@@ -3055,7 +3060,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
             saveCurrentPage(nil)
             return true
         case .printPage:
-            guard activeChromeModel?.canPrintPage ?? false else {
+            guard focusedNavigablePanel?.onPrint != nil || activeChromeModel?.canPrintPage ?? false else {
                 return false
             }
 

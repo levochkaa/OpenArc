@@ -5632,6 +5632,13 @@ std::string BrowserMediaVolumeScript(double volume) {
       shown->_browser->GetHost()->Find(ToStdString(text), forward, false, findNext);
     }
   };
+  session.panel.onPrint = ^{
+    BrowserTabController *strongSelf = weakSelf;
+    BrowserPeekSession *shown = strongSelf != nil ? strongSelf->_peekSessions[@(sessionID)] : nil;
+    if (shown != nil && shown->_browser) {
+      shown->_browser->GetHost()->Print();
+    }
+  };
   // Back, Forward, Reload and Reload Ignoring Cache, as BrowserPeekPanel numbers them.
   session.panel.onNavigationCommand = ^(NSInteger command) {
     BrowserTabController *strongSelf = weakSelf;
