@@ -364,7 +364,7 @@ import Testing
         ) { _ in notified += 1 }
         defer { NotificationCenter.default.removeObserver(observer) }
         let menu = BrowserDevToolsDockMenu.menu()
-        #expect(menu.items.map(\.title) == BrowserDevToolsDockSide.allCases.map(\.title))
+        #expect(menu.items.filter { !$0.isSeparatorItem }.map(\.title) == BrowserDevToolsDockSide.allCases.map(\.title))
         #expect(menu.items.first?.state == .on)
         let bottom = try #require(menu.items.first { $0.title == BrowserDevToolsDockSide.bottom.title })
         _ = bottom.target?.perform(bottom.action, with: bottom)

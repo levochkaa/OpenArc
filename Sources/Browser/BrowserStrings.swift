@@ -2263,6 +2263,13 @@ enum BrowserStrings {
     static let devToolsDockBottom = NSLocalizedString(
         "browser.devtools.dock_bottom", comment: "Docked Developer Tools edge menu: put them below the page.",
     )
+    static let devToolsDockBack = NSLocalizedString(
+        "browser.devtools.dock_back",
+        comment: "View › Developer item, shown while Developer Tools open in a window of their own.",
+    )
+    static let devToolsUndock = NSLocalizedString(
+        "browser.devtools.undock", comment: "Docked Developer Tools edge menu: move them into a window of their own.",
+    )
     static let devToolsDockLeft = NSLocalizedString(
         "browser.devtools.dock_left", comment: "Docked Developer Tools edge menu: put them at the page's left.",
     )

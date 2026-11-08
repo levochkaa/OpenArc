@@ -161,6 +161,8 @@ import QuartzCore
     case right
     case bottom
     case left
+    /// A window of their own, as the engine opens them.
+    case window
 
     static let defaultsKey = "browser.devtools.dockSide"
     static let didChangeNotification = Notification.Name("BrowserDevToolsDockSideDidChange")
@@ -174,6 +176,7 @@ import QuartzCore
         case .right: BrowserStrings.devToolsDockRight
         case .bottom: BrowserStrings.devToolsDockBottom
         case .left: BrowserStrings.devToolsDockLeft
+        case .window: BrowserStrings.devToolsUndock
         }
     }
 }
@@ -189,6 +192,9 @@ import QuartzCore
         let menu = BrowserNativeMenus.menu()
         let current = BrowserDevToolsDockSide.current
         for side in BrowserDevToolsDockSide.allCases {
+            if side == .window {
+                menu.addItem(.separator())
+            }
             let item = BrowserNativeMenus.add(side.title, to: menu) {
                 UserDefaults.standard.set(side.rawValue, forKey: BrowserDevToolsDockSide.defaultsKey)
                 NotificationCenter.default.post(name: BrowserDevToolsDockSide.didChangeNotification, object: nil)

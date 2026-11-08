@@ -958,6 +958,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
                 return true
             }
             return activeChromeModel?.canShowDeveloperTools ?? false
+        case #selector(dockDeveloperToolsAgain(_:)):
+            let undocked = BrowserDevToolsDockSide.current == .window
+            (item as? NSMenuItem)?.isHidden = !undocked
+            return undocked
         case #selector(viewSource(_:)):
             if let panel = focusedNavigablePanel { return panel.canViewSource }
             return activeChromeModel?.canViewSource ?? false
@@ -1204,6 +1208,11 @@ NSMenuDelegate, NSUserInterfaceValidations {
         default:
             return true
         }
+    }
+
+    func dockDeveloperToolsAgain(_: Any?) {
+        UserDefaults.standard.set(BrowserDevToolsDockSide.right.rawValue, forKey: BrowserDevToolsDockSide.defaultsKey)
+        NotificationCenter.default.post(name: BrowserDevToolsDockSide.didChangeNotification, object: nil)
     }
 
     func insertInAppleScriptTabs(_ tab: BrowserScriptTab) {
@@ -2406,6 +2415,15 @@ NSMenuDelegate, NSUserInterfaceValidations {
             descriptor: shortcutStore.descriptor(for: .toggleDeveloperMode),
             action: #selector(toggleDeveloperMode(_:)),
         ))
+        // Shown only while the tools open in a window of their own: the way back
+        // to docking them, whose edge menu is gone then.
+        let dock = NSMenuItem(
+            title: BrowserStrings.devToolsDockBack,
+            action: #selector(dockDeveloperToolsAgain(_:)),
+            keyEquivalent: "",
+        )
+        dock.target = self
+        menu.addItem(dock)
         let item = NSMenuItem(title: menu.title, action: nil, keyEquivalent: "")
         item.submenu = menu
         viewMenu.addItem(item)

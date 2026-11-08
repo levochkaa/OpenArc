@@ -969,3 +969,5 @@
 "browser.devtools.dock_right" = "Dock to Right";
 "browser.devtools.dock_bottom" = "Dock to Bottom";
 "browser.devtools.dock_left" = "Dock to Left";
+"browser.devtools.undock" = "Undock into Separate Window";
+"browser.devtools.dock_back" = "Dock Developer Tools to Right";

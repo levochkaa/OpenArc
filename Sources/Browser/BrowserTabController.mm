@@ -4521,7 +4521,9 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
 // CEF shows Developer Tools in a window of their own. The window that appears
 // after a request becomes a borderless child laid out beside the tab's page.
 - (void)expectDevToolsForTabID:(NSString *)tabID {
-  if (tabID == nil || _dockedDevTools[tabID] != nil) {
+  // Undocked tools keep the window the engine opens.
+  if (tabID == nil || _dockedDevTools[tabID] != nil ||
+      BrowserDevToolsDockMenu.currentSide == BrowserDevToolsDockSideWindow) {
     return;
   }
   _pendingDevToolsTabID = [tabID copy];
@@ -4614,6 +4616,44 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
   }
 }
 
+// Docked tools become a window of their own again, beside the browser window.
+- (void)undockAllDevTools {
+  for (NSString *tabID in _dockedDevTools.allKeys) {
+    NSWindow *window = _dockedDevTools[tabID];
+    for (id observer in _dockedDevToolsObservers[tabID]) {
+      [NSNotificationCenter.defaultCenter removeObserver:observer];
+    }
+    NSWindow *parent = window.parentWindow;
+    [parent removeChildWindow:window];
+    [_dockedDevToolsHandles[tabID] removeFromSuperview];
+    [_dockedDevToolsHandles removeObjectForKey:tabID];
+    [_dockedDevToolsObservers removeObjectForKey:tabID];
+    [_dockedDevTools removeObjectForKey:tabID];
+    window.styleMask = NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskMiniaturizable |
+                       NSWindowStyleMaskResizable;
+    for (NSView *view in window.contentView.superview.subviews) {
+      if ([NSStringFromClass(view.class) isEqualToString:@"NSTitlebarContainerView"]) {
+        view.hidden = NO;
+      }
+    }
+    window.titleVisibility = NSWindowTitleVisible;
+    window.titlebarAppearsTransparent = NO;
+    window.hasShadow = YES;
+    window.opaque = YES;
+    window.backgroundColor = NSColor.windowBackgroundColor;
+    window.excludedFromWindowsMenu = NO;
+    CALayer *layer = window.contentView.superview.layer;
+    layer.cornerRadius = 0;
+    layer.masksToBounds = NO;
+    NSRect frame = NSMakeRect(0, 0, 800, 600);
+    if (parent != nil) {
+      frame.origin = NSMakePoint(NSMidX(parent.frame) - 400, NSMidY(parent.frame) - 300);
+    }
+    [window setFrame:frame display:YES];
+    [window makeKeyAndOrderFront:nil];
+  }
+}
+
 - (void)forgetDockedDevToolsForTabID:(NSString *)tabID {
   NSWindow *window = _dockedDevTools[tabID];
   if (window == nil) {
@@ -4693,6 +4733,9 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
                     object:nil
                      queue:NSOperationQueue.mainQueue
                 usingBlock:^(NSNotification *) {
+      if (BrowserDevToolsDockMenu.currentSide == BrowserDevToolsDockSideWindow) {
+        [weakSelf undockAllDevTools];
+      }
       [weakSelf syncBrowserFrames];
     }];
   }
