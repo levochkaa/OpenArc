@@ -1462,14 +1462,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         )
         appMenu.addItem(settingsItem)
 
-        let checkForUpdatesItem = NSMenuItem(
-            title: BrowserStrings.menuCheckForUpdates,
-            action: #selector(checkForUpdates(_:)),
-            keyEquivalent: "",
-        )
-        checkForUpdatesItem.target = self
-        appMenu.addItem(checkForUpdatesItem)
-
+        // Settings and the default browser, then import and updates.
         let setAsDefaultBrowserItem = makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .setAsDefaultBrowser),
             action: #selector(setAsDefaultBrowser(_:)),
@@ -1477,9 +1470,17 @@ NSMenuDelegate, NSUserInterfaceValidations {
         setAsDefaultBrowserMenuItem = setAsDefaultBrowserItem
         updateSetAsDefaultBrowserMenuItem(setAsDefaultBrowserItem)
         appMenu.addItem(setAsDefaultBrowserItem)
+        appMenu.addItem(.separator())
         appMenu.addItem(BrowserNativeMenuItem(BrowserStrings.menuImportFromBrowser) { [weak self] in
             self?.showImportFromBrowser()
         })
+        let checkForUpdatesItem = NSMenuItem(
+            title: BrowserStrings.menuCheckForUpdates,
+            action: #selector(checkForUpdates(_:)),
+            keyEquivalent: "",
+        )
+        checkForUpdatesItem.target = self
+        appMenu.addItem(checkForUpdatesItem)
         addStandardApplicationItems(to: appMenu, app: app, appName: appName)
         let quitItem = NSMenuItem(
             title: BrowserStrings.quitMenuItem(appName: appName),
