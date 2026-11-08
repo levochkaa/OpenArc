@@ -86,7 +86,7 @@ import Testing
         #expect(!panel.canStepThroughFindMatches)
     }
 
-    @Test func theSmallWindowBarNamesTheSpaceItOpensIn() {
+    @Test func theSmallWindowBarNamesTheSpaceItOpensIn() throws {
         let panel = BrowserPeekPanel.presentStandalone()
         defer { panel.dismiss() }
         panel.spacesProvider = {
@@ -114,7 +114,20 @@ import Testing
         panel.copyLinkButton.performClick(nil)
         #expect(pasteboard.string(forType: .string) == "https://example.com/a")
         #expect(!panel.copiedToast.isHidden, "Copying shows the note")
-        #expect(panel.copiedToast.frame.maxX <= panel.contentView!.bounds.maxX)
+        #expect(try panel.copiedToast.frame.maxX <= #require(panel.contentView?.bounds.maxX))
+    }
+
+    @Test func theSmallWindowShowsTheLinkUnderThePointer() {
+        let panel = BrowserPeekPanel.presentStandalone()
+        defer { panel.dismiss() }
+        let page = panel.hostView.frame
+        panel.updateLinkStatus("https://www.iana.org/help/example-domains")
+        let pill = panel.linkStatus.frame
+        #expect(pill.minX == page.minX + BrowserPeekPanel.linkStatusInset)
+        #expect(pill.minY == page.minY + BrowserPeekPanel.linkStatusInset, "At the page's bottom left")
+        #expect(pill.height == BrowserPeekPanel.linkStatusHeight)
+        #expect(pill.width > 0 && pill.width <= page.width * 0.6)
+        #expect(panel.linkStatus.superview != nil)
     }
 
     @Test func smallWindowIsOptInAndOpensAStandaloneWindow() throws {

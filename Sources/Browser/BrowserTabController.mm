@@ -3628,6 +3628,11 @@ class BrowserPeekClient final : public CefClient,
       panel.title = ToNSString(title.ToString());
     }
   }
+  // The address of the link under the pointer, at the page's bottom left.
+  void OnStatusMessage(CefRefPtr<CefBrowser>, const CefString &value) override {
+    CEF_REQUIRE_UI_THREAD();
+    [[controller_ peekPanelForSessionID:session_id_] updateLinkStatus:ToNSString(value.ToString())];
+  }
   bool OnBeforeDownload(CefRefPtr<CefBrowser> browser,
                         CefRefPtr<CefDownloadItem> download_item,
                         const CefString &suggested_name,

@@ -17,6 +17,8 @@ import AppKit
     /// The small window's bar: an address pill and the Open in button.
     static let standaloneBarHeight: CGFloat = 48
     static let cornerRadius: CGFloat = 12
+    static let linkStatusHeight: CGFloat = 24
+    static let linkStatusInset: CGFloat = 10.5
     /// The card covers this share of the window and leaves the page
     /// visible around it.
     static let windowFraction: CGFloat = 0.84
@@ -97,6 +99,8 @@ import AppKit
     let openInButton = BrowserPeekOpenInButton()
     /// "Copied Current URL" with Share, after Copy Link.
     let copiedToast = BrowserCaptureToastView()
+    /// The address of the link under the pointer, at the page's bottom left.
+    let linkStatus = BrowserLinkStatusView()
 
     private let addressSymbol = NSImageView()
 
@@ -184,7 +188,7 @@ import AppKit
             card.frame = cardHost.bounds
             cardHost.addSubview(card)
         }
-        for view in [closeButton, hostLabel, splitButton, openButton, hostView, findBar, permissionPrompt] {
+        for view in [closeButton, hostLabel, splitButton, openButton, hostView, linkStatus, findBar, permissionPrompt] {
             card.addSubview(view)
         }
         if standalone {
@@ -566,6 +570,24 @@ import AppKit
             layoutCopiedToast()
         }
         return true
+    }
+
+    /// The page's status text, usually the address of the link under the pointer;
+    /// nil or empty hides it.
+    @objc(updateLinkStatus:) func updateLinkStatus(_ status: String?) {
+        let status = status?.isEmpty == false ? status : nil
+        let page = hostView.frame
+        let inset = Self.linkStatusInset
+        let width = linkStatus.update(status: status, maximumWidth: max(page.width * 0.6, 1))
+        guard status != nil else { return }
+        linkStatus.frame = NSRect(
+            x: page.minX + inset,
+            y: page.minY + inset,
+            width: width,
+            height: Self.linkStatusHeight,
+        )
+        linkStatus.cornerRadius = Self.linkStatusHeight / 2
+        linkStatus.autoresizingMask = [.maxXMargin, .maxYMargin]
     }
 
     private func layoutCopiedToast() {
