@@ -5434,7 +5434,8 @@ enum BrowserWindowMode: Equatable {
                 id: engineID,
                 syncID: tabSnapshot.id ?? tabSyncIDProvider(),
                 spaceID: tabSnapshot.spaceID ?? selectedSpaceID ?? Self.defaultSpaceID,
-                title: tabSnapshot.pageTitle ?? "",
+                title: tabSnapshot.id.flatMap { windowGroup?.pageTitle(forSyncID: $0, than: self) }
+                    ?? tabSnapshot.pageTitle ?? "",
                 userTitleOverride: tabSnapshot.userTitleOverride,
                 urlString: tabSnapshot.urlString,
                 pinnedURLString: placement.keepsPinnedURL

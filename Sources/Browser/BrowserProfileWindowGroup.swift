@@ -38,6 +38,15 @@ import Foundation
         }
     }
 
+    /// The tab's page title as another window shows it, for a window that joins
+    /// after the title came, since a title alone does not save the session.
+    func pageTitle(forSyncID syncID: String, than sender: BrowserChromeModel) -> String? {
+        for model in models where model !== sender {
+            if let title = model.tabs.first(where: { $0.syncID == syncID })?.title, !title.isEmpty { return title }
+        }
+        return nil
+    }
+
     /// Takes the tab's page away from whichever window has it.
     func pageWillOpen(syncID: String, in sender: BrowserChromeModel) {
         for model in models where model !== sender {

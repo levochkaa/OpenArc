@@ -12,8 +12,13 @@ import Testing
         let secondDriver = FakeBrowserTabDriver()
         let group = BrowserProfileWindowGroup()
 
-        init(pinned: [(String, String?)] = [("a", nil)], temporary: [String] = ["x", "y"]) {
+        init(
+            pinned: [(String, String?)] = [("a", nil)],
+            temporary: [String] = ["x", "y"],
+            beforeJoining: (SidebarDragFixture) -> Void = { _ in },
+        ) {
             self.first = SidebarDragFixture(pinned: pinned, temporary: temporary)
+            beforeJoining(first)
             let defaults = UserDefaults(suiteName: BrowserTestDefaults.suiteName("BrowserProfileWindowGroupTests"))!
             self.second = BrowserChromeModel(
                 tabDriver: secondDriver,
@@ -45,6 +50,17 @@ import Testing
         #expect(pair.secondDriver.createdTabRequests.isEmpty, "Pages stay in the first window")
         #expect(pair.second.selectedTabID == nil)
         #expect(pair.second.selectedSpaceID == pair.first.model.selectedSpaceID)
+    }
+
+    @Test func aNewWindowShowsTitlesThatCameWithoutASave() throws {
+        var syncID = ""
+        let pair = Pair { first in
+            let tab = first.model.tabs.last!
+            syncID = tab.syncID
+            first.driver.emitUpdate(id: tab.id, title: "Google")
+        }
+        let row = try #require(pair.second.tabs.first { $0.syncID == syncID })
+        #expect(row.title == "Google", "The row shows the page's title, not its host")
     }
 
     @Test func itSeesTheSessionEvenWhenLaunchRestoreIsOff() throws {
