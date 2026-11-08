@@ -229,6 +229,8 @@ enum BrowserWindowMode: Equatable {
     @Published private(set) var sidebarWidth = BrowserChromeModel.defaultSidebarWidth
     @Published private(set) var temporaryTabLifetime: BrowserTemporaryTabLifetime
     @Published private(set) var automaticTabArchivalEnabled = false
+    /// Never in Settings without sync: temporary tabs stay until closed.
+    @Published private(set) var localAutomaticArchivalOff = false
     @Published private(set) var automaticArchivalSettingsError: String?
     @Published private(set) var archiveRevision = 0
     @Published private(set) var archiveError: String?
@@ -1020,6 +1022,7 @@ enum BrowserWindowMode: Equatable {
         self.availableProfileCount = availableProfileCount
         self.isPersistenceEnabled = windowMode.persistsSession
         self.temporaryTabLifetime = sessionPreferencesStore.loadTemporaryTabLifetime()
+        self.localAutomaticArchivalOff = sessionPreferencesStore.loadLocalAutomaticArchivalOff()
         self.pinnedExtensionIDs = userPreferencesStore.pinnedExtensionIDs
         self.dateProvider = dateProvider
         self.spaceIDProvider = spaceIDProvider
@@ -2787,6 +2790,20 @@ enum BrowserWindowMode: Equatable {
         archiveExpiredTemporaryTabs()
     }
 
+    /// Without sync: Never keeps temporary tabs until they are closed; a
+    /// lifetime turns archival back on with that interval.
+    func setLocalAutomaticArchival(lifetime: BrowserTemporaryTabLifetime?) {
+        let off = lifetime == nil
+        if localAutomaticArchivalOff != off {
+            sessionPreferencesStore.saveLocalAutomaticArchivalOff(off)
+            localAutomaticArchivalOff = off
+        }
+        if let lifetime {
+            setTemporaryTabLifetime(lifetime)
+            archiveExpiredTemporaryTabs()
+        }
+    }
+
     /// The synced-profile picker expresses both enabled state and interval.
     /// Off remains editable while a session write or engine creation is pending.
     @discardableResult func setAutomaticTabArchival(lifetime: BrowserTemporaryTabLifetime?) -> Bool {
@@ -2867,7 +2884,8 @@ enum BrowserWindowMode: Equatable {
     }
 
     func archiveExpiredTemporaryTabs() {
-        guard !isAdditionalWindow, canAdmitLocalAutomaticArchive, localAutomaticArchiveCandidates.isEmpty,
+        guard !isAdditionalWindow, !localAutomaticArchivalOff, canAdmitLocalAutomaticArchive,
+              localAutomaticArchiveCandidates.isEmpty,
               localAutomaticArchivalOwnershipAllowsClose() else { return }
         localAutomaticArchiveCandidates = Array(tabs.lazy
             .filter { self.isLocalAutomaticArchiveEligible($0) }

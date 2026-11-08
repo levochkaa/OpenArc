@@ -26,6 +26,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
         static let sidebarWidth = "browser.session.sidebarWidth"
         static let temporaryTabLifetime = "browser.settings.temporaryTabLifetime"
         static let automaticTabArchivalEnabled = "browser.settings.automaticTabArchivalEnabled"
+        static let localAutomaticTabArchivalOff = "browser.settings.localAutomaticTabArchivalOff"
         static let syncCursor = "browser.sync.cursor"
         static let syncRequiresSignIn = "browser.sync.requiresSignIn"
     }
@@ -916,6 +917,14 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
 
     func saveTemporaryTabLifetime(_ lifetime: BrowserTemporaryTabLifetime) {
         setPreference(lifetime.rawValue, for: Key.temporaryTabLifetime)
+    }
+
+    func loadLocalAutomaticArchivalOff() -> Bool {
+        stringPreference(for: Key.localAutomaticTabArchivalOff) == "1"
+    }
+
+    func saveLocalAutomaticArchivalOff(_ off: Bool) {
+        setPreference(off ? "1" : nil, for: Key.localAutomaticTabArchivalOff)
     }
 
     func loadAutomaticTabArchivalSettings() throws -> (enabled: Bool, lifetime: BrowserTemporaryTabLifetime) {

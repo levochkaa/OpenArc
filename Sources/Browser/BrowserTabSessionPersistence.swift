@@ -461,6 +461,14 @@ protocol BrowserSessionPreferencesStoring {
     func saveSidebarWidth(_ width: CGFloat)
     func loadTemporaryTabLifetime() -> BrowserTemporaryTabLifetime
     func saveTemporaryTabLifetime(_ lifetime: BrowserTemporaryTabLifetime)
+    /// Without sync, temporary tabs can stay until closed: Never in Settings.
+    func loadLocalAutomaticArchivalOff() -> Bool
+    func saveLocalAutomaticArchivalOff(_ off: Bool)
+}
+
+extension BrowserSessionPreferencesStoring {
+    func loadLocalAutomaticArchivalOff() -> Bool { false }
+    func saveLocalAutomaticArchivalOff(_: Bool) {}
 }
 
 // MARK: - BrowserEphemeralSessionStore
