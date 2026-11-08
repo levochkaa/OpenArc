@@ -3,6 +3,10 @@
 import UIKit
 
 final class BrowserMobilePageViewController: UIViewController, UITextFieldDelegate {
+    /// A page wide enough for the buttons and a roomy address (an iPad, a
+    /// phone on its side) puts them in one row.
+    static let oneRowMinimumWidth: CGFloat = 700
+
     // MARK: Internal
 
     override var canBecomeFirstResponder: Bool { true }
@@ -77,6 +81,7 @@ final class BrowserMobilePageViewController: UIViewController, UITextFieldDelega
     private var findButton = UIButton(type: .system)
     private let toolbarSpacer = UIView()
     private var toolbarRow = UIStackView()
+    private var isChromeOneRow: Bool?
     private var downloadsButton = UIButton(type: .system)
 
     private var canPresentFind: Bool {
@@ -174,6 +179,16 @@ final class BrowserMobilePageViewController: UIViewController, UITextFieldDelega
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         workspace.dismissFindInPage()
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        arrangeChromeRows()
+    }
+
+    override func viewSafeAreaInsetsDidChange() {
+        super.viewSafeAreaInsetsDidChange()
+        arrangeChromeRows()
     }
 
     /// The address as the field shows it outside editing: the site's host
@@ -358,14 +373,7 @@ final class BrowserMobilePageViewController: UIViewController, UITextFieldDelega
         // Landscape/short windows keep chrome above content and keyboard.
         chromeIsAtBottom = traitCollection.horizontalSizeClass != .regular && traitCollection
             .verticalSizeClass != .compact
-        // A phone on its side has width to spare and little height: the
-        // address and the buttons share one row.
-        let oneRow = traitCollection.verticalSizeClass == .compact && traitCollection.horizontalSizeClass != .regular
-        chromeStack.axis = oneRow ? .horizontal : .vertical
-        chromeStack.spacing = oneRow ? 8 : 4
-        toolbarSpacer.isHidden = oneRow
-        toolbarRow.setContentHuggingPriority(oneRow ? .required : .defaultLow, for: .horizontal)
-        toolbarRow.setContentCompressionResistancePriority(oneRow ? .required : .defaultHigh, for: .horizontal)
+        arrangeChromeRows()
         let ordered: [UIView] = chromeIsAtBottom
             ? [banner, content, progress, chrome]
             : [chrome, progress, banner, content]
@@ -378,6 +386,18 @@ final class BrowserMobilePageViewController: UIViewController, UITextFieldDelega
             stack.removeArrangedSubview(view)
             stack.insertArrangedSubview(view, at: index)
         }
+    }
+
+    private func arrangeChromeRows() {
+        // The sidebar floats over the page, so the safe area is the width the chrome gets.
+        let oneRow = view.safeAreaLayoutGuide.layoutFrame.width >= Self.oneRowMinimumWidth
+        guard isChromeOneRow != oneRow else { return }
+        isChromeOneRow = oneRow
+        chromeStack.axis = oneRow ? .horizontal : .vertical
+        chromeStack.spacing = oneRow ? 8 : 4
+        toolbarSpacer.isHidden = oneRow
+        toolbarRow.setContentHuggingPriority(oneRow ? .required : .defaultLow, for: .horizontal)
+        toolbarRow.setContentCompressionResistancePriority(oneRow ? .required : .defaultHigh, for: .horizontal)
     }
 
     private func configureChrome() {
