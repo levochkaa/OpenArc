@@ -151,3 +151,11 @@ import Testing
         #expect(small.size == min)
     }
 }
+
+@Test func eachProfileAndTestRuntimeKeepsItsOwnWindowFrame() {
+    let plain = BrowserWindowGeometry.frameAutosaveName(profileID: "Default", runtimeSuffix: nil)
+    let test = BrowserWindowGeometry.frameAutosaveName(profileID: "Default", runtimeSuffix: "dt-test")
+    let work = BrowserWindowGeometry.frameAutosaveName(profileID: "Work", runtimeSuffix: nil)
+    #expect(plain == "OpenArc Window Default")
+    #expect(Set([plain, test, work]).count == 3, "A test run never moves the real window")
+}

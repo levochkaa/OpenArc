@@ -3954,6 +3954,15 @@ NSMenuDelegate, NSUserInterfaceValidations {
         } else {
             window.center()
         }
+        // A profile's first window opens where it was left.
+        if source == nil, record == nil {
+            let name = BrowserWindowGeometry.frameAutosaveName(
+                profileID: profile.id,
+                runtimeSuffix: BrowserRuntimeIdentity.suffix(arguments: ProcessInfo.processInfo.arguments),
+            )
+            window.setFrameUsingName(name)
+            window.setFrameAutosaveName(name)
+        }
 
         let contentView = BrowserWindowContentContainerView(frame: window.contentRect(forFrameRect: window.frame))
         contentView.addSubview(hostingView)

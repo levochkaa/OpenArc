@@ -14,6 +14,12 @@ enum BrowserWindowGeometry {
     /// As small as a browser window gets: the sidebar and a narrow page beside it.
     static let browserWindowMinimumSize = CGSize(width: 470, height: 382)
 
+    /// Where a profile's first window keeps its frame between launches; a test
+    /// run with its own runtime keeps its own.
+    static func frameAutosaveName(profileID: String, runtimeSuffix: String?) -> String {
+        (["OpenArc Window", profileID] + [runtimeSuffix].compactMap(\.self)).joined(separator: " ")
+    }
+
     static func frame(droppedAt point: CGPoint, size: CGSize?, minSize: CGSize, visible: CGRect) -> CGRect {
         var size = size ?? CGSize(width: 1360, height: 860)
         size.width = min(max(size.width, minSize.width), visible.width)
