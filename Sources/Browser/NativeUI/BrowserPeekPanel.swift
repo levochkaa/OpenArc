@@ -25,6 +25,7 @@ import Combine
     static let barHeight: CGFloat = 36
     /// The small window's bar: an address pill and the Open in button.
     static let standaloneBarHeight: CGFloat = 48
+    static let standaloneWindowControlsLeading: CGFloat = 13
     static let cornerRadius: CGFloat = 12
     /// A small window's share of the screen's visible area: 1185 x 832 pt on a
     /// 1728 x 1084 pt one.
@@ -148,6 +149,8 @@ import Combine
 
     private let addressSymbol = NSImageView()
 
+    /// The small window's traffic lights: the same buttons as a browser window's sidebar.
+    private let windowControls = BrowserWindowControlsHostView()
     private var parentMonitor: Any?
     private var currentURLString = ""
     private var card = NSVisualEffectView()
@@ -274,6 +277,7 @@ import Combine
             copyLinkButton.setAccessibilityIdentifier("browser.peek.copy-link")
             copyLinkButton.tooltipShortcut = BrowserShortcutStore().shortcut(for: .copyLink)
             card.addSubview(openInButton)
+            card.addSubview(windowControls)
             openInButton.onOpen = { [weak self] in self?.onOpenInTab?() }
             openInButton.onShowMenu = { [weak self] in self?.showOpenInMenu() }
             openInButton.setAccessibilityIdentifier("browser.peek.open-in")
@@ -335,14 +339,8 @@ import Combine
         layoutCard()
     }
 
-    override func setFrame(_ frameRect: NSRect, display flag: Bool) {
-        super.setFrame(frameRect, display: flag)
-        centerWindowButtons()
-    }
-
     override func becomeKey() {
         super.becomeKey()
-        centerWindowButtons()
         // The window's Space may have changed while this one was in the back.
         refreshOpenInTitle()
     }
@@ -1096,6 +1094,14 @@ import Combine
         let buttonWidth = openInButton.preferredWidth
         openInButton.frame = NSRect(x: bounds.width - 8 - buttonWidth, y: top + 10, width: buttonWidth, height: 29)
         openInButton.autoresizingMask = [.minXMargin, .minYMargin]
+        // Level with the address, where a browser window's sidebar has them.
+        windowControls.frame = NSRect(
+            x: Self.standaloneWindowControlsLeading,
+            y: top,
+            width: BrowserWindowControlsLayout.totalWidth,
+            height: bar,
+        )
+        windowControls.autoresizingMask = [.minYMargin]
         let pillX: CGFloat = 83
         addressPill.frame = NSRect(
             x: pillX,
@@ -1127,35 +1133,6 @@ import Combine
         hostView.autoresizingMask = [.width, .height]
         for view in [closeButton, splitButton, openButton] {
             view.frame = .zero
-        }
-        centerWindowButtons()
-    }
-
-    /// The traffic lights sit in the middle of the taller bar, level with the
-    /// address. AppKit lays them out again on resize, so this follows it.
-    private func centerWindowButtons() {
-        guard isStandalone, let close = standardWindowButton(.closeButton), let titlebar = close.superview,
-              let container = titlebar.superview
-        else { return }
-        let bar = Self.standaloneBarHeight
-        let containerFrame = NSRect(
-            x: container.frame.minX,
-            y: frame.height - bar,
-            width: container.frame.width,
-            height: bar,
-        )
-        if container.frame != containerFrame {
-            container.frame = containerFrame
-        }
-        if titlebar.frame.height != bar {
-            titlebar.frame = NSRect(x: 0, y: 0, width: containerFrame.width, height: bar)
-        }
-        for type in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
-            guard let button = standardWindowButton(type) else { continue }
-            let y = ((bar - button.frame.height) / 2).rounded(.down)
-            if button.frame.minY != y {
-                button.setFrameOrigin(NSPoint(x: button.frame.minX, y: y))
-            }
         }
     }
 
