@@ -103,6 +103,10 @@ import Testing
         #expect(opened == 1)
         #expect(panel.openButton.isHidden, "The labeled button replaces the icon")
         #expect(!panel.addressPill.isHidden && panel.addressPill.frame.maxX < panel.openInButton.frame.minX)
+        #expect(
+            panel.copyLinkButton.tooltipShortcut == BrowserShortcutStore().shortcut(for: .copyLink),
+            "Copy Link's tooltip names its keys",
+        )
 
         panel.update(urlString: "https://example.com/a")
         let pasteboard = NSPasteboard.general

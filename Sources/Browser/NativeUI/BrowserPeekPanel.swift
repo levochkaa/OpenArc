@@ -204,6 +204,7 @@ import AppKit
             addressPill.addSubview(copyLinkButton)
             copyLinkButton.onAction = { [weak self] in self?.copyLink() }
             copyLinkButton.setAccessibilityIdentifier("browser.peek.copy-link")
+            copyLinkButton.tooltipShortcut = BrowserShortcutStore().shortcut(for: .copyLink)
             card.addSubview(openInButton)
             openInButton.onOpen = { [weak self] in self?.onOpenInTab?() }
             openInButton.onShowMenu = { [weak self] in self?.showOpenInMenu() }
