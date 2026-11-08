@@ -558,7 +558,10 @@ import AppKit
         pasteboard.clearContents()
         pasteboard.setString(currentURLString, forType: .string)
         if let url = URL(string: currentURLString) {
-            copiedToast.fill = NSColor(white: 0.93, alpha: 1)
+            // In the small window's colors, like its bar.
+            let dark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            copiedToast.isDark = dark
+            copiedToast.fill = dark ? NSColor(white: 0.17, alpha: 1) : NSColor(white: 0.93, alpha: 1)
             copiedToast.showCopiedURL(url)
             layoutCopiedToast()
         }

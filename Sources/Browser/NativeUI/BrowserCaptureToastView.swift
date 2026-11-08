@@ -27,6 +27,9 @@ final class BrowserCaptureToastView: NSView {
 
     var fill = NSColor.windowBackgroundColor { didSet { surface.fillColor = fill } }
 
+    /// White text on a dark fill, as over a dark small window's bar.
+    var isDark = false { didSet { applyStyle() } }
+
     /// The width it wants, for the root view to place it.
     private(set) var preferredWidth: CGFloat = 0
 
@@ -162,6 +165,17 @@ final class BrowserCaptureToastView: NSView {
         show(for: 4)
     }
 
+    private func applyStyle() {
+        let ink: NSColor = isDark ? .white : .black
+        for view in [label, trailingLabel, keysLabel] {
+            view.textColor = ink
+        }
+        keys.fillColor = ink.withAlphaComponent(0.1)
+        for button in [saveButton, shareButton] {
+            button.ink = ink
+        }
+    }
+
     private func show(for seconds: TimeInterval, fading: Bool = false) {
         hideWork?.cancel()
         layer?.removeAllAnimations()
@@ -226,6 +240,18 @@ private final class BrowserCaptureToastButton: NSView {
     // MARK: Internal
 
     var onClick: () -> Void = {}
+
+    /// Text, symbol and outline color.
+    var ink = NSColor.black {
+        didSet {
+            (content as? NSTextField)?.textColor = ink
+            (content as? NSImageView)?.contentTintColor = ink
+            layer?.borderColor = ink.withAlphaComponent(0.12).cgColor
+            layer?.backgroundColor = (ink == .black ? NSColor.white : NSColor.black)
+                .withAlphaComponent(ink == .black ? 0.5 : 0.2)
+                .cgColor
+        }
+    }
 
     private let content: NSView
 
