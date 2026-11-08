@@ -7471,6 +7471,18 @@ bool BrowserTabClient::OnBeforeDownload(
     CefRefPtr<CefBeforeDownloadCallback> callback) {
   CEF_REQUIRE_UI_THREAD();
 
+  // A new tab whose first address is a download has no page to keep.
+  const std::string frame_url = browser->GetMainFrame() ? browser->GetMainFrame()->GetURL().ToString() : "";
+  if (!browser->CanGoBack() && (frame_url.empty() || frame_url == "about:blank")) {
+    BrowserTabController *controller = controller_;
+    NSString *tabID = ToNSString(tab_id_);
+    dispatch_async(dispatch_get_main_queue(), ^{
+      id<BrowserTabControllerDelegate> delegate = controller.delegate;
+      if ([delegate respondsToSelector:@selector(browserTabController:didDownloadWithoutPageInTabWithID:)]) {
+        [delegate browserTabController:controller didDownloadWithoutPageInTabWithID:tabID];
+      }
+    });
+  }
   return HandleBeforeDownload(controller_, download_item, suggested_name, callback);
 }
 

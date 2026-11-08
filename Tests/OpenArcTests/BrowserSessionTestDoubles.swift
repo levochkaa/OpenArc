@@ -49,6 +49,7 @@ import Foundation
     var onTabCreationStateChanged: ((String, BrowserTabCreationState) -> Void)?
     var onTabUpdated: ((String, String?, String?, String?) -> Void)?
     var onTabClosed: ((String) -> Void)?
+    var onDownloadWithoutPage: ((String) -> Void)?
     var onStatusChanged: ((String, String) -> Void)?
     var onTabCloseRequestFinished: ((String, String, BrowserTabCloseOutcome) -> Void)?
     var onTabCloseConfirmationPresented: ((String) -> Void)?

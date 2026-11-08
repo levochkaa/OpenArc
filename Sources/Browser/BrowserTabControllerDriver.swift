@@ -14,6 +14,7 @@ import Foundation
     var onTabCloseRequestFinished: ((String, String, BrowserTabCloseOutcome) -> Void)?
     var onTabCloseConfirmationPresented: ((String) -> Void)?
     var onTabClosed: ((String) -> Void)?
+    var onDownloadWithoutPage: ((String) -> Void)?
     var onStatusChanged: ((String, String) -> Void)?
     var onNavigationStateChanged: ((String, Bool, Bool) -> Void)?
     var onLoadingStateChanged: ((String, Bool) -> Void)?
@@ -743,6 +744,10 @@ extension BrowserTabControllerDriver: BrowserTabControllerDelegate {
         DispatchQueue.main.async { [weak self] in
             self?.onTabUpdated?(tabID, title, urlString, faviconURLString)
         }
+    }
+
+    nonisolated func browserTabController(_: BrowserTabController, didDownloadWithoutPageInTabWithID tabID: String) {
+        MainActor.assumeIsolated { onDownloadWithoutPage?(tabID) }
     }
 
     nonisolated func browserTabController(_: BrowserTabController, didCloseTabWithID tabID: String) {

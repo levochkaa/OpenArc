@@ -1048,6 +1048,9 @@ enum BrowserWindowMode: Equatable {
         tabDriver.onTabClosed = { [weak self] tabID in
             self?.handleClosedTab(id: tabID)
         }
+        tabDriver.onDownloadWithoutPage = { [weak self] tabID in
+            self?.closeTabThatOnlyDownloaded(id: tabID)
+        }
         tabDriver.searchEngineName = { [weak self] in self?.userPreferencesStore.searchEngine.title }
         tabDriver.onTabOpenedFromTab = { [weak self] tabID, openerTabID in
             self?.placeTabOpened(id: tabID, fromTabID: openerTabID)
@@ -7494,6 +7497,13 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
             persistCurrentSessionIfAllowed()
             request.completion?(.removed)
         }
+    }
+
+    /// A Today tab opened only to download a file leaves without an archive
+    /// entry, and the tab selected before it comes back.
+    func closeTabThatOnlyDownloaded(id: String) {
+        guard tabs.first(where: { $0.id == id })?.placement == .temporary else { return }
+        closeTab(id: id, forceClose: true, registersUndo: false, reason: .structuralRemoval)
     }
 
     func handleClosedTab(id: String) {

@@ -84,6 +84,8 @@ enum BrowserPageTranslationState: Int {
     var onTabCloseRequestFinished: ((String, String, BrowserTabCloseOutcome) -> Void)? { get set }
     var onTabCloseConfirmationPresented: ((String) -> Void)? { get set }
     var onTabClosed: ((String) -> Void)? { get set }
+    /// A tab that never showed a page only started a download.
+    var onDownloadWithoutPage: ((String) -> Void)? { get set }
     var onStatusChanged: ((String, String) -> Void)? { get set }
     var onNavigationStateChanged: ((String, Bool, Bool) -> Void)? { get set }
     var onLoadingStateChanged: ((String, Bool) -> Void)? { get set }

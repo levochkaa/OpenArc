@@ -68,6 +68,9 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
               didCloseTabWithID:(NSString *)tabID;
 
 @optional
+// A tab that never showed a page only started a download.
+- (void)browserTabController:(BrowserTabController *)controller
+    didDownloadWithoutPageInTabWithID:(NSString *)tabID;
 - (void)browserTabController:(BrowserTabController *)controller
     didFindAddressFormInTabWithID:(NSString *)tabID
                           frameID:(NSString *)frameID

@@ -320,3 +320,27 @@ import Testing
         f.model.currentPageCommandBarModel.dismiss()
     }
 }
+
+// MARK: - BrowserDownloadOnlyTabTests
+
+@Suite(.serialized)
+@MainActor struct BrowserDownloadOnlyTabTests {
+    @Test func aTodayTabThatOnlyDownloadedClosesAndTheEarlierTabComesBack() {
+        let f = SidebarDragFixture(pinned: [("a", nil)], temporary: ["x", "y"])
+        let x = f.id("x")
+        let y = f.id("y")
+        f.model.selectTab(id: x)
+        f.model.selectTab(id: y)
+        f.driver.onDownloadWithoutPage?(y)
+        f.driver.flushPendingCreateEvents()
+        #expect(!f.model.tabs.contains { $0.id == y }, "It leaves the sidebar")
+        #expect(f.model.selectedTabID == x, "The tab selected before it")
+    }
+
+    @Test func aPinnedTabThatDownloadsStays() {
+        let f = SidebarDragFixture(pinned: [("a", nil)], temporary: ["x"])
+        f.model.selectTab(id: f.id("a"))
+        f.driver.onDownloadWithoutPage?(f.id("a"))
+        #expect(f.model.tabs.contains { $0.id == f.id("a") })
+    }
+}
