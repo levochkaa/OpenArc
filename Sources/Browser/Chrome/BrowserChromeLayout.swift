@@ -108,7 +108,7 @@ enum BrowserChromeLayout {
     static let sidebarDragPreviewShadowY: CGFloat = 8
     static let sidebarClearButtonHorizontalPadding: CGFloat = 8
     /// Space between the divider's end and Clear's arrow or title.
-    static let sidebarClearLineGap: CGFloat = 6
+    static let sidebarClearLineGap: CGFloat = 10
     static let sidebarClearButtonVerticalPadding: CGFloat = 2
     static let sidebarTopChromeDividerHeight: CGFloat = 1
     static let sidebarTopChromeDividerScrollThreshold: CGFloat = 0.5
