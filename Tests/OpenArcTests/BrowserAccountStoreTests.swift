@@ -100,6 +100,45 @@ import Testing
         #expect(f.store.bindingState == .enabled)
     }
 
+    @Test func signingInTurnsSyncOnWhereSignInIsTheConsent() async {
+        let f = AccountStoreFixture(enablesSyncOnSignIn: true)
+        await f.store.signInWithApple()
+
+        #expect(f.sync.enabledSessions == [f.remote.response])
+        #expect(f.store.bindingState == .enabled)
+        #expect(f.sync.sessionChanges.last == .some(f.remote.response))
+    }
+
+    @Test func aSignedInProfileNotYetSyncingStartsAtLaunch() {
+        let session = accountSession()
+        let f = AccountStoreFixture(cachedSession: session, enablesSyncOnSignIn: true)
+        #expect(f.sync.enabledSessions == [session])
+        #expect(f.store.bindingState == .enabled)
+    }
+
+    @Test func aProfileThatCannotStartSyncingStillSignsIn() async {
+        let f = AccountStoreFixture(enablesSyncOnSignIn: true)
+        f.sync.enableError = AccountTestError.failure
+        await f.store.signInWithApple()
+
+        #expect(f.store.session == f.remote.response)
+        #expect(f.store.bindingState == .needsConsent)
+        #expect(f.store.lastError != nil)
+    }
+
+    @Test func theSyncSwitchPausesAndResumesAndTheLastSyncIsKept() {
+        let session = accountSession()
+        let f = AccountStoreFixture(binding: .enabled, cachedSession: session, enablesSyncOnSignIn: true)
+        f.store.setSyncEnabled(false)
+        #expect(f.store.bindingState == .paused && f.sync.suspensions == 1)
+        f.store.setSyncEnabled(true)
+        #expect(f.store.bindingState == .enabled && f.sync.resumedSessions == [session])
+        #expect(f.sync.enabledSessions.isEmpty)
+
+        f.store.syncDidSucceed(at: Date(timeIntervalSince1970: 100))
+        #expect(f.store.lastSyncDate == Date(timeIntervalSince1970: 100))
+    }
+
     @Test func explicitSignInResumesAnExistingPausedAccount() async {
         let f = AccountStoreFixture(binding: .paused)
         await f.store.signInWithApple()
@@ -279,6 +318,7 @@ import Testing
         binding: BrowserSyncBindingState = .needsConsent,
         cachedSession: BrowserAuthSession? = nil,
         deviceIdentity: BrowserSyncDeviceIdentity = .init(name: "Test Mac", platform: "macOS"),
+        enablesSyncOnSignIn: Bool = false,
     ) {
         auth.session = cachedSession
         sync.state = binding
@@ -288,6 +328,7 @@ import Testing
             syncCoordinator: sync,
             appleSignInService: identity,
             deviceIdentity: deviceIdentity,
+            enablesSyncOnSignIn: enablesSyncOnSignIn,
         )
     }
 }
@@ -370,6 +411,7 @@ import Testing
     var signInRequired = false
     var completedAuthentications = [BrowserAuthSession]()
     var suspendError: Error?
+    var enableError: Error?
 
     func requiresSignIn() -> Bool { signInRequired }
 
@@ -397,6 +439,9 @@ import Testing
 
     func enableSync(for session: BrowserAuthSession) throws {
         guard !signInRequired else { throw BrowserSyncAccountError.unavailable }
+        if let enableError {
+            throw enableError
+        }
         enabledSessions.append(session)
         state = .enabled
     }

@@ -22,6 +22,14 @@ import Security
     func cancel()
 }
 
+// MARK: - BrowserSyncSuccessRelay
+
+/// Carries a sync round trip's success from the sync service to the account
+/// store, which is made after it.
+@MainActor final class BrowserSyncSuccessRelay {
+    weak var accountStore: BrowserAccountStore?
+}
+
 // MARK: - BrowserWebSignInError
 
 enum BrowserWebSignInError: Error, Equatable {
@@ -196,6 +204,8 @@ enum BrowserAppleSignInError: Error {
     @Published private(set) var emailSignIn: BrowserEmailSignInRequest?
     /// Whether the server will send another code to `emailSignIn`.
     @Published private(set) var canResendEmailCode = false
+    /// When this run last finished a sync round trip with the server.
+    @Published private(set) var lastSyncDate: Date?
 
     private let syncClient: (any BrowserAccountAuthenticating)?
     private let authSessionStore: any BrowserSyncAuthSessionStoring
@@ -203,6 +213,8 @@ enum BrowserAppleSignInError: Error {
     private let appleSignInService: (any BrowserAppleIdentityProviding)?
     private let webSignInService: (any BrowserWebSignInPresenting)?
     private let deviceIdentity: BrowserSyncDeviceIdentity
+    /// Signing in turns sync on for the profile without asking.
+    private let enablesSyncOnSignIn: Bool
     private var signInGeneration: UInt64 = 0
     private var resendTask: Task<Void, Never>?
 
@@ -219,7 +231,9 @@ enum BrowserAppleSignInError: Error {
         appleSignInService: (any BrowserAppleIdentityProviding)? = nil,
         webSignInService: (any BrowserWebSignInPresenting)? = nil,
         deviceIdentity: BrowserSyncDeviceIdentity,
+        enablesSyncOnSignIn: Bool = false,
     ) {
+        self.enablesSyncOnSignIn = enablesSyncOnSignIn
         self.syncClient = syncClient
         self.authSessionStore = authSessionStore
         self.syncCoordinator = syncCoordinator
@@ -238,7 +252,11 @@ enum BrowserAppleSignInError: Error {
                 self.lastError = BrowserStrings.syncAccountSignInAgain
                 return
             }
-            let state = try syncCoordinator.bindingState(for: cached)
+            var state = try syncCoordinator.bindingState(for: cached)
+            if enablesSyncOnSignIn, state == .needsConsent {
+                try syncCoordinator.enableSync(for: cached)
+                state = try syncCoordinator.bindingState(for: cached)
+            }
             self.session = cached
             self.bindingState = state
             if state != .paused {
@@ -401,6 +419,20 @@ enum BrowserAppleSignInError: Error {
         webSignInService?.cancel()
     }
 
+    /// The Sync switch: on adopts or resumes the profile, off pauses it.
+    func setSyncEnabled(_ enabled: Bool) {
+        switch (enabled, bindingState) {
+        case (true, .needsConsent): enableSync()
+        case (true, .paused): resumeSync()
+        case (false, .enabled): pauseSync()
+        default: break
+        }
+    }
+
+    func syncDidSucceed(at date: Date = Date()) {
+        lastSyncDate = date
+    }
+
     func pauseSync() {
         guard let session, let syncCoordinator, bindingState == .enabled else { return }
         cancelSignIn()
@@ -482,6 +514,16 @@ enum BrowserAppleSignInError: Error {
         try attempt.coordinator.completeAuthentication(for: session)
         self.session = session
         bindingState = try attempt.coordinator.bindingState(for: session)
+        if enablesSyncOnSignIn, bindingState == .needsConsent {
+            // Signing in is the consent; a profile that cannot start syncing
+            // still signs in and offers Enable.
+            do {
+                try attempt.coordinator.enableSync(for: session)
+                bindingState = try attempt.coordinator.bindingState(for: session)
+            } catch {
+                lastError = error.localizedDescription
+            }
+        }
         attempt.coordinator.accountSessionDidChange(session)
         clearEmailSignIn()
     }

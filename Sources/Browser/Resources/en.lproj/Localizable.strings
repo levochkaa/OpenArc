@@ -485,7 +485,10 @@
 "browser.sync.account.device" = "Device %@";
 "browser.sync.account.enable" = "Enable Sync for This Profile";
 "browser.sync.account.enable_detail" = "Sync this profile’s Spaces and tabs with this account. Existing local and account data will be combined. This profile will remain linked to this account after signing out.";
-"browser.sync.account.enabled" = "Sync is enabled for this profile.";
+"browser.sync.account.sync_sidebar" = "Sync Sidebar";
+"browser.sync.account.syncing" = "Syncing…";
+"browser.sync.account.paused" = "Paused. Spaces and tabs stay on this Mac.";
+"browser.sync.account.last_synced" = "Last synced: %@";
 "browser.sync.account.different_owner" = "This profile is linked to another account or server. Sign in with the linked account, or create a separate profile in Profiles for a different account.";
 "browser.sync.account.sign_in_again" = "Sign in again to connect this profile to the configured sync server.";
 "browser.sync.account.unavailable" = "Sync storage could not be opened. Your profile remains available locally. Restart the browser to try again.";

@@ -1458,14 +1458,10 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                 ), control: enable))
             case .differentAccount:
                 rows.append(note(BrowserStrings.syncAccountDifferentOwner))
-            case .enabled:
-                rows.append(note(
-                    BrowserStrings.syncAccountEnabled,
-                    symbol: "checkmark.circle.fill",
-                    tint: .systemGreen,
-                ))
-            case nil,
-                 .paused: break
+            case .enabled,
+                 .paused:
+                rows.append(syncRow(accountStore))
+            case nil: break
             }
             if let error = accountStore.lastError {
                 rows.append(note(error, symbol: "exclamationmark.triangle.fill", tint: .systemRed))
@@ -1531,6 +1527,40 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
         ], spacing: 2)
         let leading = BrowserNativeControls.stack([avatar, text], orientation: .horizontal, spacing: 12)
         return BrowserNativeControls.padded(row(label: leading, control: signOut), vertical: 4)
+    }
+
+    /// Sync Sidebar: the switch pauses and resumes the profile's sync, and the
+    /// line under it says when it last reached the server.
+    private func syncRow(_ accountStore: BrowserAccountStore) -> NSView {
+        let isOn = accountStore.bindingState == .enabled
+        let control = BrowserActionToggle()
+        control.state = isOn ? .on : .off
+        control.setAccessibilityLabel(BrowserStrings.syncAccountSyncSidebar)
+        control.setAccessibilityIdentifier("browser.settings.account.sync")
+        control.onChange = { accountStore.setSyncEnabled($0) }
+        let status: String =
+            if !isOn {
+                BrowserStrings.syncAccountPaused
+            } else if let date = accountStore.lastSyncDate {
+                BrowserStrings.syncAccountLastSynced(
+                    date.formatted(.dateTime.month(.abbreviated).day().hour().minute()),
+                )
+            } else {
+                BrowserStrings.syncAccountSyncing
+            }
+        let dot = NSImageView(image: NSImage(systemSymbolName: "circle.fill", accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 7, weight: .regular)) ?? NSImage())
+        dot.contentTintColor = isOn ? .systemGreen : .tertiaryLabelColor
+        dot.setContentHuggingPriority(.required, for: .horizontal)
+        let detail = BrowserNativeControls.stack([
+            dot,
+            BrowserNativeControls.label(status, size: 12, color: .secondaryLabelColor, wraps: true),
+        ], orientation: .horizontal, spacing: 6)
+        let label = BrowserNativeControls.stack([
+            BrowserNativeControls.label(BrowserStrings.syncAccountSyncSidebar, wraps: true),
+            detail,
+        ], spacing: 4)
+        return row(label: label, control: control)
     }
 
     /// One line of status with an optional symbol before it.

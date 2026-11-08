@@ -3847,6 +3847,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         let syncClient = BrowserHostedService.isEnabled && source == nil
             ? BrowserSyncConfiguration.current().map { BrowserRemoteSyncClient(configuration: $0) }
             : nil
+        let syncSuccess = BrowserSyncSuccessRelay()
         let syncCoordinator: BrowserSyncService? =
             if let sqliteSessionStore, let syncClient {
                 BrowserSyncService(
@@ -3857,6 +3858,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
                     errorReporter: { error, phase in
                         BrowserTelemetry.captureError(error, event: phase == .push ? .syncPushFailed : .syncPullFailed)
                     },
+                    operationDidSucceed: { [syncSuccess] _ in syncSuccess.accountStore?.syncDidSucceed() },
                 )
             } else {
                 nil
@@ -3871,7 +3873,9 @@ NSMenuDelegate, NSUserInterfaceValidations {
                 return true
             },
             deviceIdentity: .init(name: Host.current().localizedName ?? "Mac", platform: "macOS"),
+            enablesSyncOnSignIn: true,
         )
+        syncSuccess.accountStore = accountStore
         let sessionStore: BrowserTabSessionSnapshotStoring =
             if let shared = source?.chromeModel.sharedSessionStore {
                 shared

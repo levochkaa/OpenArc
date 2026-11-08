@@ -3046,7 +3046,18 @@ enum BrowserStrings {
         "browser.sync.account.enable_detail",
         comment: "Consent to sync this profile.",
     )
-    static let syncAccountEnabled = NSLocalizedString("browser.sync.account.enabled", comment: "Sync enabled status.")
+    static let syncAccountSyncSidebar = NSLocalizedString(
+        "browser.sync.account.sync_sidebar",
+        comment: "Switch that syncs the profile's Spaces and tabs with the account.",
+    )
+    static let syncAccountSyncing = NSLocalizedString(
+        "browser.sync.account.syncing",
+        comment: "Sync status before the first sync of this run.",
+    )
+    static let syncAccountPaused = NSLocalizedString(
+        "browser.sync.account.paused",
+        comment: "Sync status while the Sync Sidebar switch is off.",
+    )
     static let syncAccountDifferentOwner = NSLocalizedString(
         "browser.sync.account.different_owner",
         comment: "Sync profile belongs to another account.",
@@ -3655,6 +3666,16 @@ enum BrowserStrings {
         "browser.menu.bring_all_to_front",
         comment: "Window menu item that brings every app window to the front.",
     )
+
+    static func syncAccountLastSynced(_ date: String) -> String {
+        String(
+            format: NSLocalizedString(
+                "browser.sync.account.last_synced",
+                comment: "Sync status; the argument is a short date and time.",
+            ),
+            date,
+        )
+    }
 
     /// A canceled download in the sidebar's tray: "Canceled · from example.com".
     static func downloadsTrayCanceled(host: String?) -> String {
