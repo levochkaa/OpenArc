@@ -55,6 +55,8 @@ final class BrowserChromeBackgroundNSView: NSView {
     // MARK: Internal
 
     var mode = BrowserChromeBackgroundMode.blurred { didSet { update() } }
+    /// A solid color in place of the blur or black, as an incognito window's.
+    var plainFill: NSColor? { didSet { if plainFill != oldValue { update() } } }
 
     private let effect = NSVisualEffectView()
     private let themeContainer = NSView()
@@ -99,7 +101,10 @@ final class BrowserChromeBackgroundNSView: NSView {
     }
 
     override func draw(_: NSRect) {
-        if mode == .black {
+        if let plainFill {
+            plainFill.setFill()
+            bounds.fill()
+        } else if mode == .black {
             BrowserChromeColors.solidBackground.setFill()
             bounds.fill()
         }
@@ -162,7 +167,7 @@ final class BrowserChromeBackgroundNSView: NSView {
 
     private func update() {
         let dark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        effect.isHidden = mode != .blurred
+        effect.isHidden = mode != .blurred || plainFill != nil
         effect.material = dark ? .hudWindow : .sidebar
         needsDisplay = true
     }

@@ -104,6 +104,15 @@ import Testing
         #expect(layout.origin.x >= BrowserChromeLayout.sidebarOuterPadding)
     }
 
+    @Test func anIncognitoWindowsEmptyPageTakesItsOwnColor() {
+        let view = BrowserContentNSView(hostView: NSView())
+        #expect(view.emptyPageFill == BrowserChromeColors.contentBackground)
+        view.emptyPageColor = BrowserChromeColors.incognitoEmptyPage
+        #expect(view.emptyPageFill == BrowserChromeColors.incognitoEmptyPage)
+        view.emptyPageColor = nil
+        #expect(view.emptyPageFill == BrowserChromeColors.contentBackground)
+    }
+
     @Test func hiddenTabCannotLeaveAnInvisibleEngineViewInteractive() {
         let host = NSView()
         let view = BrowserContentNSView(hostView: host)

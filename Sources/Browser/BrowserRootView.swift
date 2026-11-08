@@ -1070,6 +1070,9 @@ final class BrowserRootView: NSView {
         }
         previousLayoutState = state
         background.mode = chromeBackgroundMode
+        // An incognito window is a dark slate, set apart from the profile's windows.
+        background.plainFill = model.isIncognito ? BrowserChromeColors.incognitoBackground : nil
+        content.emptyPageColor = model.isIncognito ? BrowserChromeColors.incognitoEmptyPage : nil
         background.setTheme(model.selectedSpaceTheme, animated: !isEditingSpaceTheme)
         pageLoadingIndicator.setColor(
             model.selectedSpaceTheme?.palette?.title.nsColor
@@ -1129,7 +1132,9 @@ final class BrowserRootView: NSView {
         developerToolbar.refresh()
         refreshPasswordPrompt()
         refreshDownloadFlight()
+        // Without a Space's color, as in incognito and blank windows, the selection is blue.
         let selectionColor = model.selectedSpaceTheme?.palette?.accentFill
+            ?? BrowserChromeColors.commandBarNeutralSelection
         command.themeSelectionColor = selectionColor
         currentPageCommand.themeSelectionColor = selectionColor
         toolbar.refresh()

@@ -49,6 +49,11 @@ final class BrowserContentNSView: NSView {
     private(set) var crashPages = [String: BrowserSadTabView]()
     let movedPage = BrowserMovedPageView()
 
+    /// The area with no tab, in place of the usual page color.
+    var emptyPageColor: NSColor? {
+        didSet { empty.fillColor = emptyPageColor ?? BrowserChromeColors.contentBackground }
+    }
+
     // MARK: Private
 
     private let pageShadow = CALayer()
@@ -83,6 +88,8 @@ final class BrowserContentNSView: NSView {
         wraps: true,
     )
     private let retry = BrowserActionButton(BrowserStrings.tabCreationRetry, action: {})
+
+    var emptyPageFill: NSColor { empty.fillColor }
 
     init(hostView: NSView) {
         self.viewport = BrowserViewportClipView(hostView: hostView)
