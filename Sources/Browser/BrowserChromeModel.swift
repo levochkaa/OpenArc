@@ -5972,6 +5972,7 @@ enum BrowserWindowMode: Equatable {
         if tab.spaceID != selectedSpaceID {
             suggestion.spaceTitle = spaces.first { $0.id == tab.spaceID }?.title
         }
+        suggestion.faviconURL = tab.faviconURL
         return suggestion
     }
 

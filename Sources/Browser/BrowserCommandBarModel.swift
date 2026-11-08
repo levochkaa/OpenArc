@@ -28,6 +28,8 @@ struct BrowserCommandSuggestion: Identifiable, Equatable {
     var tabIDs: [String]
     /// The Space of a tab in another Space, named in place of "Switch to Tab".
     var spaceTitle: String?
+    /// An open tab's icon, from the address its page last reported.
+    var faviconURL: URL?
     /// The page's icon from the browser's own records.
     var iconData: Data?
 

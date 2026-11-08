@@ -400,10 +400,14 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
 
     private func configureRow(_ view: BrowserCommandSuggestionNSView, at index: Int) {
         let suggestion = displayedSuggestions[index]
+        // A tab's icon may not be loaded yet; the cache reports it when it is.
+        if let url = suggestion.faviconURL, faviconCache.image(for: url) == nil {
+            Task { [faviconCache] in await faviconCache.loadImageIfNeeded(from: url) }
+        }
         view.update(
             suggestion: suggestion,
             selected: model.selectedSuggestionID == suggestion.id,
-            favicon: faviconCache.image(for: faviconCandidate?.faviconURL(for: suggestion)),
+            favicon: faviconCache.image(for: faviconCandidate?.faviconURL(for: suggestion) ?? suggestion.faviconURL),
             selectionColor: model.activeSiteSearch?.chipColor ?? themeSelectionColor,
         )
         view.onPress = { [weak model] in model?.submitSuggestion(id: suggestion.id) }
