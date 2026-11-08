@@ -965,3 +965,4 @@
 "browser.library.media_source.desktop" = "Desktop";
 "browser.library.media_source.screenshots" = "Screenshots";
 "browser.library.media_source.downloads" = "Downloads";
+"browser.peek.search_spaces" = "Search Spaces...";

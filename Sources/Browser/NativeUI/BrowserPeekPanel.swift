@@ -134,6 +134,9 @@ import Combine
     /// The page's zoom in percent, one of the browser's steps.
     private(set) var zoomPercent = 100
 
+    /// The small window's Space picker, over the top right, as Open in's chevron shows it.
+    private(set) var spacePicker: BrowserPeekSpacePicker?
+
     private let addressSymbol = NSImageView()
 
     private var parentMonitor: Any?
@@ -480,10 +483,41 @@ import Combine
     }
 
     func showOpenInMenu() {
+        if isStandalone {
+            showSpacePicker()
+            return
+        }
         let anchor: NSView = isStandalone ? openInButton : openButton
         // Below the anchor, whichever way its coordinates run.
         let below = anchor.isFlipped ? anchor.bounds.height + 4 : -4
         openInMenu.popUp(positioning: nil, at: NSPoint(x: 0, y: below), in: anchor)
+    }
+
+    func showSpacePicker() {
+        spacePicker?.removeFromSuperview()
+        let picker = BrowserPeekSpacePicker(spaces: spacesProvider?() ?? [])
+        picker.onChoose = { [weak self] id in
+            self?.dismissSpacePicker()
+            self?.onOpenInSpace?(id)
+        }
+        picker.onDismiss = { [weak self] in self?.dismissSpacePicker() }
+        let size = picker.preferredSize
+        let bounds = card.bounds
+        picker.frame = NSRect(
+            x: bounds.maxX - 4 - size.width,
+            y: bounds.maxY - 4 - size.height,
+            width: size.width,
+            height: size.height,
+        )
+        picker.autoresizingMask = [.minXMargin, .minYMargin]
+        card.addSubview(picker, positioned: .above, relativeTo: nil)
+        spacePicker = picker
+        makeFirstResponder(picker.searchField)
+    }
+
+    func dismissSpacePicker() {
+        spacePicker?.removeFromSuperview()
+        spacePicker = nil
     }
 
     /// Names the Space a page opens in from the small window.
@@ -1126,12 +1160,15 @@ import Combine
     @objc let systemImageName: String
     /// The Space the window shows, where Open as Tab puts the page.
     @objc let isSelected: Bool
+    /// The Space's color, for its icon's tile; nil for a Space without one.
+    @objc let tint: NSColor?
 
-    init(id: String, title: String, systemImageName: String, isSelected: Bool = false) {
+    init(id: String, title: String, systemImageName: String, isSelected: Bool = false, tint: NSColor? = nil) {
         self.id = id
         self.title = title
         self.systemImageName = systemImageName
         self.isSelected = isSelected
+        self.tint = tint
     }
 }
 
@@ -1296,5 +1333,199 @@ final class BrowserPeekOpenInButton: NSView {
         setAccessibilityLabel(title.stringValue)
         needsLayout = true
         superview?.needsLayout = true
+    }
+}
+
+// MARK: - BrowserPeekSpacePicker
+
+/// "Search Spaces…" and the Spaces as rows with their icons on colored tiles;
+/// typing filters them, Return or a click opens the page in one.
+final class BrowserPeekSpacePicker: NSView, NSTextFieldDelegate {
+    // MARK: Internal
+
+    static let width: CGFloat = 244
+    static let fieldHeight: CGFloat = 48
+    static let rowHeight: CGFloat = 46
+
+    override var isFlipped: Bool { true }
+
+    let searchField = NSTextField()
+    var onChoose: (String) -> Void = { _ in }
+    var onDismiss: () -> Void = {}
+
+    // MARK: Private
+
+    private let spaces: [BrowserPeekSpace]
+    private var shown: [BrowserPeekSpace]
+    private var rows = [BrowserPeekSpaceRow]()
+    private let surface = BrowserNativeSurface()
+    private let magnifier = NSImageView()
+    private let collapseButton = BrowserNativeChromeButton(
+        symbol: "chevron.up",
+        title: BrowserStrings.peekOpenInMenuTitle,
+        style: .commandBarClose,
+        action: {},
+    )
+    private var highlighted = 0
+
+    var preferredSize: CGSize {
+        CGSize(width: Self.width, height: Self.fieldHeight + CGFloat(spaces.count) * Self.rowHeight + 4)
+    }
+
+    init(spaces: [BrowserPeekSpace]) {
+        self.spaces = spaces
+        self.shown = spaces
+        super.init(frame: .zero)
+        surface.cornerRadius = 12
+        surface.fillColor = NSColor(white: 0.06, alpha: 1)
+        surface.strokeColor = NSColor.white.withAlphaComponent(0.1)
+        surface.strokeWidth = 1
+        addSubview(surface)
+        magnifier.image = NSImage(systemSymbolName: "magnifyingglass", accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 14, weight: .medium))
+        magnifier.contentTintColor = NSColor.white.withAlphaComponent(0.5)
+        addSubview(magnifier)
+        searchField.isBordered = false
+        searchField.drawsBackground = false
+        searchField.focusRingType = .none
+        searchField.font = .systemFont(ofSize: 15, weight: .medium)
+        searchField.textColor = .white
+        searchField.placeholderAttributedString = NSAttributedString(
+            string: BrowserStrings.peekSearchSpacesPlaceholder,
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 15, weight: .medium),
+                .foregroundColor: NSColor.white.withAlphaComponent(0.45),
+            ],
+        )
+        searchField.delegate = self
+        addSubview(searchField)
+        collapseButton.onAction = { [weak self] in self?.onDismiss() }
+        addSubview(collapseButton)
+        self.highlighted = spaces.firstIndex(where: \.isSelected) ?? 0
+        rebuildRows()
+        setAccessibilityIdentifier("browser.peek.space-picker")
+    }
+
+    @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func layout() {
+        super.layout()
+        surface.frame = bounds
+        magnifier.frame = NSRect(x: 16, y: (Self.fieldHeight - 18) / 2, width: 18, height: 18)
+        collapseButton.frame = NSRect(x: bounds.width - 10 - 28, y: (Self.fieldHeight - 28) / 2, width: 28, height: 28)
+        searchField.frame = NSRect(
+            x: 44,
+            y: (Self.fieldHeight - 20) / 2,
+            width: max(collapseButton.frame.minX - 8 - 44, 0),
+            height: 20,
+        )
+        for (index, row) in rows.enumerated() {
+            row.frame = NSRect(
+                x: 0,
+                y: Self.fieldHeight + CGFloat(index) * Self.rowHeight,
+                width: bounds.width,
+                height: Self.rowHeight,
+            )
+        }
+    }
+
+    func controlTextDidChange(_: Notification) {
+        let query = searchField.stringValue.trimmingCharacters(in: .whitespaces).lowercased()
+        shown = query.isEmpty ? spaces : spaces.filter { $0.title.lowercased().contains(query) }
+        highlighted = 0
+        rebuildRows()
+    }
+
+    func control(_: NSControl, textView _: NSTextView, doCommandBy selector: Selector) -> Bool {
+        switch selector {
+        case #selector(NSResponder.insertNewline(_:)):
+            if shown.indices.contains(highlighted) { onChoose(shown[highlighted].id) }
+            return true
+        case #selector(NSResponder.cancelOperation(_:)):
+            onDismiss()
+            return true
+        case #selector(NSResponder.moveDown(_:)):
+            highlighted = min(highlighted + 1, max(shown.count - 1, 0))
+            refreshHighlight()
+            return true
+        case #selector(NSResponder.moveUp(_:)):
+            highlighted = max(highlighted - 1, 0)
+            refreshHighlight()
+            return true
+        default:
+            return false
+        }
+    }
+
+    private func rebuildRows() {
+        for row in rows {
+            row.removeFromSuperview()
+        }
+        rows = shown.map { space in
+            let row = BrowserPeekSpaceRow(space: space)
+            row.onPress = { [weak self] in self?.onChoose(space.id) }
+            addSubview(row)
+            return row
+        }
+        refreshHighlight()
+        needsLayout = true
+    }
+
+    private func refreshHighlight() {
+        for (index, row) in rows.enumerated() {
+            row.isHighlighted = index == highlighted
+        }
+    }
+}
+
+// MARK: - BrowserPeekSpaceRow
+
+private final class BrowserPeekSpaceRow: NSView {
+    override var isFlipped: Bool { true }
+
+    var onPress: () -> Void = {}
+    var isHighlighted = false { didSet { highlight.isHidden = !isHighlighted } }
+
+    private let highlight = BrowserNativeSurface()
+    private let tile = BrowserNativeSurface()
+    private let symbol = NSImageView()
+    private let title = NSTextField(labelWithString: "")
+
+    init(space: BrowserPeekSpace) {
+        super.init(frame: .zero)
+        highlight.fillColor = NSColor.white.withAlphaComponent(0.07)
+        highlight.strokeWidth = 0
+        highlight.isHidden = true
+        tile.cornerRadius = 6
+        tile.strokeWidth = 0
+        tile.fillColor = space.tint ?? .black
+        symbol.image = BrowserIconImage.image(named: space.systemImageName, pointSize: 13)
+        symbol.contentTintColor = .white
+        title.stringValue = space.title
+        title.font = .systemFont(ofSize: 14, weight: .semibold)
+        title.textColor = NSColor.white.withAlphaComponent(0.9)
+        title.lineBreakMode = .byTruncatingTail
+        for view in [highlight, tile, symbol, title] as [NSView] {
+            addSubview(view)
+        }
+        setAccessibilityRole(.button)
+        setAccessibilityLabel(space.title)
+    }
+
+    @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func layout() {
+        super.layout()
+        highlight.frame = bounds
+        tile.frame = NSRect(x: 10, y: (bounds.height - 26) / 2, width: 26, height: 26)
+        symbol.frame = tile.frame.insetBy(dx: 5, dy: 5)
+        title.frame = NSRect(x: 46, y: (bounds.height - 18) / 2, width: max(bounds.width - 56, 0), height: 18)
+    }
+
+    override func mouseUp(with _: NSEvent) { onPress() }
+    override func acceptsFirstMouse(for _: NSEvent?) -> Bool { true }
+    override func accessibilityPerformPress() -> Bool {
+        onPress()
+        return true
     }
 }

@@ -1083,6 +1083,7 @@ enum BrowserWindowMode: Equatable {
                     title: $0.title,
                     systemImageName: $0.systemImageName,
                     isSelected: $0.id == selectedSpaceID,
+                    tint: spaceThemesByID[$0.id]?.palette?.key.nsColor(alpha: 1),
                 )
             }
         }

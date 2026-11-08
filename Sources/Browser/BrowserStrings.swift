@@ -1615,6 +1615,10 @@ enum BrowserStrings {
         comment: "Alert shown when the window cannot take an import right now.",
     )
 
+    static let peekSearchSpacesPlaceholder = NSLocalizedString(
+        "browser.peek.search_spaces",
+        comment: "Placeholder of the small window's Space picker field.",
+    )
     static let peekCloseAction = NSLocalizedString("browser.peek.close", comment: "Button that closes a Peek card.")
 
     static let peekOpenInSplitViewAction = NSLocalizedString(

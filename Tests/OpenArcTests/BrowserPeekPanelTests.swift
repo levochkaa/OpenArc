@@ -189,6 +189,24 @@ import Testing
         #expect(panel.zoomPercent == 100 && levels.last == 0)
     }
 
+    @Test func theSpacePickerFiltersAndOpensTheChosenSpace() {
+        let picker = BrowserPeekSpacePicker(spaces: [
+            BrowserPeekSpace(id: "a", title: "Home", systemImageName: "house"),
+            BrowserPeekSpace(id: "b", title: "Work", systemImageName: "briefcase", isSelected: true),
+        ])
+        var chosen = [String]()
+        picker.onChoose = { chosen.append($0) }
+        #expect(picker.preferredSize.height == BrowserPeekSpacePicker.fieldHeight + 2 * BrowserPeekSpacePicker
+            .rowHeight + 4)
+        let editor = NSTextView()
+        _ = picker.control(picker.searchField, textView: editor, doCommandBy: #selector(NSResponder.insertNewline(_:)))
+        #expect(chosen == ["b"], "Return opens the highlighted Space, the window's own at first")
+        picker.searchField.stringValue = "ho"
+        picker.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification))
+        _ = picker.control(picker.searchField, textView: editor, doCommandBy: #selector(NSResponder.insertNewline(_:)))
+        #expect(chosen.last == "a", "Typing narrows the Spaces")
+    }
+
     @Test func smallWindowIsOptInAndOpensAStandaloneWindow() throws {
         let f = SidebarDragFixture(temporary: ["x"])
         #expect(!f.model.opensExternalLinksInLittleWindow, "Links keep opening as tabs by default")
