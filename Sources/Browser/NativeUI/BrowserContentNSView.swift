@@ -59,6 +59,8 @@ final class BrowserContentNSView: NSView {
     private var permissionObservation: AnyCancellable?
 
     private let loading = BrowserNativeSurface()
+    /// The page's card when no tab is shown, as after closing the last one.
+    private let empty = BrowserNativeSurface()
     private let spinner = NSProgressIndicator()
     private let loadingLabel = BrowserNativeControls.label(
         BrowserStrings.loadingLaunchingBrowser,
@@ -93,7 +95,7 @@ final class BrowserContentNSView: NSView {
         addSubview(viewport)
         addSubview(splitPaneBars)
         splitPaneBars.hostView = hostView
-        for overlay in [loading, failure] {
+        for overlay in [empty, loading, failure] {
             overlay.fillColor = BrowserChromeColors.contentBackground
             overlay.wantsLayer = true
             overlay.layer?.masksToBounds = true
@@ -143,6 +145,7 @@ final class BrowserContentNSView: NSView {
         viewport.frame = splitPaneBars.pageAsideFrame(in: bounds) ?? bounds
         splitPaneBars.frame = bounds
         splitPaneBars.refresh()
+        empty.frame = bounds
         loading.frame = bounds
         failure.frame = bounds
         movedPage.frame = bounds
@@ -273,11 +276,12 @@ final class BrowserContentNSView: NSView {
         viewport.updateClipping(cornerRadius: clipping.radius, maskedCorners: clipping.corners)
         pageShadowRadius = clipping.radius
         updatePageShadow()
-        for overlay in [loading, failure, movedPage] {
+        for overlay in [empty, loading, failure, movedPage] {
             overlay.layer?.cornerRadius = clipping.radius
             overlay.layer?.maskedCorners = clipping.corners
         }
         movedPage.isHidden = !isContextReady || movedPagePicture == nil
+        empty.isHidden = !isContextReady || hasSelectedTab || !movedPage.isHidden
         movedPage.picture = movedPagePicture ?? nil
         loadingLabel.stringValue = isContextReady
             ? BrowserStrings.loadingOpeningTab
