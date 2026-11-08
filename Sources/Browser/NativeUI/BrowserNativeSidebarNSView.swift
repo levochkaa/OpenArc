@@ -2454,10 +2454,15 @@ private final class BrowserNativeSidebarClearDivider: NSView {
             width: 11,
             height: 12,
         )
+        // The line stops just short of the arrow or title, not of the button's padding.
+        let fullEnd = bounds.width - BrowserChromeLayout.sidebarDividerInset
+        let clearEnd = button.frame.minX + BrowserChromeLayout.sidebarClearButtonHorizontalPadding
+            - BrowserChromeLayout.sidebarClearLineGap
+        let lineEnd = fullEnd - (fullEnd - clearEnd) * clearProgress
         line.frame = NSRect(
             x: BrowserChromeLayout.sidebarDividerInset,
             y: (bounds.height - BrowserChromeLayout.sidebarDividerThickness) / 2,
-            width: max(bounds.width - BrowserChromeLayout.sidebarDividerInset * 2 - width * clearProgress, 0),
+            width: max(lineEnd - BrowserChromeLayout.sidebarDividerInset, 0),
             height: BrowserChromeLayout.sidebarDividerThickness,
         )
     }
