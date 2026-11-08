@@ -149,7 +149,7 @@ struct BrowserNativeChromeButtonStyle {
         size: BrowserChromeLayout.sidebarCurrentURLButtonSize,
         cornerRadius: BrowserChromeLayout.sidebarCurrentURLButtonCornerRadius,
         symbolSize: BrowserChromeLayout.sidebarCurrentURLButtonSymbolSize,
-        symbolWeight: .regular,
+        symbolWeight: .semibold,
         foreground: BrowserChromeColors.sidebarChromeForeground,
         hoverBackground: BrowserChromeColors.currentURLButtonHover,
         pressedScale: BrowserChromeLayout.sidebarCloseButtonPressedScale,
@@ -224,6 +224,53 @@ struct BrowserNativeChromeButtonStyle {
 enum BrowserNativeBarGlyph {
     /// A Space without its own icon shows as a dot in the dock.
     static let spaceDot = "space.dot"
+    /// Site controls: two sliders in a rounded square, with round caps and
+    /// ring knobs.
+    static let siteControls = "openarc.site-controls"
+
+    /// Site controls for a symbol of `pointSize`, a little taller than the
+    /// symbol's square so it reads at the same weight as the link beside it.
+    static func siteControlsImage(pointSize: CGFloat) -> NSImage {
+        let side = (pointSize * 16 / 14).rounded()
+        let image = NSImage(size: NSSize(width: side, height: side), flipped: false) { rect in
+            let unit = rect.width / 16
+            let line = 1.5 * unit
+            NSColor.black.setStroke()
+            let frame = NSBezierPath(
+                roundedRect: rect.insetBy(dx: line / 2, dy: line / 2),
+                xRadius: 4.6 * unit,
+                yRadius: 4.6 * unit,
+            )
+            frame.lineWidth = line
+            frame.stroke()
+            let sliders: [(y: CGFloat, knob: CGFloat)] = [(10.5, 9.8), (5.5, 6.2)]
+            for slider in sliders {
+                let y = slider.y * unit
+                let bar = NSBezierPath()
+                bar.move(to: NSPoint(x: 4.2 * unit, y: y))
+                bar.line(to: NSPoint(x: 11.8 * unit, y: y))
+                bar.lineWidth = line
+                bar.lineCapStyle = .round
+                bar.stroke()
+                let knob = NSRect(
+                    x: slider.knob * unit - 1.6 * unit,
+                    y: y - 1.6 * unit,
+                    width: 3.2 * unit,
+                    height: 3.2 * unit,
+                )
+                // The bar stops at the ring, which stays hollow.
+                NSGraphicsContext.current?.compositingOperation = .clear
+                NSBezierPath(ovalIn: knob.insetBy(dx: -line / 2, dy: -line / 2)).fill()
+                NSGraphicsContext.current?.compositingOperation = .sourceOver
+                let ring = NSBezierPath(ovalIn: knob)
+                ring.lineWidth = line
+                ring.stroke()
+            }
+            return true
+        }
+        image.isTemplate = true
+        return image
+    }
 
     static func image(symbol: String, rotation extra: CGFloat = 0) -> NSImage? {
         if symbol == spaceDot {
@@ -588,6 +635,9 @@ final class BrowserNativeChromeButton: NSButton {
            style.usesDrawnGlyphs || symbol == BrowserNativeBarGlyph.spaceDot
         {
             return glyph
+        }
+        if symbol == BrowserNativeBarGlyph.siteControls {
+            return BrowserNativeBarGlyph.siteControlsImage(pointSize: style.symbolSize)
         }
         return BrowserIconImage.image(
             named: symbol,

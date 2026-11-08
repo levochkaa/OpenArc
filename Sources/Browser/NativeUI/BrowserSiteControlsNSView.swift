@@ -115,7 +115,7 @@ final class BrowserSiteControlsNSView: NSView {
             action: {},
         )
         self.siteButton = BrowserNativeChromeButton(
-            symbol: "slider.horizontal.2.square",
+            symbol: BrowserNativeBarGlyph.siteControls,
             title: BrowserStrings.siteControlCenterAction,
             style: mode == .sidebar ? .currentURL : .chrome,
             pressEffect: .compress,
