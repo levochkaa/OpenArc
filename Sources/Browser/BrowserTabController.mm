@@ -7906,8 +7906,14 @@ static void RunPageStartScripts(CefRefPtr<CefFrame> frame) {
     frame->ExecuteJavaScript(start.UTF8String, frame->GetURL(), 0);
   }
   NSString *url = ToNSString(frame->GetURL().ToString());
-  if ([[NSURLComponents componentsWithString:url].host isEqualToString:@"chromewebstore.google.com"]) {
+  NSURLComponents *components = [NSURLComponents componentsWithString:url];
+  if ([components.host isEqualToString:@"chromewebstore.google.com"]) {
     frame->ExecuteJavaScript(kWebStoreScript, frame->GetURL(), 0);
+  }
+  // The engine's own pages show OpenArc's icon in their toolbar.
+  NSString *logo = BrowserProductLogo.dataURL;
+  if (frame->IsMain() && [components.scheme isEqualToString:@"chrome"] && logo != nil) {
+    frame->ExecuteJavaScript([BrowserProductLogo scriptWithDataURL:logo].UTF8String, frame->GetURL(), 0);
   }
 }
 
