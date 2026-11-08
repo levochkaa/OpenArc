@@ -5295,8 +5295,9 @@ enum BrowserWindowMode: Equatable {
 
         ensureDefaultSpace()
         hasCreatedInitialTab = true
-        // A blank window starts with no page and asks where to go.
-        guard windowMode != .blank || firstTabURLString != nil else { return }
+        // Blank and incognito windows start with no page and ask where to go.
+        guard (windowMode != .blank && windowMode != .incognito) || firstTabURLString != nil || !initialTabPages.isEmpty
+        else { return }
         let pages = initialTabPages
         initialTabPages.removeAll()
         let page = { (index: Int) in index < pages.count ? pages[index] : nil }

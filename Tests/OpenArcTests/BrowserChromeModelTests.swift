@@ -245,6 +245,9 @@ import Testing
 
     model.handleContextReady()
     driver.flushPendingCreateEvents()
+    #expect(model.tabs.isEmpty, "An incognito window opens empty, with the command bar")
+    model.createNewTab()
+    driver.flushPendingCreateEvents()
     model.createNewTab()
     driver.flushPendingCreateEvents()
 
@@ -272,6 +275,8 @@ import Testing
     )
 
     model.handleContextReady()
+    driver.flushPendingCreateEvents()
+    model.createNewTab()
     driver.flushPendingCreateEvents()
     let initialTabID = try #require(model.selectedTabID)
 

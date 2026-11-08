@@ -4016,7 +4016,8 @@ NSMenuDelegate, NSUserInterfaceValidations {
 
         if hasReceivedBrowserContext {
             chromeModel.handleContextReady()
-            if blank, firstURL == nil {
+            // Blank and incognito windows open empty and ask where to go.
+            if firstURL == nil, pages.isEmpty {
                 chromeModel.presentCommandBar()
             }
         }
