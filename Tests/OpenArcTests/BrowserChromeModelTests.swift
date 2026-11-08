@@ -281,6 +281,13 @@ import Testing
     #expect(model.librarySection == .downloads, "Archive and Spaces stay out")
     model.openLibrary(section: .media)
     #expect(model.librarySection == .media)
+    let blank = makeModel(
+        driver: FakeBrowserTabDriver(),
+        snapshotStore: InMemorySessionSnapshotStore(),
+        preferencesStore: InMemorySessionPreferencesStore(),
+        windowMode: .blank,
+    )
+    #expect(blank.librarySections == [.media, .downloads], "A blank window has the same footer Library")
 }
 
 @Test

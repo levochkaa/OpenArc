@@ -910,11 +910,14 @@ enum BrowserWindowMode: Equatable {
         (currentTab?.title ?? "", currentTab?.urlString ?? "")
     }
 
-    /// The Library sections this window offers. An incognito window keeps Media and
-    /// Downloads; it has no Spaces or Archive.
+    /// The Library sections this window offers. Incognito and blank windows keep
+    /// Media and Downloads; they have no Spaces or Archive of their own.
     var librarySections: [BrowserLibrarySection] {
-        if supportsSpaces { return BrowserLibrarySection.allCases }
-        return isIncognito ? [.media, .downloads] : []
+        switch windowMode {
+        case .normal: BrowserLibrarySection.allCases
+        case .blank, .incognito: [.media, .downloads]
+        case .webApp: []
+        }
     }
 
     var hasLibrary: Bool { !librarySections.isEmpty }
