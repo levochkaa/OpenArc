@@ -2971,6 +2971,7 @@ enum PageContextMenuCommand {
   kContextMediaControls,
   kContextSaveVideoFrame,
   kContextCopyVideoFrame,
+  kContextImportPasswords,
   kContextLanguageSettings,
   kContextDirectionDefault,
   kContextDirectionLeftToRight,
@@ -3154,6 +3155,7 @@ void BuildPageContextMenu(CefRefPtr<CefContextMenuParams> params, CefRefPtr<CefM
     }
     if (allowsLinkTargets) {
       model->AddSeparator();
+      model->AddItem(kContextImportPasswords, LocalizedMenuTitle(@"browser.context.import_passwords"));
       model->AddItem(kContextLanguageSettings, LocalizedMenuTitle(@"browser.context.language_settings"));
       CefRefPtr<CefMenuModel> direction =
           model->AddSubMenu(kContextWritingDirection, LocalizedMenuTitle(@"browser.context.writing_direction"));
@@ -7484,6 +7486,9 @@ bool BrowserTabClient::OnContextMenuCommand(CefRefPtr<CefBrowser> browser,
       }
       return true;
     }
+    case kContextImportPasswords:
+      [delegate browserTabController:controller performPageContextCommand:@"importPasswords" argument:@""];
+      return true;
     case kContextCast:
       [delegate browserTabController:controller performPageContextCommand:@"cast" argument:@""];
       return true;

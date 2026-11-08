@@ -1177,8 +1177,13 @@ NSMenuDelegate, NSUserInterfaceValidations {
         }
     }
 
-    private func showOnboarding() {
-        let controller = BrowserOnboardingWindowController(preferences: userPreferencesStore)
+    /// Import from Another Browser: the welcome's import step on its own.
+    private func showImportFromBrowser() {
+        showOnboarding(importOnly: true)
+    }
+
+    private func showOnboarding(importOnly: Bool = false) {
+        let controller = BrowserOnboardingWindowController(preferences: userPreferencesStore, importOnly: importOnly)
         controller.importItems = { [weak self] items, profile in
             await self?.activeChromeModel?.importProfile(profile, items: items) ?? ""
         }
@@ -1465,7 +1470,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         updateSetAsDefaultBrowserMenuItem(setAsDefaultBrowserItem)
         appMenu.addItem(setAsDefaultBrowserItem)
         appMenu.addItem(BrowserNativeMenuItem(BrowserStrings.menuImportFromBrowser) { [weak self] in
-            self?.presentSettingsWindow(pane: .general)
+            self?.showImportFromBrowser()
         })
         addStandardApplicationItems(to: appMenu, app: app, appName: appName)
         let quitItem = NSMenuItem(
@@ -3204,6 +3209,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
     /// What a page's context menu needs from the application.
     private func connectPageCommands(to model: BrowserChromeModel) {
         model.onSavePageRequest = { [weak self] in self?.saveCurrentPage(nil) }
+        model.onImportFromBrowser = { [weak self] in self?.showImportFromBrowser() }
         model.onOpenLinkInIncognito = { [weak self] url in
             guard let self else { return }
             createIncognitoWindow(copyingFullscreenFrom: activeBrowserWindow, firstURL: url)

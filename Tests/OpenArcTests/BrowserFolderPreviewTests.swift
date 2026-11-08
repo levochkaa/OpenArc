@@ -206,3 +206,16 @@ import Testing
         #expect(noted.map(\.absoluteString) == ["https://x.example"])
     }
 }
+
+// MARK: - BrowserImportPasswordsCommandTests
+
+@Suite(.serialized)
+@MainActor struct BrowserImportPasswordsCommandTests {
+    @Test func importPasswordsFromAFieldsMenuOpensTheImport() {
+        let f = SidebarDragFixture(temporary: ["x"])
+        var opened = 0
+        f.model.onImportFromBrowser = { opened += 1 }
+        f.driver.onPageContextCommand?(.importPasswords, "")
+        #expect(opened == 1)
+    }
+}

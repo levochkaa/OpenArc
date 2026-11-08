@@ -47,6 +47,8 @@ enum BrowserOnboardingImportItem: String, CaseIterable {
     var isDefaultBrowser: () -> Bool = { false }
 
     private let preferences: BrowserUserPreferencesStore
+    /// The whole welcome, or only the import step for Import from Another Browser.
+    private let steps: [Step]
     private let window: NSWindow
     private let content = BrowserOnboardingBackdrop()
     private let profiles = BrowserProfileImporter.detected()
@@ -60,10 +62,11 @@ enum BrowserOnboardingImportItem: String, CaseIterable {
 
     // MARK: Private
 
-    private var step: Step { Step.allCases[stepIndex] }
+    private var step: Step { steps[stepIndex] }
 
-    init(preferences: BrowserUserPreferencesStore) {
+    init(preferences: BrowserUserPreferencesStore, importOnly: Bool = false) {
         self.preferences = preferences
+        self.steps = importOnly ? [.importing] : Step.allCases
         self.window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 760, height: 540),
             styleMask: [.titled, .closable, .fullSizeContentView],
@@ -91,7 +94,7 @@ enum BrowserOnboardingImportItem: String, CaseIterable {
     func windowWillClose(_: Notification) { onFinish() }
 
     private func advance() {
-        if stepIndex + 1 < Step.allCases.count {
+        if stepIndex + 1 < steps.count {
             stepIndex += 1
             render()
         } else {
@@ -226,7 +229,12 @@ enum BrowserOnboardingImportItem: String, CaseIterable {
             views.append(label(importResult, size: 13, weight: .medium, alpha: 0.95))
         }
         let actions = NSStackView(views: [
-            button(BrowserStrings.onboardingSkip, primary: false) { [weak self] in self?.advance() },
+            button(
+                steps.count == 1 ? BrowserStrings.cancelAction : BrowserStrings.onboardingSkip,
+                primary: false,
+            ) { [weak self] in
+                self?.advance()
+            },
             button(importResult == nil
                 ? BrowserStrings.onboardingImport
                 : BrowserStrings

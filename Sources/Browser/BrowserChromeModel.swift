@@ -397,6 +397,8 @@ enum BrowserWindowMode: Equatable {
     /// Opens a link in a new window of this profile, as a new tab there; false when
     /// there is no such window.
     var onOpenLinkInNewWindow: ((URL) -> Bool)?
+    /// Import Passwords from a text field's menu: the import of another browser's data.
+    var onImportFromBrowser: (() -> Void)?
     /// UI-only: Copy URL from the menu or its shortcut copied this address.
     var onCopiedCurrentURL: ((URL) -> Void)?
     /// The page's zoom changed through a command; the window shows the new value.
@@ -1411,6 +1413,8 @@ enum BrowserWindowMode: Equatable {
             if canSavePage { onSavePageRequest?() }
         case .viewSource:
             _ = viewSourceOfSelectedTab()
+        case .importPasswords:
+            onImportFromBrowser?()
         }
     }
 

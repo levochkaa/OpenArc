@@ -40,6 +40,7 @@ enum BrowserPageContextCommand: String {
     case searchForSelection
     case savePage
     case viewSource
+    case importPasswords
 }
 
 // MARK: - BrowserExtensionTabReport

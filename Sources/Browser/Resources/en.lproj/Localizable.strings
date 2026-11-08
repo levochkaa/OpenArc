@@ -726,6 +726,7 @@
 "browser.context.search_google_for_image" = "Search Google for Image";
 "browser.context.look_up" = "Look Up “%@”";
 "browser.context.emoji_symbols" = "Emoji & Symbols";
+"browser.context.import_passwords" = "Import Passwords";
 "browser.context.language_settings" = "Language Settings";
 "browser.context.writing_direction" = "Writing Direction";
 "browser.context.direction_default" = "Default";
