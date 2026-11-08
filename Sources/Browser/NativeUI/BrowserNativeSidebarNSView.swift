@@ -43,6 +43,10 @@ final class BrowserNativeSidebarNSView: NSView {
     // MARK: Private
 
     private let content = BrowserNativeSidebarBackground()
+    private let downloadsTray = BrowserDownloadsTrayView()
+    private var isLibraryButtonHovered = false
+    private var downloadsTrayWork: DispatchWorkItem?
+    private var downloadsTrayTimer: Timer?
     private let appGrid = BrowserNativeSidebarBackground()
     private let emptyAppGuide = BrowserNativeNoninteractiveSurface()
     private let emptyAppGuideLabel = BrowserNativeControls.label(
@@ -105,6 +109,12 @@ final class BrowserNativeSidebarNSView: NSView {
         self.header = header
         self.footer = footer
         super.init(frame: .zero)
+        (footer as? BrowserSidebarLibraryButtonHosting)?.onLibraryHoverChanged = { [weak self] hovered in
+            self?.isLibraryButtonHovered = hovered
+            self?.scheduleDownloadsTray()
+        }
+        downloadsTray.onHoverChanged = { [weak self] in self?.scheduleDownloadsTray() }
+        downloadsTray.alphaValue = 0
         setAccessibilityIdentifier("browser.sidebar")
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
@@ -860,6 +870,9 @@ final class BrowserNativeSidebarNSView: NSView {
             width: width,
             height: footerHeight,
         )
+        if downloadsTray.superview != nil {
+            placeDownloadsTray()
+        }
         // Mini players sit above the dock; the list keeps room for their
         // collapsed rows, and a player growing on hover covers its bottom.
         let playersBottom = footer.frame.minY - BrowserChromeLayout.sidebarBottomChromeTopSpacing
@@ -1935,6 +1948,97 @@ final class BrowserNativeSidebarNSView: NSView {
         folderDropBand.isHidden = false
     }
 
+    /// The tray shows a moment after the pointer reaches the Library button and
+    /// stays while it is over the button or the tray.
+    private func scheduleDownloadsTray() {
+        downloadsTrayWork?.cancel()
+        let shows = isLibraryButtonHovered || downloadsTray.isHovered
+        guard shows != (downloadsTray.superview != nil) else { return }
+        let work = DispatchWorkItem { [weak self] in self?.setDownloadsTrayShown(shows) }
+        downloadsTrayWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + (shows ? 0.3 : 0.2), execute: work)
+    }
+
+    private func setDownloadsTrayShown(_ shown: Bool) {
+        let entries = shown && !state.isDraggingSidebarItem
+            ? BrowserDownloadsTrayView.recentEntries(in: BrowserDownloadLocation.directory(
+                customPath: state.model.userPreferencesStore.downloadDirectoryPath,
+            ))
+            : []
+        guard !entries.isEmpty else {
+            downloadsTrayTimer?.invalidate()
+            downloadsTrayTimer = nil
+            guard downloadsTray.superview != nil else { return }
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.15
+                downloadsTray.animator().alphaValue = 0
+            } completionHandler: { [weak self] in
+                MainActor.assumeIsolated {
+                    guard let self, self.downloadsTray.alphaValue == 0 else { return }
+                    self.downloadsTray.removeFromSuperview()
+                    self.pagerClip.layer?.mask = nil
+                }
+            }
+            return
+        }
+        downloadsTray.show(entries)
+        if downloadsTray.superview == nil {
+            content.addSubview(downloadsTray, positioned: .above, relativeTo: miniPlayers)
+        }
+        placeDownloadsTray()
+        // Tracking areas miss fast exits and window changes; the pointer is checked too.
+        downloadsTrayTimer?.invalidate()
+        downloadsTrayTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.checkDownloadsTrayPointer() }
+        }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.15
+            downloadsTray.animator().alphaValue = 1
+        }
+    }
+
+    private func placeDownloadsTray() {
+        let height = downloadsTray.preferredHeight
+        downloadsTray.frame = NSRect(x: 0, y: footer.frame.minY - height, width: content.bounds.width, height: height)
+        fadeListAbove(trayTop: downloadsTray.frame.minY)
+    }
+
+    private func checkDownloadsTrayPointer() {
+        guard downloadsTray.superview != nil, let window else { return }
+        let point = content.convert(window.mouseLocationOutsideOfEventStream, from: nil)
+        let button = (footer as? BrowserSidebarLibraryButtonHosting & NSView).map {
+            content.convert($0.libraryButtonFrame, from: $0)
+        } ?? .zero
+        guard !downloadsTray.frame.contains(point), !button.contains(point) else { return }
+        isLibraryButtonHovered = false
+        setDownloadsTrayShown(false)
+    }
+
+    /// The list fades out over 40 pt above the tray and is hidden behind it.
+    private func fadeListAbove(trayTop: CGFloat) {
+        pagerClip.wantsLayer = true
+        guard let layer = pagerClip.layer, pagerClip.bounds.height > 0 else { return }
+        let top = pagerClip.convert(NSPoint(x: 0, y: trayTop), from: content).y
+        let fadeStart = top - 40
+        let height = pagerClip.bounds.height
+        // Unit positions run from the layer's bottom unless its geometry is flipped.
+        func unit(_ y: CGFloat) -> NSNumber {
+            let fromTop = pagerClip.isFlipped ? y : height - y
+            let fraction = min(max(fromTop / height, 0), 1)
+            return NSNumber(value: Double(layer.isGeometryFlipped ? fraction : 1 - fraction))
+        }
+        let mask = CAGradientLayer()
+        mask.frame = layer.bounds
+        mask.startPoint = CGPoint(x: 0.5, y: 0)
+        mask.endPoint = CGPoint(x: 0.5, y: 1)
+        // Visible above the fade, gone from the tray's top down, in either unit direction.
+        let fade = unit(fadeStart).doubleValue, gone = unit(top).doubleValue
+        mask.locations = [0, NSNumber(value: min(fade, gone)), NSNumber(value: max(fade, gone)), 1]
+        let shown = NSColor.black.cgColor, hidden = NSColor.clear.cgColor
+        mask.colors = fade > gone ? [shown, shown, hidden, hidden] : [hidden, hidden, shown, shown]
+        layer.mask = mask
+    }
+
     private func updateOutsidePreview() {
         guard let window, state.drag.phase == .dragging else {
             hideOutsidePreview()
@@ -2588,5 +2692,170 @@ enum BrowserSidebarLinkDrop {
               url.host?.isEmpty == false
         else { return [] }
         return [url]
+    }
+}
+
+// MARK: - BrowserSidebarLibraryButtonHosting
+
+/// The footer that holds the Library button, whose hover shows the downloads tray.
+@MainActor protocol BrowserSidebarLibraryButtonHosting: AnyObject {
+    var onLibraryHoverChanged: (Bool) -> Void { get set }
+    /// In the footer's own coordinates.
+    var libraryButtonFrame: NSRect { get }
+}
+
+// MARK: - BrowserDownloadsTrayView
+
+/// The newest files of the download folder, over the bottom of the sidebar while
+/// the Library button is hovered: oldest at the top, the newest by the button.
+final class BrowserDownloadsTrayView: NSView {
+    struct Entry: Equatable {
+        let url: URL
+        let date: Date
+    }
+
+    static let rowHeight: CGFloat = 56
+    static let maximumEntries = 4
+
+    override var isFlipped: Bool { true }
+
+    private(set) var isHovered = false
+    var onHoverChanged: () -> Void = {}
+
+    private var rows = [BrowserDownloadsTrayRow]()
+
+    private var tracking: NSTrackingArea?
+
+    var preferredHeight: CGFloat { CGFloat(rows.count) * Self.rowHeight }
+
+    override func layout() {
+        super.layout()
+        for (index, row) in rows.enumerated() {
+            row.frame = NSRect(x: 0, y: CGFloat(index) * Self.rowHeight, width: bounds.width, height: Self.rowHeight)
+        }
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let tracking { removeTrackingArea(tracking) }
+        let area = NSTrackingArea(
+            rect: .zero,
+            options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+            owner: self,
+        )
+        addTrackingArea(area)
+        tracking = area
+    }
+
+    override func mouseEntered(with _: NSEvent) {
+        isHovered = true
+        onHoverChanged()
+    }
+
+    override func mouseExited(with _: NSEvent) {
+        isHovered = false
+        onHoverChanged()
+    }
+
+    /// The newest visible items of `directory`, newest last; unfinished downloads are left out.
+    static func recentEntries(in directory: URL, limit: Int = maximumEntries) -> [Entry] {
+        let keys: [URLResourceKey] = [.addedToDirectoryDateKey, .creationDateKey]
+        let urls = (try? FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: keys,
+            options: [.skipsHiddenFiles],
+        )) ?? []
+        let entries = urls.compactMap { url -> Entry? in
+            guard !["crdownload", "download"].contains(url.pathExtension.lowercased()) else { return nil }
+            let values = try? url.resourceValues(forKeys: Set(keys))
+            guard let date = values?.addedToDirectoryDate ?? values?.creationDate else { return nil }
+            return Entry(url: url, date: date)
+        }
+        return Array(entries.sorted { $0.date > $1.date }.prefix(limit).reversed())
+    }
+
+    func show(_ entries: [Entry]) {
+        for row in rows {
+            row.removeFromSuperview()
+        }
+        rows = entries.map { entry in
+            let row = BrowserDownloadsTrayRow(entry: entry)
+            addSubview(row)
+            return row
+        }
+        needsLayout = true
+    }
+}
+
+// MARK: - BrowserDownloadsTrayRow
+
+/// A file's icon, name and when it arrived; a click opens it.
+private final class BrowserDownloadsTrayRow: NSView {
+    override var isFlipped: Bool { true }
+
+    private let entry: BrowserDownloadsTrayView.Entry
+    private let highlight = BrowserNativeSurface()
+    private let icon = NSImageView()
+    private let title = NSTextField(labelWithString: "")
+    private let detail = NSTextField(labelWithString: "")
+    private var tracking: NSTrackingArea?
+
+    init(entry: BrowserDownloadsTrayView.Entry) {
+        self.entry = entry
+        super.init(frame: .zero)
+        highlight.cornerRadius = 10
+        highlight.strokeWidth = 0
+        highlight.fillColor = BrowserChromeColors.rowHover
+        highlight.isHidden = true
+        icon.image = NSWorkspace.shared.icon(forFile: entry.url.path)
+        icon.imageScaling = .scaleProportionallyUpOrDown
+        title.stringValue = entry.url.lastPathComponent
+        title.font = .systemFont(ofSize: 14)
+        title.textColor = BrowserChromeColors.primaryText
+        title.lineBreakMode = .byTruncatingTail
+        detail.stringValue = RelativeDateTimeFormatter().localizedString(for: entry.date, relativeTo: Date())
+        detail.font = .systemFont(ofSize: 12)
+        detail.textColor = BrowserChromeColors.secondaryText
+        for view in [highlight, icon, title, detail] as [NSView] {
+            addSubview(view)
+        }
+        setAccessibilityRole(.button)
+        setAccessibilityLabel(title.stringValue)
+    }
+
+    @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func layout() {
+        super.layout()
+        highlight.frame = bounds.insetBy(dx: 4, dy: 2)
+        icon.frame = NSRect(x: 9, y: (bounds.height - 38) / 2, width: 38, height: 38)
+        let textX: CGFloat = 60
+        let width = max(bounds.width - textX - 10, 0)
+        title.frame = NSRect(x: textX, y: bounds.height / 2 - 18, width: width, height: 18)
+        detail.frame = NSRect(x: textX, y: bounds.height / 2 + 1, width: width, height: 16)
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let tracking { removeTrackingArea(tracking) }
+        let area = NSTrackingArea(
+            rect: .zero,
+            options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+            owner: self,
+        )
+        addTrackingArea(area)
+        tracking = area
+    }
+
+    override func mouseEntered(with _: NSEvent) { highlight.isHidden = false }
+    override func mouseExited(with _: NSEvent) { highlight.isHidden = true }
+    override func mouseUp(with _: NSEvent) { NSWorkspace.shared.open(entry.url) }
+
+    override func menu(for _: NSEvent) -> NSMenu? {
+        let menu = BrowserNativeMenus.menu()
+        BrowserNativeMenus.add(BrowserStrings.libraryRevealInFinder, to: menu) { [entry] in
+            NSWorkspace.shared.activateFileViewerSelecting([entry.url])
+        }
+        return menu
     }
 }

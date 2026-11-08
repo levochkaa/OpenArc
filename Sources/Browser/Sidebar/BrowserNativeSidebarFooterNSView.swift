@@ -5,7 +5,7 @@ import Combine
 
 // MARK: - BrowserNativeSidebarFooterNSView
 
-final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate {
+final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate, BrowserSidebarLibraryButtonHosting {
     private static let createMenuHoldDuration: CFTimeInterval = 0.3
 
     private static let toastDockGap: CGFloat = 7.5
@@ -15,6 +15,9 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate {
     override var isFlipped: Bool { true }
 
     var onSizeChanged: () -> Void = {}
+
+    /// The pointer came onto the Library button or left it.
+    var onLibraryHoverChanged: (Bool) -> Void = { _ in }
 
     // MARK: Private
 
@@ -51,6 +54,11 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate {
     private var spaces = [BrowserChromeModel.Space]()
     private var observations = Set<AnyCancellable>()
     private var isResizing = false
+
+    private var libraryTracking: NSTrackingArea?
+
+    /// The Library button, in this view's coordinates.
+    var libraryButtonFrame: NSRect { downloadsButton.frame }
 
     var isDownloadsPresented: Bool { popover.isShown }
 
@@ -141,6 +149,22 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate {
         spacesContainer.itemHeight = size
         spacesContainer.itemSpacing = 0
         spacesContainer.needsLayout = true
+        if let libraryTracking { removeTrackingArea(libraryTracking) }
+        let area = NSTrackingArea(
+            rect: downloadsButton.frame,
+            options: [.mouseEnteredAndExited, .activeInKeyWindow],
+            owner: self,
+        )
+        addTrackingArea(area)
+        libraryTracking = area
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        if event.trackingArea === libraryTracking { onLibraryHoverChanged(true) }
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        if event.trackingArea === libraryTracking { onLibraryHoverChanged(false) }
     }
 
     override func mouseDown(with event: NSEvent) {

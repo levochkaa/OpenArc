@@ -52,3 +52,26 @@ import Testing
         #expect(BrowserLibraryNSView.dayHeader(for: now.addingTimeInterval(-86400)) == BrowserStrings.libraryYesterday)
     }
 }
+
+// MARK: - BrowserDownloadsTrayTests
+
+@MainActor struct BrowserDownloadsTrayTests {
+    @Test func theTrayListsTheNewestFilesNewestLastWithoutUnfinishedOnes() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("DownloadsTray-\(UUID())")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let names = ["a.txt", "b.txt", "c.txt", "d.txt", "e.txt", "f.crdownload", ".hidden"]
+        for (index, name) in names.enumerated() {
+            let url = root.appendingPathComponent(name)
+            try Data("x".utf8).write(to: url)
+            try FileManager.default.setAttributes(
+                [.creationDate: Date(timeIntervalSince1970: 1_000_000 + Double(index) * 60)],
+                ofItemAtPath: url.path,
+            )
+        }
+        let entries = BrowserDownloadsTrayView.recentEntries(in: root)
+        #expect(entries.count == BrowserDownloadsTrayView.maximumEntries)
+        #expect(!entries.contains { $0.url.pathExtension == "crdownload" || $0.url.lastPathComponent.hasPrefix(".") })
+        #expect(entries.map(\.date) == entries.map(\.date).sorted(), "The newest by the button, at the bottom")
+    }
+}
