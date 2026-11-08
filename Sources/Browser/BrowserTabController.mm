@@ -2930,6 +2930,8 @@ enum PageContextMenuCommand {
   kContextEmojiAndSymbols,
   kContextMediaLoop,
   kContextMediaControls,
+  kContextSaveVideoFrame,
+  kContextCopyVideoFrame,
 };
 
 /// Speech › Start Speaking reads the selection aloud, as macOS apps do.
@@ -3022,8 +3024,14 @@ void BuildPageContextMenu(CefRefPtr<CefContextMenuParams> params, CefRefPtr<CefM
     separate();
     model->AddItem(kContextOpenMediaInNewTab,
                    LocalizedMenuTitle(hasImage ? @"browser.context.open_image_new_tab" : @"browser.context.open_media_new_tab"));
+    if (mediaType == CM_MEDIATYPE_VIDEO && allowsLinkTargets) {
+      model->AddItem(kContextSaveVideoFrame, LocalizedMenuTitle(@"browser.context.save_video_frame"));
+    }
     model->AddItem(kContextSaveMedia,
                    LocalizedMenuTitle(hasImage ? @"browser.context.save_image" : @"browser.context.save_media"));
+    if (mediaType == CM_MEDIATYPE_VIDEO && allowsLinkTargets) {
+      model->AddItem(kContextCopyVideoFrame, LocalizedMenuTitle(@"browser.context.copy_video_frame"));
+    }
     if (hasImage) {
       model->AddItem(kContextCopyImage, LocalizedMenuTitle(@"browser.context.copy_image"));
     }
@@ -3761,6 +3769,7 @@ struct TabRecord {
                          outcome:(BrowserTabCloseRequestOutcome)outcome;
 - (void)handleTitleChange:(NSString *)title forTabID:(NSString *)tabID;
 - (void)handlePageFullscreen:(BOOL)fullscreen forTabID:(NSString *)tabID;
+- (void)captureVideoFrameForTabID:(NSString *)tabID sourceURL:(NSString *)sourceURL save:(BOOL)save;
 - (void)applyMediaVolumeForTabID:(NSString *)tabID toFrame:(CefRefPtr<CefFrame>)frame;
 - (void)handleAddressChange:(NSString *)urlString forTabID:(NSString *)tabID;
 - (void)handleFaviconURLChange:(nullable NSString *)faviconURLString
@@ -6295,6 +6304,71 @@ std::string BrowserMediaVolumeScript(double volume) {
   return tabID;
 }
 
+/// Save Video Frame As… and Copy Video Frame: a picture of the player as shown,
+/// with its controls hidden for the moment. A frame of another site's video cannot
+/// be read through a canvas, so the page's own pixels are taken.
+- (void)captureVideoFrameForTabID:(NSString *)tabID sourceURL:(NSString *)sourceURL save:(BOOL)save {
+  auto it = _tabRecords.find(ToStdString(tabID));
+  if (it == _tabRecords.end() || !it->second.browser) return;
+  CefRefPtr<CefBrowser> browser = it->second.browser;
+  NSData *json = [NSJSONSerialization dataWithJSONObject:@[ sourceURL ] options:0 error:nil];
+  NSString *source = [[NSString alloc] initWithData:json encoding:NSUTF8StringEncoding];
+  NSString *find = [NSString stringWithFormat:
+      @"[...document.querySelectorAll('video')].find(m => m.currentSrc === %@[0] || m.src === %@[0])",
+      source, source];
+  NSString *script = [NSString stringWithFormat:
+      @"(() => { const v = %@; if (!v) return ''; window.__openArcFrameControls = v.controls; v.controls = false;"
+       " const r = v.getBoundingClientRect(), w = visualViewport.width, h = visualViewport.height;"
+       " return JSON.stringify([r.left / w, r.top / h, r.width / w, r.height / h]); })()",
+      find];
+  NSString *restore = [NSString stringWithFormat:
+      @"(() => { const v = %@; if (v && '__openArcFrameControls' in window) v.controls = window.__openArcFrameControls; })();",
+      find];
+  __weak BrowserTabController *weakSelf = self;
+  [self evaluateJavaScript:script
+               inTabWithID:tabID
+                completion:^(NSString *result) {
+                  NSArray<NSNumber *> *rect = result.length > 0
+                      ? [NSJSONSerialization JSONObjectWithData:[result dataUsingEncoding:NSUTF8StringEncoding]
+                                                        options:0
+                                                          error:nil]
+                      : nil;
+                  if (![rect isKindOfClass:NSArray.class] || rect.count != 4) return;
+                  const CGRect fraction = CGRectMake(rect[0].doubleValue, rect[1].doubleValue,
+                                                     rect[2].doubleValue, rect[3].doubleValue);
+                  // One frame for the controls to go before the picture.
+                  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 100 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
+                    CefRefPtr<RegionScreenshotObserver> observer = new RegionScreenshotObserver(fraction);
+                    observer->completion_ = ^(NSData *png) {
+                      browser->GetMainFrame()->ExecuteJavaScript(ToStdString(restore), "", 0);
+                      if (png == nil) return;
+                      if (!save) {
+                        [NSPasteboard.generalPasteboard clearContents];
+                        [NSPasteboard.generalPasteboard setData:png forType:NSPasteboardTypePNG];
+                        return;
+                      }
+                      NSWindow *window = weakSelf.hostWindowForSheets;
+                      NSSavePanel *panel = [NSSavePanel savePanel];
+                      panel.allowedContentTypes = @[ UTTypePNG ];
+                      panel.nameFieldStringValue = NSLocalizedString(@"browser.context.video_frame_file_name", nil);
+                      void (^write)(NSModalResponse) = ^(NSModalResponse response) {
+                        if (response == NSModalResponseOK && panel.URL != nil) [png writeToURL:panel.URL atomically:YES];
+                      };
+                      if (window != nil) {
+                        [panel beginSheetModalForWindow:window completionHandler:write];
+                      } else {
+                        write([panel runModal]);
+                      }
+                    };
+                    observer->Start(browser->GetHost());
+                  });
+                }];
+}
+
+- (NSWindow *)hostWindowForSheets {
+  return _hostView.window;
+}
+
 - (void)handlePageFullscreen:(BOOL)fullscreen forTabID:(NSString *)tabID {
   if (_tabRecords.find(ToStdString(tabID)) == _tabRecords.end()) return;
   if (fullscreen) {
@@ -6914,6 +6988,12 @@ bool BrowserTabClient::OnContextMenuCommand(CefRefPtr<CefBrowser> browser,
                                             int command_id,
                                             EventFlags) {
   CEF_REQUIRE_UI_THREAD();
+  if (command_id == kContextSaveVideoFrame || command_id == kContextCopyVideoFrame) {
+    [controller_ captureVideoFrameForTabID:ToNSString(tab_id_)
+                                 sourceURL:ToNSString(params->GetSourceUrl().ToString())
+                                      save:command_id == kContextSaveVideoFrame];
+    return true;
+  }
   if ((command_id == kContextMediaLoop || command_id == kContextMediaControls) && frame) {
     // The player under the menu, found by its address in the frame that showed it.
     NSData *json = [NSJSONSerialization dataWithJSONObject:@[ ToNSString(params->GetSourceUrl().ToString()) ]

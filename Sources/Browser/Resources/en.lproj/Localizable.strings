@@ -772,6 +772,9 @@
 "browser.context.picture_in_picture" = "Picture in Picture";
 "browser.context.media_loop" = "Loop";
 "browser.context.media_controls" = "Show All Controls";
+"browser.context.save_video_frame" = "Save Video Frame As…";
+"browser.context.copy_video_frame" = "Copy Video Frame";
+"browser.context.video_frame_file_name" = "Video Frame.png";
 
 "browser.menu.import_from_browser" = "Import from Another Browser…";
 "browser.menu.blank_window" = "Blank Window";
