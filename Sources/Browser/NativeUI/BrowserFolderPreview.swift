@@ -41,6 +41,11 @@ struct BrowserFolderPreviewItem: Equatable {
     private var showWork: DispatchWorkItem?
     private var hideWork: DispatchWorkItem?
 
+    private var isPointerOverShownRow: Bool {
+        guard let row = shownRow, let window = row.window else { return false }
+        return window.convertToScreen(row.convert(row.bounds, to: nil)).contains(NSEvent.mouseLocation)
+    }
+
     /// Beside the row on the page's side, top-aligned with it and kept on screen.
     static func frame(for size: NSSize, beside row: NSView) -> NSRect {
         guard let window = row.window else { return NSRect(origin: .zero, size: size) }
@@ -122,10 +127,17 @@ struct BrowserFolderPreviewItem: Equatable {
     }
 
     /// Keeps a pending preview of another folder, which replaces this one.
+    /// The preview takes the keyboard, so the window's rows stop tracking the
+    /// pointer and report it leaving at once. While it is still on the folder's
+    /// row the preview stays, and this looks again until it leaves.
     private func scheduleHide() {
         schedule(&hideWork, after: Self.hideDelay) { [weak self] in
             guard let self, panel?.isPointerInside != true, panel?.hasQuery != true else { return }
-            hidePanel()
+            if isPointerOverShownRow {
+                scheduleHide()
+            } else {
+                hidePanel()
+            }
         }
     }
 
