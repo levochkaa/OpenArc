@@ -5991,9 +5991,29 @@ enum BrowserWindowMode: Equatable {
             .sorted { $0.lastActivityAt > $1.lastActivityAt }
         let here = candidates.filter { $0.spaceID == selectedSpaceID }
         let elsewhere = candidates.filter { $0.spaceID != selectedSpaceID }
-        let recentTabs = (here + elsewhere)
+        var recentTabs = (here + elsewhere)
             .prefix(maximumCount)
             .map(commandBarSuggestion(forTab:))
+        // A Blank Window also offers the profile's other windows' tabs, as pages to open here.
+        if windowMode == .blank, let group = windowGroup {
+            let ownURLs = Set(recentTabs.map(\.resolvedURLString))
+            let others = group.models
+                .filter { $0 !== self }
+                .flatMap(\.tabs)
+                .filter { !$0.urlString.isEmpty && $0.placement != .app && !ownURLs.contains($0.urlString) }
+                .sorted { $0.lastActivityAt > $1.lastActivityAt }
+            var seen = Set<String>()
+            for tab in others where recentTabs.count < maximumCount && seen.insert(tab.urlString).inserted {
+                var page = BrowserCommandSuggestion(
+                    kind: .history,
+                    displayText: tab.displayTitle,
+                    detailText: BrowserURLDisplayFormatter.displayString(for: tab.urlString),
+                    resolvedURLString: tab.urlString,
+                )
+                page.faviconURL = tab.faviconURL
+                recentTabs.append(page)
+            }
+        }
         // The page on screen is already here, so its visit is not offered either.
         var urls = Set(recentTabs.map(\.resolvedURLString))
         if let current = selectedTab?.urlString { urls.insert(current) }

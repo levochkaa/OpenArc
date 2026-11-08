@@ -158,6 +158,35 @@ import Testing
         #expect(pair.second.tabs.first { $0.syncID == syncID }?.title == "Renamed page")
     }
 
+    @Test func aBlankWindowOffersTheOtherWindowsTabsAsPagesBeforeTyping() throws {
+        let first = SidebarDragFixture(temporary: ["x"])
+        let defaults =
+            try #require(UserDefaults(suiteName: BrowserTestDefaults.suiteName("BrowserProfileWindowGroupTests.blank")))
+        let blank = BrowserChromeModel(
+            tabDriver: FakeBrowserTabDriver(),
+            sessionSnapshotStore: first.store,
+            sessionPreferencesStore: InMemorySessionPreferencesStore(),
+            commandBarSuggestionProvider: FakeSuggestionProvider(),
+            userPreferencesStore: BrowserUserPreferencesStore(userDefaults: defaults),
+            shortcutStore: BrowserShortcutStore(userDefaults: defaults),
+            extensionManager: FakeBrowserExtensionManager(),
+            windowMode: .blank,
+            windowTitleHandler: { _ in },
+            allTabsClosedHandler: {},
+        )
+        let group = BrowserProfileWindowGroup()
+        group.add(first.model)
+        group.add(blank)
+        blank.handleContextReady()
+        let other = try #require(first.model.tabs.first { $0.id == first.id("x") })
+
+        blank.commandBarModel.present()
+        let row = blank.commandBarModel.suggestions.first { $0.resolvedURLString == other.urlString }
+        #expect(row != nil, "The other window's tab is offered")
+        #expect(row?.kind == .history && row?.tabIDs.isEmpty == true, "As a page to open here")
+        blank.commandBarModel.dismiss()
+    }
+
     @Test func aClosingWindowLeavesItsPagesToTheOthers() throws {
         let pair = Pair()
         let source = pair.first.model
