@@ -43,6 +43,7 @@ import Combine
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
         panel.contentView = bar
         bar.configure(blockedLeadingInset: 0, style: .standard, faviconCandidate: nil)
+        bar.showsCloseButton = true
         model.$isPresented
             .removeDuplicates()
             .sink { [weak self] presented in

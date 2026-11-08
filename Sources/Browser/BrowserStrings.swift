@@ -305,6 +305,10 @@ enum BrowserStrings {
         comment: "Button that retries opening the selected tab.",
     )
 
+    static let commandBarClose = NSLocalizedString(
+        "browser.command_bar.close",
+        comment: "Button beside the small window bar's field that closes the bar.",
+    )
     static let commandBarPlaceholder = NSLocalizedString(
         "browser.command_bar.placeholder",
         comment: "Placeholder shown in the command bar search field.",

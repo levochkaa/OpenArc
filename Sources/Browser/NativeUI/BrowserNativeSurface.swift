@@ -176,6 +176,17 @@ struct BrowserNativeChromeButtonStyle {
         hoverBackground: BrowserChromeColors.rowHover,
         pressedScale: BrowserChromeLayout.sidebarCloseButtonPressedScale,
     )
+    /// Close beside the small window bar's field: a filled square.
+    static let commandBarClose = BrowserNativeChromeButtonStyle(
+        size: 24,
+        cornerRadius: 6,
+        symbolSize: 11,
+        symbolWeight: .semibold,
+        foreground: NSColor.labelColor.withAlphaComponent(0.6),
+        hoverBackground: NSColor.labelColor.withAlphaComponent(0.06),
+        restingBackground: NSColor.labelColor.withAlphaComponent(0.085),
+        pressedScale: BrowserChromeLayout.sidebarCloseButtonPressedScale,
+    )
     static let extensionClose = BrowserNativeChromeButtonStyle(
         size: BrowserChromeLayout.extensionSidePanelCloseButtonSize,
         cornerRadius: BrowserChromeLayout.sidebarCloseCornerRadius,
@@ -193,6 +204,8 @@ struct BrowserNativeChromeButtonStyle {
     let foreground: NSColor
     let hoverBackground: NSColor
     var pressedBackground: NSColor?
+    /// A fill shown without hover, under the hover one.
+    var restingBackground: NSColor?
     var pressedForeground: NSColor?
     var disabledForeground: NSColor?
     var pressedScale: CGFloat = 1
@@ -493,6 +506,10 @@ final class BrowserNativeChromeButton: NSButton {
 
     override func draw(_: NSRect) {
         let progress = isEnabled ? pressProgress : 0
+        if let resting = style.restingBackground {
+            resting.setFill()
+            NSBezierPath(roundedRect: bounds, xRadius: style.cornerRadius, yRadius: style.cornerRadius).fill()
+        }
         if hoverProgress > 0 && isEnabled {
             let hoverAlpha = style.hoverBackground.alphaComponent
             let pressedAlpha = style.pressedBackground?.alphaComponent ?? hoverAlpha

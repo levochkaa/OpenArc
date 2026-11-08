@@ -30,4 +30,31 @@ import Testing
             #expect(presented == 1, "New Small Window asks where to go first")
         }
     }
+
+    @Test func theSmallWindowBarHasACloseButtonBesideItsField() throws {
+        let f = SidebarDragFixture()
+        let model = f.model.littleWindowCommandBarModel
+        let bar = BrowserCommandBarNSView(model: model)
+        bar.frame = NSRect(x: 0, y: 0, width: 506, height: 640)
+        #expect(!bar.showsCloseButton, "Command bars in a window have none")
+        bar.showsCloseButton = true
+        model.present()
+        bar.layoutSubtreeIfNeeded()
+        let close = try #require(bar.descendant(withIdentifier: "browser.command.close") as? BrowserNativeChromeButton)
+        let field = try #require(bar.descendant(withIdentifier: "browser.command.query"))
+        #expect(!close.isHidden && close.frame.width == 24)
+        #expect(field.frame.maxX <= close.frame.minX, "The text stops before it")
+        close.onAction()
+        #expect(!model.isPresented)
+    }
+}
+
+private extension NSView {
+    func descendant(withIdentifier identifier: String) -> NSView? {
+        if accessibilityIdentifier() == identifier { return self }
+        for child in subviews {
+            if let match = child.descendant(withIdentifier: identifier) { return match }
+        }
+        return nil
+    }
 }

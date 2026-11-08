@@ -6,6 +6,8 @@ import Combine
 // MARK: - BrowserCommandBarNSView
 
 final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDataSource, NSTableViewDelegate {
+    private static let closeButtonTrailing: CGFloat = 22
+
     // MARK: Internal
 
     override var isFlipped: Bool { true }
@@ -32,6 +34,13 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
     private let siteHintKey = BrowserNativeSurface()
     private let siteHintKeyLabel = NSTextField(labelWithString: "Tab")
     private let divider = BrowserNativeSurface()
+    private let closeButton = BrowserNativeChromeButton(
+        symbol: "xmark",
+        title: BrowserStrings.commandBarClose,
+        style: .commandBarClose,
+        pressEffect: .compress,
+        action: {},
+    )
     private let scrollView = NSScrollView()
     private let table = BrowserCommandSuggestionTableView()
     private var style = BrowserCommandBarOverlayStyle.standard
@@ -42,6 +51,15 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
     private let scrollAnimation = BrowserNativeAnimation()
 
     var panelFrame: CGRect { panel.frame }
+
+    /// Close beside the field, for a bar with no window around it to click away to.
+    var showsCloseButton: Bool {
+        get { !closeButton.isHidden }
+        set {
+            closeButton.isHidden = !newValue
+            needsLayout = true
+        }
+    }
 
     init(model: BrowserCommandBarModel, faviconCache: BrowserFaviconCache = .shared) {
         self.model = model
@@ -54,6 +72,10 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
         panel.contentView.addSubview(siteHint)
         panel.contentView.addSubview(siteHintKey)
         panel.contentView.addSubview(divider)
+        panel.contentView.addSubview(closeButton)
+        closeButton.isHidden = true
+        closeButton.onAction = { [weak self] in self?.model.dismiss() }
+        closeButton.setAccessibilityIdentifier("browser.command.close")
         panel.contentView.addSubview(scrollView)
         symbol.imageScaling = .scaleProportionallyUpOrDown
         symbol.setAccessibilityElement(false)
@@ -190,6 +212,16 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
                 height: 17,
             )
             queryMaxX = siteHint.frame.minX - spacing
+        }
+        if !closeButton.isHidden {
+            let size = BrowserNativeChromeButtonStyle.commandBarClose.size
+            closeButton.frame = NSRect(
+                x: geometry.panelWidth - Self.closeButtonTrailing - size,
+                y: outer + (fieldHeight - size) / 2,
+                width: size,
+                height: size,
+            )
+            queryMaxX = min(queryMaxX, closeButton.frame.minX - spacing)
         }
         queryField.frame = NSRect(
             x: queryX,
