@@ -32,6 +32,96 @@ enum BrowserSettingsLayout {
             ? NSColor.white.withAlphaComponent(0.05)
             : NSColor.white
     }
+
+    /// A card's outline: just enough to separate it from the window.
+    static let cardStroke = NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor.white.withAlphaComponent(0.08)
+            : NSColor.black.withAlphaComponent(0.08)
+    }
+}
+
+// MARK: - BrowserSettingsIcon
+
+/// The colored badge before a setting: a white symbol on a rounded square,
+/// colored by the setting's group.
+struct BrowserSettingsIcon {
+    static let side: CGFloat = 20
+
+    /// Badges by setting ID.
+    static let icons: [String: BrowserSettingsIcon] = [
+        // General
+        "automatic-updates": .init("arrow.down.circle.fill", .systemGray),
+        "update-channel": .init("shippingbox.fill", .systemGray),
+        "appearance": .init("circle.lefthalf.filled", .systemIndigo),
+        "sidebar-position": .init("sidebar.left", .systemIndigo),
+        "recent-pages-previews": .init("rectangle.stack.fill", .systemBlue),
+        "mail-previews": .init("envelope.fill", .systemBlue),
+        "folder-previews": .init("folder.fill", .systemBlue),
+        "warn-before-quitting": .init("exclamationmark.triangle.fill", .systemOrange),
+        "blurred-background": .init("camera.filters", .systemPurple),
+        "battery-saver": .init("battery.75percent", .systemGreen),
+        // Links
+        "little-arc": .init("macwindow", .systemGreen),
+        "little-window-option-command-click": .init("command", .systemGreen),
+        "little-window-any-app": .init("square.on.square", .systemGreen),
+        "small-window-lifetime": .init("timer", .systemGreen),
+        "peek": .init("eye.fill", .systemPurple),
+        "peek-other-sites": .init("arrow.up.forward.square.fill", .systemPurple),
+        // Profiles
+        "temporary-tab-lifetime": .init("archivebox.fill", .systemOrange),
+        "automatic-tab-archival": .init("archivebox.fill", .systemOrange),
+        "search-engine": .init("magnifyingglass", .systemBlue),
+        "search-suggestions": .init("text.magnifyingglass", .systemBlue),
+        "ai-search-suggestion": .init("sparkles", .systemPurple),
+        "ai-search-provider": .init("sparkle.magnifyingglass", .systemPurple),
+        "new-documents-app": .init("doc.badge.plus", .systemGray),
+        "download-location": .init("arrow.down.to.line", .systemBlue),
+        // Advanced
+        "sound-effects": .init("speaker.wave.2.fill", .systemBlue),
+        "haptic-feedback": .init("hand.tap.fill", .systemBlue),
+        "restore-windows": .init("macwindow.on.rectangle", .systemGreen),
+        "window-dragging-from-page-top": .init("rectangle.topthird.inset.filled", .systemGreen),
+        "bookmarks-bar": .init("bookmark.fill", .systemRed),
+        "toolbar-full-url": .init("ellipsis.rectangle.fill", .systemRed),
+        "picture-in-picture": .init("pip.fill", .systemPurple),
+        "share-theme-with-websites": .init("paintpalette.fill", .systemPurple),
+        "agent-access": .init("terminal.fill", .systemGray),
+        // Accounts
+        "account.sync": .init("arrow.triangle.2.circlepath", .systemBlue),
+        "default-browser": .init("globe", .systemBlue),
+    ]
+
+    let symbol: String
+    let color: NSColor
+
+    /// Drawn for the current appearance each time it shows.
+    var image: NSImage {
+        let side = Self.side
+        let symbol = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 11, weight: .semibold)
+                .applying(.init(paletteColors: [.white])))
+        let color = color
+        return NSImage(size: NSSize(width: side, height: side), flipped: false) { rect in
+            color.setFill()
+            NSBezierPath(roundedRect: rect, xRadius: 5, yRadius: 5).fill()
+            if let symbol {
+                let size = symbol.size
+                symbol.draw(in: NSRect(
+                    x: rect.midX - size.width / 2,
+                    y: rect.midY - size.height / 2,
+                    width: size.width,
+                    height: size.height,
+                ))
+            }
+            return true
+        }
+    }
+
+    init(_ symbol: String, _ color: NSColor) {
+        self.symbol = symbol
+        self.color = color
+    }
 }
 
 // MARK: - BrowserShortcutSettingsRow
@@ -520,7 +610,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
             card(accountsBody),
             section(
                 BrowserStrings.settingsDefaultBrowserSection,
-                rows: [row(BrowserStrings.settingsDefaultBrowserPrompt, control: button)],
+                rows: [row(BrowserStrings.settingsDefaultBrowserPrompt, icon: "default-browser", control: button)],
             ),
         ])
         refreshAccounts()
@@ -1040,7 +1130,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
             path,
         ], spacing: 2)
         return row(
-            label: label,
+            label: withIcon("download-location", label),
             control: BrowserNativeControls.stack([reset, choose], orientation: .horizontal, spacing: 8),
         )
     }
@@ -1560,7 +1650,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
             BrowserNativeControls.label(BrowserStrings.syncAccountSyncSidebar, wraps: true),
             detail,
         ], spacing: 4)
-        return row(label: label, control: control)
+        return row(label: withIcon("account.sync", label), control: control)
     }
 
     /// One line of status with an optional symbol before it.
@@ -1941,8 +2031,19 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
         return BrowserNativeControls.stack(labels, spacing: 2)
     }
 
-    private func row(_ title: String, detail: String? = nil, control: NSView) -> NSView {
-        row(label: titleDetail(title, detail: detail), control: control)
+    private func row(_ title: String, detail: String? = nil, icon id: String? = nil, control: NSView) -> NSView {
+        row(label: withIcon(id, titleDetail(title, detail: detail)), control: control)
+    }
+
+    /// A setting's colored badge before its title, when it has one.
+    private func withIcon(_ id: String?, _ label: NSView) -> NSView {
+        guard let id, let icon = BrowserSettingsIcon.icons[id] else { return label }
+        let badge = NSImageView(image: icon.image)
+        badge.setContentHuggingPriority(.required, for: .horizontal)
+        badge.setContentCompressionResistancePriority(.required, for: .horizontal)
+        let stack = BrowserNativeControls.stack([badge, label], orientation: .horizontal, spacing: 10)
+        stack.alignment = .centerY
+        return stack
     }
 
     private func row(label: NSView, control: NSView) -> NSView {
@@ -1975,7 +2076,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
         control.setAccessibilityIdentifier("browser.settings.\(id)")
         control.onChange = set
         updateBindings.append { [weak control] in control?.state = get() ? .on : .off }
-        return row(title, detail: detail, control: control)
+        return row(title, detail: detail, icon: id, control: control)
     }
 
     private func picker<Value: Equatable>(
@@ -2011,7 +2112,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
             control?.selectItem(at: options.firstIndex(of: get()) ?? -1)
             control?.isEnabled = enabled()
         }
-        return row(title, detail: detail, control: container)
+        return row(title, detail: detail, icon: id, control: container)
     }
 
     private func link(_ title: String, url: URL) -> NSView {
@@ -2066,7 +2167,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
         body.spacing = 0
         let surface = BrowserNativeSurface()
         surface.fillColor = BrowserSettingsLayout.cardFill
-        surface.strokeColor = NSColor.separatorColor.withAlphaComponent(0.35)
+        surface.strokeColor = BrowserSettingsLayout.cardStroke
         surface.strokeWidth = 1
         surface.cornerRadius = BrowserSettingsLayout.cardCornerRadius
         let padded = BrowserNativeControls.padded(

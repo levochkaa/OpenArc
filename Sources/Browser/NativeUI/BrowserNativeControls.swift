@@ -28,15 +28,15 @@ final class BrowserActionButton: NSButton {
 
 // MARK: - BrowserActionToggle
 
-final class BrowserActionToggle: NSButton {
+/// An on/off switch in the small size Settings rows use.
+final class BrowserActionToggle: NSSwitch {
     // MARK: Internal
 
     var onChange: (Bool) -> Void = { _ in }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
-        setButtonType(.switch)
-        title = ""
+        controlSize = .mini
         target = self
         action = #selector(changed)
     }
