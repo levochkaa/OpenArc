@@ -48,6 +48,8 @@ final class BrowserCommandSuggestionNSView: NSButton {
         primary.textColor = BrowserChromeColors.primaryText
         detail.font = .systemFont(ofSize: 12, weight: .medium)
         detail.textColor = BrowserChromeColors.secondaryText
+        // A long address keeps its start and end.
+        detail.lineBreakMode = .byTruncatingMiddle
         badgeLabel.font = .systemFont(ofSize: 11, weight: .semibold)
         badgeLabel.textColor = BrowserChromeColors.secondaryText
         badge.cornerRadius = 5
@@ -144,9 +146,9 @@ final class BrowserCommandSuggestionNSView: NSButton {
         let titleWidth = min(textWidth(primary), hasDetail ? available * 0.72 : available)
         primary.frame = NSRect(x: x, y: (bounds.height - 20) / 2 + 0.5, width: titleWidth, height: 20)
         detail.frame = NSRect(
-            x: primary.frame.maxX + spacing,
+            x: primary.frame.maxX + 3,
             y: (bounds.height - 16) / 2,
-            width: max(available - titleWidth - spacing, 0),
+            width: max(available - titleWidth - 3, 0),
             height: 16,
         )
         detail.isHidden = !hasDetail
@@ -171,7 +173,8 @@ final class BrowserCommandSuggestionNSView: NSButton {
         detail.textColor = tinted ? NSColor.white.withAlphaComponent(0.75) : BrowserChromeColors.secondaryText
         title = suggestion.displayText
         primary.stringValue = suggestion.displayText
-        detail.stringValue = suggestion.detailText ?? ""
+        // "Title — address", the address after a dash.
+        detail.stringValue = suggestion.detailText.map { "— " + $0 } ?? ""
         badgeLabel.stringValue = suggestion.shortcut?.displayText ?? ""
         badge.isHidden = suggestion.shortcut == nil
         let isTab = suggestion.kind == .openTab
