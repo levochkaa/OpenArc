@@ -358,7 +358,16 @@ extension BrowserMobileDownloads: BrowserMobileDownloadsPresenting {}
         }
         statusLabel.text = interactionError ?? downloads.error ?? (downloads.isLoading
             ? Self.localized("Loading Downloads…")
-            : entries.isEmpty ? Self.localized("No Downloads") : nil)
+            : nil)
+        // Nothing downloaded yet: the list's middle says so, as the archive does.
+        if entries.isEmpty, statusLabel.text == nil, !downloads.isLoading {
+            var empty = UIContentUnavailableConfiguration.empty()
+            empty.text = Self.localized("No Downloads")
+            empty.secondaryText = Self.localized("Files you download appear here.")
+            contentUnavailableConfiguration = empty
+        } else {
+            contentUnavailableConfiguration = nil
+        }
         retryButton.isHidden = !downloads.canRetryPersistence
         retryButton.isEnabled = !hasPendingAction && confirmation == nil && !downloads.isLoading
         navigationItem.leftBarButtonItem?.isEnabled = canStartAction && downloads.canClearCompleted &&

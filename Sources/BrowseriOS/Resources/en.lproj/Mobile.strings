@@ -120,6 +120,7 @@
 "Downloads" = "Downloads";
 "Loading Downloads…" = "Loading Downloads…";
 "No Downloads" = "No Downloads";
+"Files you download appear here." = "Files you download appear here.";
 "Downloading" = "Downloading";
 "Completed" = "Completed";
 "Cancelled" = "Cancelled";
