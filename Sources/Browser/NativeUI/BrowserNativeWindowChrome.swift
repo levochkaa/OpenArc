@@ -261,8 +261,19 @@ extension BrowserFindBarNSView {
             query: model.findQuery,
             isPresented: model.isFindBarPresented,
             canStep: model.canStepThroughFindMatches,
+            result: Self.result(
+                query: model.findQuery,
+                count: model.findResultMatchCount,
+                active: model.findResultActiveOrdinal,
+            ),
             focusRequestID: model.findBarFocusRequest,
             blockedLeadingInset: blockedLeadingInset,
         )
+    }
+
+    static func result(query: String, count: Int?, active: Int?) -> Result {
+        guard !query.isEmpty, let count else { return .none }
+        guard count > 0 else { return .notFound }
+        return .matches(active: active.flatMap { (1...count).contains($0) ? $0 : nil }, count: count)
     }
 }

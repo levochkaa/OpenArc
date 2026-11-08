@@ -194,16 +194,26 @@ enum BrowserChromeLayout {
     static let siteToolbarURLButtonMaximumWidth: CGFloat = 420
     static let incognitoBannerHeight: CGFloat = 30
     static let incognitoBannerIconSize: CGFloat = 12
-    static let findBarWidth: CGFloat = 360
-    static let findBarHeight: CGFloat = 42
-    static let findBarFieldWidth: CGFloat = 202
-    static let findBarTopInset: CGFloat = 12
-    static let findBarTrailingInset: CGFloat = 12
-    static let findBarHorizontalPadding: CGFloat = 10
-    static let findBarCornerRadius: CGFloat = 12
-    static let findBarFieldCornerRadius: CGFloat = 8
+    /// Find in page: a 300 x 32 pt bar 10 pt inside the page's top trailing corner.
+    static let findBarWidth: CGFloat = 300
+    static let findBarHeight: CGFloat = 32
+    static let findBarTopInset: CGFloat = 10
+    static let findBarTrailingInset: CGFloat = 10
+    static let findBarCornerRadius: CGFloat = 5
     static let findBarSymbolSize: CGFloat = 13
-    static let findBarContentSpacing: CGFloat = 6
+    static let findBarSymbolLeading: CGFloat = 10
+    static let findBarTextLeading: CGFloat = 32
+    static let findBarButtonSize: CGFloat = 22
+    static let findBarButtonSymbolSize: CGFloat = 12
+    /// Centers of the trailing controls, from the bar's trailing edge.
+    static let findBarCloseCenterInset: CGFloat = 15.75
+    static let findBarDividerInset: CGFloat = 30.5
+    static let findBarNextCenterInset: CGFloat = 48.25
+    static let findBarPreviousCenterInset: CGFloat = 74.25
+    /// The match count ends this far before the previous button's glyph.
+    static let findBarCountGap: CGFloat = 14.5
+    static let findBarNotFoundGap: CGFloat = 6
+    static let findBarDividerHeight: CGFloat = 18
     static let tooltipCornerRadius: CGFloat = 14
     static let tooltipTopLeadingCornerRadius: CGFloat = 3
     /// The panel's room for the shadows around the bubble.

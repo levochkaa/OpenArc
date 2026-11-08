@@ -7,6 +7,8 @@ import AppKit
 final class BrowserFindNSTextField: NSTextField {
     // MARK: Internal
 
+    static let textFont = NSFont.systemFont(ofSize: 13)
+
     override var intrinsicContentSize: NSSize {
         NSSize(width: NSView.noIntrinsicMetric, height: 18)
     }
@@ -15,16 +17,6 @@ final class BrowserFindNSTextField: NSTextField {
     var pendingFocus = false
     var pendingSelectAll = false
     var lastFocusRequestID = 0
-
-    // MARK: Private
-
-    private var activeTextColor: NSColor {
-        if effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
-            NSColor.white.withAlphaComponent(0.92)
-        } else {
-            .labelColor
-        }
-    }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -35,8 +27,8 @@ final class BrowserFindNSTextField: NSTextField {
         focusRingType = .none
         isEditable = true
         isSelectable = true
-        font = .systemFont(ofSize: 13, weight: .medium)
-        textColor = activeTextColor
+        font = Self.textFont
+        textColor = BrowserChromeColors.findBarText
         cell?.usesSingleLineMode = true
         cell?.wraps = false
         cell?.isScrollable = true
@@ -138,10 +130,10 @@ final class BrowserFindNSTextField: NSTextField {
             return
         }
 
-        editor.insertionPointColor = activeTextColor
-        editor.textColor = activeTextColor
+        editor.insertionPointColor = .controlAccentColor
+        editor.textColor = BrowserChromeColors.findBarText
         editor.drawsBackground = false
-        editor.font = .systemFont(ofSize: 13, weight: .medium)
+        editor.font = Self.textFont
         editor.textContainerInset = NSSize(width: 0, height: 1)
     }
 }

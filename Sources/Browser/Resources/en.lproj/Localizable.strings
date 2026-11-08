@@ -192,7 +192,8 @@
 "browser.downloads.progress.known_total_with_speed" = "%@ of %@ • %@/s";
 "browser.downloads.progress.unknown_total" = "%@ downloaded";
 "browser.downloads.progress.unknown_total_with_speed" = "%@ • %@/s";
-"browser.find_bar.placeholder" = "Find in page";
+"browser.find_bar.placeholder" = "Find in page…";
+"browser.find_bar.not_found" = "Not Found";
 "browser.find_bar.previous_match" = "Previous Match";
 "browser.find_bar.next_match" = "Next Match";
 "browser.find_bar.close" = "Close Find";

@@ -2493,8 +2493,9 @@ import Testing
             text: "browser",
             forward: true,
             matchCase: false,
-            findNext: false,
+            findNext: true,
         ),
+        "A typed query selects its first match",
     )
 
     model.findNextInPage()
@@ -2663,6 +2664,13 @@ import Testing
 
     driver.emitFindResult(id: selectedTabID, matchCount: 2, activeMatchOrdinal: 1)
     #expect(model.canStepThroughFindMatches)
+    #expect(model.findResultMatchCount == 2 && model.findResultActiveOrdinal == 1)
+
+    model.findQuery = "browsers"
+    #expect(
+        model.findResultMatchCount == nil && model.findResultActiveOrdinal == nil,
+        "A new query drops the old count",
+    )
 }
 
 @Test

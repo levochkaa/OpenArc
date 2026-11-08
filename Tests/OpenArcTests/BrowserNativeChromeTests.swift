@@ -13,11 +13,25 @@ import Testing
         view.onNext = { calls.append("next") }
         view.onPrevious = { calls.append("previous") }
         view.onDismiss = { calls.append("close") }
-        view.update(query: "browser", isPresented: true, canStep: false, focusRequestID: 1, blockedLeadingInset: 240)
+        view.update(
+            query: "browser",
+            isPresented: true,
+            canStep: false,
+            result: .matches(active: 1, count: 3),
+            focusRequestID: 1,
+            blockedLeadingInset: 240,
+        )
         view.nextButton.performClick(nil)
         view.previousButton.performClick(nil)
         #expect(calls.isEmpty)
-        view.update(query: "browser", isPresented: true, canStep: true, focusRequestID: 1, blockedLeadingInset: 240)
+        view.update(
+            query: "browser",
+            isPresented: true,
+            canStep: true,
+            result: .matches(active: 1, count: 3),
+            focusRequestID: 1,
+            blockedLeadingInset: 240,
+        )
         view.nextButton.performClick(nil)
         view.previousButton.performClick(nil)
         view.closeButton.performClick(nil)
@@ -32,7 +46,14 @@ import Testing
         view.onQueryChanged = { queries.append($0) }
         view.onNext = { submitted += 1 }
         view.onDismiss = { dismissed += 1 }
-        view.update(query: "initial", isPresented: true, canStep: true, focusRequestID: 1, blockedLeadingInset: 0)
+        view.update(
+            query: "initial",
+            isPresented: true,
+            canStep: true,
+            result: .none,
+            focusRequestID: 1,
+            blockedLeadingInset: 0,
+        )
         #expect(queries.isEmpty, "A model refresh must not issue a second engine search")
         view.queryField.stringValue = "edited"
         view.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: view.queryField))
@@ -53,15 +74,69 @@ import Testing
         let root = NSView(frame: NSRect(x: 0, y: 0, width: 900, height: 600))
         let view = BrowserFindBarNSView(frame: root.bounds)
         root.addSubview(view)
-        view.update(query: "", isPresented: true, canStep: false, focusRequestID: 1, blockedLeadingInset: 240)
+        view.update(
+            query: "",
+            isPresented: true,
+            canStep: false,
+            result: .none,
+            focusRequestID: 1,
+            blockedLeadingInset: 240,
+        )
         view.layoutSubtreeIfNeeded()
         #expect(view.hitTest(NSPoint(x: 20, y: 300)) == nil)
         #expect(view.hitTest(NSPoint(x: 500, y: 200)) == nil)
         let buttonPoint = view.closeButton.convert(NSPoint(x: 14, y: 14), to: root)
         #expect(view.hitTest(buttonPoint) === view.closeButton)
-        view.update(query: "", isPresented: false, canStep: false, focusRequestID: 1, blockedLeadingInset: 240)
+        view.update(
+            query: "",
+            isPresented: false,
+            canStep: false,
+            result: .none,
+            focusRequestID: 1,
+            blockedLeadingInset: 240,
+        )
         #expect(view.hitTest(buttonPoint) == nil)
         #expect(!view.queryField.pendingFocus)
+    }
+
+    @Test func findShowsTheMatchCountOrNotFound() {
+        let view = BrowserFindBarNSView(frame: NSRect(x: 0, y: 0, width: 900, height: 600))
+        func show(_ query: String, _ result: BrowserFindBarNSView.Result) {
+            view.update(
+                query: query,
+                isPresented: true,
+                canStep: true,
+                result: result,
+                focusRequestID: 1,
+                blockedLeadingInset: 0,
+            )
+            view.layoutSubtreeIfNeeded()
+        }
+
+        show("", .none)
+        #expect(view.countLabel.isHidden && view.notFoundLabel.isHidden && view.divider.isHidden)
+        #expect(view.previousButton.isHidden && view.nextButton.isHidden && !view.closeButton.isHidden)
+
+        show("domain", .matches(active: 2, count: 5))
+        #expect(view.countLabel.stringValue == "2/5" && !view.countLabel.isHidden)
+        #expect(!view.previousButton.isHidden && !view.nextButton.isHidden && !view.divider.isHidden)
+        #expect(view.countLabel.frame.maxX < view.previousButton.frame.minX)
+        #expect(view.nextButton.frame.maxX < view.divider.frame.minX)
+        #expect(view.divider.frame.maxX < view.closeButton.frame.minX)
+        #expect(view.queryField.frame.maxX < view.countLabel.frame.minX)
+
+        show("domainzz", .notFound)
+        #expect(view.countLabel.isHidden && !view.notFoundLabel.isHidden)
+        #expect(view.previousButton.isHidden && view.nextButton.isHidden)
+        #expect(view.notFoundLabel.frame.maxX < view.divider.frame.minX)
+    }
+
+    @Test func findResultFollowsTheEngineCounts() {
+        #expect(BrowserFindBarNSView.result(query: "", count: 4, active: 1) == .none)
+        #expect(BrowserFindBarNSView.result(query: "a", count: nil, active: nil) == .none)
+        #expect(BrowserFindBarNSView.result(query: "a", count: 0, active: nil) == .notFound)
+        #expect(BrowserFindBarNSView.result(query: "a", count: 4, active: 3) == .matches(active: 3, count: 4))
+        #expect(BrowserFindBarNSView.result(query: "a", count: 4, active: 9) == .matches(active: nil, count: 4))
     }
 
     @Test func findFocusRequestsSelectAllOnlyWhenRequested() {

@@ -233,7 +233,16 @@ enum BrowserWindowMode: Equatable {
     @Published private(set) var isArchiveOperationInFlight = false
     @Published private(set) var isFindBarPresented = false
     @Published private(set) var findBarFocusRequest = 0
-    @Published private(set) var findResultMatchCount: Int?
+    @Published private(set) var findResultMatchCount: Int? {
+        didSet {
+            if findResultMatchCount == nil {
+                findResultActiveOrdinal = nil
+            }
+        }
+    }
+
+    /// The match the page shows selected, counted from 1.
+    @Published private(set) var findResultActiveOrdinal: Int?
     @Published private(set) var browserExtensions = [BrowserExtension]()
     @Published private(set) var extensionSidePanel: BrowserExtensionSidePanel?
     @Published private(set) var extensionSidePanelWidth = BrowserChromeModel.defaultExtensionSidePanelWidth
@@ -7140,10 +7149,14 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
             return
         }
 
-        runFind(forward: true, findNext: false)
+        // A new query selects its first match, so the bar can count from it.
+        runFind(forward: true, findNext: false, selectsMatch: true)
     }
 
-    private func runFind(forward: Bool, findNext: Bool) {
+    /// The engine's `findNext` also selects a match: a changed query selects its
+    /// first one, while the same query steps on. Searches run again for another
+    /// tab or a reload leave it off, so they never step.
+    private func runFind(forward: Bool, findNext: Bool, selectsMatch: Bool = false) {
         guard canFindInPage, isFindBarPresented else {
             return
         }
@@ -7161,14 +7174,14 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
             text: findQuery,
             forward: forward,
             matchCase: false,
-            findNext: findNext,
+            findNext: findNext || selectsMatch,
         )
     }
 
     func handleFindResult(
         id: String,
         matchCount: Int,
-        activeMatchOrdinal _: Int,
+        activeMatchOrdinal: Int,
         finalUpdate: Bool,
     ) {
         guard id == selectedTabID, isFindBarPresented, !findQuery.isEmpty else {
@@ -7177,6 +7190,9 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
 
         if finalUpdate || matchCount > 0 {
             findResultMatchCount = max(matchCount, 0)
+        }
+        if activeMatchOrdinal > 0 {
+            findResultActiveOrdinal = activeMatchOrdinal
         }
     }
 

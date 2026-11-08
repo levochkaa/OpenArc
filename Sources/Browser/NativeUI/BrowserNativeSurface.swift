@@ -92,6 +92,15 @@ struct BrowserNativeChromeButtonStyle {
         foreground: BrowserChromeColors.secondaryText,
         hoverBackground: BrowserChromeColors.rowHover,
     )
+    static let findBar = BrowserNativeChromeButtonStyle(
+        size: BrowserChromeLayout.findBarButtonSize,
+        cornerRadius: BrowserChromeLayout.findBarCornerRadius,
+        symbolSize: BrowserChromeLayout.findBarButtonSymbolSize,
+        symbolWeight: .heavy,
+        foreground: BrowserChromeColors.findBarControl,
+        hoverBackground: BrowserChromeColors.findBarControlHover,
+        disabledForeground: BrowserChromeColors.findBarControlDisabled,
+    )
     static let sidebarNavigation = BrowserNativeChromeButtonStyle(
         size: BrowserChromeLayout.sidebarChromeButtonSize,
         cornerRadius: BrowserChromeLayout.sidebarChromeButtonCornerRadius,

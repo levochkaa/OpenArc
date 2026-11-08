@@ -967,6 +967,11 @@ enum BrowserStrings {
         comment: "Placeholder shown in the page find field.",
     )
 
+    static let findBarNotFound = NSLocalizedString(
+        "browser.find_bar.not_found",
+        comment: "Shown in capitals in the find bar when the page has no match.",
+    )
+
     static let findBarPreviousMatch = NSLocalizedString(
         "browser.find_bar.previous_match",
         comment: "Tooltip for moving to the previous in-page search match.",
