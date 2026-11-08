@@ -367,6 +367,56 @@ private final class SignInURLProtocol: URLProtocol, @unchecked Sendable {
     #expect(try result.get() == url)
 }
 
+// MARK: - BrowserInAppWebSignInTests
+
+/// While OpenArc is the default browser, web sign-in runs in its own small window.
+@Suite(.serialized)
+@MainActor struct BrowserInAppWebSignInTests {
+    @Test func theCallbackFromThePageFinishesTheSignIn() async throws {
+        var opened = [URL]()
+        let service = BrowserWebSignInService(openInApp: { opened.append($0)
+            return true
+        }, isDefaultBrowser: { true })
+        let start = signInTestURL("https://openarc.su/signin/apple?code_challenge=x")
+        let sign = Task { try await service.signIn(at: start, callbackScheme: "openarc-auth") }
+        await Task.yield()
+        #expect(opened == [start])
+
+        // Another scheme is not this sign-in's end.
+        post(BrowserSignInEvents.callback, url: "https://example.com/?code=no")
+        post(BrowserSignInEvents.callback, url: "openarc-auth://callback?code=abc")
+        // The small window closes after its callback.
+        post(BrowserSignInEvents.windowDidClose)
+        #expect(try await sign.value == signInTestURL("openarc-auth://callback?code=abc"))
+    }
+
+    @Test func closingTheWindowCancels() async {
+        let service = BrowserWebSignInService(openInApp: { _ in true }, isDefaultBrowser: { true })
+        let sign = Task { try await service.signIn(
+            at: signInTestURL("https://openarc.su/"),
+            callbackScheme: "openarc-auth",
+        ) }
+        await Task.yield()
+        post(BrowserSignInEvents.windowDidClose)
+        await #expect(throws: BrowserWebSignInError.cancelled) { try await sign.value }
+    }
+
+    @Test func noWindowToSignInFails() async {
+        let service = BrowserWebSignInService(openInApp: { _ in false }, isDefaultBrowser: { true })
+        await #expect(throws: BrowserAccountSignInError.providerFailed) {
+            try await service.signIn(at: signInTestURL("https://openarc.su/"), callbackScheme: "openarc-auth")
+        }
+    }
+
+    private func post(_ name: Notification.Name, url: String? = nil) {
+        NotificationCenter.default.post(
+            name: name,
+            object: nil,
+            userInfo: url.map { [BrowserSignInEvents.urlKey: $0] },
+        )
+    }
+}
+
 private func signInTestURL(_ string: String) -> URL {
     URL(string: string)!
 }

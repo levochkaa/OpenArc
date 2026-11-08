@@ -3588,6 +3588,11 @@ enum BrowserWindowMode: Equatable {
         tabDriver.showLittleWindow(withURLString: url.absoluteString)
     }
 
+    /// A web sign-in page in a small window, which its callback closes.
+    func openSignInWindow(_ url: URL) {
+        tabDriver.showSignInWindow(withURLString: url.absoluteString)
+    }
+
     /// New Small Window: an empty small window with its address
     /// field focused.
     @discardableResult func openNewLittleWindow() -> Bool {

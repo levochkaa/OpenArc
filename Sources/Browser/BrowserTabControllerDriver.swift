@@ -255,6 +255,10 @@ import Foundation
         controller.showLittleWindow(withURLString: urlString)
     }
 
+    func showSignInWindow(withURLString urlString: String) {
+        controller.showSignInWindow(withURLString: urlString)
+    }
+
     func showNewLittleWindow() {
         controller.showNewLittleWindow()
     }

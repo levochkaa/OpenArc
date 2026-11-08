@@ -3865,7 +3865,11 @@ NSMenuDelegate, NSUserInterfaceValidations {
             syncClient: syncClient,
             authSessionStore: authSessionStore,
             syncCoordinator: syncCoordinator,
-            webSignInService: BrowserWebSignInService(),
+            webSignInService: BrowserWebSignInService { [weak self] url in
+                guard let model = self?.activeChromeModel ?? self?.importTargetModel else { return false }
+                model.openSignInWindow(url)
+                return true
+            },
             deviceIdentity: .init(name: Host.current().localizedName ?? "Mac", platform: "macOS"),
         )
         let sessionStore: BrowserTabSessionSnapshotStoring =

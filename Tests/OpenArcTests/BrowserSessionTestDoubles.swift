@@ -118,6 +118,7 @@ import Foundation
     private(set) var prepareForCefShutdownCount = 0
 
     private(set) var littleWindowURLs = [String]()
+    private(set) var signInWindowURLs = [String]()
 
     private(set) var newLittleWindowCount = 0
 
@@ -418,6 +419,10 @@ import Foundation
 
     func showLittleWindow(withURLString urlString: String) {
         littleWindowURLs.append(urlString)
+    }
+
+    func showSignInWindow(withURLString urlString: String) {
+        signInWindowURLs.append(urlString)
     }
 
     func closePeeks() {

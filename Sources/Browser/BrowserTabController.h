@@ -328,6 +328,10 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
 - (void)showPeekWithURLString:(NSString *)urlString;
 /// Opens the page in a small window of its own.
 - (void)showLittleWindowWithURLString:(NSString *)urlString;
+/// Opens a web sign-in in a small window. Its end at `openarc-auth://` posts
+/// `BrowserSignInEvents.callback` and closes the window; closing it first
+/// posts `BrowserSignInEvents.windowDidClose`.
+- (void)showSignInWindowWithURLString:(NSString *)urlString;
 /// An empty small window with its address field focused.
 - (void)showNewLittleWindow;
 /// Closes every Peek card and small window of this window's pages.

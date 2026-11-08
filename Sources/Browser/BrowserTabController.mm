@@ -2971,6 +2971,24 @@ bool IsOpenArcBookmarksURL(const CefString &url) {
              shared::kOpenArcBookmarksHost;
 }
 
+/// Where a web sign-in ends: `openarc-auth://callback?…`. The app takes it
+/// instead of the page.
+bool IsSignInCallbackURL(const CefString &url) {
+  CefURLParts parts;
+  return CefParseURL(url, parts) && CefString(&parts.scheme).ToString() == "openarc-auth";
+}
+
+/// Hands a sign-in callback to the app on the main thread, after the engine has
+/// cancelled the navigation to it.
+void PostSignInCallback(const CefString &url) {
+  NSString *urlString = ToNSString(url.ToString());
+  dispatch_async(dispatch_get_main_queue(), ^{
+    [NSNotificationCenter.defaultCenter postNotificationName:BrowserSignInEvents.callback
+                                                      object:nil
+                                                    userInfo:@{BrowserSignInEvents.urlKey : urlString}];
+  });
+}
+
 bool IsOpenArcInternalWindowURL(const CefString &url) {
   return URLHasSchemeAndInternalHost(url, shared::kOpenArcScheme);
 }
@@ -3732,6 +3750,11 @@ class BrowserPeekClient final : public CefClient,
   void OnAfterCreated(CefRefPtr<CefBrowser> browser) override;
   bool DoClose(CefRefPtr<CefBrowser> browser) override;
   void OnBeforeClose(CefRefPtr<CefBrowser> browser) override;
+  bool OnBeforeBrowse(CefRefPtr<CefBrowser> browser,
+                      CefRefPtr<CefFrame> frame,
+                      CefRefPtr<CefRequest> request,
+                      bool user_gesture,
+                      bool is_redirect) override;
   bool OnOpenURLFromTab(CefRefPtr<CefBrowser> browser,
                         CefRefPtr<CefFrame> frame,
                         const CefString &target_url,
@@ -4021,6 +4044,9 @@ struct TabRecord {
 @property(nonatomic) BOOL hiddenWithTab;
 /// Tells extensions the small window is a window whose one tab is its page.
 @property(nonatomic, strong, nullable) NSArray *extensionWindowObservers;
+/// A small window running a web sign-in: it ends at the app's callback, and
+/// closing it cancels the sign-in.
+@property(nonatomic) BOOL signIn;
 @end
 
 @implementation BrowserPeekSession {
@@ -5685,6 +5711,11 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
   [self presentPeekWithURLString:urlString standalone:YES];
 }
 
+- (void)showSignInWindowWithURLString:(NSString *)urlString {
+  [self presentPeekWithURLString:urlString standalone:YES];
+  _peekSessions[@(_nextPeekSessionID)].signIn = YES;
+}
+
 - (void)showNewLittleWindow {
   [self presentPeekWithURLString:@"about:blank" standalone:YES];
   [_peekSessions[@(_nextPeekSessionID)].panel focusAddressField];
@@ -5708,7 +5739,7 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
   NSDate *now = NSDate.date;
   for (NSNumber *sessionID in _peekSessions.allKeys) {
     BrowserPeekSession *session = _peekSessions[sessionID];
-    if (!session.standalone || session.closing) {
+    if (!session.standalone || session.closing || session.signIn) {
       continue;
     }
     if (session.panel.isKeyWindow) {
@@ -5975,6 +6006,9 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
     return;
   }
   session.closing = YES;
+  if (session.signIn) {
+    [NSNotificationCenter.defaultCenter postNotificationName:BrowserSignInEvents.windowDidClose object:nil];
+  }
   for (id observer in session.extensionWindowObservers) {
     [NSNotificationCenter.defaultCenter removeObserver:observer];
   }
@@ -6007,7 +6041,12 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
   }
   NSString *urlString = session.urlString;
   const BOOL standalone = session.panel.isStandalone;
+  const BOOL signIn = session.signIn;
   [self closePeekSession:sessionID];
+  // A sign-in page is not a page to bring back.
+  if (signIn) {
+    return;
+  }
   id<BrowserTabControllerDelegate> delegate = self.delegate;
   if ([delegate respondsToSelector:@selector(browserTabController:didClosePeekWithURLString:standalone:)]) {
     [delegate browserTabController:self didClosePeekWithURLString:urlString standalone:standalone];
@@ -8137,6 +8176,11 @@ bool BrowserTabClient::OnBeforeBrowse(CefRefPtr<CefBrowser> browser,
     return false;
   }
 
+  if (IsSignInCallbackURL(request->GetURL())) {
+    PostSignInCallback(request->GetURL());
+    return true;
+  }
+
   if (allow_next_chromium_internal_navigation_ &&
       IsChromiumInternalWindowURL(request->GetURL())) {
     allow_next_chromium_internal_navigation_ = false;
@@ -8706,6 +8750,25 @@ void BrowserPeekClient::OnRenderProcessTerminated(CefRefPtr<CefBrowser>,
   dispatch_async(dispatch_get_main_queue(), ^{
     [controller closePeekSession:sessionID];
   });
+}
+
+// A sign-in in a small window ends at the app's callback, which closes it.
+bool BrowserPeekClient::OnBeforeBrowse(CefRefPtr<CefBrowser>,
+                                       CefRefPtr<CefFrame> frame,
+                                       CefRefPtr<CefRequest> request,
+                                       bool,
+                                       bool) {
+  CEF_REQUIRE_UI_THREAD();
+  if (!frame || !frame->IsMain() || !request || !IsSignInCallbackURL(request->GetURL())) {
+    return false;
+  }
+  PostSignInCallback(request->GetURL());
+  __weak BrowserTabController *controller = controller_;
+  const int sessionID = session_id_;
+  dispatch_async(dispatch_get_main_queue(), ^{
+    [controller closePeekSession:sessionID];
+  });
+  return true;
 }
 
 bool BrowserPeekClient::OnOpenURLFromTab(CefRefPtr<CefBrowser>,

@@ -193,6 +193,8 @@ enum BrowserPageTranslationState: Int {
     func showNetworkInspectorForActiveTab()
     /// The page in a small window of its own.
     func showLittleWindow(withURLString urlString: String)
+    /// A web sign-in in a small window, which its callback closes.
+    func showSignInWindow(withURLString urlString: String)
     /// Peek card over the window.
     func showPeek(withURLString urlString: String)
     /// An empty small window with its address field focused.
