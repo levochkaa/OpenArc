@@ -39,4 +39,5 @@
 
 ## Instructions
 
+- Read `LOCAL.md` from the main checkout's root before any task, when it exists (`$(git rev-parse --git-common-dir)/../LOCAL.md` in a worktree). It holds this machine's rules and notes kept out of the repository, and they apply on top of this file.
 - Keep `AGENTS.md` under 32 KB: Codex does not read a larger one.
