@@ -33,6 +33,13 @@ settings:
     OPENARC_SPARKLE_FEED_URL: https://api.openarc.su/appcast.xml
     OPENARC_SYNC_BASE_URL: https://api.openarc.su
     OPENARC_SPARKLE_PUBLIC_KEY: K2RmhxJLUxN8YeRS4I7Tz7cYrzkbcZB1axGePxRHflM=
+    OTHER_SWIFT_FLAGS: $(inherited) $(OPENARC_DYNAMIC_ACTOR_ISOLATION_FLAGS)
+  configs:
+    # Swift 6 traps when main-actor code runs off the main thread behind an
+    # API the compiler cannot check, such as an Objective-C callback. Debug
+    # keeps the trap to surface these bugs; Release keeps Swift 5's behavior.
+    Release:
+      OPENARC_DYNAMIC_ACTOR_ISOLATION_FLAGS: -Xfrontend -disable-dynamic-actor-isolation
 targetTemplates:
   BrowserSyncCore:
     sources:
