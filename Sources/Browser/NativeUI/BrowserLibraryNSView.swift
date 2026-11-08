@@ -326,6 +326,20 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
         return BrowserStrings.libraryDownloadKindFromHost(kind: kind, host: host)
     }
 
+    /// The archived page's address without `https://` and `www.`, its path and
+    /// query kept; other schemes stay whole.
+    static func archiveDetail(for urlString: String) -> String {
+        var text = urlString
+        for prefix in ["https://", "http://"] where text.lowercased().hasPrefix(prefix) {
+            text.removeFirst(prefix.count)
+            if text.lowercased().hasPrefix("www.") { text.removeFirst(4) }
+        }
+        if text.hasSuffix("/"), text.dropLast().contains(where: { $0 != "/" }) {
+            text.removeLast()
+        }
+        return text
+    }
+
     private static func matches(fileName: String, kind: String) -> Bool {
         let type = UTType(filenameExtension: (fileName as NSString).pathExtension)
         return switch kind {
@@ -473,7 +487,7 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
             let id = entry.id
             result.append(.item(BrowserLibraryRowContent(
                 title: entry.title ?? host ?? urlString,
-                detail: host ?? urlString,
+                detail: Self.archiveDetail(for: urlString),
                 faviconPageURL: urlString,
                 fileIcon: nil,
                 progress: nil,
@@ -787,6 +801,8 @@ private final class BrowserLibraryRow: BrowserNativePressableView {
         menuProvider = { [content] in content.menu() }
         pressedScale = 1
         if let page = content.faviconPageURL {
+            // A page without its icon is a plain square, as in the sidebar.
+            favicon.fallback = .square
             favicon.update(url: nil, pageURLString: page)
             addSubview(favicon)
         } else if let icon = content.fileIcon {

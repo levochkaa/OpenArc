@@ -51,6 +51,15 @@ import Testing
         #expect(BrowserLibraryNSView.dayHeader(for: now) == BrowserStrings.libraryToday)
         #expect(BrowserLibraryNSView.dayHeader(for: now.addingTimeInterval(-86400)) == BrowserStrings.libraryYesterday)
     }
+
+    @Test func archivedPagesListTheirAddressWithoutTheScheme() {
+        #expect(BrowserLibraryNSView.archiveDetail(for: "https://www.example.com/") == "example.com")
+        #expect(BrowserLibraryNSView
+            .archiveDetail(for: "https://example.com/?ref=a") == "example.com/?ref=a")
+        #expect(BrowserLibraryNSView.archiveDetail(for: "openarc://history/") == "openarc://history")
+        #expect(BrowserLibraryNSView
+            .archiveDetail(for: "view-source:https://example.com") == "view-source:https://example.com")
+    }
 }
 
 // MARK: - BrowserDownloadsTrayTests
