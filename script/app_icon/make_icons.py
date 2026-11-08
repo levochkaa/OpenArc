@@ -21,13 +21,15 @@ RESOURCES = ROOT / "Sources/Browser/Resources"
 
 # macOS icon grid: a 824 px body with a 100 px margin on a 1024 px canvas.
 CANVAS, BODY, MARGIN, RADIUS = 1024, 824, 100, 185
-MARK_WIDTH = 640
+MARK_WIDTH = 680
+# A sticker's outline takes room, so its mark is drawn wider.
+STICKER_WIDTH = 700
 
 
-def mark_transform():
-    scale = MARK_WIDTH / mark.WIDTH
+def mark_transform(width=MARK_WIDTH):
+    scale = width / mark.WIDTH
     height = mark.HEIGHT * scale
-    x = (CANVAS - MARK_WIDTH) / 2
+    x = (CANVAS - width) / 2
     # The mark's weight sits low; lift it a little above the true center.
     y = (CANVAS - height) / 2 - 12
     return f"translate({x:.2f},{y:.2f}) scale({scale:.5f})"
@@ -53,6 +55,30 @@ BODY_SHADOW = (
     '<filter id="body-shadow" x="-10%" y="-10%" width="120%" height="125%">'
     '<feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#000" flood-opacity="0.3"/></filter>'
 )
+
+
+def sticker_mark(leg_fill, arch_fill, outline, rim_color, rim_opacity, width=STICKER_WIDTH):
+    """The mark as a sticker: a white outline around both shapes, a faint rim
+    around their outline, and a soft shadow under it all."""
+    rim = (
+        '<filter id="sticker" x="-20%" y="-20%" width="140%" height="160%">'
+        '<feMorphology in="SourceAlpha" operator="dilate" radius="4" result="grown"/>'
+        f'<feFlood flood-color="{rim_color}" flood-opacity="{rim_opacity}"/>'
+        '<feComposite in2="grown" operator="in" result="rim"/>'
+        '<feGaussianBlur in="SourceAlpha" stdDeviation="20" result="blur"/>'
+        '<feOffset in="blur" dy="16" result="drop"/>'
+        '<feFlood flood-color="#1B1F4A" flood-opacity="0.16"/>'
+        '<feComposite in2="drop" operator="in" result="shadow"/>'
+        '<feMerge><feMergeNode in="shadow"/><feMergeNode in="rim"/><feMergeNode in="SourceGraphic"/></feMerge>'
+        "</filter>"
+    )
+    line = f'fill="#FFFFFF" stroke="#FFFFFF" stroke-width="{outline}" stroke-linejoin="round"'
+    group = (
+        f'<g transform="{mark_transform(width)}" filter="url(#sticker)">'
+        f'<path d="{mark.leg()}" {line}/><path d="{mark.arch()}" {line}/>'
+        f'<path d="{mark.leg()}" fill="{leg_fill}"/><path d="{mark.arch()}" fill="{arch_fill}"/></g>'
+    )
+    return rim, group
 
 
 def shapes(leg, arch, extra=""):
@@ -84,17 +110,15 @@ def soft_shadow(fid, color, opacity, dy=14, deviation=16):
     )
 
 
-def original():
+def original(outline=58):
+    rim, group = sticker_mark("url(#leg)", "url(#arch)", outline, "#6E7487", 0.3)
     defs = (
-        gradient("bg", [(0, "#FFFFFF"), (1, "#EEF0F6")])
+        gradient("bg", [(0, "#FFFFFF"), (1, "#F7F8FB")])
         + gradient("leg", [(0, "#5B6CFF"), (1, "#1B26A8")], 0.2, 0, 0.6, 1)
         + gradient("arch", [(0, "#FF8A98"), (0.55, "#F2475F"), (1, "#C92A47")], 0.1, 0, 0.9, 1)
-        + soft_shadow("lift", "#1B1F4A", 0.22)
+        + rim
     )
-    content = body("url(#bg)") + shapes(
-        'fill="url(#leg)" filter="url(#lift)"', 'fill="url(#arch)" fill-opacity="0.96" filter="url(#lift)"'
-    )
-    return svg(defs, content)
+    return svg(defs, body("url(#bg)") + group)
 
 
 def candy():
@@ -159,12 +183,9 @@ def sunset():
 
 
 def sticker():
-    defs = gradient("bg", [(0, "#F8EBC4"), (1, "#EFDCA6")]) + soft_shadow("lift", "#6B4E12", 0.25, 8, 8)
-    outline = 'stroke="#FFFFFF" stroke-width="26" stroke-linejoin="round" paint-order="stroke"'
-    content = body("url(#bg)") + shapes(
-        f'fill="#3F6BF0" {outline} filter="url(#lift)"', f'fill="#F2633F" {outline} filter="url(#lift)"'
-    )
-    return svg(defs, content)
+    rim, group = sticker_mark("#3F6BF0", "#F2633F", 58, "#8A6A2A", 0.3)
+    defs = gradient("bg", [(0, "#F8EBC4"), (1, "#EFDCA6")]) + rim
+    return svg(defs, body("url(#bg)") + group)
 
 
 def monochrome():

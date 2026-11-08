@@ -1021,8 +1021,8 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                 radio.state = selected ? .on : .off
                 let image = NSImageView(image: icon.image ?? NSImage())
                 image.imageScaling = .scaleProportionallyUpOrDown
-                image.widthAnchor.constraint(equalToConstant: 40).isActive = true
-                image.heightAnchor.constraint(equalToConstant: 40).isActive = true
+                image.widthAnchor.constraint(equalToConstant: 52).isActive = true
+                image.heightAnchor.constraint(equalToConstant: 52).isActive = true
                 let name = BrowserNativeControls.label(icon.title, size: 13, weight: .medium, color: .labelColor)
                 return BrowserNativeControls.stack([radio, image, name], orientation: .horizontal, spacing: 12)
             }
