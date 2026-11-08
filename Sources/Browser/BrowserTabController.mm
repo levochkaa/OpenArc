@@ -1958,6 +1958,50 @@ NSView *BrowserViewForBrowser(CefRefPtr<CefBrowser> browser) {
   return CAST_CEF_WINDOW_HANDLE_TO_NSVIEW(browser->GetHost()->GetWindowHandle());
 }
 
+/// Chromium's web-modal dialogs over a page, such as print preview, are
+/// windows over its window. Closing the page under one crashes a turn later, when
+/// the dialog's window finishes closing, so they are cancelled first.
+BOOL CancelPageModalWindows(NSWindow *window) {
+  BOOL found = NO;
+  if (window == nil) {
+    return NO;
+  }
+  // They are windows of their own, not child windows, placed over the page.
+  for (NSWindow *child in NSApp.windows) {
+    if (child == window || ![NSStringFromClass(child.class) containsString:@"NativeWidgetMacNSWindow"] ||
+        [child.title hasPrefix:@"DevTools"] || !child.isVisible ||
+        !NSContainsRect(window.frame, child.frame)) {
+      continue;
+    }
+    found = YES;
+    for (NSEventType type : {NSEventTypeKeyDown, NSEventTypeKeyUp}) {
+      NSEvent *escape = [NSEvent keyEventWithType:type
+                                         location:NSZeroPoint
+                                    modifierFlags:0
+                                        timestamp:NSProcessInfo.processInfo.systemUptime
+                                     windowNumber:child.windowNumber
+                                          context:nil
+                                       characters:@"\e"
+                      charactersIgnoringModifiers:@"\e"
+                                        isARepeat:NO
+                                          keyCode:53];
+      [child sendEvent:escape];
+    }
+  }
+  return found;
+}
+
+/// Closes a page once any dialog over it has gone.
+void CloseBrowserAfterPageModalWindows(CefRefPtr<CefBrowser> browser, bool force) {
+  if (!CancelPageModalWindows(BrowserViewForBrowser(browser).window)) {
+    browser->GetHost()->CloseBrowser(force);
+    return;
+  }
+  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 200 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
+    if (browser->IsValid()) browser->GetHost()->CloseBrowser(force);
+  });
+}
+
 void ContinuePermissionRequest(
     CefRefPtr<CefPermissionPromptCallback> callback,
     cef_permission_request_result_t result) {
@@ -6530,7 +6574,7 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
   // Retain the latest pending navigation. Cancel must not drop an address
   // accepted before this close, including the initial deferred engine load.
   if (it->second.browser) {
-    it->second.browser->GetHost()->CloseBrowser(false);
+    CloseBrowserAfterPageModalWindows(it->second.browser, false);
   } else {
     const BOOL wasActive = [_activeTabID isEqualToString:tabID];
     _tabRecords.erase(it);
@@ -6893,7 +6937,7 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
   CefRefPtr<CefBrowser> browser = it->second.browser;
   [self invalidateCloseRequestForTabID:tabID];
   if (browser) {
-    if (browser->IsValid()) browser->GetHost()->CloseBrowser(forceClose);
+    if (browser->IsValid()) CloseBrowserAfterPageModalWindows(browser, forceClose);
     return;
   }
 

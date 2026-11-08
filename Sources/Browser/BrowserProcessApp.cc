@@ -12,6 +12,7 @@ namespace {
 constexpr char kDisableBackgroundingOccludedWindowsSwitch[] =
     "disable-backgrounding-occluded-windows";
 constexpr char kDisableChromeLoginPromptSwitch[] = "disable-chrome-login-prompt";
+constexpr char kEnablePrintPreviewSwitch[] = "enable-print-preview";
 constexpr char kDisableFeaturesSwitch[] = "disable-features";
 constexpr char kImmersiveReadAnythingFeature[] = "ImmersiveReadAnything";
 constexpr char kJourneysFeature[] = "Journeys";
@@ -80,6 +81,10 @@ class BrowserProcessApp : public CefApp, public CefBrowserProcessHandler {
     // Sites' password requests reach GetAuthCredentials, for OpenArc's own sheet.
     // Chromium's window closes a turn after its page and can crash the app then.
     command_line->AppendSwitch(kDisableChromeLoginPromptSwitch);
+
+    // Printing shows the engine's preview over the page rather
+    // than the system print panel.
+    command_line->AppendSwitch(kEnablePrintPreviewSwitch);
 
     // Passkeys: phones and USB keys work as they are. Chromium itself leaves out
     // iCloud Keychain and Touch ID without Apple's entitlements. Bluetooth for
