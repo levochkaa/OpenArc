@@ -1969,6 +1969,7 @@ final class BrowserNativeSidebarNSView: NSView {
             downloadsTrayTimer?.invalidate()
             downloadsTrayTimer = nil
             guard downloadsTray.superview != nil else { return }
+            BrowserNativeTooltipPresenter.shared.isSuppressed = state.isSpacePagerDragging
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = 0.15
                 downloadsTray.animator().alphaValue = 0
@@ -1982,6 +1983,8 @@ final class BrowserNativeSidebarNSView: NSView {
             return
         }
         downloadsTray.show(entries)
+        // The button's tooltip would cover the newest row.
+        BrowserNativeTooltipPresenter.shared.isSuppressed = true
         if downloadsTray.superview == nil {
             content.addSubview(downloadsTray, positioned: .above, relativeTo: miniPlayers)
         }
