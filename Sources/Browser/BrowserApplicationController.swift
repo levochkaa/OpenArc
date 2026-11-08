@@ -29,6 +29,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
     }
 
     private var aboutWindow: NSWindow?
+    private let fullScreenMenuTarget = BrowserFullScreenMenuTarget()
     private var settingsWindowController: SettingsWindowController?
     private var lastLiveFolderRefresh = Date.distantPast
     private var archiveWindowControllers = [ObjectIdentifier: BrowserArchiveWindowController]()
@@ -1756,8 +1757,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
             action: #selector(openExtensions(_:)),
         ))
         // Full screen is Control-Command-F; AppKit adds its own item
-        // with Globe-F unless an item with this action is already there, and keeps
-        // the title in step (Enter or Exit).
+        // with Globe-F unless an item with this action is already there.
         viewMenu.addItem(.separator())
         let fullScreenItem = NSMenuItem(
             title: BrowserStrings.menuEnterFullScreen,
@@ -1765,6 +1765,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
             keyEquivalent: "f",
         )
         fullScreenItem.keyEquivalentModifierMask = [.control, .command]
+        fullScreenItem.target = fullScreenMenuTarget
         viewMenu.addItem(fullScreenItem)
         viewMenuItem.submenu = viewMenu
 

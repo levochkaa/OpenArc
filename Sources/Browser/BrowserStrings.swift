@@ -2615,7 +2615,11 @@ enum BrowserStrings {
     )
     static let menuEnterFullScreen = NSLocalizedString(
         "browser.menu.enter_full_screen",
-        comment: "View menu item that puts the window in full screen; AppKit retitles it Exit Full Screen there.",
+        comment: "View menu item that puts the window in full screen.",
+    )
+    static let menuExitFullScreen = NSLocalizedString(
+        "browser.menu.exit_full_screen",
+        comment: "The View menu's full screen item while the window is in full screen.",
     )
     static let menuCloseTab = NSLocalizedString(
         "browser.menu.close_tab",

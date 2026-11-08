@@ -409,6 +409,7 @@
 "browser.tab.move_to_new_window_action" = "Move to New Window";
 "browser.menu.close_tab" = "Close Tab";
 "browser.menu.enter_full_screen" = "Enter Full Screen";
+"browser.menu.exit_full_screen" = "Exit Full Screen";
 "browser.content.moved_page_show_here" = "Shown in Another Window";
 "browser.tab.archive_tabs_below_action" = "Archive Tabs Below";
 "browser.tab.duplicate_action" = "Duplicate";
