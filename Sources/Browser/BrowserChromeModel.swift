@@ -1646,7 +1646,7 @@ enum BrowserWindowMode: Equatable {
     }
 
     func openBookmarksManager() {
-        openURLInNewTab(BrowserInternalPageRouting.bookmarksURL)
+        openURLInNewTab(BrowserInternalPageRouting.bookmarksURL, atTop: true)
     }
 
     @discardableResult func importBookmarks(from source: BrowserBookmarkImportSource) -> BrowserBookmarkImportResult {
@@ -3173,7 +3173,7 @@ enum BrowserWindowMode: Equatable {
     }
 
     func openExtensionsManager() {
-        openURLInNewTab(URL(string: BrowserExtensionRouting.extensionsURLString)!)
+        openURLInNewTab(URL(string: BrowserExtensionRouting.extensionsURLString)!, atTop: true)
     }
 
     @discardableResult func openExtension(id: String) -> BrowserExtensionActionPopup? {

@@ -4317,7 +4317,8 @@ NSMenuDelegate, NSUserInterfaceValidations {
         let targetWindow = activeBrowserWindow
 
         if targetChromeModel?.canCreateTab == true {
-            targetChromeModel?.openURLInNewTab(url)
+            // A page opened from a menu joins the top of Today, as a new tab does.
+            targetChromeModel?.openURLInNewTab(url, atTop: true)
             targetWindow?.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return
