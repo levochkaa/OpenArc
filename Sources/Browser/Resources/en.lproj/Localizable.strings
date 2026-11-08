@@ -793,6 +793,7 @@
 "browser.menu.import_from_browser" = "Import from Another Browser…";
 "browser.menu.blank_window" = "Blank Window";
 "browser.menu.new_profile" = "New Profile";
+"browser.space.menu_new_profile" = "New Profile…";
 "browser.menu.delete" = "Delete";
 "browser.menu.spelling" = "Spelling and Grammar";
 "browser.menu.show_spelling" = "Show Spelling and Grammar";

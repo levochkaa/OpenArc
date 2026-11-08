@@ -2217,6 +2217,10 @@ enum BrowserStrings {
     static let menuImportFromBrowser = NSLocalizedString("browser.menu.import_from_browser", comment: "App menu item.")
     static let menuBlankWindow = NSLocalizedString("browser.menu.blank_window", comment: "File menu item.")
     static let menuNewProfile = NSLocalizedString("browser.menu.new_profile", comment: "File menu item.")
+    static let spaceMenuNewProfile = NSLocalizedString(
+        "browser.space.menu_new_profile",
+        comment: "Space menu › Set Profile item that makes a profile for the Space.",
+    )
     static let menuDelete = NSLocalizedString("browser.menu.delete", comment: "Edit menu item.")
     static let menuSpellingAndGrammar = NSLocalizedString("browser.menu.spelling", comment: "Edit submenu.")
     static let menuShowSpelling = NSLocalizedString("browser.menu.show_spelling", comment: "Spelling menu item.")

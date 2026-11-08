@@ -111,7 +111,7 @@ import AppKit
             }
             if let onNewProfile {
                 submenu.addItem(.separator())
-                add(BrowserStrings.settingsNewProfile, to: submenu, action: onNewProfile)
+                add(BrowserStrings.spaceMenuNewProfile, to: submenu, action: onNewProfile)
             }
         }
         if let onNewFolder {
