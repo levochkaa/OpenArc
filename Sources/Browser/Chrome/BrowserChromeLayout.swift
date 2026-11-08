@@ -111,6 +111,8 @@ enum BrowserChromeLayout {
     static let sidebarClearLineGap: CGFloat = 10
     /// How far above its place Clear's arrow starts when it appears.
     static let sidebarClearArrowDropDistance: CGFloat = 8
+    /// Room Clear's arrow takes before the title.
+    static let sidebarClearArrowWidth: CGFloat = 10
     static let sidebarClearButtonVerticalPadding: CGFloat = 2
     static let sidebarTopChromeDividerHeight: CGFloat = 1
     static let sidebarTopChromeDividerScrollThreshold: CGFloat = 0.5

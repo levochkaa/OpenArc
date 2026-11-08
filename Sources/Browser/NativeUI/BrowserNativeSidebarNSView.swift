@@ -2440,7 +2440,7 @@ private final class BrowserNativeSidebarClearDivider: NSView {
         let textWidth = ceil((title.stringValue as NSString)
             .size(withAttributes: [.font: title.font ?? NSFont.systemFont(ofSize: 11)])
             .width) + 4
-        let indicatorWidth = 10 * indicatorProgress
+        let indicatorWidth = BrowserChromeLayout.sidebarClearArrowWidth * indicatorProgress
         let width = textWidth + indicatorWidth + BrowserChromeLayout.sidebarClearButtonHorizontalPadding * 2
         button.frame = NSRect(x: bounds.width - width, y: 0, width: width, height: bounds.height)
         title.frame = NSRect(
@@ -2451,8 +2451,11 @@ private final class BrowserNativeSidebarClearDivider: NSView {
         )
         // The arrow stands as tall as the title's capitals and centers on them.
         let drop = indicatorDrops ? BrowserChromeLayout.sidebarClearArrowDropDistance * (1 - indicatorProgress) : 0
+        // The button widens to the left as the arrow comes; the arrow keeps
+        // its final place across the window and only moves down.
         indicator.frame = NSRect(
-            x: BrowserChromeLayout.sidebarClearButtonHorizontalPadding - 0.5,
+            x: BrowserChromeLayout.sidebarClearButtonHorizontalPadding - 0.5
+                - BrowserChromeLayout.sidebarClearArrowWidth * (1 - indicatorProgress),
             y: (bounds.height - 12) / 2 - 2 - drop,
             width: 11,
             height: 12,
