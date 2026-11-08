@@ -63,6 +63,8 @@ import Combine
     @objc var onFind: ((String, Bool, Bool) -> Void)?
     /// Prints the card's page.
     @objc var onPrint: (() -> Void)?
+    /// Saves the card's page, asking where.
+    @objc var onSavePage: (() -> Void)?
     /// Gets a `NavigationCommand` raw value.
     @objc var onNavigationCommand: ((Int) -> Void)?
     /// Whether the page has somewhere to go back or forward to, from the engine.

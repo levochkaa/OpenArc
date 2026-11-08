@@ -795,6 +795,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
     }
 
     public func saveCurrentPage(_: Any?) {
+        if let panel = focusedNavigablePanel, let save = panel.onSavePage {
+            save()
+            return
+        }
         activeChromeModel?.saveCurrentPage()
     }
 
@@ -1006,6 +1010,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
             }
             return activeChromeModel?.canReload ?? false
         case #selector(saveCurrentPage(_:)):
+            if focusedNavigablePanel?.onSavePage != nil { return true }
             return activeChromeModel?.canSavePage ?? false
         case #selector(addSplitView(_:)):
             return activeChromeModel?.isWebApp != true && activeChromeModel?.canAddSplitView == true
@@ -3053,7 +3058,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
             guard let model = archiveContextModel else { return false }
             return performArchiveCommand(.clearArchive, from: model)
         case .savePage:
-            guard activeChromeModel?.canSavePage ?? false else {
+            guard focusedNavigablePanel?.onSavePage != nil || activeChromeModel?.canSavePage ?? false else {
                 return false
             }
 

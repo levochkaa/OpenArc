@@ -5632,6 +5632,13 @@ std::string BrowserMediaVolumeScript(double volume) {
       shown->_browser->GetHost()->Find(ToStdString(text), forward, false, findNext);
     }
   };
+  session.panel.onSavePage = ^{
+    BrowserTabController *strongSelf = weakSelf;
+    BrowserPeekSession *shown = strongSelf != nil ? strongSelf->_peekSessions[@(sessionID)] : nil;
+    if (shown != nil && shown->_browser) {
+      SavePageBrowserOnUI(shown->_browser, shown.panel.title);
+    }
+  };
   session.panel.onPrint = ^{
     BrowserTabController *strongSelf = weakSelf;
     BrowserPeekSession *shown = strongSelf != nil ? strongSelf->_peekSessions[@(sessionID)] : nil;
