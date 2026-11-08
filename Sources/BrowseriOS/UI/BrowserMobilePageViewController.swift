@@ -140,6 +140,10 @@ final class BrowserMobilePageViewController: UIViewController, UITextFieldDelega
                 self, selector: #selector(sceneBecameInactive(_:)), name: name, object: nil,
             )
         }
+        // Find in Page waits for an active scene; the page may draw before that.
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(sceneBecameActive(_:)), name: UIScene.didActivateNotification, object: nil,
+        )
         render()
     }
 
@@ -296,6 +300,12 @@ final class BrowserMobilePageViewController: UIViewController, UITextFieldDelega
             guard let textField, textField.isFirstResponder else { return }
             textField.selectAll(nil)
         }
+    }
+
+    @objc private func sceneBecameActive(_ notification: Notification) {
+        guard let scene = notification.object as? UIWindowScene,
+              scene === viewIfLoaded?.window?.windowScene else { return }
+        render()
     }
 
     @objc private func sceneBecameInactive(_ notification: Notification) {
