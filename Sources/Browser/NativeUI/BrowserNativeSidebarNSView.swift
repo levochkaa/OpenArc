@@ -2495,7 +2495,7 @@ private final class BrowserNativeSidebarClearDivider: NSView {
             if window == nil {
                 setIndicatorProgress(to)
             } else {
-                indicatorAnimation.start(.sidebar) { [weak self] progress in
+                indicatorAnimation.start(includesActive ? .clearArrowDrop : .sidebar) { [weak self] progress in
                     self?.setIndicatorProgress(from + (to - from) * progress)
                 }
             }

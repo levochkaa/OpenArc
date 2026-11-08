@@ -22,6 +22,8 @@ import QuartzCore
 
         /// Page, sidebar and bar geometry: 0.08 s, timing (0.25, 0.46, 0.45, 0.94).
         static let sidebar = Curve.bezier(0.08, x1: 0.25, y1: 0.46, x2: 0.45, y2: 0.94)
+        /// Clear's arrow dropping into place: 0.25 s, easing out.
+        static let clearArrowDrop = Curve.bezier(0.25, x1: 0.215, y1: 0.61, x2: 0.355, y2: 1)
         /// The theme cross-fading to a chosen Space.
         static let spaceSlide = Curve.bezier(0.19, x1: 0.215, y1: 0.61, x2: 0.355, y2: 1)
         /// The Library sliding in from the window edge.
