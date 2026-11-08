@@ -2031,7 +2031,12 @@ final class BrowserNativeSidebarNSView: NSView {
         let button = (footer as? BrowserSidebarLibraryButtonHosting & NSView).map {
             content.convert($0.libraryButtonFrame, from: $0)
         } ?? .zero
-        guard !downloadsTray.frame.contains(point), !button.contains(point) else { return }
+        guard !downloadsTray.frame.contains(point), !button.contains(point) else {
+            // Progress moves, and a finished download turns into its file.
+            downloadsTray.refresh(downloadsTrayEntries())
+            placeDownloadsTray()
+            return
+        }
         isLibraryButtonHovered = false
         setDownloadsTrayShown(false)
     }
@@ -2803,6 +2808,17 @@ final class BrowserDownloadsTrayView: NSView {
         return Array(entries.sorted { $0.date > $1.date }.prefix(limit).reversed())
     }
 
+    /// New progress for the same rows, without rebuilding them under the pointer.
+    func refresh(_ entries: [Entry]) {
+        guard entries.map(\.url) == rows.map(\.entry.url) else {
+            show(entries)
+            return
+        }
+        for (row, entry) in zip(rows, entries) {
+            row.update(entry)
+        }
+    }
+
     func show(_ entries: [Entry]) {
         for row in rows {
             row.removeFromSuperview()
@@ -2822,7 +2838,8 @@ final class BrowserDownloadsTrayView: NSView {
 private final class BrowserDownloadsTrayRow: NSView {
     override var isFlipped: Bool { true }
 
-    private let entry: BrowserDownloadsTrayView.Entry
+    private(set) var entry: BrowserDownloadsTrayView.Entry
+
     private let highlight = BrowserNativeSurface()
     private let icon = NSImageView()
     private let ring = BrowserDownloadsTrayProgressRing()
@@ -2913,6 +2930,14 @@ private final class BrowserDownloadsTrayRow: NSView {
             NSWorkspace.shared.activateFileViewerSelecting([entry.url])
         }
         return menu
+    }
+
+    func update(_ entry: BrowserDownloadsTrayView.Entry) {
+        self.entry = entry
+        if let progress = entry.progress {
+            detail.stringValue = progress
+        }
+        ring.fraction = entry.fraction ?? 0
     }
 }
 
