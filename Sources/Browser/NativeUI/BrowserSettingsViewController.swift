@@ -15,6 +15,9 @@ enum BrowserSettingsLayout {
     static let rowSpacing: CGFloat = 10
     static let pickerWidth: CGFloat = 190
     static let shortcutCaptureWidth: CGFloat = 132
+    static let siteSearchNameWidth: CGFloat = 140
+    static let siteSearchKeywordWidth: CGFloat = 120
+    static let siteSearchColumnSpacing: CGFloat = 12
     static let cardCornerRadius: CGFloat = 10
     static let cardHorizontalPadding: CGFloat = 14
     static let cardVerticalPadding: CGFloat = 6
@@ -28,6 +31,189 @@ enum BrowserSettingsLayout {
         appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
             ? NSColor.white.withAlphaComponent(0.05)
             : NSColor.white
+    }
+}
+
+// MARK: - BrowserShortcutSettingsRow
+
+/// A Shortcuts row: the command, its shortcut and Record and Reset. It lays
+/// out by frames, since a hundred rows of nested constraints took a second.
+final class BrowserShortcutSettingsRow: NSView {
+    // MARK: Internal
+
+    static let height: CGFloat = 36
+
+    override var isFlipped: Bool { true }
+
+    override var intrinsicContentSize: NSSize { NSSize(width: NSView.noIntrinsicMetric, height: Self.height) }
+
+    /// A hairline above the row, as other sections put between their rows.
+    var drawsSeparator = true { didSet { needsDisplay = true } }
+
+    // MARK: Private
+
+    private let title: NSTextField
+    private let value: NSView
+    private let record: NSButton
+    private let reset: NSButton
+
+    init(title: NSTextField, value: NSView, record: NSButton, reset: NSButton) {
+        self.title = title
+        self.value = value
+        self.record = record
+        self.reset = reset
+        super.init(frame: .zero)
+        title.lineBreakMode = .byTruncatingTail
+        for view in [title, value, record, reset] {
+            addSubview(view)
+        }
+    }
+
+    @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func draw(_: NSRect) {
+        guard drawsSeparator else { return }
+        NSColor.separatorColor.setFill()
+        let scale = window?.backingScaleFactor ?? 2
+        NSRect(x: 0, y: 0, width: bounds.width, height: 1 / scale).fill()
+    }
+
+    override func layout() {
+        super.layout()
+        let spacing: CGFloat = 12
+        let resetWidth: CGFloat = 72
+        let recordWidth: CGFloat = 92
+        let valueWidth = BrowserSettingsLayout.shortcutCaptureWidth
+        func centered(_ view: NSView, x: CGFloat, width: CGFloat) {
+            let natural = view.intrinsicContentSize.height
+            let height = min(natural > 0 ? natural : 22, bounds.height)
+            view.frame = NSRect(x: x, y: ((bounds.height - height) / 2).rounded(), width: width, height: height)
+        }
+        let resetX = bounds.width - resetWidth
+        let recordX = resetX - spacing - recordWidth
+        let valueX = recordX - spacing - valueWidth
+        centered(reset, x: resetX, width: resetWidth)
+        centered(record, x: recordX, width: recordWidth)
+        centered(value, x: valueX, width: valueWidth)
+        centered(title, x: 0, width: max(valueX - spacing, 0))
+    }
+
+    static func empty() -> BrowserShortcutSettingsRow {
+        BrowserShortcutSettingsRow(
+            title: NSTextField(labelWithString: ""),
+            value: NSView(),
+            record: NSButton(),
+            reset: NSButton(),
+        )
+    }
+}
+
+// MARK: - BrowserShortcutSettingsList
+
+/// The Shortcuts rows, one under another, each made as it comes into view.
+final class BrowserShortcutSettingsList: NSView {
+    // MARK: Internal
+
+    override var isFlipped: Bool { true }
+
+    override var intrinsicContentSize: NSSize {
+        NSSize(width: NSView.noIntrinsicMetric, height: CGFloat(count) * BrowserShortcutSettingsRow.height)
+    }
+
+    // MARK: Private
+
+    private let count: Int
+    private let makeRow: (Int) -> BrowserShortcutSettingsRow
+    private var rows = [Int: BrowserShortcutSettingsRow]()
+
+    init(count: Int, makeRow: @escaping (Int) -> BrowserShortcutSettingsRow) {
+        self.count = count
+        self.makeRow = makeRow
+        super.init(frame: .zero)
+    }
+
+    @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        NotificationCenter.default.removeObserver(self)
+        guard let clip = enclosingScrollView?.contentView else { return }
+        clip.postsBoundsChangedNotifications = true
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(clipBoundsChanged),
+            name: NSView.boundsDidChangeNotification,
+            object: clip,
+        )
+    }
+
+    override func layout() {
+        super.layout()
+        makeVisibleRows()
+        for (index, row) in rows {
+            row.frame = frame(ofRow: index)
+        }
+    }
+
+    /// Every row, as scrolling through all of them would make.
+    func makeAllRows() {
+        makeRows(in: 0..<count)
+    }
+
+    @objc private func clipBoundsChanged() {
+        makeVisibleRows()
+    }
+
+    private func frame(ofRow index: Int) -> NSRect {
+        let height = BrowserShortcutSettingsRow.height
+        return NSRect(x: 0, y: CGFloat(index) * height, width: bounds.width, height: height)
+    }
+
+    /// The rows in view and a screen's worth either side.
+    private func makeVisibleRows() {
+        guard window != nil else { return }
+        let visible = visibleRect.insetBy(dx: 0, dy: -max(visibleRect.height, 300))
+        let height = BrowserShortcutSettingsRow.height
+        let first = max(Int(floor(visible.minY / height)), 0)
+        let last = min(Int(ceil(visible.maxY / height)), count)
+        guard first < last else { return }
+        makeRows(in: first..<last)
+    }
+
+    private func makeRows(in range: Range<Int>) {
+        for index in range where rows[index] == nil {
+            let row = makeRow(index)
+            row.frame = frame(ofRow: index)
+            addSubview(row)
+            rows[index] = row
+        }
+    }
+}
+
+// MARK: - BrowserSettingsClickableRow
+
+/// A settings row that acts on a click anywhere in it; its own controls still
+/// take their clicks first.
+final class BrowserSettingsClickableRow: NSView {
+    // MARK: Private
+
+    private let onClick: () -> Void
+
+    // MARK: Internal
+
+    init(onClick: @escaping () -> Void) {
+        self.onClick = onClick
+        super.init(frame: .zero)
+    }
+
+    @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func mouseDown(with _: NSEvent) {}
+
+    override func mouseUp(with event: NSEvent) {
+        if bounds.contains(convert(event.locationInWindow, from: nil)) {
+            onClick()
+        }
     }
 }
 
@@ -253,6 +439,20 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
         }
     }
 
+    /// The provider's mark before its name; GitHub's follows the text color.
+    private static func signInLogo(for provider: BrowserAccountProvider) -> NSImage? {
+        let image: NSImage? =
+            switch provider {
+            case .apple: NSImage(systemSymbolName: "apple.logo", accessibilityDescription: nil)
+            case .google: NSImage(named: "GoogleLogo")
+            case .github: NSImage(named: "GitHubLogo")
+            default: nil
+            }
+        guard let image, provider != .apple else { return image }
+        image.size = NSSize(width: 16, height: 16)
+        return image
+    }
+
     func controlTextDidChange(_ notification: Notification) {
         if notification.object as? NSSearchField === searchField {
             refreshShortcuts()
@@ -267,6 +467,13 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
            let index = preferences.siteSearches.firstIndex(where: { $0.id == entry.id })
         {
             preferences.siteSearches[index][keyPath: entry.keyPath] = field.stringValue
+        }
+    }
+
+    /// Makes every Shortcuts row, which otherwise appear as they scroll into view.
+    func loadAllShortcutRows() {
+        for case let list as BrowserShortcutSettingsList in shortcutsBody.arrangedSubviews {
+            list.makeAllRows()
         }
     }
 
@@ -308,6 +515,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
             .append { [weak self, weak button] in
                 button?.isEnabled = !(self?.defaultBrowserService.isDefaultBrowser ?? true)
             }
+        defer { releaseEmailFieldFocus() }
         scrollView.setViews([
             card(accountsBody),
             section(
@@ -479,6 +687,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
         importButton.setAccessibilityIdentifier("browser.settings.site-search.import")
         replaceRows(
             [BrowserNativeControls.padded(detail, vertical: 8)]
+                + (preferences.siteSearches.isEmpty ? [] : [siteSearchHeader()])
                 + preferences.siteSearches.map(siteSearchRow)
                 + [BrowserNativeControls.padded(
                     BrowserNativeControls.stack([add, restore, importButton], orientation: .horizontal, spacing: 8),
@@ -522,21 +731,41 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
         }
     }
 
+    /// Column titles above the site searches, at the rows' widths.
+    private func siteSearchHeader() -> NSView {
+        func title(_ text: String, width: CGFloat?) -> NSTextField {
+            let label = BrowserNativeControls.label(text, size: 11, weight: .medium, color: .tertiaryLabelColor)
+            if let width {
+                label.widthAnchor.constraint(equalToConstant: width).isActive = true
+            }
+            return label
+        }
+        let row = BrowserNativeControls.stack([
+            title(BrowserStrings.settingsSiteSearchName, width: BrowserSettingsLayout.siteSearchNameWidth),
+            title(BrowserStrings.settingsSiteSearchKeyword, width: BrowserSettingsLayout.siteSearchKeywordWidth),
+            title(BrowserStrings.settingsSiteSearchURL, width: nil),
+        ], orientation: .horizontal, spacing: BrowserSettingsLayout.siteSearchColumnSpacing)
+        return BrowserNativeControls.padded(row, vertical: 6)
+    }
+
+    /// One site search: its name, its shortcut in a tag and its address,
+    /// each edited in place; borderless until focused, in fixed columns.
     private func siteSearchRow(_ site: BrowserSiteSearch) -> NSView {
         let id = site.id
         func field(
             _ value: String,
             placeholder: String,
-            width: CGFloat,
             keyPath: WritableKeyPath<BrowserSiteSearch, String>,
             identifier: String,
         ) -> NSTextField {
             let field = NSTextField(string: value)
             field.placeholderString = placeholder
             field.delegate = self
+            field.isBordered = false
+            field.isBezeled = false
+            field.drawsBackground = false
             field.lineBreakMode = .byTruncatingTail
             field.cell?.usesSingleLineMode = true
-            field.widthAnchor.constraint(greaterThanOrEqualToConstant: width).isActive = true
             field.setAccessibilityIdentifier("browser.settings.site-search.\(identifier)")
             siteSearchFields.append((field, id, keyPath))
             return field
@@ -544,27 +773,43 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
         let name = field(
             site.name,
             placeholder: BrowserStrings.settingsSiteSearchName,
-            width: 110,
             keyPath: \.name,
             identifier: "name",
         )
+        name.font = .systemFont(ofSize: 13, weight: .medium)
+        name.widthAnchor.constraint(equalToConstant: BrowserSettingsLayout.siteSearchNameWidth).isActive = true
         let keyword = field(
             site.keyword,
             placeholder: BrowserStrings.settingsSiteSearchKeyword,
-            width: 100,
             keyPath: \.keyword,
             identifier: "keyword",
         )
+        keyword.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+        let tag = BrowserNativeSurface()
+        tag.fillColor = .quaternaryLabelColor
+        tag.strokeWidth = 0
+        tag.cornerRadius = 6
+        tag.addSubview(keyword)
+        keyword.translatesAutoresizingMaskIntoConstraints = false
+        tag.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            tag.widthAnchor.constraint(equalToConstant: BrowserSettingsLayout.siteSearchKeywordWidth),
+            keyword.leadingAnchor.constraint(equalTo: tag.leadingAnchor, constant: 6),
+            keyword.trailingAnchor.constraint(equalTo: tag.trailingAnchor, constant: -6),
+            keyword.topAnchor.constraint(equalTo: tag.topAnchor, constant: 3),
+            keyword.bottomAnchor.constraint(equalTo: tag.bottomAnchor, constant: -3),
+        ])
         let url = field(
             site.urlTemplate,
             placeholder: BrowserStrings.settingsSiteSearchURL,
-            width: 200,
             keyPath: \.urlTemplate,
             identifier: "url",
         )
-        name.setContentHuggingPriority(.defaultHigh, for: .horizontal)
-        keyword.setContentHuggingPriority(.defaultHigh, for: .horizontal)
+        url.font = .systemFont(ofSize: 12)
+        url.textColor = .secondaryLabelColor
+        url.lineBreakMode = .byTruncatingMiddle
         url.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        url.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         let remove = BrowserActionButton("") { [weak self] in
             self?.preferences.siteSearches.removeAll { $0.id == id }
             self?.refreshSiteSearches()
@@ -573,12 +818,18 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
             systemSymbolName: "minus.circle",
             accessibilityDescription: BrowserStrings.settingsSiteSearchRemove,
         )
+        remove.contentTintColor = .secondaryLabelColor
         remove.isBordered = false
+        remove.setContentHuggingPriority(.required, for: .horizontal)
         remove.toolTip = BrowserStrings.settingsSiteSearchRemove
         remove.setAccessibilityIdentifier("browser.settings.site-search.remove")
         return BrowserNativeControls.padded(
-            BrowserNativeControls.stack([name, keyword, url, remove], orientation: .horizontal, spacing: 8),
-            vertical: 4,
+            BrowserNativeControls.stack(
+                [name, tag, url, remove],
+                orientation: .horizontal,
+                spacing: BrowserSettingsLayout.siteSearchColumnSpacing,
+            ),
+            vertical: 6,
         )
     }
 
@@ -799,11 +1050,13 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
         let localRow = picker(
             "temporary-tab-lifetime",
             BrowserStrings.settingsTemporaryTabsLifetimeLabel,
-            options: BrowserTemporaryTabLifetime.allCases,
-            title: BrowserStrings.title,
-            get: { model.temporaryTabLifetime },
+            options: [nil] + BrowserTemporaryTabLifetime.allCases.map(Optional.some),
+            title: { lifetime in
+                lifetime.map(BrowserStrings.title(for:)) ?? BrowserStrings.settingsAutomaticArchivalNever
+            },
+            get: { model.localAutomaticArchivalOff ? nil : model.temporaryTabLifetime },
             set: { [weak self] lifetime in
-                model.setTemporaryTabLifetime(lifetime)
+                model.setLocalAutomaticArchival(lifetime: lifetime)
                 self?.syncControls()
             },
             enabled: { !model.usesSynchronizedAutomaticArchival },
@@ -1026,11 +1279,12 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
         func rows() -> [NSView] {
             BrowserAppIcon.choices.map { icon in
                 let selected = preferences.appIcon == icon
-                let radio = BrowserActionButton("") { [weak self] in
+                let choose = { [weak self] in
                     preferences.appIcon = icon
                     icon.apply()
                     self?.configureContent()
                 }
+                let radio = BrowserActionButton("", action: choose)
                 radio.setButtonType(.radio)
                 radio.state = selected ? .on : .off
                 let image = NSImageView(image: icon.image ?? NSImage())
@@ -1038,7 +1292,18 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                 image.widthAnchor.constraint(equalToConstant: 52).isActive = true
                 image.heightAnchor.constraint(equalToConstant: 52).isActive = true
                 let name = BrowserNativeControls.label(icon.title, size: 13, weight: .medium, color: .labelColor)
-                return BrowserNativeControls.stack([radio, image, name], orientation: .horizontal, spacing: 12)
+                // A click anywhere on the row picks the icon, not only on its radio button.
+                let row = BrowserSettingsClickableRow(onClick: choose)
+                let content = BrowserNativeControls.stack([radio, image, name], orientation: .horizontal, spacing: 12)
+                row.addSubview(content)
+                content.translatesAutoresizingMaskIntoConstraints = false
+                NSLayoutConstraint.activate([
+                    content.leadingAnchor.constraint(equalTo: row.leadingAnchor),
+                    content.trailingAnchor.constraint(lessThanOrEqualTo: row.trailingAnchor),
+                    content.topAnchor.constraint(equalTo: row.topAnchor, constant: 6),
+                    content.bottomAnchor.constraint(equalTo: row.bottomAnchor, constant: -6),
+                ])
+                return row
             }
         }
         let section = section(BrowserStrings.settingsIconTab, body: body)
@@ -1149,11 +1414,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                             _ = model.importBookmarks(from: source)
                         }
                     }
-                    button.isBordered = false
-                    button.alignment = .left
-                    button.image = NSImage(systemSymbolName: "square.and.arrow.down", accessibilityDescription: nil)
-                    button.imagePosition = .imageLeading
-                    return BrowserNativeControls.padded(button, vertical: 8)
+                    return listButton(button, symbol: "square.and.arrow.down")
                 },
             ),
             section(BrowserStrings.settingsAdvancedTab, rows: [
@@ -1200,11 +1461,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
             }
         }
         button.setAccessibilityIdentifier("browser.settings.import-arc-sidebar")
-        button.isBordered = false
-        button.alignment = .left
-        button.image = NSImage(systemSymbolName: "square.and.arrow.down.on.square", accessibilityDescription: nil)
-        button.imagePosition = .imageLeading
-        return BrowserNativeControls.padded(button, vertical: 8)
+        return listButton(button, symbol: "square.and.arrow.down.on.square")
     }
 
     private func refreshAccounts() {
@@ -1244,6 +1501,18 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
             view.window?.makeFirstResponder(accountCodeField)
         }
         isShowingEmailCodeEntry = showsCodeEntry
+    }
+
+    /// Opening Accounts must not start typing into the email field, which
+    /// AppKit focuses as the window's first text field.
+    private func releaseEmailFieldFocus() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let window = view.window, accountStore?.emailSignIn == nil,
+                  (window.firstResponder as? NSText)?.delegate === accountEmailField
+                  || window.firstResponder === accountEmailField
+            else { return }
+            window.makeFirstResponder(nil)
+        }
     }
 
     /// The signed-in account: its initial in a circle, the address and this
@@ -1371,8 +1640,8 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                 Task { await accountStore.signIn(with: provider) }
             }
             button.isEnabled = isEnabled
-            if provider == .apple {
-                button.image = NSImage(systemSymbolName: "apple.logo", accessibilityDescription: nil)
+            if let logo = Self.signInLogo(for: provider) {
+                button.image = logo
                 button.imagePosition = .imageLeading
             }
             button.setAccessibilityIdentifier("browser.settings.account.continue-with-\(provider.rawValue)")
@@ -1545,10 +1814,18 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                     .displayText
                     .localizedCaseInsensitiveContains(query))
         }
-        replaceRows(commands.map(shortcutRow), in: shortcutsBody)
+        // A hundred rows of controls took a third of a second to open; the
+        // list makes only the rows that scroll into view.
+        let list = BrowserShortcutSettingsList(count: commands.count) { [weak self] index in
+            let row = self?.shortcutRow(commands[index]) ?? BrowserShortcutSettingsRow.empty()
+            row.drawsSeparator = index > 0
+            return row
+        }
+        BrowserNativeControls.replaceViews([list], in: shortcutsBody)
+        scrollView.needsLayout = true
     }
 
-    private func shortcutRow(_ command: BrowserCommandID) -> NSView {
+    private func shortcutRow(_ command: BrowserCommandID) -> BrowserShortcutSettingsRow {
         let descriptor = shortcutStore.descriptor(for: command)
         let recording = recordingCommandID == command
         let value: NSView
@@ -1570,7 +1847,6 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
             label.alignment = .right
             value = label
         }
-        value.widthAnchor.constraint(equalToConstant: BrowserSettingsLayout.shortcutCaptureWidth).isActive = true
         let record = BrowserActionButton(recording
             ? BrowserStrings.settingsShortcutPressShortcut
             : BrowserStrings.settingsShortcutRecord)
@@ -1579,7 +1855,6 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
             self?.shortcutMessage.isHidden = true
             self?.refreshShortcuts()
         }
-        record.widthAnchor.constraint(equalToConstant: 92).isActive = true
         record.setAccessibilityIdentifier("browser.settings.shortcut.record.\(command.rawValue)")
         let reset = BrowserActionButton(BrowserStrings.settingsShortcutReset) { [weak self] in
             guard let self else { return }
@@ -1591,10 +1866,8 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
             refreshShortcuts()
         }
         reset.isEnabled = shortcutStore.isCustomized(command)
-        reset.widthAnchor.constraint(equalToConstant: 72).isActive = true
-        let title = titleDetail(descriptor.menuTitle)
-        let actions = BrowserNativeControls.stack([value, record, reset], orientation: .horizontal, spacing: 12)
-        return row(label: title, control: actions)
+        let title = BrowserNativeControls.label(descriptor.menuTitle)
+        return BrowserShortcutSettingsRow(title: title, value: value, record: record, reset: reset)
     }
 
     private func apply(_ shortcut: BrowserKeyboardShortcut, to command: BrowserCommandID) {
@@ -1734,11 +2007,30 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
 
     private func link(_ title: String, url: URL) -> NSView {
         let button = BrowserActionButton(title) { [weak self] in self?.openURL(url) }
+        return listButton(button, symbol: "chevron.right", trailing: true)
+    }
+
+    /// A borderless button filling a row: title in the label color, its
+    /// symbol in the secondary one, before the title or at the row's end.
+    private func listButton(_ button: BrowserActionButton, symbol: String, trailing: Bool = false) -> NSView {
         button.isBordered = false
         button.alignment = .left
-        button.image = NSImage(systemSymbolName: "chevron.right", accessibilityDescription: nil)
-        button.imagePosition = .imageTrailing
-        return BrowserNativeControls.padded(button, vertical: 8)
+        button.attributedTitle = NSAttributedString(string: button.title, attributes: [
+            .font: NSFont.systemFont(ofSize: 13),
+            .foregroundColor: NSColor.labelColor,
+        ])
+        let image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(paletteColors: [.secondaryLabelColor]))
+        guard trailing else {
+            button.image = image
+            button.imagePosition = .imageLeading
+            return BrowserNativeControls.padded(button, vertical: 8)
+        }
+        let chevron = NSImageView(image: image ?? NSImage())
+        chevron.setContentHuggingPriority(.required, for: .horizontal)
+        button.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let row = BrowserNativeControls.stack([button, chevron], orientation: .horizontal, spacing: 8)
+        return BrowserNativeControls.padded(row, vertical: 8)
     }
 
     private func section(_ title: String, rows: [NSView]) -> NSView {

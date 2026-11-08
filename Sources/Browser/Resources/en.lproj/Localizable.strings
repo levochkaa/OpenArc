@@ -982,3 +982,4 @@
 "browser.devtools.dock_left" = "Dock to Left";
 "browser.devtools.undock" = "Undock into Separate Window";
 "browser.devtools.dock_back" = "Dock Developer Tools to Right";
+"browser.settings.automatic_archival.never" = "Never";

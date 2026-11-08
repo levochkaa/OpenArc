@@ -2998,7 +2998,6 @@ enum BrowserStrings {
         comment: "Title for the accounts settings tab.",
     )
 
-
     static let settingsAccountsSignInTitle = NSLocalizedString(
         "browser.settings.accounts.sign_in_title",
         comment: "Title of the Accounts settings card when no account is signed in.",
@@ -3547,6 +3546,10 @@ enum BrowserStrings {
         comment: "Option title for archiving temporary tabs after 12 hours.",
     )
 
+    static let settingsAutomaticArchivalNever = NSLocalizedString(
+        "browser.settings.automatic_archival.never",
+        comment: "Temporary tab lifetime option that never archives tabs automatically.",
+    )
     static let settingsAutomaticArchivalOff = NSLocalizedString(
         "browser.settings.automatic_archival.off",
         comment: "Disable automatic archiving for this synchronized profile.",

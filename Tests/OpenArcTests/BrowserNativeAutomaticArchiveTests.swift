@@ -136,6 +136,21 @@ import Testing
         }
     }
 
+    @Test func neverKeepsTemporaryTabsWithoutSyncAndALifetimeTurnsArchivalBackOn() async throws {
+        try await withNativeAutomaticArchive(state: "local") { f in
+            let controller = f.controller()
+            let local = try f.popup("temporary-tab-lifetime", in: controller)
+            try f.choose(0, popup: local)
+            #expect(f.model.localAutomaticArchivalOff)
+            #expect(f.store.loadLocalAutomaticArchivalOff())
+            #expect(local.titleOfSelectedItem == BrowserStrings.settingsAutomaticArchivalNever)
+            try f.choose(2, popup: local)
+            #expect(!f.model.localAutomaticArchivalOff)
+            #expect(!f.store.loadLocalAutomaticArchivalOff())
+            #expect(f.model.temporaryTabLifetime == .twentyFourHours)
+        }
+    }
+
     @Test func neverBoundLifetimePickerKeepsExistingDefaultAndBindingSwitchesToOffWithoutRebuildingPane() async throws {
         try await withNativeAutomaticArchive(state: "local") { f in
             let controller = f.controller()
@@ -143,9 +158,10 @@ import Testing
             let synchronized = try f.popup("automatic-tab-archival", in: controller)
             #expect(!local.isHiddenOrHasHiddenAncestor && local.isEnabled)
             #expect(synchronized.isHiddenOrHasHiddenAncestor)
-            #expect(local.itemTitles == BrowserTemporaryTabLifetime.allCases.map(BrowserStrings.title))
+            #expect(local.itemTitles == [BrowserStrings.settingsAutomaticArchivalNever]
+                + BrowserTemporaryTabLifetime.allCases.map(BrowserStrings.title))
             #expect(local.titleOfSelectedItem == BrowserStrings.title(for: .thirtyDays))
-            try f.choose(2, popup: local)
+            try f.choose(3, popup: local)
             #expect(f.model.temporaryTabLifetime == .threeDays)
             #expect(try !f.store.loadAutomaticTabArchivalSettings().enabled)
             #expect(try f.store.syncOwner() == nil)

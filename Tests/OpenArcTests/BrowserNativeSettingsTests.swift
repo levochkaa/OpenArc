@@ -204,14 +204,17 @@ import Testing
         defer { fixture.cleanup() }
         let controller = fixture.controller(.shortcuts)
         let search = try #require(find("browser.settings.shortcut-search", in: controller.view) as? NSSearchField)
+        controller.loadAllShortcutRows()
         let count = recordingButtons(controller.view).count
         #expect(count == fixture.model.shortcutStore.commandIDs.count)
         search.stringValue = "battery-nonexistent-shortcut"
         controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: search))
+        controller.loadAllShortcutRows()
         #expect(recordingButtons(controller.view).isEmpty)
         #expect(find("browser.settings.shortcut-search", in: controller.view) === search)
         search.stringValue = "Find"
         controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: search))
+        controller.loadAllShortcutRows()
         #expect(!recordingButtons(controller.view).isEmpty)
         #expect(recordingButtons(controller.view).count < count)
     }
