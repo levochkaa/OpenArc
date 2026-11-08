@@ -630,9 +630,9 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
     case clearCookiesAndRefresh
     case addSplitView
     case addTopSplit
-    case addBottomSplit
     case addLeftSplit
     case addRightSplit
+    case addBottomSplit
     case closeSplitPane
     case separateTabFromSplit
     case separateSplitView
