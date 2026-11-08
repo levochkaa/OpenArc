@@ -710,3 +710,17 @@ private struct BrowserEmptySuggestionProviderForTests: BrowserSuggestionProvidin
     #expect(split.count == 1 && split[0].contains("example.net"))
     #expect(!model.isPresented)
 }
+
+@MainActor @Test func commandReturnOpensAPageBehindAndKeepsTheBar() {
+    var background = [String]()
+    let model = BrowserCommandBarModel(
+        suggestionProvider: BrowserEmptySuggestionProviderForTests(),
+        submitHandler: { _ in },
+    )
+    model.backgroundSubmitHandler = { background.append($0) }
+    model.present()
+    model.query = "example.net"
+    model.submitSelectionInBackground()
+    #expect(background.count == 1 && background[0].contains("example.net"))
+    #expect(model.isPresented && model.query == "example.net", "The bar stays for the next page")
+}

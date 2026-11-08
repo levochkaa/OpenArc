@@ -329,11 +329,20 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
             return true
         case #selector(NSResponder.insertNewline(_:)),
              #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)):
-            if NSApp.currentEvent?.modifierFlags.contains(.option) == true {
+            let modifiers = NSApp.currentEvent?.modifierFlags ?? []
+            if modifiers.contains(.option) {
                 model.submitSelectionInSplitView()
+            } else if modifiers.contains(.command) {
+                model.submitSelectionInBackground()
             } else {
                 model.submitSelection()
             }
+            return true
+        // Command-Return has no key binding of its own.
+        case Selector(("noop:"))
+            where NSApp.currentEvent?.type == .keyDown && [36, 76].contains(NSApp.currentEvent?.keyCode)
+            && NSApp.currentEvent?.modifierFlags.contains(.command) == true:
+            model.submitSelectionInBackground()
             return true
         case #selector(NSResponder.cancelOperation(_:)):
             if model.endSiteSearch(restoringQuery: false) {

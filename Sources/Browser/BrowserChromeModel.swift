@@ -269,6 +269,10 @@ enum BrowserWindowMode: Equatable {
         let model = makeCommandBarModel { [weak self] resolvedURLString in
             self?.openResolvedSelectionInNewTab(resolvedURLString)
         }
+        // Command-Return opens the page behind, at the top of Today.
+        model.backgroundSubmitHandler = { [weak self] resolvedURLString in
+            self?.createTab(withURLString: resolvedURLString, makeActive: false, placesAtTop: true)
+        }
         // Option-Return opens the page beside the one on screen.
         model.splitSubmitHandler = { [weak self] resolvedURLString in
             guard let self else { return }
