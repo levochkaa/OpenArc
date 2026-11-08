@@ -473,8 +473,11 @@
 "browser.tab.rename_tooltip_caption" = "Double-click to rename";
 "browser.settings.window_title" = "Settings";
 "browser.settings.accounts" = "Accounts";
-"browser.settings.accounts.current_accounts" = "Current Accounts";
 "browser.settings.accounts.empty" = "No accounts yet.";
+"browser.settings.accounts.sign_in_title" = "Sign in to OpenArc";
+"browser.settings.accounts.sign_in_detail" = "Keep your Spaces and tabs in sync across your devices.";
+"browser.settings.accounts.or" = "or";
+"browser.settings.default_browser_section" = "Default Browser";
 "browser.sync.account.sign_out" = "Sign Out";
 "browser.sync.account.signed_in" = "Signed in";
 "browser.sync.account.server_not_configured" = "Set OPENARC_SYNC_BASE_URL to enable sync.";

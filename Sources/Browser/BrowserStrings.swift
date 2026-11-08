@@ -2998,11 +2998,23 @@ enum BrowserStrings {
         comment: "Title for the accounts settings tab.",
     )
 
-    static let settingsAccountsCurrentAccounts = NSLocalizedString(
-        "browser.settings.accounts.current_accounts",
-        comment: "Title for the current accounts section.",
-    )
 
+    static let settingsAccountsSignInTitle = NSLocalizedString(
+        "browser.settings.accounts.sign_in_title",
+        comment: "Title of the Accounts settings card when no account is signed in.",
+    )
+    static let settingsAccountsSignInDetail = NSLocalizedString(
+        "browser.settings.accounts.sign_in_detail",
+        comment: "What an account does, under the Accounts settings sign-in title.",
+    )
+    static let settingsAccountsOr = NSLocalizedString(
+        "browser.settings.accounts.or",
+        comment: "Divider between the sign-in buttons and email sign-in.",
+    )
+    static let settingsDefaultBrowserSection = NSLocalizedString(
+        "browser.settings.default_browser_section",
+        comment: "Settings section with the default browser control.",
+    )
     static let settingsAccountsEmpty = NSLocalizedString(
         "browser.settings.accounts.empty",
         comment: "Empty state text for accounts.",

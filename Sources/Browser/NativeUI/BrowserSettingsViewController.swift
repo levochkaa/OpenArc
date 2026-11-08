@@ -15,6 +15,20 @@ enum BrowserSettingsLayout {
     static let rowSpacing: CGFloat = 10
     static let pickerWidth: CGFloat = 190
     static let shortcutCaptureWidth: CGFloat = 132
+    static let cardCornerRadius: CGFloat = 10
+    static let cardHorizontalPadding: CGFloat = 14
+    static let cardVerticalPadding: CGFloat = 6
+    /// Sign-in buttons and fields share one width, centered in the account card.
+    static let signInWidth: CGFloat = 280
+    static let accountIconSize: CGFloat = 64
+    static let avatarSize: CGFloat = 36
+
+    /// A card stands off the window: lighter in Dark Mode, white in Light Mode.
+    static let cardFill = NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor.white.withAlphaComponent(0.05)
+            : NSColor.white
+    }
 }
 
 // MARK: - BrowserSafariBookmarkImportPanel
@@ -295,11 +309,11 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                 button?.isEnabled = !(self?.defaultBrowserService.isDefaultBrowser ?? true)
             }
         scrollView.setViews([
+            card(accountsBody),
             section(
-                BrowserStrings.settingsGeneralTab,
+                BrowserStrings.settingsDefaultBrowserSection,
                 rows: [row(BrowserStrings.settingsDefaultBrowserPrompt, control: button)],
             ),
-            section(BrowserStrings.settingsAccountsCurrentAccounts, body: accountsBody),
         ])
         refreshAccounts()
     }
@@ -1196,64 +1210,132 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
     private func refreshAccounts() {
         guard pane == .accounts else { return }
         var rows = [NSView]()
-        if let accountStore {
-            if let session = accountStore.session {
-                rows.append(titleDetail(
-                    session.userEmail ?? BrowserStrings.syncAccountSignedIn,
-                    detail: BrowserStrings.syncAccountDevice(session.deviceID),
+        if let accountStore, let session = accountStore.session {
+            rows.append(signedInRow(email: session.userEmail, deviceID: session.deviceID, accountStore: accountStore))
+            switch accountStore.bindingState {
+            case .needsConsent:
+                let enable = BrowserActionButton(BrowserStrings.syncAccountEnable) { accountStore.enableSync() }
+                enable.keyEquivalent = "\r"
+                rows.append(row(label: titleDetail(
+                    BrowserStrings.syncAccountEnable,
+                    detail: BrowserStrings.syncAccountEnableDetail,
+                ), control: enable))
+            case .differentAccount:
+                rows.append(note(BrowserStrings.syncAccountDifferentOwner))
+            case .enabled:
+                rows.append(note(
+                    BrowserStrings.syncAccountEnabled,
+                    symbol: "checkmark.circle.fill",
+                    tint: .systemGreen,
                 ))
-                switch accountStore.bindingState {
-                case .needsConsent:
-                    rows.append(BrowserNativeControls.label(
-                        BrowserStrings.syncAccountEnableDetail, color: .secondaryLabelColor, wraps: true,
-                    ))
-                    rows.append(BrowserActionButton(BrowserStrings.syncAccountEnable) { accountStore.enableSync() })
-                case .differentAccount:
-                    rows.append(BrowserNativeControls.label(
-                        BrowserStrings.syncAccountDifferentOwner, color: .secondaryLabelColor, wraps: true,
-                    ))
-                case .enabled:
-                    rows.append(BrowserNativeControls.label(
-                        BrowserStrings.syncAccountEnabled, color: .secondaryLabelColor, wraps: true,
-                    ))
-                case nil,
-                     .paused: break
-                }
-                rows.append(BrowserActionButton(BrowserStrings.syncAccountSignOut) { accountStore.signOut() })
-            } else {
-                rows.append(BrowserNativeControls.label(
-                    accountStore.isConfigured
-                        ? BrowserStrings.settingsAccountsEmpty
-                        : accountStore.unavailableMessage,
-                    color: .secondaryLabelColor,
-                    wraps: true,
-                ))
-                if accountStore.isConfigured {
-                    rows.append(contentsOf: signInRows(accountStore))
-                }
+            case nil,
+                 .paused: break
             }
             if let error = accountStore.lastError {
-                rows.append(BrowserNativeControls.label(
-                    error,
-                    size: 12,
-                    color: .systemRed,
-                    wraps: true,
-                ))
+                rows.append(note(error, symbol: "exclamationmark.triangle.fill", tint: .systemRed))
             }
+            replaceRows(rows, in: accountsBody)
         } else {
-            rows.append(BrowserNativeControls.label(
-                BrowserStrings.settingsAccountsEmpty,
-                color: .secondaryLabelColor,
-            ))
+            BrowserNativeControls.replaceViews([signInPanel()], in: accountsBody)
         }
-        accountsBody.spacing = 10
-        BrowserNativeControls.replaceViews(rows, in: accountsBody)
         scrollView.needsLayout = true
         let showsCodeEntry = accountStore?.emailSignIn != nil
         if showsCodeEntry, !isShowingEmailCodeEntry {
             view.window?.makeFirstResponder(accountCodeField)
         }
         isShowingEmailCodeEntry = showsCodeEntry
+    }
+
+    /// The signed-in account: its initial in a circle, the address and this
+    /// device, and Sign Out.
+    private func signedInRow(email: String?, deviceID: String, accountStore: BrowserAccountStore) -> NSView {
+        let name = email ?? BrowserStrings.syncAccountSignedIn
+        let size = BrowserSettingsLayout.avatarSize
+        let avatar = BrowserNativeSurface()
+        avatar.fillColor = .controlAccentColor
+        avatar.strokeWidth = 0
+        avatar.cornerRadius = size / 2
+        let initial = BrowserNativeControls.label(
+            String(name.prefix(1)).uppercased(),
+            size: 16,
+            weight: .semibold,
+            color: .white,
+        )
+        initial.alignment = .center
+        avatar.addSubview(initial)
+        initial.translatesAutoresizingMaskIntoConstraints = false
+        avatar.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            avatar.widthAnchor.constraint(equalToConstant: size),
+            avatar.heightAnchor.constraint(equalToConstant: size),
+            initial.centerXAnchor.constraint(equalTo: avatar.centerXAnchor),
+            initial.centerYAnchor.constraint(equalTo: avatar.centerYAnchor),
+        ])
+        let signOut = BrowserActionButton(BrowserStrings.syncAccountSignOut) { accountStore.signOut() }
+        signOut.setAccessibilityIdentifier("browser.settings.account.sign-out")
+        let text = BrowserNativeControls.stack([
+            BrowserNativeControls.label(name, size: 14, weight: .semibold),
+            BrowserNativeControls.label(
+                BrowserStrings.syncAccountDevice(deviceID),
+                size: 12,
+                color: .secondaryLabelColor,
+            ),
+        ], spacing: 2)
+        let leading = BrowserNativeControls.stack([avatar, text], orientation: .horizontal, spacing: 12)
+        return BrowserNativeControls.padded(row(label: leading, control: signOut), vertical: 4)
+    }
+
+    /// One line of status with an optional symbol before it.
+    private func note(_ text: String, symbol: String? = nil, tint: NSColor = .secondaryLabelColor) -> NSView {
+        let label = BrowserNativeControls.label(text, size: 12, color: .secondaryLabelColor, wraps: true)
+        guard let symbol, let image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil) else {
+            return BrowserNativeControls.padded(label, vertical: 10)
+        }
+        let icon = NSImageView(image: image)
+        icon.contentTintColor = tint
+        icon.setContentHuggingPriority(.required, for: .horizontal)
+        return BrowserNativeControls.padded(
+            BrowserNativeControls.stack([icon, label], orientation: .horizontal, spacing: 6),
+            vertical: 10,
+        )
+    }
+
+    /// Signed out: the app's icon and what an account is for above the
+    /// server's sign-in methods, all centered.
+    private func signInPanel() -> NSView {
+        let icon = NSImageView(image: NSApp.applicationIconImage ?? NSImage())
+        icon.imageScaling = .scaleProportionallyUpOrDown
+        let iconSize = BrowserSettingsLayout.accountIconSize
+        icon.widthAnchor.constraint(equalToConstant: iconSize).isActive = true
+        icon.heightAnchor.constraint(equalToConstant: iconSize).isActive = true
+        let title = BrowserNativeControls.label(BrowserStrings.settingsAccountsSignInTitle, size: 17, weight: .semibold)
+        let configured = accountStore?.isConfigured == true
+        let detail = BrowserNativeControls.label(
+            configured
+                ? BrowserStrings.settingsAccountsSignInDetail
+                : accountStore?.unavailableMessage ?? BrowserStrings.settingsAccountsEmpty,
+            size: 13,
+            color: .secondaryLabelColor,
+            wraps: true,
+        )
+        detail.alignment = .center
+        detail.preferredMaxLayoutWidth = BrowserSettingsLayout.signInWidth + 80
+        var views: [NSView] = [icon, title, detail]
+        if configured, let accountStore {
+            views.append(contentsOf: signInRows(accountStore))
+        }
+        if let error = accountStore?.lastError {
+            let label = BrowserNativeControls.label(error, size: 12, color: .systemRed, wraps: true)
+            label.alignment = .center
+            label.preferredMaxLayoutWidth = BrowserSettingsLayout.signInWidth
+            views.append(label)
+        }
+        let stack = BrowserNativeControls.stack(views, spacing: 10)
+        stack.alignment = .centerX
+        stack.setCustomSpacing(14, after: icon)
+        stack.setCustomSpacing(4, after: title)
+        stack.setCustomSpacing(18, after: detail)
+        return BrowserNativeControls.padded(stack, vertical: 22)
     }
 
     private func configureAccountFields() {
@@ -1274,13 +1356,13 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
     }
 
     /// The server's sign-in methods: a button per web provider, then a code
-    /// sent by email.
+    /// sent by email. Each is as wide as the column.
     private func signInRows(_ accountStore: BrowserAccountStore) -> [NSView] {
         guard let providers = accountStore.providers else {
             guard accountStore.lastError != nil else { return [] }
-            return [BrowserActionButton(BrowserStrings.syncAccountLoadProviders) {
+            return [signInWidth(BrowserActionButton(BrowserStrings.syncAccountLoadProviders) {
                 Task { await accountStore.loadProviders() }
-            }]
+            })]
         }
         let isEnabled = !accountStore.isSigningIn
         var rows = [NSView]()
@@ -1289,10 +1371,17 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                 Task { await accountStore.signIn(with: provider) }
             }
             button.isEnabled = isEnabled
+            if provider == .apple {
+                button.image = NSImage(systemSymbolName: "apple.logo", accessibilityDescription: nil)
+                button.imagePosition = .imageLeading
+            }
             button.setAccessibilityIdentifier("browser.settings.account.continue-with-\(provider.rawValue)")
-            rows.append(button)
+            rows.append(signInWidth(button))
         }
         guard providers.contains(.email) else { return rows }
+        if !rows.isEmpty {
+            rows.append(orDivider())
+        }
         accountEmailField.isEnabled = isEnabled
         accountCodeField.isEnabled = isEnabled
         guard let request = accountStore.emailSignIn else {
@@ -1301,20 +1390,27 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
             }
             send.isEnabled = isEnabled
             send.setAccessibilityIdentifier("browser.settings.account.send-code")
-            rows.append(BrowserNativeControls.stack([accountEmailField, send], orientation: .horizontal, spacing: 8))
+            rows.append(signInWidth(accountEmailField))
+            rows.append(signInWidth(send))
             return rows
         }
-        rows.append(BrowserNativeControls.label(
+        let sent = BrowserNativeControls.label(
             BrowserStrings.syncAccountCodeSent(to: request.email),
+            size: 12,
             color: .secondaryLabelColor,
             wraps: true,
-        ))
+        )
+        sent.alignment = .center
+        sent.preferredMaxLayoutWidth = BrowserSettingsLayout.signInWidth
+        rows.append(sent)
         let signIn = BrowserActionButton(BrowserStrings.syncAccountSignInWithCode) { [weak self] in
             self?.signInWithEmailCode()
         }
         signIn.isEnabled = isEnabled
+        signIn.keyEquivalent = "\r"
         signIn.setAccessibilityIdentifier("browser.settings.account.sign-in-with-code")
-        rows.append(BrowserNativeControls.stack([accountCodeField, signIn], orientation: .horizontal, spacing: 8))
+        rows.append(signInWidth(accountCodeField))
+        rows.append(signInWidth(signIn))
         let sendAgain = BrowserActionButton(BrowserStrings.syncAccountSendAgain) {
             Task { await accountStore.requestEmailCode(email: request.email) }
         }
@@ -1324,8 +1420,53 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
             self?.accountCodeField.stringValue = ""
             accountStore.cancelEmailSignIn()
         }
-        rows.append(BrowserNativeControls.stack([sendAgain, differentEmail], orientation: .horizontal, spacing: 8))
+        differentEmail.setAccessibilityIdentifier("browser.settings.account.use-different-email")
+        for link in [sendAgain, differentEmail] {
+            link.isBordered = false
+            link.contentTintColor = .linkColor
+            link.font = .systemFont(ofSize: 12)
+        }
+        rows.append(BrowserNativeControls.stack([sendAgain, differentEmail], orientation: .horizontal, spacing: 16))
         return rows
+    }
+
+    /// Sizes a sign-in control to the column, large like a sheet's buttons.
+    private func signInWidth(_ control: NSControl) -> NSView {
+        control.controlSize = .large
+        control.translatesAutoresizingMaskIntoConstraints = false
+        control.widthAnchor.constraint(equalToConstant: BrowserSettingsLayout.signInWidth).isActive = true
+        return control
+    }
+
+    /// A thin line on each side of "or", between the providers and email.
+    private func orDivider() -> NSView {
+        let row = NSView()
+        let label = BrowserNativeControls.label(BrowserStrings.settingsAccountsOr, size: 12, color: .tertiaryLabelColor)
+        let leading = NSBox()
+        let trailing = NSBox()
+        for view in [leading, trailing] {
+            view.boxType = .separator
+        }
+        for view in [leading, label, trailing] as [NSView] {
+            row.addSubview(view)
+            view.translatesAutoresizingMaskIntoConstraints = false
+        }
+        row.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            row.widthAnchor.constraint(equalToConstant: BrowserSettingsLayout.signInWidth),
+            label.centerXAnchor.constraint(equalTo: row.centerXAnchor),
+            label.topAnchor.constraint(equalTo: row.topAnchor),
+            label.bottomAnchor.constraint(equalTo: row.bottomAnchor),
+            leading.leadingAnchor.constraint(equalTo: row.leadingAnchor),
+            leading.trailingAnchor.constraint(equalTo: label.leadingAnchor, constant: -10),
+            leading.centerYAnchor.constraint(equalTo: label.centerYAnchor),
+            leading.heightAnchor.constraint(equalToConstant: 1),
+            trailing.leadingAnchor.constraint(equalTo: label.trailingAnchor, constant: 10),
+            trailing.trailingAnchor.constraint(equalTo: row.trailingAnchor),
+            trailing.centerYAnchor.constraint(equalTo: label.centerYAnchor),
+            trailing.heightAnchor.constraint(equalToConstant: 1),
+        ])
+        return row
     }
 
     @objc private func requestEmailCode() {
@@ -1531,8 +1672,8 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
         NSLayoutConstraint.activate([
             label.leadingAnchor.constraint(equalTo: row.leadingAnchor),
             label.trailingAnchor.constraint(equalTo: control.leadingAnchor, constant: -16),
-            label.topAnchor.constraint(equalTo: row.topAnchor, constant: 6),
-            label.bottomAnchor.constraint(equalTo: row.bottomAnchor, constant: -6),
+            label.topAnchor.constraint(equalTo: row.topAnchor, constant: 8),
+            label.bottomAnchor.constraint(equalTo: row.bottomAnchor, constant: -8),
             control.trailingAnchor.constraint(equalTo: row.trailingAnchor),
             control.centerYAnchor.constraint(equalTo: row.centerYAnchor),
             row.heightAnchor.constraint(greaterThanOrEqualTo: control.heightAnchor, constant: 12),
@@ -1608,13 +1749,30 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
     }
 
     private func section(_ title: String, body: NSStackView) -> NSView {
+        let label = BrowserNativeControls.label(title, size: 13, weight: .semibold, color: .secondaryLabelColor)
+        let section = BrowserNativeControls.stack(
+            [BrowserNativeControls.padded(label, horizontal: 4, vertical: 0)],
+            spacing: 8,
+        )
+        BrowserNativeControls.fillWidth(card(body), in: section)
+        return section
+    }
+
+    /// A rounded, outlined surface around a section's rows.
+    private func card(_ body: NSStackView) -> NSView {
         body.orientation = .vertical
         body.alignment = .leading
         body.spacing = 0
         let surface = BrowserNativeSurface()
-        surface.fillColor = .controlBackgroundColor
-        surface.cornerRadius = 8
-        let padded = BrowserNativeControls.padded(body, horizontal: 12, vertical: 8)
+        surface.fillColor = BrowserSettingsLayout.cardFill
+        surface.strokeColor = NSColor.separatorColor.withAlphaComponent(0.35)
+        surface.strokeWidth = 1
+        surface.cornerRadius = BrowserSettingsLayout.cardCornerRadius
+        let padded = BrowserNativeControls.padded(
+            body,
+            horizontal: BrowserSettingsLayout.cardHorizontalPadding,
+            vertical: BrowserSettingsLayout.cardVerticalPadding,
+        )
         surface.addSubview(padded)
         padded.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
@@ -1623,10 +1781,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
             padded.topAnchor.constraint(equalTo: surface.topAnchor),
             padded.bottomAnchor.constraint(equalTo: surface.bottomAnchor),
         ])
-        let label = BrowserNativeControls.label(title, size: 12, weight: .semibold, color: .secondaryLabelColor)
-        let section = BrowserNativeControls.stack([label], spacing: BrowserSettingsLayout.rowSpacing)
-        BrowserNativeControls.fillWidth(surface, in: section)
-        return section
+        return surface
     }
 
     private func replaceRows(_ rows: [NSView], in stack: NSStackView) {
