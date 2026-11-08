@@ -15,17 +15,22 @@ import AppKit
         return "data:image/png;base64," + png.base64EncodedString()
     }()
 
-    /// Replaces the logo in an internal page's toolbar, inside its shadow roots,
-    /// once the page has drawn it.
+    /// Replaces the logos of an internal page, inside its shadow roots, once
+    /// the page has drawn them. Settings draws another on its About page when
+    /// that opens, so it keeps looking there.
     @objc static func script(dataURL: String) -> String {
         """
         (function(){var logo=\(String(reflecting: dataURL));
-        function find(root,depth){if(!root||depth>6)return null;var img=root.querySelector('img#product-logo');
-        if(img)return img;var all=root.querySelectorAll('*');for(var i=0;i<all.length;i++){
-        if(all[i].shadowRoot){var f=find(all[i].shadowRoot,depth+1);if(f)return f;}}return null;}
-        var tries=0;var timer=setInterval(function(){var img=find(document,0);
-        if(img){var p=img.parentNode;if(p&&p.tagName==='PICTURE'){p.querySelectorAll('source').forEach(function(s){s.remove();});}
-        img.removeAttribute('srcset');img.src=logo;clearInterval(timer);}else if(++tries>100){clearInterval(timer);}},50);})();
+        function swap(root,depth){if(!root||depth>8)return 0;var n=0;
+        root.querySelectorAll('img#product-logo').forEach(function(img){if(img.dataset.openarcLogo)return;
+        var p=img.parentNode;if(p&&p.tagName==='PICTURE'){p.querySelectorAll('source').forEach(function(s){s.remove();});}
+        img.removeAttribute('srcset');img.src=logo;img.dataset.openarcLogo='1';n++;});
+        var all=root.querySelectorAll('*');for(var i=0;i<all.length;i++){if(all[i].shadowRoot)n+=swap(all[i].shadowRoot,depth+1);}
+        return n;}
+        var settings=location.host==='settings';var swapped=0;var tries=0;
+        var timer=setInterval(function(){swapped+=swap(document,0);tries++;
+        if(!settings&&(swapped>0||tries>100)){clearInterval(timer);}
+        else if(settings&&tries===100){clearInterval(timer);setInterval(function(){swap(document,0);},500);}},50);})();
         """
     }
 }
