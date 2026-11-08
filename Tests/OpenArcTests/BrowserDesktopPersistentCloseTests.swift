@@ -80,7 +80,8 @@ import Testing
         #expect(f.model.tabs.map(\.syncID) == order)
         #expect(f.model.selectedTabID == survivor && f.driver.selectedTabIDs == selections)
         #expect(f.driver.createdTabRequests.count == creates)
-        #expect(!f.model.undoManager.canUndo)
+        // Only the rename is undoable; the unload registers nothing.
+        #expect(f.model.undoManager.undoTabActionName == BrowserStrings.undoRenameAction)
         #expect(try f.store.loadArchivePage().entries.isEmpty)
         #expect(try !f.hasTombstone("a"))
         #expect(try !f.operations().contains(.deleteTab(id: "a")))

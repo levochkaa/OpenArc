@@ -88,7 +88,9 @@ import Testing
         let write = try #require(f.recording.attempts.first?.first)
         #expect(write.archiveAction == .insert(entry) && write.origin == .local(syncMove: nil))
         #expect(write.archiveProjectionSnapshot == nil)
-        #expect(!f.model.undoManager.canUndo && !f.model.undoManager.canRedo)
+        // Only the rename is undoable; the archive registers nothing.
+        #expect(f.model.undoManager.undoTabActionName == BrowserStrings.undoRenameAction)
+        #expect(!f.model.undoManager.canRedo)
         #expect(try f.evidence().queue.isEmpty)
     }
 
@@ -207,7 +209,8 @@ import Testing
             .tabs
             .first { $0.id == "a" }?
             .userTitleOverride == "Surviving newer edit")
-        #expect(!f.model.hasUncommittedSessionWrites && !f.model.undoManager.canUndo)
+        #expect(!f.model.hasUncommittedSessionWrites)
+        #expect(f.model.undoManager.undoTabActionName == BrowserStrings.undoRenameAction)
         #expect(try f.evidence().queue.isEmpty)
     }
 

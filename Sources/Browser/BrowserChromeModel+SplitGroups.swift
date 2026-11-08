@@ -112,13 +112,15 @@ extension BrowserChromeModel {
 
     /// Rename… on a split row; an empty title restores the pane chips.
     @discardableResult func setSplitTitle(_ title: String?, groupID: String) -> Bool {
-        guard let index = splitGroups.firstIndex(where: { $0.id == groupID }) else { return false }
-        let trimmed = title?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let value = trimmed?.isEmpty == false ? String(trimmed!.prefix(80)) : nil
-        guard splitGroups[index].title != value else { return false }
-        splitGroups[index].title = value
-        persistSplitGroupChange()
-        return true
+        withArrangementUndo(BrowserStrings.undoRenameAction) {
+            guard let index = splitGroups.firstIndex(where: { $0.id == groupID }) else { return false }
+            let trimmed = title?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let value = trimmed?.isEmpty == false ? String(trimmed!.prefix(80)) : nil
+            guard splitGroups[index].title != value else { return false }
+            splitGroups[index].title = value
+            persistSplitGroupChange()
+            return true
+        }
     }
 
     /// Change Icon… on a split row.
@@ -223,56 +225,58 @@ extension BrowserChromeModel {
         insertion: SplitInsertion = .end,
         orientation: BrowserTabSplitOrientation = .horizontal,
     ) -> Bool {
-        guard let anchorID = anchorTabID ?? selectedTabID, canOpenInSplitView(tabID: tabID, anchorTabID: anchorID),
-              let anchor = tabs.first(where: { $0.id == anchorID }),
-              let added = tabs.first(where: { $0.id == tabID })
-        else { return false }
-        // A Favorite keeps its tile: a copy of its page joins the split.
-        if anchor.placement == .app || added.placement == .app {
-            guard let anchorCopy = anchor.placement == .app ? duplicateTab(id: anchorID) : anchorID,
-                  let addedCopy = added.placement == .app ? duplicateTab(id: tabID) : tabID
+        withArrangementUndo(BrowserStrings.splitViewButtonTitle) {
+            guard let anchorID = anchorTabID ?? selectedTabID, canOpenInSplitView(tabID: tabID, anchorTabID: anchorID),
+                  let anchor = tabs.first(where: { $0.id == anchorID }),
+                  let added = tabs.first(where: { $0.id == tabID })
             else { return false }
-            return openInSplitView(
-                tabID: addedCopy,
-                anchorTabID: anchorCopy,
-                insertion: insertion,
-                orientation: orientation,
-            )
-        }
-        let existing = splitGroup(containingTabID: anchorID)
-        let paneIDs = existing.map { splitPaneTabIDs(of: $0) } ?? [anchorID]
-        guard !paneIDs.contains(tabID), paneIDs.count < Self.maximumSplitPaneCount,
-              let lastPaneID = paneIDs.last
-        else { return false }
-        removeFromSplitGroups(syncID: added.syncID)
-        guard placeTab(tabID, after: lastPaneID) else { return false }
-        // An unloaded pinned tab moved among temporary tabs loads with a new ID.
-        let tabID = runtimeTabID(syncID: added.syncID) ?? tabID
-        if let existing, let index = splitGroups.firstIndex(where: { $0.id == existing.id }) {
-            var members = existing.tabSyncIDs
-            let anchorIndex = members.firstIndex(of: anchor.syncID) ?? members.count - 1
-            switch insertion {
-            case .end: members.append(added.syncID)
-            case .before: members.insert(added.syncID, at: anchorIndex)
-            case .after: members.insert(added.syncID, at: anchorIndex + 1)
+            // A Favorite keeps its tile: a copy of its page joins the split.
+            if anchor.placement == .app || added.placement == .app {
+                guard let anchorCopy = anchor.placement == .app ? duplicateTab(id: anchorID) : anchorID,
+                      let addedCopy = added.placement == .app ? duplicateTab(id: tabID) : tabID
+                else { return false }
+                return openInSplitView(
+                    tabID: addedCopy,
+                    anchorTabID: anchorCopy,
+                    insertion: insertion,
+                    orientation: orientation,
+                )
             }
-            splitGroups[index].tabSyncIDs = members
-            splitGroups[index].fractions = nil
-            splitGroups[index].focusedTabSyncID = added.syncID
-        } else {
-            splitGroups.append(SplitGroup(
-                id: UUID().uuidString,
-                tabSyncIDs: insertion == .before ? [added.syncID, anchor.syncID] : [anchor.syncID, added.syncID],
-                orientation: orientation,
-                focusedTabSyncID: added.syncID,
-            ))
+            let existing = splitGroup(containingTabID: anchorID)
+            let paneIDs = existing.map { splitPaneTabIDs(of: $0) } ?? [anchorID]
+            guard !paneIDs.contains(tabID), paneIDs.count < Self.maximumSplitPaneCount,
+                  let lastPaneID = paneIDs.last
+            else { return false }
+            removeFromSplitGroups(syncID: added.syncID)
+            guard placeTab(tabID, after: lastPaneID) else { return false }
+            // An unloaded pinned tab moved among temporary tabs loads with a new ID.
+            let tabID = runtimeTabID(syncID: added.syncID) ?? tabID
+            if let existing, let index = splitGroups.firstIndex(where: { $0.id == existing.id }) {
+                var members = existing.tabSyncIDs
+                let anchorIndex = members.firstIndex(of: anchor.syncID) ?? members.count - 1
+                switch insertion {
+                case .end: members.append(added.syncID)
+                case .before: members.insert(added.syncID, at: anchorIndex)
+                case .after: members.insert(added.syncID, at: anchorIndex + 1)
+                }
+                splitGroups[index].tabSyncIDs = members
+                splitGroups[index].fractions = nil
+                splitGroups[index].focusedTabSyncID = added.syncID
+            } else {
+                splitGroups.append(SplitGroup(
+                    id: UUID().uuidString,
+                    tabSyncIDs: insertion == .before ? [added.syncID, anchor.syncID] : [anchor.syncID, added.syncID],
+                    orientation: orientation,
+                    focusedTabSyncID: added.syncID,
+                ))
+            }
+            let wasSelected = selectedTabID == tabID
+            selectTab(id: tabID)
+            if wasSelected || selectedTabID != tabID {
+                persistSplitGroupChange()
+            }
+            return true
         }
-        let wasSelected = selectedTabID == tabID
-        selectTab(id: tabID)
-        if wasSelected || selectedTabID != tabID {
-            persistSplitGroupChange()
-        }
-        return true
     }
 
     /// Whether `openInSplitView(tabID:anchorTabID:)` would accept the pair.
@@ -290,32 +294,34 @@ extension BrowserChromeModel {
     /// follows the group, as with Separate Tab from Split. A tab already in the
     /// split moves to that pane's position instead.
     @discardableResult func replaceSplitPane(anchorTabID: String, with tabID: String) -> Bool {
-        guard canReplaceSplitPane(anchorTabID: anchorTabID, with: tabID),
-              let group = splitGroup(containingTabID: anchorTabID),
-              let anchor = tabs.first(where: { $0.id == anchorTabID }),
-              let added = tabs.first(where: { $0.id == tabID }),
-              let index = group.tabSyncIDs.firstIndex(of: anchor.syncID)
-        else { return false }
-        if group.tabSyncIDs.contains(added.syncID) {
-            return moveSplitPane(tabID: tabID, to: index)
+        withArrangementUndo(BrowserStrings.splitViewButtonTitle) {
+            guard canReplaceSplitPane(anchorTabID: anchorTabID, with: tabID),
+                  let group = splitGroup(containingTabID: anchorTabID),
+                  let anchor = tabs.first(where: { $0.id == anchorTabID }),
+                  let added = tabs.first(where: { $0.id == tabID }),
+                  let index = group.tabSyncIDs.firstIndex(of: anchor.syncID)
+            else { return false }
+            if group.tabSyncIDs.contains(added.syncID) {
+                return moveSplitPane(tabID: tabID, to: index)
+            }
+            removeFromSplitGroups(syncID: added.syncID)
+            guard placeTab(tabID, after: anchorTabID),
+                  let groupIndex = splitGroups.firstIndex(where: { $0.id == group.id })
+            else { return false }
+            // An unloaded pinned tab moved among temporary tabs loads with a new ID.
+            let tabID = runtimeTabID(syncID: added.syncID) ?? tabID
+            var members = group.tabSyncIDs
+            members[index] = added.syncID
+            splitGroups[groupIndex].tabSyncIDs = members
+            splitGroups[groupIndex].fractions = group.fractions
+            splitGroups[groupIndex].focusedTabSyncID = added.syncID
+            if let last = splitPaneTabIDs(of: splitGroups[groupIndex]).last {
+                _ = placeTab(anchorTabID, after: last)
+            }
+            selectTab(id: tabID)
+            persistSplitGroupChange()
+            return true
         }
-        removeFromSplitGroups(syncID: added.syncID)
-        guard placeTab(tabID, after: anchorTabID),
-              let groupIndex = splitGroups.firstIndex(where: { $0.id == group.id })
-        else { return false }
-        // An unloaded pinned tab moved among temporary tabs loads with a new ID.
-        let tabID = runtimeTabID(syncID: added.syncID) ?? tabID
-        var members = group.tabSyncIDs
-        members[index] = added.syncID
-        splitGroups[groupIndex].tabSyncIDs = members
-        splitGroups[groupIndex].fractions = group.fractions
-        splitGroups[groupIndex].focusedTabSyncID = added.syncID
-        if let last = splitPaneTabIDs(of: splitGroups[groupIndex]).last {
-            _ = placeTab(anchorTabID, after: last)
-        }
-        selectTab(id: tabID)
-        persistSplitGroupChange()
-        return true
     }
 
     func canReplaceSplitPane(anchorTabID: String, with tabID: String) -> Bool {
@@ -372,26 +378,28 @@ extension BrowserChromeModel {
     /// Pane drag: a pane moves to another position, keeps its size and
     /// takes focus. The other panes keep their order.
     @discardableResult func moveSplitPane(tabID: String, to destination: Int) -> Bool {
-        guard let group = splitGroup(containingTabID: tabID),
-              let syncID = tabs.first(where: { $0.id == tabID })?.syncID,
-              let index = group.tabSyncIDs.firstIndex(of: syncID),
-              group.tabSyncIDs.indices.contains(destination), destination != index,
-              let groupIndex = splitGroups.firstIndex(where: { $0.id == group.id })
-        else { return false }
-        var members = group.tabSyncIDs
-        members.insert(members.remove(at: index), at: destination)
-        var fractions = group.fractions
-        if var sizes = fractions, sizes.count == members.count {
-            sizes.insert(sizes.remove(at: index), at: destination)
-            fractions = sizes
+        withArrangementUndo(BrowserStrings.splitViewButtonTitle) {
+            guard let group = splitGroup(containingTabID: tabID),
+                  let syncID = tabs.first(where: { $0.id == tabID })?.syncID,
+                  let index = group.tabSyncIDs.firstIndex(of: syncID),
+                  group.tabSyncIDs.indices.contains(destination), destination != index,
+                  let groupIndex = splitGroups.firstIndex(where: { $0.id == group.id })
+            else { return false }
+            var members = group.tabSyncIDs
+            members.insert(members.remove(at: index), at: destination)
+            var fractions = group.fractions
+            if var sizes = fractions, sizes.count == members.count {
+                sizes.insert(sizes.remove(at: index), at: destination)
+                fractions = sizes
+            }
+            splitGroups[groupIndex].tabSyncIDs = members
+            splitGroups[groupIndex].fractions = fractions
+            persistSplitGroupChange()
+            if selectedTabID != tabID {
+                selectTab(id: tabID)
+            }
+            return true
         }
-        splitGroups[groupIndex].tabSyncIDs = members
-        splitGroups[groupIndex].fractions = fractions
-        persistSplitGroupChange()
-        if selectedTabID != tabID {
-            selectTab(id: tabID)
-        }
-        return true
     }
 
     func canMoveSelectedSplitPane(by offset: Int) -> Bool {
@@ -476,34 +484,40 @@ extension BrowserChromeModel {
     /// "Separate All Tabs": members stay in pane order at the group's
     /// position and the focused tab stays selected.
     @discardableResult func separateSplitGroup(id: String) -> Bool {
-        guard splitGroups.contains(where: { $0.id == id }) else { return false }
-        splitGroups.removeAll { $0.id == id }
-        persistSplitGroupChange()
-        return true
+        withArrangementUndo(BrowserStrings.splitSeparateAllTabsAction) {
+            guard splitGroups.contains(where: { $0.id == id }) else { return false }
+            splitGroups.removeAll { $0.id == id }
+            persistSplitGroupChange()
+            return true
+        }
     }
 
     /// "Separate Tab from Split": the tab leaves the group and its row
     /// follows the remaining panes, so the group keeps its sidebar position.
     @discardableResult func separateTabFromSplit(tabID: String) -> Bool {
-        guard let group = splitGroup(containingTabID: tabID),
-              let syncID = tabs.first(where: { $0.id == tabID })?.syncID
-        else { return false }
-        let remaining = splitPaneTabIDs(of: group).filter { $0 != tabID }
-        removeFromSplitGroups(syncID: syncID)
-        if let last = remaining.last {
-            _ = placeTab(tabID, after: last)
+        withArrangementUndo(BrowserStrings.splitSeparateTabAction) {
+            guard let group = splitGroup(containingTabID: tabID),
+                  let syncID = tabs.first(where: { $0.id == tabID })?.syncID
+            else { return false }
+            let remaining = splitPaneTabIDs(of: group).filter { $0 != tabID }
+            removeFromSplitGroups(syncID: syncID)
+            if let last = remaining.last {
+                _ = placeTab(tabID, after: last)
+            }
+            persistSplitGroupChange()
+            return true
         }
-        persistSplitGroupChange()
-        return true
     }
 
     @discardableResult func setSplitOrientation(_ orientation: BrowserTabSplitOrientation, groupID: String) -> Bool {
-        guard let index = splitGroups.firstIndex(where: { $0.id == groupID }),
-              splitGroups[index].orientation != orientation
-        else { return false }
-        splitGroups[index].orientation = orientation
-        persistSplitGroupChange()
-        return true
+        withArrangementUndo(BrowserStrings.splitViewButtonTitle) {
+            guard let index = splitGroups.firstIndex(where: { $0.id == groupID }),
+                  splitGroups[index].orientation != orientation
+            else { return false }
+            splitGroups[index].orientation = orientation
+            persistSplitGroupChange()
+            return true
+        }
     }
 
     /// Commit pane sizes once, for example when a divider drag ends.

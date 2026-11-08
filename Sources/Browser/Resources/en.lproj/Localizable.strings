@@ -232,6 +232,8 @@
 "browser.about.made_possible.other_prefix" = ", as well as other ";
 "browser.about.made_possible.suffix" = ".";
 "browser.menu.undo" = "Undo";
+"browser.undo.move_action" = "Move";
+"browser.undo.rename_action" = "Rename";
 "browser.menu.redo" = "Redo";
 "browser.menu.cut" = "Cut";
 "browser.menu.copy" = "Copy";

@@ -1070,6 +1070,14 @@ enum BrowserStrings {
         comment: "Closing punctuation for the About window credits paragraph.",
     )
 
+    static let undoMoveAction = NSLocalizedString(
+        "browser.undo.move_action",
+        comment: "Undo menu action name for moving sidebar rows or Spaces.",
+    )
+    static let undoRenameAction = NSLocalizedString(
+        "browser.undo.rename_action",
+        comment: "Undo menu action name for renaming a tab, folder, Space or Split View.",
+    )
     static let menuUndo = NSLocalizedString(
         "browser.menu.undo",
         comment: "Undo menu item title.",

@@ -256,9 +256,11 @@ import AppKit
                     orientation: target.orientation,
                 )
             } else {
-                !cancel && proposal.map {
+                !cancel && proposal.map { proposal in
                     onWillCommitDrop()
-                    return model.commitSidebarDrop(payload: payload, destination: $0.destination)
+                    return model.withArrangementUndo(BrowserStrings.undoMoveAction) {
+                        model.commitSidebarDrop(payload: payload, destination: proposal.destination)
+                    }
                 } == true
             }
         resetSplitDrop()

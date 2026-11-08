@@ -265,6 +265,9 @@ enum BrowserWindowMode: Equatable {
     let windowMode: BrowserWindowMode
     let profile: BrowserProfile
     let undoManager = BrowserTabUndoManager()
+    /// Nesting of arrangement edits; only the outermost registers Undo.
+    var arrangementUndoDepth = 0
+    var isApplyingArrangementUndo = false
     lazy var commandBarModel: BrowserCommandBarModel = {
         let model = makeCommandBarModel { [weak self] resolvedURLString in
             self?.openResolvedSelectionInNewTab(resolvedURLString)
@@ -922,6 +925,10 @@ enum BrowserWindowMode: Equatable {
 
     var hasLibrary: Bool { !librarySections.isEmpty }
 
+    var canRegisterTabUndo: Bool {
+        isContextReady && isPersistenceEnabled && !isRestoringSession && !isShuttingDown
+    }
+
     private var canAdmitLocalAutomaticArchive: Bool {
         isContextReady && windowMode.persistsSession && isPersistenceEnabled && !isShuttingDown &&
             !hasDiscardedSessionForClosure && !hasUncommittedSessionWrites && !isRestoringSession &&
@@ -960,10 +967,6 @@ enum BrowserWindowMode: Equatable {
             "space_count": "\(spaces.count)",
             "tab_count": "\(tabs.count)",
         ]
-    }
-
-    private var canRegisterTabUndo: Bool {
-        isContextReady && isPersistenceEnabled && !isRestoringSession && !isShuttingDown
     }
 
     init(
@@ -2034,17 +2037,19 @@ enum BrowserWindowMode: Equatable {
     }
 
     func setTitle(_ title: String?, forSpaceID spaceID: String) {
-        guard supportsSpaces, let index = spaces.firstIndex(where: { $0.id == spaceID }) else {
-            return
-        }
+        withArrangementUndo(BrowserStrings.undoRenameAction) {
+            guard supportsSpaces, let index = spaces.firstIndex(where: { $0.id == spaceID }) else {
+                return
+            }
 
-        let sanitizedTitle = sanitizedSpaceTitle(from: title) ?? defaultSpaceTitle(forDisplayIndex: index + 1)
-        guard spaces[index].title != sanitizedTitle else {
-            return
-        }
+            let sanitizedTitle = sanitizedSpaceTitle(from: title) ?? defaultSpaceTitle(forDisplayIndex: index + 1)
+            guard spaces[index].title != sanitizedTitle else {
+                return
+            }
 
-        spaces[index].title = sanitizedTitle
-        persistCurrentSessionIfAllowed()
+            spaces[index].title = sanitizedTitle
+            persistCurrentSessionIfAllowed()
+        }
     }
 
     func setIcon(_ systemImageName: String, forSpaceID spaceID: String) {
@@ -2062,13 +2067,15 @@ enum BrowserWindowMode: Equatable {
     /// Dock reorder: the Space takes `index` among the Spaces. Sync
     /// sends the move from the new order.
     @discardableResult func moveSpace(id: String, toIndex index: Int) -> Bool {
-        guard supportsSpaces, let from = spaces.firstIndex(where: { $0.id == id }) else { return false }
-        let target = min(max(index, 0), spaces.count - 1)
-        guard from != target else { return false }
-        let space = spaces.remove(at: from)
-        spaces.insert(space, at: target)
-        persistCurrentSessionIfAllowed()
-        return true
+        withArrangementUndo(BrowserStrings.undoMoveAction) {
+            guard supportsSpaces, let from = spaces.firstIndex(where: { $0.id == id }) else { return false }
+            let target = min(max(index, 0), spaces.count - 1)
+            guard from != target else { return false }
+            let space = spaces.remove(at: from)
+            spaces.insert(space, at: target)
+            persistCurrentSessionIfAllowed()
+            return true
+        }
     }
 
     @discardableResult func createPinnedTabFolder(containingTabIDs tabIDs: Set<String>) -> String? {
@@ -2238,22 +2245,24 @@ enum BrowserWindowMode: Equatable {
 
     /// Move to: an empty folder has no pages for the sidebar's move plan to carry.
     func moveFolder(id folderID: String, toSpaceID spaceID: String) {
-        guard spaces.contains(where: { $0.id == spaceID }) else { return }
-        let descendants = BrowserSidebarTabTree(snapshot: sidebarPlanningSnapshot())
-            .descendantFolderIDs(including: folderID)
-        movePinnedTabFolder(withID: folderID, toRootSectionIndex: 0, targetSpaceID: spaceID)
-        guard pinnedTabFolders.first(where: { $0.id == folderID })?.spaceID != spaceID else { return }
-        for index in pinnedTabFolders.indices where descendants.contains(pinnedTabFolders[index].id) {
-            pinnedTabFolders[index].spaceID = spaceID
+        withArrangementUndo(BrowserStrings.undoMoveAction) {
+            guard spaces.contains(where: { $0.id == spaceID }) else { return }
+            let descendants = BrowserSidebarTabTree(snapshot: sidebarPlanningSnapshot())
+                .descendantFolderIDs(including: folderID)
+            movePinnedTabFolder(withID: folderID, toRootSectionIndex: 0, targetSpaceID: spaceID)
+            guard pinnedTabFolders.first(where: { $0.id == folderID })?.spaceID != spaceID else { return }
+            for index in pinnedTabFolders.indices where descendants.contains(pinnedTabFolders[index].id) {
+                pinnedTabFolders[index].spaceID = spaceID
+            }
+            if let index = pinnedTabFolders.firstIndex(where: { $0.id == folderID }) {
+                pinnedTabFolders[index].parentFolderID = nil
+            }
+            var tree = BrowserSidebarTabTree(snapshot: sidebarPlanningSnapshot())
+            let root = BrowserSidebarDropContainer.pinned(spaceID)
+            tree.children[root] = [.folder(folderID)] + tree.items(in: root).filter { $0 != .folder(folderID) }
+            applyPinnedTree(tree)
+            persistCurrentSessionIfAllowed()
         }
-        if let index = pinnedTabFolders.firstIndex(where: { $0.id == folderID }) {
-            pinnedTabFolders[index].parentFolderID = nil
-        }
-        var tree = BrowserSidebarTabTree(snapshot: sidebarPlanningSnapshot())
-        let root = BrowserSidebarDropContainer.pinned(spaceID)
-        tree.children[root] = [.folder(folderID)] + tree.items(in: root).filter { $0 != .folder(folderID) }
-        applyPinnedTree(tree)
-        persistCurrentSessionIfAllowed()
     }
 
     /// Turn into Space: a new Space with the folder's name and icon, whose pinned rows are
@@ -2372,18 +2381,20 @@ enum BrowserWindowMode: Equatable {
     }
 
     func setTitle(_ title: String?, forPinnedTabFolderID folderID: String) {
-        guard let index = pinnedTabFolders.firstIndex(where: { $0.id == folderID }) else {
-            return
-        }
+        withArrangementUndo(BrowserStrings.undoRenameAction) {
+            guard let index = pinnedTabFolders.firstIndex(where: { $0.id == folderID }) else {
+                return
+            }
 
-        let sanitizedTitle = sanitizedPinnedTabFolderTitle(from: title) ?? BrowserStrings
-            .pinnedTabFolderDefaultTitle
-        guard pinnedTabFolders[index].title != sanitizedTitle else {
-            return
-        }
+            let sanitizedTitle = sanitizedPinnedTabFolderTitle(from: title) ?? BrowserStrings
+                .pinnedTabFolderDefaultTitle
+            guard pinnedTabFolders[index].title != sanitizedTitle else {
+                return
+            }
 
-        pinnedTabFolders[index].title = sanitizedTitle
-        persistCurrentSessionIfAllowed()
+            pinnedTabFolders[index].title = sanitizedTitle
+            persistCurrentSessionIfAllowed()
+        }
     }
 
     func setIcon(_ systemImageName: String?, forPinnedTabFolderID folderID: String) {
@@ -2408,7 +2419,9 @@ enum BrowserWindowMode: Equatable {
 
         let targetPlacement: BrowserTabPlacement = tab.placement == .spacePinned ? .temporary : .spacePinned
         let targetSectionIndex = tabCount(for: targetPlacement)
-        moveTab(withID: tabID, toPlacement: targetPlacement, atSectionIndex: targetSectionIndex)
+        withArrangementUndo(targetPlacement == .spacePinned ? BrowserStrings.menuPinTab : BrowserStrings.menuUnpinTab) {
+            moveTab(withID: tabID, toPlacement: targetPlacement, atSectionIndex: targetSectionIndex)
+        }
     }
 
     @discardableResult func resetPinnedTabToPinnedURL(id tabID: String) -> Bool {
@@ -4059,18 +4072,20 @@ enum BrowserWindowMode: Equatable {
     }
 
     func setUserTitleOverride(_ titleOverride: String?, forTabID tabID: String) {
-        guard let index = tabs.firstIndex(where: { $0.id == tabID }) else {
-            return
-        }
+        withArrangementUndo(BrowserStrings.undoRenameAction) {
+            guard let index = tabs.firstIndex(where: { $0.id == tabID }) else {
+                return
+            }
 
-        let sanitizedTitleOverride = sanitizedUserTitleOverride(from: titleOverride)
-        guard tabs[index].userTitleOverride != sanitizedTitleOverride else {
-            return
-        }
+            let sanitizedTitleOverride = sanitizedUserTitleOverride(from: titleOverride)
+            guard tabs[index].userTitleOverride != sanitizedTitleOverride else {
+                return
+            }
 
-        tabs[index].userTitleOverride = sanitizedTitleOverride
-        updateWindowTitle()
-        persistCurrentSessionIfAllowed()
+            tabs[index].userTitleOverride = sanitizedTitleOverride
+            updateWindowTitle()
+            persistCurrentSessionIfAllowed()
+        }
     }
 
     func toggleSidebar() {

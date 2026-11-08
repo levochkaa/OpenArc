@@ -245,20 +245,22 @@ extension BrowserChromeModel {
         _ payload: BrowserSidebarDragPayload,
         toTopOfSpace spaceID: String,
     ) -> Bool {
-        guard supportsSpaces, spaces.contains(where: { $0.id == spaceID }) else { return false }
-        let container: BrowserSidebarDropContainer
-        switch payload.primary {
-        case .tab(let id):
-            guard let tab = tabs.first(where: { $0.id == id }), tab.placement != .app, tab.spaceID != spaceID
-            else { return false }
-            container = tab.placement == .spacePinned ? .pinned(spaceID) : .temporary(spaceID)
-        case .folder(let id):
-            guard let folder = pinnedTabFolders.first(where: { $0.id == id }), folder.spaceID != spaceID
-            else { return false }
-            container = .pinned(spaceID)
+        withArrangementUndo(BrowserStrings.undoMoveAction) {
+            guard supportsSpaces, spaces.contains(where: { $0.id == spaceID }) else { return false }
+            let container: BrowserSidebarDropContainer
+            switch payload.primary {
+            case .tab(let id):
+                guard let tab = tabs.first(where: { $0.id == id }), tab.placement != .app, tab.spaceID != spaceID
+                else { return false }
+                container = tab.placement == .spacePinned ? .pinned(spaceID) : .temporary(spaceID)
+            case .folder(let id):
+                guard let folder = pinnedTabFolders.first(where: { $0.id == id }), folder.spaceID != spaceID
+                else { return false }
+                container = .pinned(spaceID)
+            }
+            let first = BrowserSidebarTabTree(snapshot: sidebarSnapshot).items(in: container).first
+            return commitSidebarDrop(payload: payload, destination: .init(container: container, beforeItem: first))
         }
-        let first = BrowserSidebarTabTree(snapshot: sidebarSnapshot).items(in: container).first
-        return commitSidebarDrop(payload: payload, destination: .init(container: container, beforeItem: first))
     }
 
     /// Moves tabs through the sidebar drop path, which keeps their order, a
