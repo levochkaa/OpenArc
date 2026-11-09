@@ -45,6 +45,8 @@ enum BrowserChromeColors {
     static let sidebarDropIndicator = adaptive(light: rgba(0, 0, 0, 0.84), dark: rgba(255, 255, 255, 0.96))
     static let primaryText = adaptive(light: rgba(0, 0, 0, 0.86), dark: rgba(255, 255, 255, 0.92))
     static let secondaryText = adaptive(light: rgba(0, 0, 0, 0.5), dark: rgba(255, 255, 255, 0.58))
+    /// The slash between a pinned tab's favicon and the page it moved to.
+    static let sidebarPinnedSlash = adaptive(light: rgba(0, 0, 0, 0.34), dark: rgba(255, 255, 255, 0.3))
     static let currentURLText = adaptive(light: rgba(0, 0, 0, 0.6), dark: rgba(255, 255, 255, 0.6))
     static let buttonBackground = adaptive(light: rgba(0, 0, 0, 0.06), dark: rgba(255, 255, 255, 0.1))
     static let buttonHoverBackground = adaptive(light: rgba(0, 0, 0, 0.1), dark: rgba(255, 255, 255, 0.16))

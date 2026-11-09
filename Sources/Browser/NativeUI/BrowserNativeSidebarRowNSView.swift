@@ -12,8 +12,8 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
 
     /// From the icon's trailing edge: the slash's middle 5 pt after it, the
     /// title 11.5 pt after it.
-    private static let pinnedSlashOffset: CGFloat = 5
-    private static let pinnedSlashTitleOffset: CGFloat = 11.5
+    private static let pinnedSlashOffset: CGFloat = 6
+    private static let pinnedSlashTitleOffset: CGFloat = 10
 
     // MARK: Internal
 
@@ -997,11 +997,11 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
 // MARK: - BrowserNativeSidebarPinnedSlashView
 
 /// A line corner to corner, 1 pt in from each, 2 pt wide with round caps,
-/// leaning forward: 15 pt tall and 3 pt across.
+/// leaning forward: 15 pt tall and 2 pt across.
 final class BrowserNativeSidebarPinnedSlashView: NSView {
     // MARK: Internal
 
-    static let size = NSSize(width: 5, height: 15)
+    static let size = NSSize(width: 4, height: 15)
 
     override var isFlipped: Bool { true }
 
@@ -1020,7 +1020,7 @@ final class BrowserNativeSidebarPinnedSlashView: NSView {
         path.line(to: NSPoint(x: bounds.width - 1, y: 1))
         path.lineWidth = 2
         path.lineCapStyle = .round
-        BrowserChromeColors.secondaryText.setStroke()
+        BrowserChromeColors.sidebarPinnedSlash.setStroke()
         path.stroke()
     }
 }
