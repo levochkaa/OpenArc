@@ -158,6 +158,13 @@ import Testing
         library.needsLayout = true
         library.layoutSubtreeIfNeeded()
         #expect(library.documentBuildCount == 1, "A layout without new rows keeps the rows")
+
+        library.isHidden = true
+        library.refresh()
+        library.isHidden = false
+        library.refresh()
+        library.layoutSubtreeIfNeeded()
+        #expect(library.documentBuildCount == 1, "Opening it again with the same contents keeps the rows")
     }
 }
 

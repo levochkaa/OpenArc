@@ -19,6 +19,37 @@ import Testing
         #expect(two.count == 2)
     }
 
+    /// Opening the Library again on an unchanged archive keeps its row views.
+    @Test func reopeningTheLibraryKeepsTheArchiveRows() async throws {
+        let f = try DesktopArchiveFixture(archivedIDs: ["a", "b", "c"])
+        defer { f.close() }
+        f.restoreModel()
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 600, height: 500),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: true,
+        )
+        let library = BrowserLibraryNSView(model: f.model)
+        library.frame = NSRect(x: 0, y: 0, width: 400, height: 500)
+        window.contentView?.addSubview(library)
+        library.refresh()
+        for _ in 0..<50 where library.documentBuildCount < 2 {
+            try await Task.sleep(for: .milliseconds(10))
+            library.layoutSubtreeIfNeeded()
+        }
+        let built = library.documentBuildCount
+        #expect(built >= 1)
+        for _ in 0..<3 {
+            library.isHidden = true
+            library.refresh()
+            library.isHidden = false
+            try await Task.sleep(for: .milliseconds(30))
+            library.layoutSubtreeIfNeeded()
+        }
+        #expect(library.documentBuildCount == built)
+    }
+
     @Test func restoreCommitsFreshIdentityBeforeEngineCreationAndPreservesTheOriginalTombstone() throws {
         let f = try DesktopArchiveFixture()
         defer { f.close() }

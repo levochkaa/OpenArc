@@ -67,6 +67,24 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
         case header(String)
         case item(BrowserLibraryRowContent)
         case tile(URL)
+
+        /// What a row shows; a download's file icon follows its name.
+        var signature: [AnyHashable?] {
+            switch self {
+            case .header(let title): ["header", title]
+            case .item(let content): [
+                    "item",
+                    content.identity,
+                    content.title,
+                    content.detail,
+                    content.faviconPageURL,
+                    content.faviconImage.map(ObjectIdentifier.init),
+                    content.fileIcon != nil,
+                    content.progress,
+                ]
+            case .tile(let url): ["tile", url]
+            }
+        }
     }
 
     /// The archive store hands out at most this many entries at a time.
@@ -431,10 +449,10 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
         switch section {
         case .archive:
             loadArchiveIfNeeded()
-            rows = archiveRows()
-        case .downloads: rows = downloadRows()
-        case .media: rows = mediaRows()
-        case .spaces: rows = []
+            show(archiveRows())
+        case .downloads: show(downloadRows())
+        case .media: show(mediaRows())
+        case .spaces: show([])
         }
         updateEmptyState()
         needsLayout = true
@@ -495,10 +513,17 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
                 hasDeferredRefresh = true
                 return
             }
-            rows = archiveRows()
+            show(archiveRows())
             updateEmptyState()
             needsLayout = true
         }
+    }
+
+    /// Takes new rows only when they differ from the shown ones, so opening the Library
+    /// or a model change that leaves its contents alone keeps the row views.
+    private func show(_ newRows: [Row]) {
+        guard newRows.map(\.signature) != rows.map(\.signature) else { return }
+        rows = newRows
     }
 
     private func archiveFavicon(for urlString: String, data: Data?) -> NSImage? {
@@ -551,6 +576,7 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
                     }
                     return menu
                 },
+                identity: id,
             )))
         }
         return result
@@ -599,6 +625,7 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
                     BrowserNativeMenus.add(BrowserStrings.libraryRevealInFinder, to: menu) { downloads?.reveal(item) }
                     return menu
                 },
+                identity: item.id,
             )))
         }
         return result
@@ -830,6 +857,8 @@ struct BrowserLibraryRowContent {
     let progress: Double?
     let onOpen: () -> Void
     let menu: () -> NSMenu
+    /// The archived tab or download the row stands for.
+    var identity = ""
 }
 
 // MARK: - BrowserLibraryRow
