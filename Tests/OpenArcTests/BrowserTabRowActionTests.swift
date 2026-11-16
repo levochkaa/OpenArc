@@ -230,6 +230,23 @@ import Testing
             #expect(row.titleLabel.frame.minX > titleOnPinnedPage)
         }
 
+        let titleAway = row.titleLabel.frame.minX
+        let pointer = CGPoint(x: 120, y: 20)
+        let enter = try #require(NSEvent.enterExitEvent(
+            with: .mouseEntered, location: pointer, modifierFlags: [], timestamp: 1, windowNumber: 0,
+            context: nil, eventNumber: 0, trackingNumber: 0, userData: nil,
+        ))
+        row.mouseEntered(with: enter)
+        row.layoutSubtreeIfNeeded()
+        #expect(row.pinnedSlash.isHidden, "Hover hides it")
+        #expect(row.titleLabel.frame.minX == titleAway, "The title stays put")
+        let exit = try #require(NSEvent.enterExitEvent(
+            with: .mouseExited, location: pointer, modifierFlags: [], timestamp: 2, windowNumber: 0,
+            context: nil, eventNumber: 0, trackingNumber: 0, userData: nil,
+        ))
+        row.mouseExited(with: exit)
+        #expect(!row.pinnedSlash.isHidden)
+
         row.update(
             tab: pinned,
             selected: true,

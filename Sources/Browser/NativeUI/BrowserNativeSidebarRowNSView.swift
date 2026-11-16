@@ -952,8 +952,10 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
         folderIcon.isHidden = kind != .folder
         // VoiceOver hears which tab is shown or selected.
         setAccessibilitySelected((kind == .tab || kind == .appTab || kind == .split) && (selected || multiSelected))
-        if pinnedSlash.isHidden == showsPinnedSlash {
-            pinnedSlash.isHidden = !showsPinnedSlash
+        // Hover splits the row into the icon and title areas, and the slash between them goes.
+        let slashVisible = showsPinnedSlash && !isHovered
+        if pinnedSlash.isHidden == slashVisible {
+            pinnedSlash.isHidden = !slashVisible
             needsLayout = true
         }
         updateSurface()
