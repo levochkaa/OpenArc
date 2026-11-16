@@ -161,6 +161,25 @@ import Testing
         #expect(resets == 0)
     }
 
+    @Test func folderDoubleClickTogglesInsteadOfRenaming() {
+        let row = BrowserNativeSidebarRowNSView(frame: NSRect(x: 0, y: 0, width: 240, height: 36))
+        row.update(
+            folder: .init(id: "folder", spaceID: "space", title: "Folder", isExpanded: false),
+            renaming: false,
+            indentLevel: 0,
+            dropTargeted: false,
+            isResizing: false,
+            resetID: 0,
+        )
+        var renames = 0
+        var toggles = 0
+        row.onBeginRename = { renames += 1 }
+        row.onToggle = { toggles += 1 }
+        row.onDoubleClick?(nil)
+        #expect(renames == 0)
+        #expect(toggles == 1)
+    }
+
     @Test func activeRowRenamesAndOtherRowsSelect() {
         let row = BrowserNativeSidebarRowNSView(frame: NSRect(x: 0, y: 0, width: 240, height: 36))
         var selections = 0

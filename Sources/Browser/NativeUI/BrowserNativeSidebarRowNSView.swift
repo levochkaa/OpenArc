@@ -224,9 +224,7 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
                 primaryClick(event)
                 return
             }
-            if kind == .folder {
-                onBeginRename()
-            } else if kind == .tab {
+            if kind == .tab {
                 if !selected {
                     onSelect()
                 }
