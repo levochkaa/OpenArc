@@ -24,13 +24,17 @@ extension CGRect {
 class BrowserNativeSurface: NSView {
     override var isFlipped: Bool { true }
 
-    var fillColor = NSColor.clear { didSet { needsDisplay = true } }
-    var strokeColor = NSColor.clear { didSet { needsDisplay = true } }
-    var cornerRadius: CGFloat = 0 { didSet { needsDisplay = true } }
-    var roundsTopLeadingCorner = true { didSet { needsDisplay = true } }
+    // Refreshes set these on every pass; the same value leaves the drawing as it is.
+    var fillColor = NSColor.clear { didSet { if fillColor != oldValue { needsDisplay = true } } }
+    var strokeColor = NSColor.clear { didSet { if strokeColor != oldValue { needsDisplay = true } } }
+    var cornerRadius: CGFloat = 0 { didSet { if cornerRadius != oldValue { needsDisplay = true } } }
+    var roundsTopLeadingCorner = true { didSet { if roundsTopLeadingCorner != oldValue { needsDisplay = true } } }
     /// The top leading corner's radius while `roundsTopLeadingCorner` is off.
-    var topLeadingCornerRadius: CGFloat = 0 { didSet { needsDisplay = true } }
-    var strokeWidth: CGFloat = 1 { didSet { needsDisplay = true } }
+    var topLeadingCornerRadius: CGFloat = 0 {
+        didSet { if topLeadingCornerRadius != oldValue { needsDisplay = true } }
+    }
+
+    var strokeWidth: CGFloat = 1 { didSet { if strokeWidth != oldValue { needsDisplay = true } } }
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
@@ -349,7 +353,9 @@ final class BrowserNativeChromeButton: NSButton {
         if !isEnabled {
             highlight(false)
         }
-        needsDisplay = true
+        if isEnabled != oldValue {
+            needsDisplay = true
+        }
     } }
     override var isHighlighted: Bool { didSet { updatePressAnimation() } }
 
@@ -365,7 +371,7 @@ final class BrowserNativeChromeButton: NSButton {
     /// A press held past half a second, instead of the action.
     var onLongPress: (() -> Void)?
     var tooltipPlacement = BrowserTooltipPlacement.belowLeading
-    var isSelected = false { didSet { needsDisplay = true } }
+    var isSelected = false { didSet { if isSelected != oldValue { needsDisplay = true } } }
     /// A drag rests on the button, as on a Space's dock icon; it shows the
     /// hover background, since a drag sends no mouse-entered events.
     var isDropTarget = false {

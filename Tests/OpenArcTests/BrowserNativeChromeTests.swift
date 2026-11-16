@@ -3,9 +3,25 @@
 import AppKit
 import Testing
 
+// MARK: - BrowserNativeChromeTests
+
 @Suite(.serialized)
 @MainActor struct BrowserNativeChromeTests {
     // MARK: Internal
+
+    /// Refreshes set a surface's colors on every pass; only a new value redraws it.
+    @Test func settingTheSameLookDoesNotRedrawASurface() {
+        let surface = RedrawCountingSurface(frame: NSRect(x: 0, y: 0, width: 40, height: 20))
+        surface.fillColor = .red
+        surface.cornerRadius = 6
+        let marks = surface.redrawRequests
+        #expect(marks > 0, "A new look asks to redraw")
+        surface.fillColor = .red
+        surface.cornerRadius = 6
+        surface.strokeWidth = 1
+        surface.roundsTopLeadingCorner = true
+        #expect(surface.redrawRequests == marks)
+    }
 
     /// A menu without shortcuts is filled when it opens, not while AppKit looks for the
     /// shortcut of each Command key press.
@@ -323,4 +339,25 @@ import Testing
             previewImage: nil,
         )
     }
+}
+
+// MARK: - RedrawCountingSurface
+
+private final class RedrawCountingSurface: BrowserNativeSurface {
+    override var needsDisplay: Bool {
+        get { super.needsDisplay }
+        set {
+            if newValue {
+                redrawRequests += 1
+            }
+            super.needsDisplay = newValue
+        }
+    }
+
+    override func setNeedsDisplay(_ invalidRect: NSRect) {
+        redrawRequests += 1
+        super.setNeedsDisplay(invalidRect)
+    }
+
+    private(set) var redrawRequests = 0
 }
