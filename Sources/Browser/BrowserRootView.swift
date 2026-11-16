@@ -1195,6 +1195,7 @@ final class BrowserRootView: NSView {
     }
 
     private func finishPresentationAnimation() {
+        let wasAnimating = isAnimatingFrames
         isAnimatingFrames = false
         isSidebarOverlayPinning = false
         if !isExtensionSidePanelPresented {
@@ -1205,10 +1206,22 @@ final class BrowserRootView: NSView {
             isSidebarHoverOverlayChromeVisible = false
         }
         showsSidebarWindowControls = model.isSidebarVisible || isSidebarPresented
-        sidebar.showsWindowControls = showsWindowControlsInSidebarChrome
-        sidebar.isOverlayPresentation = isSidebarOverlayPresentation
-        sidebar.fadesOverlayBorder = false
-        sidebar.refresh()
+        let shown = BrowserSidebarPresentation(
+            showsWindowControls: sidebar.showsWindowControls,
+            isOverlay: sidebar.isOverlayPresentation,
+            fadesOverlayBorder: sidebar.fadesOverlayBorder,
+        )
+        let next = BrowserSidebarPresentation(
+            showsWindowControls: showsWindowControlsInSidebarChrome,
+            isOverlay: isSidebarOverlayPresentation,
+            fadesOverlayBorder: false,
+        )
+        sidebar.showsWindowControls = next.showsWindowControls
+        sidebar.isOverlayPresentation = next.isOverlay
+        sidebar.fadesOverlayBorder = next.fadesOverlayBorder
+        if BrowserSidebarPresentation.needsRefresh(from: shown, to: next, afterAnimation: wasAnimating) {
+            sidebar.refresh()
+        }
     }
 
     private func handleSidebarRevealEdgeHoverChange(_ hovering: Bool) {

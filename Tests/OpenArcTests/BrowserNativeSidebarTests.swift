@@ -50,6 +50,19 @@ import Testing
         #expect(refreshes == 2)
     }
 
+    /// A window layout that moved nothing leaves the sidebar its earlier redraw.
+    @Test func aStillLayoutDoesNotRedrawTheSidebarAgain() {
+        let docked = BrowserSidebarPresentation(showsWindowControls: true, isOverlay: false, fadesOverlayBorder: false)
+        #expect(!BrowserSidebarPresentation.needsRefresh(from: docked, to: docked, afterAnimation: false))
+        #expect(BrowserSidebarPresentation.needsRefresh(from: docked, to: docked, afterAnimation: true))
+        var floating = docked
+        floating.isOverlay = true
+        #expect(BrowserSidebarPresentation.needsRefresh(from: docked, to: floating, afterAnimation: false))
+        var fading = docked
+        fading.fadesOverlayBorder = true
+        #expect(BrowserSidebarPresentation.needsRefresh(from: fading, to: docked, afterAnimation: false))
+    }
+
     @Test func clearRequiresSecondActionForActiveTemporaryTab() throws {
         let (model, _) = makeModel()
         let active = try #require(model.temporaryTabs.last)
