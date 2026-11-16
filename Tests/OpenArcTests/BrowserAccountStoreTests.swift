@@ -503,3 +503,24 @@ private func accountSession(serverURL: URL? = URL(string: "https://sync.example"
 }
 
 private func accountTestURL(_ value: String) -> URL { URL(string: value)! }
+
+// MARK: - BrowserAuthSessionStoreCacheTests
+
+@MainActor struct BrowserAuthSessionStoreCacheTests {
+    /// Sync reads the session before and after every request from memory; a save or
+    /// sign-out through another store for the same profile shows up at once.
+    @Test func storesForOneProfileShareTheSessionTheyKeep() throws {
+        let service = "com.levochkaa.OpenArc.tests.\(UUID().uuidString)"
+        let first = BrowserAuthSessionStore(service: service)
+        let second = BrowserAuthSessionStore(service: service)
+        defer { try? first.clearSession() }
+        #expect(first.loadSession() == nil)
+        let session = BrowserAuthSession(accessToken: "token", userID: "user", userEmail: nil, deviceID: "device")
+        try first.saveSession(session)
+        #expect(second.loadSession() == session)
+        try second.clearSession()
+        #expect(first.loadSession() == nil)
+        let other = BrowserAuthSessionStore(service: service, namespace: .profile("other"))
+        #expect(other.loadSession() == nil, "Another profile keeps its own session")
+    }
+}

@@ -98,7 +98,7 @@ final class BrowserRemoteSyncClient: @unchecked Sendable {
         switch try await openAPIClient(accessToken: nil).listAuthProviders() {
         case .ok(let response):
             switch response.body {
-            case .json(let body): return body.providers.compactMap(BrowserAccountProvider.init(rawValue:))
+            case .json(let body): body.providers.compactMap(BrowserAccountProvider.init(rawValue:))
             }
         case .default(let statusCode, let response):
             throw Self.signInError(statusCode: statusCode, body: response.body, rejectedCode: .signInExpired)
@@ -131,7 +131,7 @@ final class BrowserRemoteSyncClient: @unchecked Sendable {
         switch try await openAPIClient(accessToken: nil).startEmailSignIn(.init(body: .json(.init(email: email)))) {
         case .accepted(let response):
             switch response.body {
-            case .json(let body): return BrowserEmailSignInCode(expiresIn: body.expiresIn, resendIn: body.resendIn)
+            case .json(let body): BrowserEmailSignInCode(expiresIn: body.expiresIn, resendIn: body.resendIn)
             }
         case .default(let statusCode, let response):
             throw Self.signInError(statusCode: statusCode, body: response.body, rejectedCode: .invalidEmail)
@@ -360,10 +360,16 @@ private struct BrowserOpenAPIRequestMiddleware: ClientMiddleware {
 // MARK: - BrowserAuthSessionStore
 
 final class BrowserAuthSessionStore {
+    /// Sessions read from or written to the keychain, by service and account; a missing
+    /// key has not been read yet, and `.some(nil)` is a known absent session.
+    private static let sessionCache = OSAllocatedUnfairLock(initialState: [String: BrowserAuthSession?]())
+
     // MARK: Private
 
     private let service: String
     private let sessionAccount: String
+
+    private var cacheKey: String { "\(service)\u{1F}\(sessionAccount)" }
 
     init(
         service: String = Bundle.main.bundleIdentifier ?? "com.levochkaa.OpenArc",
@@ -375,27 +381,36 @@ final class BrowserAuthSessionStore {
 
     // MARK: Internal
 
+    /// The stored session. Sync checks it before and after every request, so it is read
+    /// from the keychain once and then served from memory; saving and clearing through any
+    /// store in this process update that copy.
     func loadSession() -> BrowserAuthSession? {
-        guard
-            let data = keychainData(account: sessionAccount),
-            let session = try? JSONDecoder().decode(BrowserAuthSession.self, from: data)
-        else {
-            return nil
+        let key = cacheKey
+        if let cached = Self.sessionCache.withLock({ $0[key] }) {
+            return cached
         }
-
+        let session = keychainData(account: sessionAccount)
+            .flatMap { try? JSONDecoder().decode(BrowserAuthSession.self, from: $0) }
+        Self.sessionCache.withLock { $0[key] = .some(session) }
         return session
     }
 
     func saveSession(_ session: BrowserAuthSession) throws {
         let data = try JSONEncoder().encode(session)
+        let key = cacheKey
+        Self.sessionCache.withLock { $0[key] = nil }
         try setKeychainData(data, account: sessionAccount)
+        Self.sessionCache.withLock { $0[key] = .some(session) }
     }
 
     func clearSession() throws {
+        let key = cacheKey
+        Self.sessionCache.withLock { $0[key] = nil }
         let status = SecItemDelete(keychainQuery(account: sessionAccount) as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else {
             throw BrowserAuthSessionStoreError.keychain(status)
         }
+        Self.sessionCache.withLock { $0[key] = .some(nil) }
     }
 
     private func keychainData(account: String) -> Data? {
