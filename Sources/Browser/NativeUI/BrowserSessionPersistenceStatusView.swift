@@ -83,7 +83,9 @@ final class BrowserSessionPersistenceStatusView: NSView {
         )
     }
 
+    /// Runs on every window refresh; with nothing to report it stays hidden untouched.
     func update(_ failure: BrowserSessionPersistenceFailure?) {
+        guard failure != nil || !isHidden else { return }
         isHidden = failure == nil
         retry.isEnabled = failure?.isRetryable == true
         title.stringValue = BrowserStrings.sessionRecoveryTitle
@@ -94,7 +96,9 @@ final class BrowserSessionPersistenceStatusView: NSView {
         needsLayout = true
     }
 
+    /// Measuring the message took a millisecond of each window layout; hidden, it has none.
     func height(for width: CGFloat) -> CGFloat {
+        guard !isHidden else { return 0 }
         let textHeight = (message.stringValue as NSString)
             .boundingRect(
                 with: NSSize(width: max(width - 32, 1), height: .greatestFiniteMagnitude),

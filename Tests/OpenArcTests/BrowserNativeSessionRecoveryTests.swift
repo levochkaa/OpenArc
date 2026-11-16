@@ -39,6 +39,16 @@ import Testing
         #expect(view.isHidden)
     }
 
+    @Test func aHiddenStatusCostsTheWindowNoLayout() {
+        let view = BrowserSessionPersistenceStatusView(frame: NSRect(x: 0, y: 0, width: 400, height: 100))
+        view.layoutSubtreeIfNeeded()
+        view.update(nil)
+        #expect(!view.needsLayout, "A refresh with nothing to report leaves it alone")
+        #expect(view.height(for: 400) == 0)
+        view.update(.init(reason: .writeFailed))
+        #expect(view.height(for: 400) > 0)
+    }
+
     @Test(arguments: [320.0, 640.0]) func recoveryTextAndButtonsFitWithoutOverlap(width: Double) {
         let view = BrowserSessionPersistenceStatusView()
         view.update(.init(reason: .writeFailed))
