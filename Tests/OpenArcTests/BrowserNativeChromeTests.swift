@@ -7,6 +7,33 @@ import Testing
 @MainActor struct BrowserNativeChromeTests {
     // MARK: Internal
 
+    /// A hovered row refreshes its tooltip with every sidebar redraw; the same tooltip in
+    /// the same place stays as it is, and a new title lays it out again.
+    @Test func refreshingAShownTooltipLeavesItAlone() async throws {
+        let window = NSWindow(
+            contentRect: NSRect(x: 200, y: 200, width: 300, height: 200),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false,
+        )
+        let anchor = NSView(frame: NSRect(x: 20, y: 20, width: 100, height: 30))
+        window.contentView?.addSubview(anchor)
+        window.orderFront(nil)
+        defer { window.orderOut(nil) }
+        let presenter = BrowserNativeTooltipPresenter.shared
+        let id = UUID()
+        defer { presenter.end(id: id, detached: true) }
+        presenter.begin(id: id, anchor: anchor, title: "Tab")
+        try await Task.sleep(for: .milliseconds(700))
+        let shown = presenter.presentationCount
+        #expect(shown > 0, "Shown after the hover delay")
+        presenter.begin(id: id, anchor: anchor, title: "Tab")
+        presenter.begin(id: id, anchor: anchor, title: "Tab")
+        #expect(presenter.presentationCount == shown)
+        presenter.begin(id: id, anchor: anchor, title: "Renamed tab")
+        #expect(presenter.presentationCount == shown + 1)
+    }
+
     /// Rows ask for their icons on every refresh and get the image made the first time.
     @Test func anIconIsMadeOnceForEachSizeAndWeight() throws {
         let first = try #require(BrowserIconImage.image(named: "globe", pointSize: 16, weight: .semibold))

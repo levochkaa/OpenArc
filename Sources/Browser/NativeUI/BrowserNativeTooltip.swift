@@ -341,7 +341,7 @@ private final class BrowserNativeTooltipPanelView: NSView {
 @MainActor final class BrowserNativeTooltipPresenter: NSObject {
     // MARK: Private
 
-    private struct Descriptor {
+    private struct Descriptor: Equatable {
         let id: UUID
         let title: String
         let caption: String?
@@ -363,6 +363,9 @@ private final class BrowserNativeTooltipPanelView: NSView {
         }
     }
 
+    /// How many times the panel was laid out and shown, for tests.
+    private(set) var presentationCount = 0
+
     private var hoveredID: UUID?
     private weak var anchor: NSView?
     private var descriptor: Descriptor?
@@ -370,6 +373,9 @@ private final class BrowserNativeTooltipPanelView: NSView {
     private var observation: AnyCancellable?
     private var panel: NSPanel?
     private let visibilityAnimation = BrowserNativeAnimation()
+    /// What the panel shows now and where its anchor was, so a refresh of the same
+    /// tooltip leaves the panel alone.
+    private var shown: (descriptor: Descriptor, source: NSRect)?
 
     override init() {
         super.init()
@@ -470,6 +476,13 @@ private final class BrowserNativeTooltipPanelView: NSView {
             ? window.frame
             : (window.screen?.visibleFrame ?? window.frame)
         let source = window.convertToScreen(anchor.convert(anchor.bounds, to: nil))
+        if panel.isVisible, panel.alphaValue == 1, panel.parent === window,
+           let shown, shown.descriptor == descriptor, shown.source == source
+        {
+            return
+        }
+        shown = (descriptor, source)
+        presentationCount += 1
         let content = BrowserNativeTooltipContent(
             title: descriptor.title,
             caption: descriptor.caption,
@@ -522,6 +535,7 @@ private final class BrowserNativeTooltipPanelView: NSView {
     }
 
     private func hide(curve: BrowserNativeAnimation.Curve = .tooltipOut) {
+        shown = nil
         guard let panel else { return }
         let from = panel.alphaValue
         visibilityAnimation.start(curve) { [weak panel] progress in
