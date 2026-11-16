@@ -114,7 +114,7 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
     }()
 
     private var splitChips = [BrowserNativeSidebarSplitChipView]()
-    private let symbol = NSImageView()
+    private let symbol = BrowserSidebarSymbolView()
     private var selected = false
     private var multiSelected = false
     private var dropTargeted = false
@@ -1307,6 +1307,20 @@ private final class BrowserDeveloperRowBorder: NSView {
         for shape in [base, dashes] {
             shape.frame = bounds
             shape.path = path
+        }
+    }
+}
+
+// MARK: - BrowserSidebarSymbolView
+
+/// Rows set their symbol on every refresh; handing it the image it already shows
+/// leaves the view alone instead of redrawing it.
+final class BrowserSidebarSymbolView: NSImageView {
+    override var image: NSImage? {
+        get { super.image }
+        set {
+            guard newValue !== super.image else { return }
+            super.image = newValue
         }
     }
 }

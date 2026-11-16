@@ -1,6 +1,7 @@
 // BrowserSpaceIconCatalog.swift
 
 import AppKit
+import os
 
 // MARK: - BrowserSpaceIconCatalog
 
@@ -88,7 +89,21 @@ enum BrowserSpaceIconCatalog {
 /// Draws an icon name: a symbol, or an emoji stored with a prefix so older
 /// versions keep treating the value as a plain string.
 enum BrowserIconImage {
+    private struct CacheKey: Hashable {
+        let name: String
+        let pointSize: CGFloat
+        let weight: CGFloat
+        let description: String?
+    }
+
+    /// Images are only read once made, so one instance can be shared across threads.
+    private struct CachedImage: @unchecked Sendable {
+        let image: NSImage?
+    }
+
     private static let emojiPrefix = "emoji:"
+
+    private static let cache = OSAllocatedUnfairLock(initialState: [CacheKey: CachedImage]())
 
     static func name(emoji: String) -> String { emojiPrefix + emoji }
 
@@ -100,15 +115,27 @@ enum BrowserIconImage {
         emoji(from: name) != nil || NSImage(systemSymbolName: name, accessibilityDescription: nil) != nil
     }
 
+    /// The icon at a size and weight. Sidebar rows ask again on every refresh, so each
+    /// image is made once and the same instance is handed out after that.
     static func image(
         named name: String,
         pointSize: CGFloat,
         weight: NSFont.Weight = .regular,
         description: String? = nil,
     ) -> NSImage? {
-        if let emoji = emoji(from: name) { return emojiImage(emoji, pointSize: pointSize) }
-        return NSImage(systemSymbolName: name, accessibilityDescription: description)?
-            .withSymbolConfiguration(.init(pointSize: pointSize, weight: weight))
+        let key = CacheKey(name: name, pointSize: pointSize, weight: weight.rawValue, description: description)
+        if let cached = cache.withLock({ $0[key] }) {
+            return cached.image
+        }
+        let image: NSImage? =
+            if let emoji = emoji(from: name) {
+                emojiImage(emoji, pointSize: pointSize)
+            } else {
+                NSImage(systemSymbolName: name, accessibilityDescription: description)?
+                    .withSymbolConfiguration(.init(pointSize: pointSize, weight: weight))
+            }
+        cache.withLock { $0[key] = CachedImage(image: image) }
+        return image
     }
 
     private static func emojiImage(_ emoji: String, pointSize: CGFloat) -> NSImage {

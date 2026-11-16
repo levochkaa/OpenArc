@@ -7,6 +7,17 @@ import Testing
 @MainActor struct BrowserNativeChromeTests {
     // MARK: Internal
 
+    /// Rows ask for their icons on every refresh and get the image made the first time.
+    @Test func anIconIsMadeOnceForEachSizeAndWeight() throws {
+        let first = try #require(BrowserIconImage.image(named: "globe", pointSize: 16, weight: .semibold))
+        #expect(BrowserIconImage.image(named: "globe", pointSize: 16, weight: .semibold) === first)
+        #expect(BrowserIconImage.image(named: "globe", pointSize: 16, weight: .regular) !== first)
+        #expect(BrowserIconImage.image(named: "globe", pointSize: 12, weight: .semibold) !== first)
+        let emoji = try #require(BrowserIconImage.image(named: BrowserIconImage.name(emoji: "🙂"), pointSize: 16))
+        #expect(BrowserIconImage.image(named: BrowserIconImage.name(emoji: "🙂"), pointSize: 16) === emoji)
+        #expect(BrowserIconImage.image(named: "no.such.symbol.name", pointSize: 16) == nil)
+    }
+
     @Test func reconfiguringTheSameSymbolKeepsItsImage() throws {
         let button = BrowserNativeChromeButton(symbol: "xmark", title: "Close") {}
         let first = try #require(button.image)
