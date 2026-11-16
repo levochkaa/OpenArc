@@ -72,16 +72,25 @@ import Testing
     )
     let favicons = try DatabaseQueue(path: harness.profileDirectoryURL.appendingPathComponent("Favicons").path)
     let png = Data([0x89, 0x50, 0x4E, 0x47])
+    let touchIcon = Data([0x89, 0x50, 0x4E, 0x47, 0x01])
     try favicons.write { db in
+        try db.execute(sql: "CREATE TABLE favicons (id INTEGER PRIMARY KEY, url LONGVARCHAR, icon_type INTEGER)")
         try db.execute(sql: "CREATE TABLE icon_mapping (page_url LONGVARCHAR, icon_id INTEGER)")
         try db.execute(sql: "CREATE TABLE favicon_bitmaps (icon_id INTEGER, image_data BLOB, width INTEGER)")
+        try db.execute(sql: "INSERT INTO favicons VALUES (1, 'https://a.example/favicon.png', 1)")
+        try db.execute(sql: "INSERT INTO favicons VALUES (2, 'https://a.example/touch.png', 2)")
         try db.execute(sql: "INSERT INTO icon_mapping VALUES ('https://a.example/', 1)")
-        try db.execute(sql: "INSERT INTO favicon_bitmaps VALUES (1, ?, 16)", arguments: [png])
+        try db.execute(sql: "INSERT INTO icon_mapping VALUES ('https://a.example/', 2)")
+        try db.execute(sql: "INSERT INTO favicon_bitmaps VALUES (1, ?, 32)", arguments: [png])
+        try db.execute(sql: "INSERT INTO favicon_bitmaps VALUES (2, ?, 180)", arguments: [touchIcon])
     }
     try favicons.close()
     let store = BrowserChromiumHistoryStore(profileDirectoryCandidates: [harness.profileDirectoryURL])
-    let icons = store.pageIcons(for: ["https://a.example/", "https://b.example/"])
-    #expect(icons == ["https://a.example/": png], "A page without a saved icon is left out")
+    let icons = store.pageIcons(for: ["https://a.example/", "https://a.example/other", "https://b.example/"])
+    #expect(icons == [
+        "https://a.example/": png,
+        "https://a.example/other": png,
+    ], "The favicon before a larger touch icon, the site's icon for its other pages, none for unknown sites")
 }
 
 // MARK: - ChromiumHistoryHarness

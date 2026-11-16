@@ -189,6 +189,15 @@ final class BrowserChromiumHistoryStore: BrowserHistorySearching, @unchecked Sen
         )
     }
 
+    /// "https://host/" for a page on that site.
+    private static func originPrefix(of urlString: String) -> String? {
+        guard let components = URLComponents(string: urlString), let scheme = components.scheme,
+              let host = components.host, !host.isEmpty
+        else { return nil }
+        let port = components.port.map { ":\($0)" } ?? ""
+        return "\(scheme)://\(host)\(port)/"
+    }
+
     // MARK: Internal
 
     func recentSuggestions(maximumCount: Int) -> [BrowserCommandSuggestion] {
@@ -488,18 +497,35 @@ final class BrowserChromiumHistoryStore: BrowserHistorySearching, @unchecked Sen
                 defer { try? dbQueue.close() }
                 for urlString in missing {
                     iconCache[urlString] = .some(try? dbQueue.read { db in
+                        // The page's own favicon before touch icons, which are larger but
+                        // drawn on a plate; a page never visited takes its site's icon.
                         try Data.fetchOne(
                             db,
                             sql: """
                             SELECT b.image_data
                             FROM favicon_bitmaps b
                             JOIN icon_mapping m ON m.icon_id = b.icon_id
+                            JOIN favicons f ON f.id = b.icon_id
                             WHERE m.page_url = ?
-                            ORDER BY b.width DESC
+                            ORDER BY f.icon_type = 1 DESC, b.width DESC
                             LIMIT 1
                             """,
                             arguments: [urlString],
-                        )
+                        ) ?? Self.originPrefix(of: urlString).flatMap { prefix in
+                            try Data.fetchOne(
+                                db,
+                                sql: """
+                                SELECT b.image_data
+                                FROM favicon_bitmaps b
+                                JOIN icon_mapping m ON m.icon_id = b.icon_id
+                                JOIN favicons f ON f.id = b.icon_id
+                                WHERE substr(m.page_url, 1, length(?)) = ? AND f.icon_type = 1
+                                ORDER BY b.width DESC
+                                LIMIT 1
+                                """,
+                                arguments: [prefix, prefix],
+                            )
+                        }
                     })
                 }
             }

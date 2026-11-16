@@ -80,14 +80,7 @@ struct BrowserBookmarkItem: Identifiable, Equatable {
     }
 
     var faviconURL: URL? {
-        guard
-            let urlString,
-            let encodedURL = urlString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)
-        else {
-            return nil
-        }
-
-        return URL(string: "https://www.google.com/s2/favicons?sz=64&domain_url=\(encodedURL)")
+        urlString.flatMap(BrowserFaviconCache.pageIconURL(forPageURLString:))
     }
 
     var hostDisplayString: String? {

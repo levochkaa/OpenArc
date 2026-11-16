@@ -10,6 +10,12 @@ import Foundation
 
     static let shared = BrowserFaviconCache()
 
+    private nonisolated static let pageIconScheme = "openarc-page-icon"
+
+    /// The icon a page showed last, as the browser recorded it. Pages it has no
+    /// record of fall back to a favicon service.
+    var pageIconProvider: (String) -> Data? = { _ in nil }
+
     // MARK: Private
 
     @Published private var imagesByURL = [URL: NSImage]()
@@ -22,6 +28,25 @@ import Foundation
         self.dataLoader = dataLoader ?? { url in
             await BrowserFaviconCache.loadData(from: url)
         }
+    }
+
+    /// Stands for the recorded icon of a page whose own icon address is unknown,
+    /// such as an unloaded tab after a restart.
+    nonisolated static func pageIconURL(forPageURLString urlString: String) -> URL? {
+        guard !urlString.isEmpty else { return nil }
+        var components = URLComponents()
+        components.scheme = pageIconScheme
+        components.path = "icon"
+        components.queryItems = [URLQueryItem(name: "page", value: urlString)]
+        return components.url
+    }
+
+    nonisolated static func pageURLString(forPageIconURL url: URL) -> String? {
+        guard url.scheme == pageIconScheme else { return nil }
+        return URLComponents(url: url, resolvingAgainstBaseURL: false)?
+            .queryItems?
+            .first { $0.name == "page" }?
+            .value
     }
 
     private nonisolated static func loadData(from url: URL) async -> Data? {
@@ -38,6 +63,13 @@ import Foundation
         } catch {
             return nil
         }
+    }
+
+    private nonisolated static func serviceIconURL(forPageURLString urlString: String) -> URL? {
+        guard let encodedURL = urlString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
+            return nil
+        }
+        return URL(string: "https://www.google.com/s2/favicons?sz=64&domain_url=\(encodedURL)")
     }
 
     func image(for url: URL?) -> NSImage? {
@@ -59,6 +91,20 @@ import Foundation
             imagesByURL[url] == nil,
             !failedURLs.contains(url)
         else {
+            return
+        }
+
+        if let pageURLString = Self.pageURLString(forPageIconURL: url) {
+            if let data = pageIconProvider(pageURLString) {
+                storeLoadedImageData(data, for: url)
+                return
+            }
+            guard let serviceURL = Self.serviceIconURL(forPageURLString: pageURLString) else {
+                failedURLs.insert(url)
+                return
+            }
+            let data = await dataLoader(serviceURL)
+            storeLoadedImageData(data, for: url)
             return
         }
 

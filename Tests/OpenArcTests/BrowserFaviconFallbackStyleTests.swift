@@ -57,8 +57,31 @@ import Testing
     let fallbackTab = makeFaviconTab(urlString: "https://example.com/article")
     let fallbackURL = try #require(fallbackTab.faviconURL)
 
-    #expect(fallbackURL.host == "www.google.com")
-    #expect(fallbackURL.path == "/s2/favicons")
+    #expect(BrowserFaviconCache.pageURLString(forPageIconURL: fallbackURL) == "https://example.com/article")
+}
+
+@Test @MainActor func anUnloadedPageShowsItsRecordedIconWithoutAskingTheService() async throws {
+    var requested = [URL]()
+    let recorded = try #require(NSImage(size: NSSize(width: 32, height: 32), flipped: false) { rect in
+        NSColor.white.setFill()
+        rect.fill()
+        return true
+    }.tiffRepresentation)
+    let cache = BrowserFaviconCache { url in
+        await MainActor.run { requested.append(url) }
+        return recorded
+    }
+    cache.pageIconProvider = { $0 == "https://example.com/article" ? recorded : nil }
+
+    let known = try #require(makeFaviconTab(urlString: "https://example.com/article").faviconURL)
+    await cache.loadImageIfNeeded(from: known)
+    #expect(cache.image(for: known) != nil)
+    #expect(requested.isEmpty, "A recorded icon needs no request")
+
+    let unknown = try #require(makeFaviconTab(urlString: "https://unknown.example/").faviconURL)
+    await cache.loadImageIfNeeded(from: unknown)
+    #expect(cache.image(for: unknown) != nil)
+    #expect(requested.map(\.host) == ["www.google.com"], "A page without a record asks the service")
 }
 
 private func makeFaviconTab(

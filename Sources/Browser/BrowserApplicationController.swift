@@ -241,6 +241,14 @@ NSMenuDelegate, NSUserInterfaceValidations {
         if webAppConfiguration == nil, userPreferencesStore.appIcon != .standard {
             userPreferencesStore.appIcon.apply()
         }
+        BrowserFaviconCache.shared.pageIconProvider = { [weak self] pageURLString in
+            self?.profileWindowSessions
+                .lazy
+                .compactMap {
+                    $0.chromeModel.pageIcons(for: [pageURLString])[pageURLString]
+                }
+                .first
+        }
         observeShortcutStore()
         observeAppearancePreference()
         installLayoutIndependentKeyMonitor()

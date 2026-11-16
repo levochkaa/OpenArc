@@ -78,14 +78,8 @@ extension BrowserChromeModel {
                 return faviconURL
             }
 
-            guard
-                !urlString.isEmpty,
-                let encodedURL = urlString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)
-            else {
-                return nil
-            }
-
-            return URL(string: "https://www.google.com/s2/favicons?sz=64&domain_url=\(encodedURL)")
+            // An unloaded page shows the icon it showed last, from the browser's records.
+            return BrowserFaviconCache.pageIconURL(forPageURLString: urlString)
         }
 
         var faviconFallbackStyle: BrowserFaviconFallbackStyle {
