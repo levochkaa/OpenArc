@@ -1987,8 +1987,10 @@ enum BrowserWindowMode: Equatable {
 
         let wasPersistenceEnabled = isPersistenceEnabled
         isPersistenceEnabled = false
-        for tabID in tabs.filter({ $0.spaceID == spaceID && $0.placement != .app }).map(\.id) {
-            closeTab(id: tabID, registersUndo: false, reason: .structuralRemoval)
+        changingTabRowsTogether {
+            for tabID in tabs.filter({ $0.spaceID == spaceID && $0.placement != .app }).map(\.id) {
+                closeTab(id: tabID, registersUndo: false, reason: .structuralRemoval)
+            }
         }
         for (engineID, binding) in pendingRemoteTabCreations
             where binding.snapshot.spaceID == spaceID && binding.snapshot.placement != .app
@@ -2340,9 +2342,13 @@ enum BrowserWindowMode: Equatable {
     func syncLiveFolder(id folderID: String, pages: [BrowserLivePage]) {
         guard let folder = pinnedTabFolders.first(where: { $0.id == folderID }) else { return }
         let wanted = Set(pages.map(\.url))
-        for tab in tabs where tab.pinnedFolderID == folderID && !wanted.contains(tab.pinnedURLString ?? tab.urlString) {
-            if tab.id != selectedTabID {
-                closeTab(id: tab.id, registersUndo: false, reason: .structuralRemoval)
+        changingTabRowsTogether {
+            for tab in tabs
+                where tab.pinnedFolderID == folderID && !wanted.contains(tab.pinnedURLString ?? tab.urlString)
+            {
+                if tab.id != selectedTabID {
+                    closeTab(id: tab.id, registersUndo: false, reason: .structuralRemoval)
+                }
             }
         }
         let existing = Set(tabs.filter { $0.pinnedFolderID == folderID }.map { $0.pinnedURLString ?? $0.urlString })
@@ -2381,10 +2387,13 @@ enum BrowserWindowMode: Equatable {
         let removed = descendantPinnedTabFolderIDs(including: folderID)
         let wasPersistenceEnabled = isPersistenceEnabled
         isPersistenceEnabled = false
-        for tabID in tabs.filter({ $0.placement == .spacePinned && $0.pinnedFolderID.map(removed.contains) == true })
-            .map(\.id)
-        {
-            closeTab(id: tabID, registersUndo: false, reason: .structuralRemoval)
+        changingTabRowsTogether {
+            for tabID in tabs
+                .filter({ $0.placement == .spacePinned && $0.pinnedFolderID.map(removed.contains) == true })
+                .map(\.id)
+            {
+                closeTab(id: tabID, registersUndo: false, reason: .structuralRemoval)
+            }
         }
         for (engineID, binding) in pendingRemoteTabCreations
             where binding.snapshot.placement == .spacePinned && binding.snapshot
@@ -3704,8 +3713,10 @@ enum BrowserWindowMode: Equatable {
             return
         }
 
-        for tabID in openTabIDs {
-            closeTab(id: tabID, registersUndo: false)
+        changingTabRowsTogether {
+            for tabID in openTabIDs {
+                closeTab(id: tabID, registersUndo: false)
+            }
         }
     }
 
@@ -4573,6 +4584,17 @@ enum BrowserWindowMode: Equatable {
         persistCurrentSessionIfAllowed()
     }
 
+    /// Rows that one action takes away leave the sidebar together, not one by one.
+    func changingTabRowsTogether(_ changes: () -> Void) {
+        tabRowChangeBatchDepth += 1
+        changes()
+        tabRowChangeBatchDepth -= 1
+        if tabRowChangeBatchDepth == 0, tabRowsChangedInBatch {
+            tabRowsChangedInBatch = false
+            onTabRowsChanged?()
+        }
+    }
+
     private func persistSelectionSoon() {
         pendingSelectionPersist?.invalidate()
         let timer = Timer(timeInterval: Self.selectionPersistDelay, repeats: false) { [weak self] _ in
@@ -4590,17 +4612,6 @@ enum BrowserWindowMode: Equatable {
         if tabRowChangeBatchDepth > 0 {
             tabRowsChangedInBatch = true
         } else {
-            onTabRowsChanged?()
-        }
-    }
-
-    /// Rows that one action takes away leave the sidebar together, not one by one.
-    private func changingTabRowsTogether(_ changes: () -> Void) {
-        tabRowChangeBatchDepth += 1
-        changes()
-        tabRowChangeBatchDepth -= 1
-        if tabRowChangeBatchDepth == 0, tabRowsChangedInBatch {
-            tabRowsChangedInBatch = false
             onTabRowsChanged?()
         }
     }

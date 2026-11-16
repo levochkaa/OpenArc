@@ -694,6 +694,34 @@ import Testing
 }
 
 @Test
+@MainActor func closingOtherOrHigherTabsTakesTheirRowsAwayTogether() throws {
+    let driver = FakeBrowserTabDriver()
+    driver.automaticallyConfirmsCloseRequests = false
+    let model = makeModel(
+        driver: driver,
+        snapshotStore: InMemorySessionSnapshotStore(),
+        preferencesStore: InMemorySessionPreferencesStore(),
+    )
+    model.handleContextReady()
+    driver.flushPendingCreateEvents()
+    for _ in 0..<5 {
+        model.createNewTab()
+        driver.flushPendingCreateEvents()
+    }
+    var redraws = 0
+    model.onTabRowsChanged = { redraws += 1 }
+    let ids = model.temporaryTabs.map(\.id)
+    model.closeTemporaryTabsAbove(id: ids[2])
+    #expect(redraws == 1, "One redraw for the two rows above")
+    #expect(model.presentedSidebarSnapshot.temporaryTabs.map(\.id) == Array(ids[2...]))
+    redraws = 0
+    let kept = try #require(model.presentedSidebarSnapshot.temporaryTabs.first?.id)
+    model.closeOtherTemporaryTabs(id: kept)
+    #expect(redraws == 1, "One redraw for every other row")
+    #expect(model.presentedSidebarSnapshot.temporaryTabs.map(\.id) == [kept])
+}
+
+@Test
 @MainActor func clearTemporaryTabsCanPreserveSelectedTemporaryTab() throws {
     let driver = FakeBrowserTabDriver()
     let snapshotStore = InMemorySessionSnapshotStore()

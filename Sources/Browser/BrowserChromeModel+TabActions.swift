@@ -206,12 +206,14 @@ extension BrowserChromeModel {
     /// Archive Item on a Split View row: temporary panes archive, pinned
     /// panes unload and keep their rows, like Close Tab on each.
     func closeSplit(containingTabID tabID: String) {
-        for id in splitPaneTabIDs(forTabID: tabID) {
-            guard let tab = tabs.first(where: { $0.id == id }) else { continue }
-            if tab.placement == .spacePinned {
-                closePinnedTabProcessOrReset(id: id)
-            } else {
-                closeTab(id: id)
+        changingTabRowsTogether {
+            for id in splitPaneTabIDs(forTabID: tabID) {
+                guard let tab = tabs.first(where: { $0.id == id }) else { continue }
+                if tab.placement == .spacePinned {
+                    closePinnedTabProcessOrReset(id: id)
+                } else {
+                    closeTab(id: id)
+                }
             }
         }
     }
@@ -231,14 +233,18 @@ extension BrowserChromeModel {
     }
 
     func closeTemporaryTabsAbove(id: String) {
-        for tabID in temporaryTabIDsAbove(id: id) {
-            closeTab(id: tabID)
+        changingTabRowsTogether {
+            for tabID in temporaryTabIDsAbove(id: id) {
+                closeTab(id: tabID)
+            }
         }
     }
 
     func closeOtherTemporaryTabs(id: String) {
-        for tabID in otherTemporaryTabIDs(id: id) {
-            closeTab(id: tabID)
+        changingTabRowsTogether {
+            for tabID in otherTemporaryTabIDs(id: id) {
+                closeTab(id: tabID)
+            }
         }
     }
 
