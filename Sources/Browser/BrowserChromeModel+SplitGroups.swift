@@ -40,6 +40,15 @@ extension BrowserChromeModel {
     /// Applies the membership rules to the raw groups without mutating them.
     func validatedSplitGroups() -> [SplitGroup] {
         guard !splitGroups.isEmpty else { return [] }
+        if let validatedSplitGroupsCache {
+            return validatedSplitGroupsCache
+        }
+        let result = computeValidatedSplitGroups()
+        validatedSplitGroupsCache = result
+        return result
+    }
+
+    private func computeValidatedSplitGroups() -> [SplitGroup] {
         let tabsBySyncID = Dictionary(tabs.map { ($0.syncID, $0) }, uniquingKeysWith: { first, _ in first })
         var claimed = Set<String>()
         var groupIDs = Set<String>()

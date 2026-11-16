@@ -24,6 +24,19 @@ import Testing
         #expect(saved.orientation == .horizontal)
     }
 
+    /// The checked groups are kept between changes; a closed pane ends the split at once.
+    @Test func checkedSplitGroupsFollowTabChanges() throws {
+        let f = SidebarDragFixture(temporary: ["x", "y", "z"])
+        let pane = f.id("y")
+        #expect(f.model.openInSplitView(tabID: pane))
+        let group = try #require(f.model.splitGroup(containingTabID: pane))
+        #expect(f.model.validatedSplitGroups() == f.model.validatedSplitGroups())
+        #expect(f.model.splitPaneTabIDs(of: group).count == 2)
+        f.model.closeTab(id: pane, forceClose: true)
+        #expect(f.model.splitGroup(containingTabID: pane) == nil)
+        #expect(f.model.validatedSplitGroups().isEmpty)
+    }
+
     @Test func selectingAPaneRemembersFocusWithoutChangingTheGroup() throws {
         let f = SidebarDragFixture(temporary: ["x", "y", "z"])
         f.model.selectTab(id: f.id("x"))

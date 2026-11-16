@@ -23,6 +23,32 @@ import Testing
         #expect(surface.redrawRequests == marks)
     }
 
+    /// The split button's right-click menu is made as it opens, not on every refresh.
+    @Test func aButtonBuildsItsMenuWhenItOpens() throws {
+        var builds = 0
+        let button = BrowserNativeChromeButton(symbol: "rectangle.split.2x1", title: "Split") {}
+        button.menuProvider = {
+            builds += 1
+            let menu = NSMenu()
+            menu.addItem(withTitle: "Add Split View", action: nil, keyEquivalent: "")
+            return menu
+        }
+        #expect(builds == 0)
+        let event = try #require(NSEvent.mouseEvent(
+            with: .rightMouseDown,
+            location: .zero,
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            eventNumber: 0,
+            clickCount: 1,
+            pressure: 1,
+        ))
+        #expect(button.menu(for: event)?.items.map(\.title) == ["Add Split View"])
+        #expect(builds == 1)
+    }
+
     /// A menu without shortcuts is filled when it opens, not while AppKit looks for the
     /// shortcut of each Command key press.
     @Test func aMenuWithoutShortcutsFillsOnlyWhenItOpens() throws {

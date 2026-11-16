@@ -131,6 +131,7 @@ final class BrowserSiteControlsNSView: NSView {
         )
         self.extensionPopovers = BrowserNativeExtensionPopoverPresenter(model: model)
         super.init(frame: .zero)
+        splitButton.menuProvider = { [weak self] in self?.splitMenu() }
         for view in [urlButton, backButton, forwardButton, reloadButton, copyButton, splitButton, siteButton] {
             addSubview(view)
         }
@@ -290,7 +291,6 @@ final class BrowserSiteControlsNSView: NSView {
         let inSplit = model.selectedSplitGroup != nil
         splitButton.isSelected = inSplit
         splitButton.tooltipShortcut = inSplit ? nil : model.shortcutStore.shortcut(for: .addSplitView)
-        splitButton.menu = splitMenu()
         let byID = Dictionary(uniqueKeysWithValues: model.browserExtensions.map { ($0.id, $0) })
         pinned = model.pinnedExtensionIDs.compactMap { id in byID[id].flatMap { $0.isEnabled ? $0 : nil } }
         for id in Set(extensionButtons.keys)

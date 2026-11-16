@@ -368,6 +368,8 @@ final class BrowserNativeChromeButton: NSButton {
     var tooltipShortcut: BrowserKeyboardShortcut?
     /// A right click that shows something other than a menu.
     var onSecondaryClick: (() -> Void)?
+    /// Builds the right-click menu as it opens, so refreshes need not.
+    var menuProvider: (() -> NSMenu?)?
     /// A press held past half a second, instead of the action.
     var onLongPress: (() -> Void)?
     var tooltipPlacement = BrowserTooltipPlacement.belowLeading
@@ -497,6 +499,10 @@ final class BrowserNativeChromeButton: NSButton {
         super.mouseDown(with: event)
         hold?.cancel()
         onRelease?()
+    }
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        menuProvider?() ?? super.menu(for: event)
     }
 
     override func rightMouseDown(with event: NSEvent) {

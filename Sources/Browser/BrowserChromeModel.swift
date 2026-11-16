@@ -212,7 +212,12 @@ enum BrowserWindowMode: Equatable {
 
     private static let selectionHistoryLimit = 64
 
-    @Published private(set) var tabs = [Tab]()
+    @Published private(set) var tabs = [Tab]() {
+        didSet { validatedSplitGroupsCache = nil }
+    }
+
+    /// `validatedSplitGroups()` for the current tabs and groups; every row asks for it.
+    var validatedSplitGroupsCache: [SplitGroup]?
     @Published private(set) var isCustomizingToolbar = false
     /// Tabs whose close the engine is still confirming. Their rows go at once, and the model
     /// keeps them until the engine answers, so a page that refuses loses nothing.
@@ -484,6 +489,7 @@ enum BrowserWindowMode: Equatable {
     /// members against the current tabs.
     @Published var splitGroups = [SplitGroup]() {
         didSet {
+            validatedSplitGroupsCache = nil
             syncSplitLayout()
         }
     }
