@@ -1031,7 +1031,8 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
                 if case .expiry(let payload) = mutation, let expiryResponse {
                     recordExpiryResponseLimits(expiryResponse, mutation: payload)
                 }
-                if previous != projected {
+                // The acknowledged change is usually this device's own, already shown.
+                if previous?.isUnchanged(byProjection: projected) != true {
                     snapshotApplier?.applyRemoteSyncSnapshot(projected)
                 }
                 guard isCurrent(context), !Task.isCancelled else { return }
@@ -1259,7 +1260,7 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
                         events, cursor: cursor, for: context.owner, enableSemanticMutations: versions.contains(3),
                     )
                 }
-            if previous != projected {
+            if previous?.isUnchanged(byProjection: projected) != true {
                 snapshotApplier?.applyRemoteSyncSnapshot(projected)
             }
             guard isCurrent(context), !Task.isCancelled else { return }

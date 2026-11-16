@@ -299,6 +299,15 @@ struct BrowserTabSessionSnapshot: Codable, Equatable {
         self.tabs = tabURLStrings.map { BrowserTabSessionSnapshotTab(urlString: $0) }
     }
 
+    /// Whether storing `projection` over this snapshot changes nothing. A sync
+    /// projection has no split state, and storing it keeps these groups.
+    func isUnchanged(byProjection projection: BrowserTabSessionSnapshot) -> Bool {
+        guard projection.splitGroups == nil else { return self == projection }
+        return BrowserTabSessionSnapshot(
+            version: version, spaces: spaces, pinnedTabFolders: pinnedTabFolders, tabs: tabs,
+        ) == projection
+    }
+
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(version, forKey: .version)

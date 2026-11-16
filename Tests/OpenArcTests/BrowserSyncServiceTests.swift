@@ -146,6 +146,27 @@ import Testing
     #expect(h.store.loadSnapshot()?.tabs.map(\.id) == ["second"])
 }
 
+@Test @MainActor func ownAcknowledgedEditsAreNotAppliedAgainOverLocalSplitViews() async throws {
+    let h = try await SyncServiceHarness()
+    defer { h.cleanup() }
+    let tabs = ["left", "right"].map {
+        BrowserTabSessionSnapshotTab(id: $0, urlString: "https://example.com/\($0)", spaceID: "space")
+    }
+    let space = BrowserSpaceSessionSnapshot(id: "space", title: "Work", systemImageName: "briefcase")
+    h.persist(BrowserTabSessionSnapshot(
+        spaces: [space], tabs: tabs, splitGroups: [.init(id: "split", tabIDs: ["left", "right"])],
+    ))
+    await h.service.waitForPendingOperations()
+    #expect(h.remote.pushes.count == 1)
+    #expect(h.applier.snapshots.isEmpty, "The model already shows its own edit")
+    #expect(h.store.loadSnapshot()?.splitGroups?.map(\.id) == ["split"])
+
+    h.remote.events.append(syncServiceDelete(id: "right", sequence: (h.remote.events.last?.serverSeq ?? 0) + 1))
+    h.service.schedulePull()
+    await h.service.waitForPendingOperations()
+    #expect(h.applier.snapshots.last?.tabs.map(\.id) == ["left"], "A change from elsewhere still reaches the model")
+}
+
 @Test @MainActor func syncServicePushReceiptDoesNotSkipUnreadRemoteEvents() async throws {
     let h = try await SyncServiceHarness()
     defer { h.cleanup() }
