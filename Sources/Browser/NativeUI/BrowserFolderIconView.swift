@@ -32,6 +32,9 @@ final class BrowserFolderIconView: NSView {
         m41: 3, m42: 0, m43: 0, m44: 1,
     )
 
+    /// The icon's box on the front panel, centered where the dots sit.
+    private static let iconFrame = CGRect(x: (side - 11) / 2, y: 6.5 - 4, width: 11, height: 8)
+
     private static let backPath: CGPath = {
         let path = CGMutablePath()
         path.move(to: CGPoint(x: 2, y: 0))
@@ -78,6 +81,13 @@ final class BrowserFolderIconView: NSView {
     private let frontShade = CAGradientLayer()
     /// Three dots on the front, while the collapsed folder shows some of its tabs.
     private let dots = CAShapeLayer()
+    /// The folder's own icon, on the front so it swings open with it.
+    private let icon = CALayer()
+    private let iconMask = CALayer()
+    private var iconIsTemplate = true
+
+    var showsIcon: Bool { !icon.isHidden }
+    var showsDots: Bool { !dots.isHidden }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -130,6 +140,12 @@ final class BrowserFolderIconView: NSView {
         dots.path = dotPath
         dots.isHidden = true
         frontPanel.addSublayer(dots)
+        icon.frame = Self.iconFrame
+        icon.contentsGravity = .resizeAspect
+        iconMask.frame = icon.bounds
+        iconMask.contentsGravity = .resizeAspect
+        icon.isHidden = true
+        frontPanel.addSublayer(icon)
         front.addSublayer(frontPanel)
 
         back.transform = Self.flat
@@ -150,7 +166,7 @@ final class BrowserFolderIconView: NSView {
             back.position = hinge
             front.position = hinge
             let scale = window?.backingScaleFactor ?? 2
-            for sublayer in [back, backShade, front, frontPanel, frontShade, dots] {
+            for sublayer in [back, backShade, front, frontPanel, frontShade, dots, icon, iconMask] {
                 sublayer.contentsScale = scale
             }
         }
@@ -163,11 +179,36 @@ final class BrowserFolderIconView: NSView {
             frontPanel.strokeColor = stroke.cgColor
             frontPanel.fillColor = frontFill.cgColor
             dots.fillColor = stroke.cgColor
+            icon.backgroundColor = iconIsTemplate ? stroke.cgColor : nil
         }
     }
 
+    /// Dots take the icon's place while the collapsed folder shows some of its tabs.
     func setShowsDots(_ shows: Bool) {
-        withoutActions { dots.isHidden = !shows }
+        withoutActions {
+            dots.isHidden = !shows
+            icon.isHidden = shows || (icon.contents == nil && iconMask.contents == nil)
+        }
+    }
+
+    /// A symbol draws in the folder's line color; an emoji keeps its own colors.
+    func setIcon(_ image: NSImage?, color: NSColor) {
+        withoutActions {
+            let picture = image?.cgImage(forProposedRect: nil, context: nil, hints: nil)
+            iconIsTemplate = image?.isTemplate ?? true
+            if iconIsTemplate {
+                iconMask.contents = picture
+                icon.mask = picture == nil ? nil : iconMask
+                icon.contents = nil
+                icon.backgroundColor = color.cgColor
+            } else {
+                iconMask.contents = nil
+                icon.mask = nil
+                icon.contents = picture
+                icon.backgroundColor = nil
+            }
+            icon.isHidden = picture == nil || !dots.isHidden
+        }
     }
 
     func setTilted(_ tilted: Bool, animated: Bool) {

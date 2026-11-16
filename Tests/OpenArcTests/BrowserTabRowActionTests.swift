@@ -280,6 +280,42 @@ import Testing
         }
     }
 
+    @Test func aFolderIconSitsOnTheFrontAndGivesWayToTheOpenTabDots() {
+        let row = BrowserNativeSidebarRowNSView(frame: NSRect(x: 0, y: 0, width: 240, height: 40))
+        func update(icon: String?, expanded: Bool, openTabs: Bool) {
+            row.update(
+                folder: .init(
+                    id: "folder",
+                    spaceID: "space",
+                    parentFolderID: nil,
+                    title: "Folder",
+                    systemImageName: icon,
+                    isExpanded: expanded,
+                    pinnedSiblingRank: nil,
+                ),
+                showsOpenTabs: openTabs,
+                renaming: false,
+                indentLevel: 0,
+                dropTargeted: false,
+                isResizing: false,
+                resetID: 0,
+            )
+        }
+        update(icon: nil, expanded: false, openTabs: false)
+        #expect(!row.folderIcon.showsIcon)
+        update(icon: "chevron.left.forwardslash.chevron.right", expanded: false, openTabs: false)
+        #expect(row.folderIcon.showsIcon)
+        #expect(!row.folderIcon.showsDots)
+        update(icon: "chevron.left.forwardslash.chevron.right", expanded: false, openTabs: true)
+        #expect(!row.folderIcon.showsIcon, "Open tabs in a collapsed folder show dots instead")
+        #expect(row.folderIcon.showsDots)
+        update(icon: "chevron.left.forwardslash.chevron.right", expanded: true, openTabs: true)
+        #expect(row.folderIcon.showsIcon, "It swings open with the folder")
+        #expect(row.folderIcon.isTilted)
+        update(icon: nil, expanded: true, openTabs: true)
+        #expect(!row.folderIcon.showsIcon)
+    }
+
     @Test func aSplitMovesToAnotherSpaceWholeAndArchivesAsOneItem() throws {
         let f = SidebarDragFixture(temporary: ["x", "y", "z"])
         let x = f.id("x")

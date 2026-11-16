@@ -99,6 +99,7 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
     // MARK: Private
 
     private let selectionSurface = BrowserNativeSidebarSelectionSurface()
+    private var folderIconSymbol: String?
     private var folderIconID: String?
     private let favicon: BrowserFaviconNSView = {
         let view = BrowserFaviconNSView()
@@ -108,7 +109,6 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
 
     private var splitChips = [BrowserNativeSidebarSplitChipView]()
     private let symbol = NSImageView()
-    private let badge = NSImageView()
     private var selected = false
     private var multiSelected = false
     private var dropTargeted = false
@@ -174,7 +174,6 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
             folderIcon,
             favicon,
             symbol,
-            badge,
             titleLabel,
             captionLabel,
             developerBorder,
@@ -193,10 +192,8 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
         peekBadge.setAccessibilityElement(false)
         peekBadge.addSubview(peekBadgeIcon)
         peekBadgeIcon.frame = NSRect(x: 3, y: 3, width: 14, height: 14)
-        for image in [symbol, badge] {
-            image.imageScaling = .scaleProportionallyUpOrDown
-            image.setAccessibilityElement(false)
-        }
+        symbol.imageScaling = .scaleProportionallyUpOrDown
+        symbol.setAccessibilityElement(false)
         titleLabel.lineBreakMode = .byTruncatingTail
         titleLabel.maximumNumberOfLines = 1
         titleLabel.cell?.wraps = false
@@ -311,19 +308,12 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
         favicon.frame = iconFrame
         symbol.frame = iconFrame
         folderIcon.frame = iconFrame
-        let badgeSize = BrowserChromeLayout.sidebarPinnedFolderBadgeIconSize
         let slashSize = BrowserNativeSidebarPinnedSlashView.size
         pinnedSlash.frame = NSRect(
             x: iconFrame.maxX + Self.pinnedSlashOffset - slashSize.width / 2,
             y: (height - slashSize.height) / 2,
             width: slashSize.width,
             height: slashSize.height,
-        )
-        badge.frame = NSRect(
-            x: iconFrame.midX - badgeSize / 2,
-            y: iconFrame.midY - badgeSize / 2 + 1,
-            width: badgeSize,
-            height: badgeSize,
         )
         var titleX = indent + BrowserChromeLayout.sidebarRowTitleX
         if kind == .space, showsSpaceTitleAtLeadingEdge {
@@ -585,15 +575,16 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
             folder.isExpanded || dropTargeted,
             animated: window != nil && folderIconID == folder.id,
         )
-        // A folder with its own icon keeps it clear of the dots.
-        folderIcon.setShowsDots(showsOpenTabs && !folder.isExpanded && folder.systemImageName == nil)
+        if folderIconSymbol != folder.systemImageName {
+            folderIconSymbol = folder.systemImageName
+            // Drawn large and scaled into the front panel, so it stays sharp.
+            folderIcon.setIcon(
+                folder.systemImageName.flatMap { Self.symbol($0, size: 24, weight: .bold) },
+                color: BrowserChromeColors.sidebarFolderStroke,
+            )
+        }
+        folderIcon.setShowsDots(showsOpenTabs && !folder.isExpanded)
         folderIconID = folder.id
-        badge.image = folder.systemImageName.map { Self.symbol(
-            $0,
-            size: BrowserChromeLayout.sidebarPinnedFolderBadgeIconSize,
-            weight: .bold,
-        ) } ?? nil
-        badge.contentTintColor = BrowserChromeColors.sidebarRowText
         tooltipTitle = nil
         setAccessibilityIdentifier("browser.sidebar.folder.\(folder.id)")
         renameField.setAccessibilityIdentifier("browser.sidebar.rename-folder.\(folder.id)")
@@ -966,7 +957,6 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
             chip.isHidden = kind != .split
             chip.isInteractionEnabled = !isResizing
         }
-        badge.isHidden = kind != .folder || badge.image == nil
         let showCaption = kind == .tab && (pinnedIconHovered || developerHost != nil) && !isRenaming
         developerBorder.isHidden = kind != .tab || developerHost == nil || !selected
         if showCaption != captionTarget {

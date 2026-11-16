@@ -38,7 +38,6 @@ enum BrowserChromeLayout {
     static let sidebarPinnedURLTextHoverOverlap: CGFloat = 4
     static let sidebarPinnedFolderTabIndent: CGFloat = 16
     static let sidebarPinnedFolderIconSize: CGFloat = 21
-    static let sidebarPinnedFolderBadgeIconSize: CGFloat = 7.5
     static let sidebarButtonPressedScale: CGFloat = 0.985
     static let sidebarRenameActivationGraceInterval: TimeInterval = 0.25
     static let sidebarCloseButtonPressedScale: CGFloat = 0.92
