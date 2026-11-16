@@ -1,6 +1,7 @@
 // BrowserNativeSidebarTests.swift
 
 import AppKit
+import Combine
 import Testing
 
 // MARK: - BrowserNativeSidebarTests
@@ -8,6 +9,26 @@ import Testing
 @Suite(.serialized)
 @MainActor struct BrowserNativeSidebarTests {
     // MARK: Internal
+
+    /// Many model changes before the next run loop pass refresh the window once,
+    /// and a later change refreshes it again.
+    @Test func modelChangesInOnePassRefreshTheWindowOnce() {
+        let (model, _) = makeModel()
+        var refreshes = 0
+        let refresh = BrowserCoalescedRefresh { refreshes += 1 }
+        let other = PassthroughSubject<Void, Never>()
+        refresh.observe([model.objectWillChange.eraseToAnyPublisher(), other.eraseToAnyPublisher()])
+        for tab in model.temporaryTabs {
+            model.selectTab(id: tab.id)
+        }
+        other.send()
+        #expect(refreshes == 0, "Not before the next pass")
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        #expect(refreshes == 1)
+        other.send()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        #expect(refreshes == 2)
+    }
 
     @Test func clearRequiresSecondActionForActiveTemporaryTab() throws {
         let (model, _) = makeModel()

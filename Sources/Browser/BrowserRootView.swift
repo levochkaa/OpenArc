@@ -71,7 +71,8 @@ final class BrowserRootView: NSView {
     private let toolbarVisibility = BrowserNativeVisibilityAnimation()
     private let bookmarksVisibility = BrowserNativeVisibilityAnimation()
     private let extensionVisibility = BrowserNativeVisibilityAnimation()
-    private var observations = Set<AnyCancellable>()
+    /// Model changes refresh the window once per run loop pass.
+    private lazy var coalescedRefresh = BrowserCoalescedRefresh { [weak self] in self?.refresh() }
     private var revealTask: Task<Void, Never>?
     private var previousLayoutState: [LayoutFlag: Bool]?
     private let presentationMotion = BrowserNativeFrameTransitions()
@@ -385,7 +386,7 @@ final class BrowserRootView: NSView {
         extensionResize.defaultWidth = BrowserChromeModel.defaultExtensionSidePanelWidth
         extensionResize.direction = -1
         extensionResize.setAccessibilityIdentifier("browser.extensions.resize")
-        for publisher in [
+        coalescedRefresh.observe([
             model.objectWillChange.eraseToAnyPublisher(),
             commandBarModel.objectWillChange.eraseToAnyPublisher(),
             currentPageCommandBarModel.objectWillChange.eraseToAnyPublisher(),
@@ -393,9 +394,7 @@ final class BrowserRootView: NSView {
             shortcutStore.objectWillChange.eraseToAnyPublisher(),
             model.bookmarksModel.objectWillChange.eraseToAnyPublisher(),
             updateController.objectWillChange.eraseToAnyPublisher(),
-        ] {
-            publisher.receive(on: RunLoop.main).sink { [weak self] in self?.refresh() }.store(in: &observations)
-        }
+        ])
         refresh()
     }
 
