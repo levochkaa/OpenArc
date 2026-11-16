@@ -316,6 +316,10 @@ final class BrowserRootView: NSView {
         model.onToggleDownloads = { [weak self] in self?.toggleDownloads() }
         model.onRevealSidebar = { [weak self] in self?.revealSidebarFromKeyboard() }
         model.onSpaceWillSelect = { [weak self] in self?.beginSpaceTransition(to: $0) }
+        model.onLiveSidebarWidthChange = { [weak self] in
+            self?.sidebar.followLiveWidth()
+            self?.needsLayout = true
+        }
         model.onTabRowsChanged = { [weak self] in
             self?.refresh()
             self?.layoutSubtreeIfNeeded()

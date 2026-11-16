@@ -63,6 +63,30 @@ import Testing
         #expect(BrowserSidebarPresentation.needsRefresh(from: fading, to: docked, afterAnimation: false))
     }
 
+    /// Dragging the sidebar's edge moves the layout at each width and publishes the
+    /// model change once, as the drag ends.
+    @Test func aLiveResizePublishesOnceItEnds() {
+        let (model, _) = makeModel()
+        var changes = 0
+        var liveWidths = [CGFloat]()
+        let observation = model.objectWillChange.sink { changes += 1 }
+        defer { observation.cancel() }
+        model.onLiveSidebarWidthChange = { liveWidths.append(model.sidebarWidth) }
+        model.isSidebarResizing = true
+        model.setSidebarWidth(BrowserChromeModel.defaultSidebarWidth + 10)
+        model.setSidebarWidth(BrowserChromeModel.defaultSidebarWidth + 20)
+        #expect(changes == 0)
+        #expect(liveWidths == [
+            BrowserChromeModel.defaultSidebarWidth + 10,
+            BrowserChromeModel.defaultSidebarWidth + 20,
+        ])
+        model.isSidebarResizing = false
+        #expect(changes == 1)
+        model.setSidebarWidth(BrowserChromeModel.defaultSidebarWidth + 30)
+        #expect(changes == 2, "Outside a drag every width is a change")
+        #expect(liveWidths.count == 2)
+    }
+
     @Test func clearRequiresSecondActionForActiveTemporaryTab() throws {
         let (model, _) = makeModel()
         let active = try #require(model.temporaryTabs.last)

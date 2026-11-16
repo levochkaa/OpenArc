@@ -234,7 +234,27 @@ enum BrowserWindowMode: Equatable {
 
     @Published private(set) var tabSwitcherState: TabSwitcherState?
     @Published var isSidebarVisible = true
-    @Published private(set) var sidebarWidth = BrowserChromeModel.defaultSidebarWidth
+    /// Published as a change of the model, except while a live resize drags it: then
+    /// `onLiveSidebarWidthChange` only moves the layout, and the resize's end publishes.
+    private(set) var sidebarWidth = BrowserChromeModel.defaultSidebarWidth {
+        willSet {
+            if !isSidebarResizing, newValue != sidebarWidth {
+                objectWillChange.send()
+            }
+        }
+    }
+
+    /// A pointer drags the sidebar's edge.
+    var isSidebarResizing = false {
+        willSet {
+            if isSidebarResizing, !newValue {
+                objectWillChange.send()
+            }
+        }
+    }
+
+    /// Each width a live resize passes through, for the window's layout.
+    var onLiveSidebarWidthChange: (() -> Void)?
     @Published private(set) var temporaryTabLifetime: BrowserTemporaryTabLifetime
     @Published private(set) var automaticTabArchivalEnabled = false
     /// Never in Settings without sync: temporary tabs stay until closed.
@@ -4175,6 +4195,9 @@ enum BrowserWindowMode: Equatable {
             return
         }
         sidebarWidth = clampedWidth
+        if isSidebarResizing {
+            onLiveSidebarWidthChange?()
+        }
     }
 
     func setExtensionSidePanelWidth(_ width: CGFloat) {

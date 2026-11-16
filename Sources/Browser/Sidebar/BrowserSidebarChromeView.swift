@@ -76,6 +76,7 @@ final class BrowserSidebarChromeView: NSView, BrowserSpaceThemedChrome {
                 model.persistSidebarWidthPreferenceIfAllowed()
             }
             self.isResizing = active
+            model.isSidebarResizing = active
             refresh()
         }
         refresh()
@@ -97,6 +98,18 @@ final class BrowserSidebarChromeView: NSView, BrowserSpaceThemedChrome {
 
     override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance()
         refresh()
+    }
+
+    /// A live resize moved the edge: the rows keep their contents and only lay out
+    /// again at the new width.
+    func followLiveWidth() {
+        sidebar.footerHeight = footer.height(for: max(
+            model.sidebarWidth - BrowserChromeLayout.sidebarOuterPadding * 2,
+            0,
+        ))
+        sidebar.state.sidebarWidth = model.sidebarWidth
+        sidebar.needsLayout = true
+        needsLayout = true
     }
 
     func refresh() {
