@@ -12,3 +12,10 @@ import Testing
     #expect(BrowserLaunchWarmup.defaultSpeechVoice() != nil)
     #expect(Date().timeIntervalSince(start) < 0.05, "The engine's later lookup finds the voice ready")
 }
+
+@Test func theMenuDonationLibraryIsLoadedBeforeTheFirstShortcut() async {
+    await withCheckedContinuation { continuation in
+        BrowserLaunchWarmup.warmMenuDonation { continuation.resume() }
+    }
+    #expect(dlopen(BrowserLaunchWarmup.menuDonationLibraryPath, RTLD_NOLOAD) != nil)
+}

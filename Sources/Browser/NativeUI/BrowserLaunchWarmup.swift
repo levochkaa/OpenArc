@@ -7,8 +7,22 @@ import AppKit
 /// System lookups the engine makes on the main thread the first time a page needs
 /// them, started at launch on a background queue so their cost is paid there.
 @objc final class BrowserLaunchWarmup: NSObject {
+    /// The system library AppKit loads on the main thread the first time a menu
+    /// item runs, to report it to app suggestions.
+    static let menuDonationLibraryPath =
+        "/System/Library/PrivateFrameworks/AppPredictionClient.framework/AppPredictionClient"
+
     @objc static func start() {
         warmSpeechVoices()
+        warmMenuDonation()
+    }
+
+    /// Loading the library took 20 ms of the first keyboard shortcut after launch.
+    static func warmMenuDonation(completion: (@Sendable () -> Void)? = nil) {
+        DispatchQueue.global(qos: .utility).async {
+            _ = dlopen(menuDonationLibraryPath, RTLD_LAZY)
+            completion?()
+        }
     }
 
     /// The first default voice lookup in a process waits on the speech service for
