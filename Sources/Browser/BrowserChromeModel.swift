@@ -5733,7 +5733,7 @@ enum BrowserWindowMode: Equatable {
             return false
         }
         sessionWriteBuffer.clearAfterSuccess()
-        sessionPersistenceFailure = historyRestoreFailure
+        showSessionPersistenceFailure(historyRestoreFailure)
         if wasBlocked, !hasUncommittedSessionWrites {
             deferredRemoteSyncSnapshot = nil
             syncCoordinator?.setLocalPersistenceBlocked(false)
@@ -5760,8 +5760,16 @@ enum BrowserWindowMode: Equatable {
         return true
     }
 
+    /// Every save sets this; an unchanged value publishes nothing, so a tab switch's
+    /// save does not redraw the window.
+    private func showSessionPersistenceFailure(_ failure: BrowserSessionPersistenceFailure?) {
+        if sessionPersistenceFailure != failure {
+            sessionPersistenceFailure = failure
+        }
+    }
+
     private func publishSessionPersistenceFailure() {
-        sessionPersistenceFailure = sessionWriteBuffer.failure ?? historyRestoreFailure
+        showSessionPersistenceFailure(sessionWriteBuffer.failure ?? historyRestoreFailure)
         deferredRemoteSyncSnapshot = nil
         syncCoordinator?.setLocalPersistenceBlocked(true)
     }
@@ -6857,7 +6865,7 @@ enum BrowserWindowMode: Equatable {
         pendingHistoryRestore = nil
         let wasBlocked = hasUncommittedSessionWrites
         historyRestoreFailure = nil
-        sessionPersistenceFailure = sessionWriteBuffer.failure
+        showSessionPersistenceFailure(sessionWriteBuffer.failure)
         if wasBlocked, !hasUncommittedSessionWrites {
             deferredRemoteSyncSnapshot = nil
             syncCoordinator?.setLocalPersistenceBlocked(false)

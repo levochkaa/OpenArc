@@ -1039,6 +1039,30 @@ import Testing
 }
 
 @Test
+@MainActor func savingATabSwitchLeavesTheModelAlone() {
+    let driver = FakeBrowserTabDriver()
+    let snapshotStore = InMemorySessionSnapshotStore()
+    let model = makeModel(
+        driver: driver,
+        snapshotStore: snapshotStore,
+        preferencesStore: InMemorySessionPreferencesStore(),
+    )
+    model.handleContextReady()
+    driver.flushPendingCreateEvents()
+    model.createNewTab()
+    driver.flushPendingCreateEvents()
+    let other = model.tabs.first { $0.id != model.selectedTabID }
+    model.selectTab(id: other?.id ?? "")
+    var changes = 0
+    let observation = model.objectWillChange.sink { changes += 1 }
+    defer { observation.cancel() }
+    let saves = snapshotStore.savedSnapshots.count
+    model.persistPendingSelection()
+    #expect(snapshotStore.savedSnapshots.count == saves + 1)
+    #expect(changes == 0, "The save changes nothing on screen")
+}
+
+@Test
 @MainActor func createSelectAndClosePersistState() {
     let driver = FakeBrowserTabDriver()
     let snapshotStore = InMemorySessionSnapshotStore()
