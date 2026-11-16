@@ -77,6 +77,11 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
 
     override var isFlipped: Bool { true }
 
+    /// Set while a hidden Library skipped a refresh; it refreshes as it shows again.
+    private(set) var hasDeferredRefresh = false
+    /// How many times the list's row views were built, for tests.
+    private(set) var documentBuildCount = 0
+
     private let model: BrowserChromeModel
     private let listBackground = BrowserNativeSurface()
     private var sectionButtons = [BrowserLibrarySection: BrowserLibrarySectionButton]()
@@ -101,8 +106,16 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
     private var observations = Set<AnyCancellable>()
     private var shownSection: BrowserLibrarySection?
     private var filter: String?
-    private var rows = [Row]()
+    private var rows = [Row]() {
+        didSet { rowsGeneration &+= 1 }
+    }
+
+    private var rowsGeneration = 0
+    /// The rows and width the document's views were last built for.
+    private var builtDocument: (generation: Int, width: CGFloat)?
     private var rowViews = [NSView]()
+    /// Archive favicons decoded at row size, kept while their page icon stays the same.
+    private var archiveFavicons = [String: (data: Data, image: NSImage)]()
     private var listScrollObservation: NSObjectProtocol?
     private var spaceCards = [String: BrowserLibrarySpaceCard]()
     private let newSpaceButton = BrowserLibraryNewSpaceButton()
@@ -258,8 +271,15 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
         filterPill.isHidden = !showsFilter
         scroll.isHidden = showsSpaces
         spacesScroll.isHidden = !showsSpaces
+        guard !isHiddenOrHasHiddenAncestor else { return }
         layoutDocument()
         layoutSpaces()
+    }
+
+    override func viewDidUnhide() {
+        super.viewDidUnhide()
+        guard hasDeferredRefresh else { return }
+        refresh()
     }
 
     /// The newest archived tabs, read page by page within the store's page size.
@@ -400,8 +420,19 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
             filter = nil
             reloadFilterMenu()
         }
+        // Hidden, it builds no rows: the archive still loads, so it opens filled.
+        guard !isHiddenOrHasHiddenAncestor else {
+            hasDeferredRefresh = true
+            if section == .archive {
+                loadArchiveIfNeeded()
+            }
+            return
+        }
+        hasDeferredRefresh = false
         switch section {
-        case .archive: reloadArchiveIfNeeded()
+        case .archive:
+            loadArchiveIfNeeded()
+            rows = archiveRows()
         case .downloads: rows = downloadRows()
         case .media: rows = mediaRows()
         case .spaces: rows = []
@@ -451,12 +482,9 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
         refresh()
     }
 
-    private func reloadArchiveIfNeeded() {
+    private func loadArchiveIfNeeded() {
         let key = "\(query)|\(filter ?? "")|\(model.archiveRevision)"
-        guard key != loadedArchiveKey else {
-            rows = archiveRows()
-            return
-        }
+        guard key != loadedArchiveKey else { return }
         loadedArchiveKey = key
         archiveTask?.cancel()
         let query = query
@@ -464,10 +492,27 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
             let entries = await Self.loadArchive(model: model, query: query)
             guard let self, !Task.isCancelled else { return }
             archiveEntries = entries
+            guard !isHiddenOrHasHiddenAncestor else {
+                hasDeferredRefresh = true
+                return
+            }
             rows = archiveRows()
             updateEmptyState()
             needsLayout = true
         }
+    }
+
+    private func archiveFavicon(for urlString: String, data: Data?) -> NSImage? {
+        guard let data else {
+            archiveFavicons[urlString] = nil
+            return nil
+        }
+        if let cached = archiveFavicons[urlString], cached.data == data {
+            return cached.image
+        }
+        guard let image = BrowserImageThumbnailer.image(data: data, maximumPixelSize: 32) else { return nil }
+        archiveFavicons[urlString] = (data, image)
+        return image
     }
 
     private func archiveRows() -> [Row] {
@@ -490,8 +535,7 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
                 title: entry.title ?? host ?? urlString,
                 detail: Self.archiveDetail(for: urlString),
                 faviconPageURL: urlString,
-                faviconImage: icons[urlString]
-                    .flatMap { BrowserImageThumbnailer.image(data: $0, maximumPixelSize: 32) },
+                faviconImage: archiveFavicon(for: urlString, data: icons[urlString]),
                 fileIcon: nil,
                 progress: nil,
                 onOpen: { [weak model] in
@@ -582,11 +626,14 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
 
     /// One row or tile per entry; rows are rebuilt with the section's contents.
     private func layoutDocument() {
+        let width = scroll.contentSize.width
+        guard builtDocument?.generation != rowsGeneration || builtDocument?.width != width else { return }
+        builtDocument = (rowsGeneration, width)
+        documentBuildCount += 1
         for view in rowViews {
             view.removeFromSuperview()
         }
         rowViews.removeAll()
-        let width = scroll.contentSize.width
         var y: CGFloat = 0
         var tileColumn = 0
         let tileSize = (width - 24) / 2

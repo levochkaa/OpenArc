@@ -110,6 +110,57 @@ import Testing
     }
 }
 
+// MARK: - BrowserLibraryRefreshTests
+
+@MainActor struct BrowserLibraryRefreshTests {
+    /// A hidden Library builds no rows on model changes; it builds them once as it shows,
+    /// and a layout without new rows keeps the ones it has.
+    @Test func aHiddenLibraryBuildsRowsOnlyOnceItShows() throws {
+        let driver = FakeBrowserTabDriver()
+        let defaults = try #require(UserDefaults(suiteName: BrowserTestDefaults.suiteName("LibraryRefresh")))
+        let model = BrowserChromeModel(
+            tabDriver: driver,
+            sessionSnapshotStore: InMemorySessionSnapshotStore(loadedSnapshot: BrowserTabSessionSnapshot(tabs: [
+                .init(urlString: "https://one.example"),
+            ])),
+            sessionPreferencesStore: InMemorySessionPreferencesStore(storedSelectedTabIndex: 0),
+            commandBarSuggestionProvider: FakeSuggestionProvider(),
+            userPreferencesStore: BrowserUserPreferencesStore(userDefaults: defaults),
+            shortcutStore: BrowserShortcutStore(userDefaults: defaults),
+            extensionManager: FakeBrowserExtensionManager(),
+            windowTitleHandler: { _ in },
+            allTabsClosedHandler: {},
+        )
+        model.handleContextReady()
+        driver.flushPendingCreateEvents()
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 600, height: 500),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: true,
+        )
+        let library = BrowserLibraryNSView(model: model)
+        library.frame = NSRect(x: 0, y: 0, width: 400, height: 500)
+        library.isHidden = true
+        window.contentView?.addSubview(library)
+
+        library.refresh()
+        library.needsLayout = true
+        library.layoutSubtreeIfNeeded()
+        #expect(library.documentBuildCount == 0, "Hidden, it builds nothing")
+        #expect(library.hasDeferredRefresh)
+
+        library.isHidden = false
+        library.layoutSubtreeIfNeeded()
+        #expect(library.documentBuildCount == 1, "Shown, it catches up once")
+        #expect(!library.hasDeferredRefresh)
+
+        library.needsLayout = true
+        library.layoutSubtreeIfNeeded()
+        #expect(library.documentBuildCount == 1, "A layout without new rows keeps the rows")
+    }
+}
+
 // MARK: - BrowserLibraryMediaSourceTests
 
 @MainActor struct BrowserLibraryMediaSourceTests {
