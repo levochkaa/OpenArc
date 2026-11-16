@@ -1263,6 +1263,19 @@ final class BrowserNativeSidebarNSView: NSView {
         page.scroll.isScrollingEnabled = !state.isSpacePagerDragging
     }
 
+    /// A pressed tab looks selected in this frame, and the row that was selected
+    /// stops looking so; the page switch and the full refresh follow.
+    private func showSelectionAtOnce(on pressed: BrowserNativeSidebarRowNSView) {
+        for page in pages.values {
+            for row in page.rows.values where row !== pressed && row.showsSelected {
+                row.showSelected(false)
+            }
+        }
+        pressed.showSelected(true)
+        window?.displayIfNeeded()
+        CATransaction.flush()
+    }
+
     private func configure(
         row: BrowserNativeSidebarRowNSView,
         tab: BrowserChromeModel.Tab,
@@ -1315,6 +1328,7 @@ final class BrowserNativeSidebarNSView: NSView {
             }
             state.handleSidebarTabSelection(tab, in: section)
         }
+        row.onShowSelectionAtOnce = { [weak self] row in self?.showSelectionAtOnce(on: row) }
         row.onModifiedSelect = { [weak state] modifiers in
             guard let state else { return }
             state.dismissRenamingIfNeeded()

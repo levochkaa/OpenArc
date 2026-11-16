@@ -314,18 +314,53 @@ class BrowserNativePressableView: BrowserNativeSurface {
         guard isPressed != value else { return }
         isPressed = value
         let scale = value ? pressedScale : 1
+        if case .spring(let response, let damping) = pressCurve {
+            pressWithSpring(to: scale, response: response, damping: damping)
+            interactionChanged()
+            return
+        }
         let from = displayedScale
         pressAnimation.start(pressCurve) { [weak self] progress in
             guard let self else { return }
             displayedScale = from + (scale - from) * progress
             CATransaction.begin()
             CATransaction.setDisableActions(true)
-            layer?.setAffineTransform(CGAffineTransform(
-                translationX: bounds.width * (1 - displayedScale) / 2,
-                y: bounds.height * (1 - displayedScale) / 2,
-            ).scaledBy(x: displayedScale, y: displayedScale))
+            layer?.setAffineTransform(pressTransform(scale: displayedScale))
             CATransaction.commit()
         }
         interactionChanged()
+    }
+
+    private func pressTransform(scale: CGFloat) -> CGAffineTransform {
+        CGAffineTransform(
+            translationX: bounds.width * (1 - scale) / 2,
+            y: bounds.height * (1 - scale) / 2,
+        ).scaledBy(x: scale, y: scale)
+    }
+
+    /// The press springs in the render server, so work that the press starts on
+    /// the main thread, such as showing a tab, never holds its first frames.
+    private func pressWithSpring(to scale: CGFloat, response: Double, damping: Double) {
+        pressAnimation.cancel()
+        displayedScale = scale
+        guard let layer else { return }
+        let from = layer.presentation()?.transform ?? layer.transform
+        let target = CATransform3DMakeAffineTransform(pressTransform(scale: scale))
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        layer.transform = target
+        CATransaction.commit()
+        guard window != nil, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
+            layer.removeAnimation(forKey: "press")
+            return
+        }
+        let animation = CASpringAnimation(keyPath: "transform")
+        animation.mass = 1
+        animation.stiffness = pow(2 * .pi / response, 2)
+        animation.damping = 4 * .pi * damping / response
+        animation.fromValue = NSValue(caTransform3D: from)
+        animation.toValue = NSValue(caTransform3D: target)
+        animation.duration = animation.settlingDuration
+        layer.add(animation, forKey: "press")
     }
 }

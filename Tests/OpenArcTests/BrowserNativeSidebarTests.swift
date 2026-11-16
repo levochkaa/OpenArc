@@ -269,6 +269,41 @@ import Testing
         #expect(editor.textContainerInset == .zero)
     }
 
+    @Test func aClosedRowFadesUnderItsNeighborsAndAPressSpringsInTheRenderServer() throws {
+        _ = NSApplication.shared
+        let window = NSWindow(
+            contentRect: NSRect(x: -10000, y: -10000, width: 240, height: 80),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false,
+        )
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let list = NSView(frame: NSRect(x: 0, y: 0, width: 240, height: 80))
+        window.contentView = list
+        let closed = BrowserNativeSidebarRowNSView(frame: NSRect(x: 0, y: 0, width: 240, height: 36))
+        let neighbor = BrowserNativeSidebarRowNSView(frame: NSRect(x: 0, y: 40, width: 240, height: 36))
+        list.addSubview(neighbor)
+        list.addSubview(closed)
+        for row in [closed, neighbor] {
+            row.update(tab: tab(), selected: false, isResizing: false, closeDescriptor: BrowserCommands.archiveTab)
+        }
+
+        let press = try #require(NSEvent.mouseEvent(
+            with: .leftMouseDown, location: CGPoint(x: 120, y: 58), modifierFlags: [], timestamp: 1,
+            windowNumber: window.windowNumber, context: nil, eventNumber: 1, clickCount: 1, pressure: 1,
+        ))
+        neighbor.mouseDown(with: press)
+        #expect(neighbor.isPressed)
+        #expect(neighbor.layer?.animation(forKey: "press") != nil)
+        #expect(neighbor.layer?.affineTransform().a ?? 1 < 1, "The press scale is the model value at once")
+
+        closed.removeAnimated()
+        #expect(closed.alphaValue == 0)
+        #expect(closed.layer?.animation(forKey: "removal") != nil)
+        #expect(list.subviews.first === closed, "It fades under the rows that take its place")
+    }
+
     @Test func activeRowRenamesAndOtherRowsSelect() {
         let row = BrowserNativeSidebarRowNSView(frame: NSRect(x: 0, y: 0, width: 240, height: 36))
         var selections = 0

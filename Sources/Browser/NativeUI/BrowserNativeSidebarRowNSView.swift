@@ -13,6 +13,8 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
     /// From the icon's trailing edge: the slash's middle 5 pt after it, the
     /// title 11.5 pt after it.
     private static let pinnedSlashOffset: CGFloat = 6
+    /// About three frames.
+    private static let removalFadeDuration: CFTimeInterval = 0.06
     private static let pinnedSlashTitleOffset: CGFloat = 10
 
     // MARK: Internal
@@ -92,6 +94,10 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
     let peekBadge = BrowserNativeSurface()
     private(set) var peekPageURLString: String?
 
+    /// Moves the selection look to this row before the model catches up, so a
+    /// press shows at once even while the page switch is still working.
+    var onShowSelectionAtOnce: ((BrowserNativeSidebarRowNSView) -> Void)?
+
     private let peekBadgeIcon = BrowserFaviconNSView()
 
     private let unreadDot = NSView()
@@ -157,6 +163,8 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
     }
 
     var contentIndent: CGFloat { indent }
+
+    var showsSelected: Bool { selected }
 
     private var hasRenameChanged: Bool {
         renameField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -474,12 +482,16 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
             animation.isRemovedOnCompletion = false
             layer?.add(animation, forKey: "fold")
         }
-        let from = appearanceProgress
-        opacityAnimation.start(.rowFade) { [weak self] progress in
-            guard let self else { return }
-            appearanceProgress = from * min(max(1 - progress, 0), 1)
-            alphaValue = dragOpacity * appearanceProgress
-        } completion: { [weak self] in self?.removeFromSuperview() }
+        if rising > 0 {
+            let from = appearanceProgress
+            opacityAnimation.start(.rowFade) { [weak self] progress in
+                guard let self else { return }
+                appearanceProgress = from * min(max(1 - progress, 0), 1)
+                alphaValue = dragOpacity * appearanceProgress
+            } completion: { [weak self] in self?.removeFromSuperview() }
+            return
+        }
+        fadeOutAndRemove()
     }
 
     func update(
@@ -729,6 +741,39 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
         }
     }
 
+    /// The selection look alone; the next update brings the model's state.
+    func showSelected(_ value: Bool) {
+        guard selected != value else { return }
+        selected = value
+        refreshAppearance()
+    }
+
+    /// A closed row is gone within a few frames, before the rows below arrive in its
+    /// place, and sits under them meanwhile. The fade runs in the render server, so the
+    /// work the close starts on the main thread does not hold it.
+    private func fadeOutAndRemove() {
+        opacityAnimation.cancel()
+        wantsLayer = true
+        superview?.addSubview(self, positioned: .below, relativeTo: nil)
+        guard let layer, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
+            removeFromSuperview()
+            return
+        }
+        let from = layer.presentation()?.opacity ?? Float(alphaValue)
+        appearanceProgress = 0
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        CATransaction.setCompletionBlock { [weak self] in self?.removeFromSuperview() }
+        alphaValue = 0
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = from
+        fade.toValue = 0
+        fade.duration = Self.removalFadeDuration
+        fade.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        layer.add(fade, forKey: "removal")
+        CATransaction.commit()
+    }
+
     /// Follows Command while the pointer is on the pinned icon, for its caption.
     private func watchSeparateKey() {
         if pinnedIconHovered, separateKeyMonitor == nil {
@@ -851,6 +896,7 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
                     return false
                 }
             }
+            onShowSelectionAtOnce?(self)
             onSelect()
             return true
         case .appTab:
@@ -943,8 +989,9 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
         folderIcon.isHidden = kind != .folder
         // VoiceOver hears which tab is shown or selected.
         setAccessibilitySelected((kind == .tab || kind == .appTab || kind == .split) && (selected || multiSelected))
-        // Hover splits the row into the icon and title areas, and the slash between them goes.
-        let slashVisible = showsPinnedSlash && !isHovered
+        // Hover splits a background row into the icon and title areas, and the slash
+        // between them goes; the shown tab loses it only over its icon.
+        let slashVisible = showsPinnedSlash && !(isHovered && (!selected || pinnedIconHovered))
         if pinnedSlash.isHidden == slashVisible {
             pinnedSlash.isHidden = !slashVisible
             needsLayout = true

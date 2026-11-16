@@ -231,20 +231,35 @@ import Testing
         }
 
         let titleAway = row.titleLabel.frame.minX
-        let pointer = CGPoint(x: 120, y: 20)
-        let enter = try #require(NSEvent.enterExitEvent(
-            with: .mouseEntered, location: pointer, modifierFlags: [], timestamp: 1, windowNumber: 0,
-            context: nil, eventNumber: 0, trackingNumber: 0, userData: nil,
-        ))
-        row.mouseEntered(with: enter)
-        row.layoutSubtreeIfNeeded()
-        #expect(row.pinnedSlash.isHidden, "Hover hides it")
+        func hover(at x: CGFloat) throws {
+            let enter = try #require(NSEvent.enterExitEvent(
+                with: .mouseEntered, location: CGPoint(x: x, y: 20), modifierFlags: [], timestamp: 1,
+                windowNumber: 0, context: nil, eventNumber: 0, trackingNumber: 0, userData: nil,
+            ))
+            row.mouseEntered(with: enter)
+            row.layoutSubtreeIfNeeded()
+        }
+        func leave() throws {
+            let exit = try #require(NSEvent.enterExitEvent(
+                with: .mouseExited, location: CGPoint(x: 120, y: 20), modifierFlags: [], timestamp: 2,
+                windowNumber: 0, context: nil, eventNumber: 0, trackingNumber: 0, userData: nil,
+            ))
+            row.mouseExited(with: exit)
+        }
+        // The shown tab keeps it over its title and loses it over its icon.
+        try hover(at: 120)
+        #expect(!row.pinnedSlash.isHidden, "The shown tab keeps it")
+        try leave()
+        try hover(at: 10)
+        #expect(row.pinnedSlash.isHidden, "Over the icon it goes")
+        try leave()
+        #expect(!row.pinnedSlash.isHidden)
+
+        row.update(tab: pinned, selected: false, isResizing: false, closeDescriptor: BrowserCommands.archiveTab)
+        try hover(at: 120)
+        #expect(row.pinnedSlash.isHidden, "Hover hides it on a background tab")
         #expect(row.titleLabel.frame.minX == titleAway, "The title stays put")
-        let exit = try #require(NSEvent.enterExitEvent(
-            with: .mouseExited, location: pointer, modifierFlags: [], timestamp: 2, windowNumber: 0,
-            context: nil, eventNumber: 0, trackingNumber: 0, userData: nil,
-        ))
-        row.mouseExited(with: exit)
+        try leave()
         #expect(!row.pinnedSlash.isHidden)
 
         row.update(
