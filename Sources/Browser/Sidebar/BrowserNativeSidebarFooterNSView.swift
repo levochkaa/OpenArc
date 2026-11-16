@@ -52,7 +52,9 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate, Browser
     private let popover = BrowserNativePopover()
     private var buttons = [String: BrowserNativeChromeButton]()
     private var spaces = [BrowserChromeModel.Space]()
-    private var observations = Set<AnyCancellable>()
+    /// Update and download changes redraw their parts once per run loop pass.
+    private lazy var toastRefresh = BrowserCoalescedRefresh { [weak self] in self?.refreshToast() }
+    private lazy var downloadsRefresh = BrowserCoalescedRefresh { [weak self] in self?.refreshDownloadsButton() }
     private var isResizing = false
 
     private var libraryTracking: NSTrackingArea?
@@ -122,16 +124,8 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate, Browser
         popover.delegate = self
         popover.contentViewController = downloadsController
         downloadsController.onSizeChanged = { [weak self] size in self?.popover.contentSize = size }
-        updateController.objectWillChange
-            .receive(on: RunLoop.main)
-            .sink { [weak self] in self?.refreshToast() }
-            .store(in: &observations)
-        state.model
-            .downloadsModel
-            .objectWillChange
-            .receive(on: RunLoop.main)
-            .sink { [weak self] in self?.refreshDownloadsButton() }
-            .store(in: &observations)
+        toastRefresh.observe([updateController.objectWillChange.eraseToAnyPublisher()])
+        downloadsRefresh.observe([state.model.downloadsModel.objectWillChange.eraseToAnyPublisher()])
         refreshToast()
         refreshDownloadsButton()
     }

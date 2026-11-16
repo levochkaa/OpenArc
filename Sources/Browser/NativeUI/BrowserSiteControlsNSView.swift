@@ -73,7 +73,8 @@ final class BrowserSiteControlsNSView: NSView {
     private var extensionButtons = [String: BrowserNativeExtensionButton]()
     private var extensionVisibilities = [String: BrowserNativeVisibilityAnimation]()
     private var pinned = [BrowserExtension]()
-    private var observations = Set<AnyCancellable>()
+    /// Model changes refresh the view once per run loop pass.
+    private lazy var coalescedRefresh = BrowserCoalescedRefresh { [weak self] in self?.refresh() }
     private var copyTask: Task<Void, Never>?
     private let copyVisibility = BrowserNativeVisibilityAnimation()
     private let siteVisibility = BrowserNativeVisibilityAnimation()
@@ -157,14 +158,12 @@ final class BrowserSiteControlsNSView: NSView {
         siteButton.onAction = { [weak self] in self?.showControlCenter() }
         splitButton.onAction = { [weak self] in self?.splitButtonPressed() }
         extensionPopovers.onPresentationChanged = { [weak self] in self?.refreshHover() }
-        for publisher in [
+        coalescedRefresh.observe([
             model.objectWillChange.eraseToAnyPublisher(),
             model.userPreferencesStore.objectWillChange.eraseToAnyPublisher(),
             model.shortcutStore.objectWillChange.eraseToAnyPublisher(),
             model.currentPageCommandBarModel.objectWillChange.eraseToAnyPublisher(),
-        ] {
-            publisher.receive(on: RunLoop.main).sink { [weak self] in self?.refresh() }.store(in: &observations)
-        }
+        ])
         refresh()
     }
 

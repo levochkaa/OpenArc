@@ -24,7 +24,8 @@ final class BrowserDownloadsViewController: NSViewController {
     )
     private let scroll = NSScrollView()
     private let document = BrowserNativeSurface()
-    private var observation: AnyCancellable?
+    /// Model changes refresh the panel once per run loop pass.
+    private var coalescedRefresh: BrowserCoalescedRefresh?
 
     init(model: BrowserDownloadsModel) {
         self.model = model
@@ -52,7 +53,9 @@ final class BrowserDownloadsViewController: NSViewController {
         scroll.hasVerticalScroller = true
         scroll.autohidesScrollers = true
         scroll.documentView = document
-        observation = model.objectWillChange.receive(on: RunLoop.main).sink { [weak self] in self?.refresh() }
+        let changes = BrowserCoalescedRefresh { [weak self] in self?.refresh() }
+        changes.observe([model.objectWillChange.eraseToAnyPublisher()])
+        coalescedRefresh = changes
         refresh()
     }
 

@@ -59,7 +59,8 @@ final class BrowserNativeSidebarHeaderNSView: NSView {
         weight: .semibold,
         color: BrowserChromeColors.primaryText,
     )
-    private var observations = Set<AnyCancellable>()
+    /// Model changes refresh the view once per run loop pass.
+    private lazy var coalescedRefresh = BrowserCoalescedRefresh { [weak self] in self?.refresh() }
     private var showsURL = true
     private var showsNavigation = true
 
@@ -109,12 +110,10 @@ final class BrowserNativeSidebarHeaderNSView: NSView {
                     model?.reloadRespectingDeveloperMode()
                 }
             }
-        for publisher in [
+        coalescedRefresh.observe([
             model.objectWillChange.eraseToAnyPublisher(),
             model.shortcutStore.objectWillChange.eraseToAnyPublisher(),
-        ] {
-            publisher.receive(on: RunLoop.main).sink { [weak self] in self?.refresh() }.store(in: &observations)
-        }
+        ])
         refresh()
     }
 

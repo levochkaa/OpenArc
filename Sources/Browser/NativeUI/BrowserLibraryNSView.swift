@@ -103,7 +103,8 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
     private let spacesScroll = BrowserLibraryScrollView()
     private let spacesDocument = BrowserLibraryDocument()
     private let emptyState = BrowserLibraryEmptyState()
-    private var observations = Set<AnyCancellable>()
+    /// Model changes refresh the view once per run loop pass.
+    private lazy var coalescedRefresh = BrowserCoalescedRefresh { [weak self] in self?.refresh() }
     private var shownSection: BrowserLibrarySection?
     private var filter: String?
     private var rows = [Row]() {
@@ -199,12 +200,10 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
         spacesScroll.documentView = spacesDocument
         addSubview(spacesScroll)
         addSubview(emptyState)
-        for publisher in [
+        coalescedRefresh.observe([
             model.objectWillChange.eraseToAnyPublisher(),
             model.downloadsModel.objectWillChange.eraseToAnyPublisher(),
-        ] {
-            publisher.receive(on: RunLoop.main).sink { [weak self] in self?.refresh() }.store(in: &observations)
-        }
+        ])
     }
 
     @available(*, unavailable) required init?(coder _: NSCoder) { fatalError() }

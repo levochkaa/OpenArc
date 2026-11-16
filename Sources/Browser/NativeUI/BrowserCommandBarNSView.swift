@@ -30,7 +30,9 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
 
     private let model: BrowserCommandBarModel
     private let faviconCache: BrowserFaviconCache
-    private var observations = Set<AnyCancellable>()
+    /// Model changes refresh the bar, and new favicons its icons, once per run loop pass.
+    private lazy var coalescedRefresh = BrowserCoalescedRefresh { [weak self] in self?.refresh() }
+    private lazy var coalescedIconRefresh = BrowserCoalescedRefresh { [weak self] in self?.refreshIcons() }
 
     private let panel = BrowserNativeMaterialPanel()
     private let symbol = NSImageView()
@@ -139,14 +141,8 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
         table.delegate = self
         table.focusRingType = .none
         scrollView.documentView = table
-        model.objectWillChange
-            .receive(on: RunLoop.main)
-            .sink { [weak self] in self?.refresh() }
-            .store(in: &observations)
-        faviconCache.objectWillChange
-            .receive(on: RunLoop.main)
-            .sink { [weak self] in self?.refreshIcons() }
-            .store(in: &observations)
+        coalescedRefresh.observe([model.objectWillChange.eraseToAnyPublisher()])
+        coalescedIconRefresh.observe([faviconCache.objectWillChange.eraseToAnyPublisher()])
         refresh()
     }
 

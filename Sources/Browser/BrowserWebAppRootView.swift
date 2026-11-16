@@ -34,7 +34,8 @@ final class BrowserWebAppRootView: NSView {
     private var animateNextLayout = false
     private let frameTransitions = BrowserNativeFrameTransitions()
     private let toolbarVisibility = BrowserNativeVisibilityAnimation()
-    private var observations = Set<AnyCancellable>()
+    /// Model changes refresh the view once per run loop pass.
+    private lazy var coalescedRefresh = BrowserCoalescedRefresh { [weak self] in self?.refresh() }
 
     private var showsToolbar: Bool { !isFullscreen || preferences.alwaysShowsToolbarInFullscreen }
     private var windowLayout: BrowserWebAppWindowLayout { .init(isFullscreen: isFullscreen, showsToolbar: showsToolbar)
@@ -69,14 +70,12 @@ final class BrowserWebAppRootView: NSView {
         fullscreen.onFullscreenStateChange = { [weak self] state in self?.isFullscreen = state.isFullscreen
             self?.refresh()
         }
-        for publisher in [
+        coalescedRefresh.observe([
             model.objectWillChange.eraseToAnyPublisher(),
             preferences.objectWillChange.eraseToAnyPublisher(),
             model.userPreferencesStore.objectWillChange.eraseToAnyPublisher(),
             model.shortcutStore.objectWillChange.eraseToAnyPublisher(),
-        ] {
-            publisher.receive(on: RunLoop.main).sink { [weak self] in self?.refresh() }.store(in: &observations)
-        }
+        ])
         refresh()
     }
 

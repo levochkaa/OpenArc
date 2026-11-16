@@ -123,3 +123,23 @@ private func makeFaviconTab(
     #expect(view.contentTintColor == BrowserChromeColors.internalPageIcon)
     #expect(view.image != nil)
 }
+
+/// Icons refresh whenever any favicon arrives; one without a favicon of its own keeps
+/// the image it shows, and many arrivals in a pass refresh it once.
+@MainActor @Test func iconsKeepTheirImageAcrossRefreshes() {
+    let cache = BrowserFaviconCache()
+    let globe = BrowserFaviconNSView(cache: cache)
+    globe.update(url: nil, pageURLString: "https://example.com")
+    let globeImage = globe.image
+    let history = BrowserFaviconNSView(cache: cache)
+    history.update(url: nil, pageURLString: "openarc://history/")
+    let clock = history.image
+    for _ in 0..<5 {
+        cache.objectWillChange.send()
+    }
+    RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+    globe.update(url: nil, pageURLString: "https://example.com")
+    history.update(url: nil, pageURLString: "openarc://history/")
+    #expect(globe.image != nil && globe.image === globeImage)
+    #expect(history.image != nil && history.image === clock)
+}

@@ -61,7 +61,8 @@ final class BrowserSiteControlCenterViewController: NSViewController {
     private var settingViews = [BrowserSiteSettingRowView]()
     private var siteSettings = [BrowserSiteSettingRow]()
     private var siteSettingsURLString = ""
-    private var observation: AnyCancellable?
+    /// Model changes refresh the panel once per run loop pass.
+    private var coalescedRefresh: BrowserCoalescedRefresh?
     private var isSecure = false
 
     private let pageActions: [PageAction] = [
@@ -147,7 +148,9 @@ final class BrowserSiteControlCenterViewController: NSViewController {
         more.setAccessibilityIdentifier("browser.site-control.more")
         more.onClick = { [weak self] _ in self?.showMoreMenu() }
         root.addSubview(more)
-        observation = model.objectWillChange.receive(on: RunLoop.main).sink { [weak self] in self?.refresh() }
+        let changes = BrowserCoalescedRefresh { [weak self] in self?.refresh() }
+        changes.observe([model.objectWillChange.eraseToAnyPublisher()])
+        coalescedRefresh = changes
         reloadSiteSettings()
     }
 

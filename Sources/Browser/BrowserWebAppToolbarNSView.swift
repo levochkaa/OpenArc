@@ -52,7 +52,8 @@ final class BrowserWebAppToolbarNSView: NSView {
         weight: .medium,
         color: BrowserChromeColors.primaryText,
     )
-    private var observations = Set<AnyCancellable>()
+    /// Model changes refresh the view once per run loop pass.
+    private lazy var coalescedRefresh = BrowserCoalescedRefresh { [weak self] in self?.refresh() }
 
     init(
         model: BrowserChromeModel,
@@ -94,13 +95,11 @@ final class BrowserWebAppToolbarNSView: NSView {
             guard let self else { return }
             moreMenu().popUp(positioning: nil, at: NSPoint(x: more.frame.minX, y: more.frame.maxY), in: self)
         }
-        for publisher in [
+        coalescedRefresh.observe([
             model.objectWillChange.eraseToAnyPublisher(),
             preferences.objectWillChange.eraseToAnyPublisher(),
             model.shortcutStore.objectWillChange.eraseToAnyPublisher(),
-        ] {
-            publisher.receive(on: RunLoop.main).sink { [weak self] in self?.refresh() }.store(in: &observations)
-        }
+        ])
         refresh()
     }
 

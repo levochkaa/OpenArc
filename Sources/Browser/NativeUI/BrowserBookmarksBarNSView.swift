@@ -54,7 +54,8 @@ final class BrowserBookmarksBarNSView: NSView {
     private let scroll = NSScrollView()
     private let document = BrowserNativeBookmarksDocument()
     private var items = [BrowserBookmarkItem]()
-    private var observations = Set<AnyCancellable>()
+    /// Model changes refresh the view once per run loop pass.
+    private lazy var coalescedRefresh = BrowserCoalescedRefresh { [weak self] in self?.refresh() }
     private let dropIndicator = NSView()
     private var firstOverflowIndex: Int?
 
@@ -93,13 +94,11 @@ final class BrowserBookmarksBarNSView: NSView {
         chevron.onAction = { [weak self] in self?.openOverflow() }
         star.setAccessibilityIdentifier("browser.bookmarks.toggle-current")
         star.onAction = { [weak model] in _ = model?.toggleSelectedTabBookmark() }
-        for publisher in [
+        coalescedRefresh.observe([
             model.objectWillChange.eraseToAnyPublisher(),
             model.bookmarksModel.objectWillChange.eraseToAnyPublisher(),
             model.shortcutStore.objectWillChange.eraseToAnyPublisher(),
-        ] {
-            publisher.receive(on: RunLoop.main).sink { [weak self] in self?.refresh() }.store(in: &observations)
-        }
+        ])
         refresh()
     }
 
