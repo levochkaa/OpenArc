@@ -136,6 +136,33 @@ enum BrowserImageThumbnailer {
         return renderedImage(image, canvasSize: targetSize, drawRect: CGRect(origin: .zero, size: targetSize))
     }
 
+    /// A view drawn straight into a bitmap at most `maximumPixelWidth` wide. Drawing
+    /// at the small size skips the full-resolution capture a resize would start from.
+    @MainActor static func viewSnapshot(of view: NSView, maximumPixelWidth: CGFloat) -> NSImage? {
+        let bounds = view.bounds
+        guard maximumPixelWidth > 0, bounds.width > 0, bounds.height > 0 else { return nil }
+        let backingScale = view.window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
+        let pixelWidth = floor(min(maximumPixelWidth, bounds.width * backingScale))
+        let pixelHeight = floor(bounds.height * pixelWidth / bounds.width)
+        guard pixelWidth >= 1, pixelHeight >= 1, let bitmap = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: Int(pixelWidth),
+            pixelsHigh: Int(pixelHeight),
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 0,
+        ) else { return nil }
+        bitmap.size = bounds.size
+        view.cacheDisplay(in: bounds, to: bitmap)
+        let image = NSImage(size: bounds.size)
+        image.addRepresentation(bitmap)
+        return image
+    }
+
     // MARK: Private
 
     private static func macOSApplicationIconBitmap(from sourceImage: CGImage) -> NSBitmapImageRep? {

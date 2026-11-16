@@ -9115,7 +9115,8 @@ private extension [String] {
 private enum BrowserTabPreviewCapture {
     // MARK: Private
 
-    private static let maximumPreviewPixelWidth: CGFloat = 960
+    /// Twice the switcher's widest preview.
+    private static let maximumPreviewPixelWidth: CGFloat = 480
     private static let minimumCaptureDimension: CGFloat = 24
 
     // MARK: Internal
@@ -9128,21 +9129,7 @@ private enum BrowserTabPreviewCapture {
             return nil
         }
 
-        return viewSnapshot(for: view).flatMap {
-            BrowserImageThumbnailer.resizedImage($0, maximumPixelWidth: maximumPreviewPixelWidth)
-        }
-    }
-
-    @MainActor private static func viewSnapshot(for view: NSView) -> NSImage? {
-        guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else {
-            return nil
-        }
-
-        view.cacheDisplay(in: view.bounds, to: bitmap)
-
-        let image = NSImage(size: view.bounds.size)
-        image.addRepresentation(bitmap)
-        return image
+        return BrowserImageThumbnailer.viewSnapshot(of: view, maximumPixelWidth: maximumPreviewPixelWidth)
     }
 }
 

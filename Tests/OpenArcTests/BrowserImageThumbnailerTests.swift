@@ -135,3 +135,17 @@ import Testing
     NSGraphicsContext.restoreGraphicsState()
     return bitmap.representation(using: .png, properties: [:])
 }
+
+/// A tab preview draws the page area straight at preview size, keeping its colors.
+@Test
+@MainActor func viewSnapshotDrawsAtTheSmallSizeDirectly() throws {
+    let view = NSView(frame: NSRect(x: 0, y: 0, width: 1600, height: 1000))
+    view.wantsLayer = true
+    view.layer?.backgroundColor = NSColor(deviceRed: 1, green: 0, blue: 0, alpha: 1).cgColor
+    let image = try #require(BrowserImageThumbnailer.viewSnapshot(of: view, maximumPixelWidth: 480))
+    let bitmap = try #require(image.representations.first as? NSBitmapImageRep)
+    #expect(bitmap.pixelsWide == 480 && bitmap.pixelsHigh == 300)
+    #expect(image.size == view.bounds.size)
+    let center = try #require(bitmap.colorAt(x: 240, y: 150)?.usingColorSpace(.deviceRGB))
+    #expect(center.redComponent > 0.9 && center.greenComponent < 0.1)
+}
