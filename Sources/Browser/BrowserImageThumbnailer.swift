@@ -24,6 +24,12 @@ enum BrowserImageThumbnailer {
             return nil
         }
 
+        // An SVG or PDF icon is drawn once into a bitmap, as decoded icons are: image
+        // views can leave parts of a vector icon undrawn.
+        if !image.representations.contains(where: { $0 is NSBitmapImageRep }) {
+            return rasterizedImage(image, maximumPixelSize: maximumPixelSize)
+        }
+
         return resizedImage(image, maximumPixelDimension: maximumPixelSize)
     }
 
@@ -161,6 +167,34 @@ enum BrowserImageThumbnailer {
         let image = NSImage(size: bounds.size)
         image.addRepresentation(bitmap)
         return image
+    }
+
+    private static func rasterizedImage(_ image: NSImage, maximumPixelSize: CGFloat) -> NSImage? {
+        guard image.size.width > 0, image.size.height > 0 else { return nil }
+        let scale = maximumPixelSize / max(image.size.width, image.size.height)
+        let width = max(Int((image.size.width * scale).rounded()), 1)
+        let height = max(Int((image.size.height * scale).rounded()), 1)
+        guard let bitmap = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: width,
+            pixelsHigh: height,
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 0,
+        ), let context = NSGraphicsContext(bitmapImageRep: bitmap) else { return nil }
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = context
+        context.imageInterpolation = .high
+        image.draw(in: NSRect(x: 0, y: 0, width: width, height: height))
+        NSGraphicsContext.restoreGraphicsState()
+        let rasterized = NSImage(size: NSSize(width: width, height: height))
+        rasterized.addRepresentation(bitmap)
+        rasterized.isTemplate = image.isTemplate
+        return rasterized
     }
 
     // MARK: Private

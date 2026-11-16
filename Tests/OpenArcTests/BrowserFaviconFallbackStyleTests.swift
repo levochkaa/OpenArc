@@ -143,3 +143,24 @@ private func makeFaviconTab(
     #expect(globe.image != nil && globe.image === globeImage)
     #expect(history.image != nil && history.image === clock)
 }
+
+/// A sidebar row shows the plain square until the page's icon arrives, then the icon
+/// itself, untinted.
+@MainActor @Test func anArrivingIconReplacesTheSquare() throws {
+    let cache = BrowserFaviconCache()
+    let view = BrowserFaviconNSView(cache: cache)
+    view.fallback = .square
+    let url = try #require(URL(string: "https://docs.example/static/icon.svg"))
+    view.update(url: url, pageURLString: "https://docs.example/")
+    #expect(view.image === BrowserFaviconNSView.squareImage)
+    #expect(view.contentTintColor != nil)
+    let icon = NSImage(size: NSSize(width: 16, height: 16), flipped: false) { rect in
+        NSColor.systemBlue.setFill()
+        rect.fill()
+        return true
+    }
+    cache.store(icon, for: url)
+    RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+    #expect(view.image === icon)
+    #expect(view.contentTintColor == nil)
+}

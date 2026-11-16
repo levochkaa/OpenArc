@@ -149,3 +149,20 @@ import Testing
     let center = try #require(bitmap.colorAt(x: 240, y: 150)?.usingColorSpace(.deviceRGB))
     #expect(center.redComponent > 0.9 && center.greenComponent < 0.1)
 }
+
+/// An SVG favicon becomes a bitmap at icon size, its colors kept.
+@Test
+@MainActor func vectorIconsAreDrawnIntoBitmaps() throws {
+    let svg = """
+    <svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+    <rect x="0" y="0" width="8" height="16" fill="#0000ff"/><rect x="8" y="0" width="8" height="16" fill="#ffff00"/>
+    </svg>
+    """
+    let image = try #require(BrowserImageThumbnailer.image(data: Data(svg.utf8), maximumPixelSize: 64))
+    let bitmap = try #require(image.representations.first as? NSBitmapImageRep)
+    #expect(bitmap.pixelsWide == 64 && bitmap.pixelsHigh == 64)
+    let left = try #require(bitmap.colorAt(x: 10, y: 32)?.usingColorSpace(.deviceRGB))
+    let right = try #require(bitmap.colorAt(x: 54, y: 32)?.usingColorSpace(.deviceRGB))
+    #expect(left.blueComponent > 0.8 && left.redComponent < 0.2)
+    #expect(right.redComponent > 0.8 && right.blueComponent < 0.2)
+}

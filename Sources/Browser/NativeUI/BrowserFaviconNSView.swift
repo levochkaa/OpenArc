@@ -24,23 +24,6 @@ final class BrowserFaviconNSView: NSImageView {
 
     private static let globeImage = NSImage(systemSymbolName: "globe", accessibilityDescription: nil)
 
-    /// Rows refresh their icon often; the same image or tint leaves the view as it is.
-    override var image: NSImage? {
-        get { super.image }
-        set {
-            guard newValue !== super.image else { return }
-            super.image = newValue
-        }
-    }
-
-    override var contentTintColor: NSColor? {
-        get { super.contentTintColor }
-        set {
-            guard newValue != super.contentTintColor else { return }
-            super.contentTintColor = newValue
-        }
-    }
-
     // MARK: Internal
 
     var fallback = Fallback.globe {
