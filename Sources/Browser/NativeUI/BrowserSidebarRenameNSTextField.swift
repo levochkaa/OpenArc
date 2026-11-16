@@ -20,6 +20,10 @@ final class BrowserSidebarRenameNSTextField: NSTextField {
     var pendingFocus = false
     var pendingSelectAll = false
 
+    /// The inset of the window's shared field editor before this field changed it;
+    /// AppKit sets the editor's size for each field itself.
+    private var editorDefaultInset: NSSize?
+
     // MARK: Private
 
     private var activeTextColor: NSColor {
@@ -58,12 +62,25 @@ final class BrowserSidebarRenameNSTextField: NSTextField {
         return didBecomeFirstResponder
     }
 
+    override func textDidEndEditing(_ notification: Notification) {
+        if let editor = notification.object as? NSTextView, let editorDefaultInset {
+            editor.textContainerInset = editorDefaultInset
+        }
+        editorDefaultInset = nil
+        super.textDidEndEditing(notification)
+    }
+
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
 
         if pendingFocus {
             syncFocus(true)
         }
+    }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        keepEditorInsideTitleFrame()
     }
 
     func syncFocus(_ shouldFocus: Bool) {
@@ -128,10 +145,47 @@ final class BrowserSidebarRenameNSTextField: NSTextField {
             return
         }
 
+        rememberEditorDefaults(editor)
         editor.insertionPointColor = activeTextColor
         editor.textColor = activeTextColor
         editor.drawsBackground = false
         editor.font = font
-        editor.textContainerInset = NSSize(width: 0, height: 0.5 - Self.editorLineLift)
+        editor.textContainerInset = NSSize(width: editor.textContainerInset.width, height: 0.5 - Self.editorLineLift)
+        keepEditorInsideTitleFrame()
+    }
+
+    private func rememberEditorDefaults(_ editor: NSTextView) {
+        if editorDefaultInset == nil {
+            editorDefaultInset = editor.textContainerInset
+        }
+    }
+
+    /// AppKit widens the editor 3 pt to the left and 2 pt to the right of the field,
+    /// and a title longer than the field scrolls its text into that margin, toward
+    /// the icon. The editor keeps the field's frame and starts its text where the
+    /// title draws it.
+    private func keepEditorInsideTitleFrame() {
+        guard let editor = currentEditor() as? NSTextView, let clip = editor.superview as? NSClipView,
+              clip.superview === self
+        else { return }
+        rememberEditorDefaults(editor)
+        var frame = clip.frame
+        frame.origin.x = bounds.minX
+        frame.size.width = bounds.width
+        if clip.frame != frame {
+            clip.frame = frame
+        }
+        // A short title's editor fills the field, so nothing scrolls it into the margin.
+        if editor.minSize.width < bounds.width {
+            editor.minSize.width = bounds.width
+            editor.sizeToFit()
+        }
+        if clip.bounds.minX < 0 {
+            clip.setBoundsOrigin(NSPoint(x: 0, y: clip.bounds.minY))
+        }
+        // The text container starts at the editor's edge, as the title's text starts at the field's.
+        if editor.textContainerOrigin.x != 0 {
+            editor.textContainerInset.width -= editor.textContainerOrigin.x
+        }
     }
 }

@@ -206,6 +206,69 @@ import Testing
         #expect(renames == 1)
     }
 
+    @Test func renamingALongTitleKeepsItsTextWhereTheTitleWas() throws {
+        _ = NSApplication.shared
+        let window = NSWindow(
+            contentRect: NSRect(x: -10000, y: -10000, width: 240, height: 36),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false,
+        )
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let surface = BrowserNativeSurface(frame: NSRect(x: 0, y: 0, width: 240, height: 36))
+        surface.appearance = NSAppearance(named: .aqua)
+        surface.fillColor = .white
+        surface.strokeWidth = 0
+        window.contentView = surface
+        let row = BrowserNativeSidebarRowNSView(frame: surface.bounds)
+        surface.addSubview(row)
+        let title = "feat(core): multiplayer for-you feed with presence and cursors"
+        func update(renaming: Bool) {
+            row.update(
+                tab: .init(id: "tab", syncID: "tab", spaceID: "space", title: title, urlString: "about:blank"),
+                selected: true,
+                renaming: renaming,
+                isResizing: false,
+                closeDescriptor: BrowserCommands.archiveTab,
+            )
+            surface.layoutSubtreeIfNeeded()
+        }
+        func leadingInk() throws -> CGFloat {
+            let bitmap = try #require(surface.bitmapImageRepForCachingDisplay(in: surface.bounds))
+            surface.cacheDisplay(in: surface.bounds, to: bitmap)
+            let scale = CGFloat(bitmap.pixelsWide) / surface.bounds.width
+            for x in Int((row.renameField.frame.minX - 10) * scale)..<bitmap.pixelsWide {
+                for y in 0..<bitmap.pixelsHigh {
+                    guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else { continue }
+                    if max(color.redComponent, color.greenComponent, color.blueComponent) < 0.6 {
+                        return CGFloat(x) / scale
+                    }
+                }
+            }
+            return .infinity
+        }
+
+        update(renaming: false)
+        let titleInk = try leadingInk()
+        update(renaming: true)
+        #expect(window.makeFirstResponder(row.renameField))
+        let editor = try #require(row.renameField.currentEditor() as? NSTextView)
+        #expect(editor.textContainerInset.height != 0, "The field set its own inset")
+        let clip = try #require(editor.superview)
+        let clipFrame = row.renameField.convert(clip.bounds, from: clip)
+        #expect(clipFrame.minX >= 0, "The editor starts where the title does")
+        #expect(clipFrame.maxX <= row.renameField.bounds.maxX)
+        editor.insertionPointColor = .clear
+        editor.setSelectedRange(NSRange(location: 0, length: 0))
+        #expect(try abs(leadingInk() - titleInk) <= 0.5)
+
+        // The window's shared editor goes back to how other fields use it.
+        update(renaming: false)
+        #expect(window.makeFirstResponder(nil))
+        #expect(editor.textContainerInset == .zero)
+    }
+
     @Test func activeRowRenamesAndOtherRowsSelect() {
         let row = BrowserNativeSidebarRowNSView(frame: NSRect(x: 0, y: 0, width: 240, height: 36))
         var selections = 0
