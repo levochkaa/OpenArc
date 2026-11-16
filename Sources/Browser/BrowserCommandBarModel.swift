@@ -197,7 +197,6 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
     @Published private(set) var selectedSuggestionIndex: Int?
     /// The site the bar searches after Tab, shown as a chip before the query.
     @Published private(set) var activeSiteSearch: BrowserSiteSearch?
-
     @Published var query = "" {
         didSet {
             handleQueryChange()
@@ -208,6 +207,10 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
     var splitSubmitHandler: ((String) -> Void)?
     /// Where Command-Return sends a page; nil makes it a plain Return.
     var backgroundSubmitHandler: ((String) -> Void)?
+
+    /// The person moved to the selected suggestion; until then the field only
+    /// completes what was typed and never replaces it.
+    private var selectionWasChosen = false
 
     // MARK: Private
 
@@ -266,6 +269,7 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
         let previewDisplayText = selectedSuggestion.completionText ?? selectedSuggestion.displayText
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard
+            selectionWasChosen || inlineCompletionSuffix != nil,
             previewDisplayText != query,
             !(previewDisplayText == trimmedQuery && trimmedQuery != query)
         else {
@@ -389,6 +393,7 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
         }
 
         let currentIndex = selectedSuggestionIndex ?? 0
+        selectionWasChosen = true
         selectedSuggestionIndex = min(max(currentIndex + offset, 0), suggestions.count - 1)
     }
 
@@ -464,6 +469,7 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
     func handleQueryChange() {
         suggestionLoadTask?.cancel()
         suggestionLoadTask = nil
+        selectionWasChosen = false
 
         guard isPresented else {
             suggestions = []
@@ -613,8 +619,11 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
         }
 
         // A visited page whose address starts with the text comes first, and the
-        // field completes the text to that address.
-        if let completed = Self.addressCompletion(for: query, in: localSuggestions) {
+        // field completes the text to that address. A typed space ends the word, so
+        // the text is a search, not the start of an address.
+        if self.query.last?.isWhitespace != true,
+           let completed = Self.addressCompletion(for: query, in: localSuggestions)
+        {
             appendSuggestion(completed)
         }
 

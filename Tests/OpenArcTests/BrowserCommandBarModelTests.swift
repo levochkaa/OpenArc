@@ -296,6 +296,36 @@ private let defaultAISuggestionTitle = BrowserStrings.commandBarAskAI(BrowserAIS
 }
 
 @Test
+@MainActor func aTypedSpaceKeepsTheTextInsteadOfCompletingAnAddress() async {
+    let page = BrowserCommandSuggestion(
+        kind: .history,
+        displayText: "Docs",
+        detailText: "docs.example",
+        resolvedURLString: "https://docs.example",
+    )
+    let model = makeModel(
+        suggestionProvider: FakeSuggestionProvider(suggestionsByQuery: [:]),
+        localSuggestionProvider: { query, _ in query == "docs" ? [page] : [] },
+    )
+
+    model.present()
+    model.query = "docs"
+    await model.waitForPendingSuggestionLoad()
+    #expect(model.inlineCompletionSuffix == ".example")
+
+    model.query = "docs "
+    await model.waitForPendingSuggestionLoad()
+    #expect(model.selectedSuggestion?.kind == .search)
+    #expect(model.selectedSuggestion?.displayText == "docs")
+    #expect(model.previewDisplayText == nil, "The field keeps what was typed")
+
+    // Chosen with the arrows, the page fills the field.
+    model.moveSelection(by: 2)
+    #expect(model.selectedSuggestion?.displayText == "Docs")
+    #expect(model.previewDisplayText == "Docs")
+}
+
+@Test
 @MainActor func aiSuggestionSubmitsSelectedProviderQueryURL() async throws {
     var submittedURLStrings = [String]()
     let model = makeModel(
