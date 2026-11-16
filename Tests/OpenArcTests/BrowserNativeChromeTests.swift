@@ -7,6 +7,18 @@ import Testing
 @MainActor struct BrowserNativeChromeTests {
     // MARK: Internal
 
+    @Test func reconfiguringTheSameSymbolKeepsItsImage() throws {
+        let button = BrowserNativeChromeButton(symbol: "xmark", title: "Close") {}
+        let first = try #require(button.image)
+        button.configureSymbol("xmark", title: "Close")
+        #expect(button.image === first)
+        button.configureSymbol("xmark", title: "Archive")
+        #expect(button.image !== first)
+        let renamed = try #require(button.image)
+        button.configureSymbol("minus", title: "Archive")
+        #expect(button.image !== renamed)
+    }
+
     @Test func findActionsAndDisabledNavigation() {
         let view = BrowserFindBarNSView(frame: NSRect(x: 0, y: 0, width: 900, height: 600))
         var calls = [String]()

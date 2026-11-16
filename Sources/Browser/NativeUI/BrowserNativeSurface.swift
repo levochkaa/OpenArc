@@ -387,6 +387,8 @@ final class BrowserNativeChromeButton: NSButton {
     private var restingSymbol: NSBitmapImageRep?
     private var pressedSymbol: NSBitmapImageRep?
     private var symbolName: String
+    /// The symbol image `configureSymbol` set last and the title it was made for.
+    private var symbolImage: (image: NSImage, title: String)?
     private var symbolProgress = 1.0
     private let symbolAnimation = BrowserNativeAnimation()
     private let style: BrowserNativeChromeButtonStyle
@@ -466,6 +468,7 @@ final class BrowserNativeChromeButton: NSButton {
         isBordered = false
         imagePosition = .imageOnly
         image = Self.image(symbol: symbol, title: title, style: style)
+        self.symbolImage = image.map { ($0, title) }
         self.tooltipTitle = title
         setAccessibilityLabel(title)
         target = self
@@ -656,6 +659,8 @@ final class BrowserNativeChromeButton: NSButton {
 
     func configureSymbol(_ name: String, title: String) {
         let changed = symbolName != name
+        // Sidebar refreshes reconfigure every row; making a symbol image is slow.
+        if !changed, let symbolImage, symbolImage.title == title, image === symbolImage.image { return }
         symbolName = name
         let dissolves = changed && !style.drawsCloseBars && symbolCrossfades
         if changed, window != nil, dissolves || ["link", "checkmark"].contains(name) {
@@ -674,6 +679,7 @@ final class BrowserNativeChromeButton: NSButton {
         }
         self.title = title
         image = Self.image(symbol: name, title: title, style: style)
+        symbolImage = image.map { ($0, title) }
         imagePosition = .imageOnly
         setAccessibilityLabel(title)
         tooltipTitle = title
