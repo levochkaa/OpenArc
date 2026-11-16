@@ -920,6 +920,34 @@ import Testing
     #expect(restoredModel.tabs.first?.userTitleOverride == "Workspace")
 }
 
+/// A tab switch is saved once the page has had time to show; quick switches share one
+/// write, and any other save takes the selection with it.
+@Test
+@MainActor func tabSwitchesAreSavedShortlyAfterInOneWrite() {
+    let driver = FakeBrowserTabDriver()
+    let snapshotStore = InMemorySessionSnapshotStore()
+    let preferencesStore = InMemorySessionPreferencesStore()
+    let model = makeModel(driver: driver, snapshotStore: snapshotStore, preferencesStore: preferencesStore)
+    model.handleContextReady()
+    driver.flushPendingCreateEvents()
+    model.createNewTab()
+    model.createNewTab()
+    driver.flushPendingCreateEvents()
+    let saves = snapshotStore.savedSnapshots.count
+    model.selectTab(id: model.tabs[2].id)
+    model.selectTab(id: model.tabs[1].id)
+    #expect(snapshotStore.savedSnapshots.count == saves, "Not while the page switches")
+    RunLoop.main.run(until: Date().addingTimeInterval(BrowserChromeModel.selectionPersistDelay + 0.1))
+    #expect(snapshotStore.savedSnapshots.count == saves + 1)
+    #expect(preferencesStore.storedSelectedTabIndex == 1)
+    model.selectTab(id: model.tabs[0].id)
+    model.createNewTab()
+    driver.flushPendingCreateEvents()
+    let afterCreate = snapshotStore.savedSnapshots.count
+    RunLoop.main.run(until: Date().addingTimeInterval(BrowserChromeModel.selectionPersistDelay + 0.1))
+    #expect(snapshotStore.savedSnapshots.count == afterCreate, "The new tab's save took the switch with it")
+}
+
 @Test
 @MainActor func createSelectAndClosePersistState() {
     let driver = FakeBrowserTabDriver()
@@ -947,6 +975,7 @@ import Testing
     let initialTabID = model.tabs[1].id
 
     model.selectTab(id: initialTabID)
+    model.persistPendingSelection()
 
     #expect(preferencesStore.storedSelectedTabIndex == 1)
 
@@ -1566,6 +1595,7 @@ import Testing
 
     model.moveTab(withID: firstTabID, toPlacement: .temporary, atSectionIndex: model.temporaryTabs.count)
     model.selectTab(id: firstTabID)
+    model.persistPendingSelection()
 
     #expect(model.tabs.map(\.id) == [secondTabID, thirdTabID, fourthTabID, firstTabID])
     #expect(model.spacePinnedTabs.map(\.id) == [secondTabID, thirdTabID])

@@ -45,6 +45,7 @@ import Testing
         let b = try f.runtimeID("b")
         f.clock.now = 200.9
         f.model.selectTab(id: b)
+        f.model.persistPendingSelection()
         #expect(try f.activity("a") == 200)
         #expect(try f.activity("b") == 200)
         f.clock.now = 201.9
@@ -173,6 +174,7 @@ import Testing
         #expect(try f.queueBytes() == before)
         f.clock.now = 200
         try f.model.selectTab(id: f.runtimeID("b"))
+        f.model.persistPendingSelection()
         #expect(try f.activity("a") == 200)
         #expect(try f.activity("b") == 200)
         #expect(try f.activity("pending-remote") == 50)

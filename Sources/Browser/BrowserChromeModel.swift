@@ -203,6 +203,9 @@ enum BrowserWindowMode: Equatable {
     /// A busy page may answer late; give up after about a second.
     static let findPasteboardAttempts = 8
 
+    /// How long a tab switch waits before it is saved.
+    nonisolated static let selectionPersistDelay: TimeInterval = 0.15
+
     private static let automaticArchivalLogger = Logger(
         subsystem: Bundle.main.bundleIdentifier ?? "com.levochkaa.OpenArc", category: "AutomaticArchival",
     )
@@ -604,6 +607,8 @@ enum BrowserWindowMode: Equatable {
     private var sessionWriteBuffer = BrowserSessionWriteBuffer()
     private var hasDiscardedSessionForClosure = false
     private var isSessionClosurePrepared = false
+    /// A tab switch waiting to be saved.
+    private var pendingSelectionPersist: Timer?
     private var isRestoringSession = false
     private var isApplyingRemoteSync = false
     private var deferredRemoteSyncSnapshot: BrowserTabSessionSnapshot?
@@ -4039,7 +4044,7 @@ enum BrowserWindowMode: Equatable {
         recordSelectedTab(id)
         updateWindowTitle()
         BrowserTelemetry.captureUsage(.tabSelected, properties: telemetryProperties(for: tab))
-        persistCurrentSessionIfAllowed()
+        persistSelectionSoon()
         runFind(forward: true, findNext: false)
     }
 
@@ -4557,6 +4562,27 @@ enum BrowserWindowMode: Equatable {
     /// New Tab in a small window: the same results as its bar, going to `navigate`.
     func makeLittleWindowSearchModel(navigate: @escaping (String) -> Void) -> BrowserCommandBarModel {
         makeCommandBarModel(forLittleWindow: true, submit: navigate)
+    }
+
+    /// Saves a tab switch once the new page has had time to show: the write reads and
+    /// rewrites the whole session on the main thread, which also draws the page. Quick
+    /// switches share one write, and any other save includes the selection and drops it.
+    /// Saves a tab switch still waiting, now.
+    func persistPendingSelection() {
+        guard pendingSelectionPersist != nil else { return }
+        persistCurrentSessionIfAllowed()
+    }
+
+    private func persistSelectionSoon() {
+        pendingSelectionPersist?.invalidate()
+        let timer = Timer(timeInterval: Self.selectionPersistDelay, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.pendingSelectionPersist != nil else { return }
+                self.persistCurrentSessionIfAllowed()
+            }
+        }
+        pendingSelectionPersist = timer
+        RunLoop.main.add(timer, forMode: .common)
     }
 
     /// Shows a row change at once, or with the rest of the batch it belongs to.
@@ -5610,6 +5636,8 @@ enum BrowserWindowMode: Equatable {
     }
 
     private func persistCurrentSessionIfAllowed(syncMove: BrowserSyncMoveIntent? = nil) {
+        pendingSelectionPersist?.invalidate()
+        pendingSelectionPersist = nil
         guard isContextReady, isPersistenceEnabled, !isRestoringSession, !isReconcilingRemoteProjection,
               !isCompletingTabClose, !isApplyingPeerSnapshot
         else {

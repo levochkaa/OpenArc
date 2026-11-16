@@ -17,6 +17,7 @@ import Testing
         let group = try #require(f.model.splitGroup(containingTabID: f.id("x")))
         #expect(f.model.splitPaneTabIDs(of: group) == [f.id("x"), f.id("z")])
         #expect(f.model.splitPaneTabIDs(forTabID: f.id("y")) == [f.id("y")])
+        f.model.persistPendingSelection()
         let saved = try #require(f.store.savedSnapshots.last?.splitGroups?.first)
         #expect(saved.tabIDs == [f.syncID("x"), f.syncID("z")])
         #expect(saved.focusedTabID == f.syncID("z"))
@@ -32,6 +33,7 @@ import Testing
         #expect(group.focusedTabSyncID == f.syncID("x"))
         #expect(f.model.splitPaneTabIDs(of: group) == [f.id("x"), f.id("y")])
         f.model.selectTab(id: f.id("z"))
+        f.model.persistPendingSelection()
         #expect(f.model.selectedSplitGroup == nil)
         #expect(f.store.savedSnapshots.last?.splitGroups?.first?.focusedTabID == f.syncID("x"))
     }

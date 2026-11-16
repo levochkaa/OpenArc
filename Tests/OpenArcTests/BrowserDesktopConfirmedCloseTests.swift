@@ -235,6 +235,7 @@ import Testing
         let survivorID = try f.runtimeID("b")
         f.clock.now += 60
         f.model.selectTab(id: survivorID)
+        f.model.persistPendingSelection()
         let selectedState = try f.evidence()
         let selections = f.driver.selectedTabIDs
         f.finish(request, outcome)
