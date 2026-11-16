@@ -668,6 +668,32 @@ import Testing
 }
 
 @Test
+@MainActor func clearedTabsLeaveTheSidebarTogether() {
+    let driver = FakeBrowserTabDriver()
+    driver.automaticallyConfirmsCloseRequests = false
+    let model = makeModel(
+        driver: driver,
+        snapshotStore: InMemorySessionSnapshotStore(),
+        preferencesStore: InMemorySessionPreferencesStore(),
+    )
+    model.handleContextReady()
+    driver.flushPendingCreateEvents()
+    for _ in 0..<3 {
+        model.createNewTab()
+        driver.flushPendingCreateEvents()
+    }
+    let cleared = Set(model.temporaryTabs.map(\.id))
+    #expect(cleared.count == 4)
+    var shownRows = [Set<String>]()
+    model.onTabRowsChanged = { shownRows.append(Set(model.presentedSidebarSnapshot.temporaryTabs.map(\.id))) }
+
+    model.clearTemporaryTabs()
+
+    #expect(shownRows.count == 1, "One redraw takes every cleared row away")
+    #expect(shownRows.first?.isDisjoint(with: cleared) == true)
+}
+
+@Test
 @MainActor func clearTemporaryTabsCanPreserveSelectedTemporaryTab() throws {
     let driver = FakeBrowserTabDriver()
     let snapshotStore = InMemorySessionSnapshotStore()

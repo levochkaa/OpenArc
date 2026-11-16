@@ -546,6 +546,9 @@ enum BrowserWindowMode: Equatable {
     /// The section the Library opens on again, however it was closed.
     private(set) var lastLibrarySection = BrowserLibrarySection.archive
 
+    private var tabRowChangeBatchDepth = 0
+    private var tabRowsChangedInBatch = false
+
     /// Tabs a link opened, with the tab it came from, to keep them together below it.
     private var tabOpenerIDs = [String: String]()
 
@@ -2772,10 +2775,12 @@ enum BrowserWindowMode: Equatable {
             .filter { $0 != activeTemporaryTabID }
         // One Undo brings back every tab this Clear closes.
         let batch = UUID()
-        for tabID in temporaryTabIDs {
-            tabCloseUndoBatches[tabID] = batch
-            if !closeTab(id: tabID, undoActionName: BrowserStrings.sidebarClearTemporaryTabs) {
-                tabCloseUndoBatches.removeValue(forKey: tabID)
+        changingTabRowsTogether {
+            for tabID in temporaryTabIDs {
+                tabCloseUndoBatches[tabID] = batch
+                if !closeTab(id: tabID, undoActionName: BrowserStrings.sidebarClearTemporaryTabs) {
+                    tabCloseUndoBatches.removeValue(forKey: tabID)
+                }
             }
         }
     }
@@ -3817,8 +3822,10 @@ enum BrowserWindowMode: Equatable {
     }
 
     func closeTabsBelow(id: String) {
-        for tabID in tabIDsBelowInSidebarOrder(forTabID: id) {
-            closeTab(id: tabID)
+        changingTabRowsTogether {
+            for tabID in tabIDsBelowInSidebarOrder(forTabID: id) {
+                closeTab(id: tabID)
+            }
         }
     }
 
@@ -4552,6 +4559,26 @@ enum BrowserWindowMode: Equatable {
         makeCommandBarModel(forLittleWindow: true, submit: navigate)
     }
 
+    /// Shows a row change at once, or with the rest of the batch it belongs to.
+    private func tabRowsChanged() {
+        if tabRowChangeBatchDepth > 0 {
+            tabRowsChangedInBatch = true
+        } else {
+            onTabRowsChanged?()
+        }
+    }
+
+    /// Rows that one action takes away leave the sidebar together, not one by one.
+    private func changingTabRowsTogether(_ changes: () -> Void) {
+        tabRowChangeBatchDepth += 1
+        changes()
+        tabRowChangeBatchDepth -= 1
+        if tabRowChangeBatchDepth == 0, tabRowsChangedInBatch {
+            tabRowsChangedInBatch = false
+            onTabRowsChanged?()
+        }
+    }
+
     private func showsMovedPage(syncID: String) -> Bool {
         tabs.first { $0.syncID == syncID }.map { movedPageTabIDs.contains($0.id) && hasNoPage($0.id) } ?? false
     }
@@ -4967,7 +4994,7 @@ enum BrowserWindowMode: Equatable {
         closingTabIDs.insert(id)
         if tab.placement == .temporary, !unloadsPersistentTab, localAutomaticCandidate == nil {
             tabsLeavingSidebar.insert(id)
-            onTabRowsChanged?()
+            tabRowsChanged()
         }
         guard tabDriver.requestCloseTab(withID: id, requestID: requestID) else {
             if pendingTabCloseRequests[id]?.requestID == requestID {
@@ -6947,7 +6974,7 @@ extension BrowserChromeModel {
             )])
             isSessionClosurePrepared = false
             publishArchivedTab(entry: entry, restored: restored, outgoing: outgoing, outgoingDate: outgoingDate)
-            onTabRowsChanged?()
+            tabRowsChanged()
             archiveRevision &+= 1
             sessionPreferencesStore.saveSelectedSpaceIndex(selectedSpaceIndex)
             sessionPreferencesStore.saveSelectedTabIndex(next.tabs.firstIndex { $0.id == syncID })
