@@ -159,7 +159,8 @@ import Testing
     </svg>
     """
     let image = try #require(BrowserImageThumbnailer.image(data: Data(svg.utf8), maximumPixelSize: 64))
-    let bitmap = try #require(image.representations.first as? NSBitmapImageRep)
+    #expect(!(image.representations.first is NSBitmapImageRep), "A finished picture, as decoded icons are")
+    let bitmap = try NSBitmapImageRep(cgImage: #require(image.cgImage(forProposedRect: nil, context: nil, hints: nil)))
     #expect(bitmap.pixelsWide == 64 && bitmap.pixelsHigh == 64)
     let left = try #require(bitmap.colorAt(x: 10, y: 32)?.usingColorSpace(.deviceRGB))
     let right = try #require(bitmap.colorAt(x: 54, y: 32)?.usingColorSpace(.deviceRGB))

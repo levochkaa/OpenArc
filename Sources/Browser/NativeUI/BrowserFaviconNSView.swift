@@ -69,20 +69,30 @@ final class BrowserFaviconNSView: NSImageView {
 
     private func refreshImage() {
         if let symbol = BrowserFaviconFallbackStyle.webUISymbol(forPageURLString: pageURLString) {
-            image = BrowserIconImage.image(named: symbol, pointSize: 13, weight: .semibold)
-            contentTintColor = BrowserChromeColors.internalPageIcon
+            show(
+                BrowserIconImage.image(named: symbol, pointSize: 13, weight: .semibold),
+                tint: BrowserChromeColors.internalPageIcon,
+            )
         } else if BrowserFaviconFallbackStyle.style(forPageURLString: pageURLString) == .chromiumWebUI {
-            image = NSImage(named: "ChromiumWebUIFavicon")
-            contentTintColor = nil
+            show(NSImage(named: "ChromiumWebUIFavicon"), tint: nil)
         } else if let cached = cache.image(for: url) {
-            image = cached
-            contentTintColor = nil
+            show(cached, tint: nil)
         } else if fallback == .square {
-            image = Self.squareImage
-            contentTintColor = NSColor.labelColor.withAlphaComponent(0.13)
+            show(Self.squareImage, tint: NSColor.labelColor.withAlphaComponent(0.13))
         } else {
-            image = Self.globeImage
-            contentTintColor = BrowserChromeColors.secondaryText
+            show(Self.globeImage, tint: BrowserChromeColors.secondaryText)
+        }
+    }
+
+    /// Every sidebar refresh asks each row's icon again; the same picture and tint
+    /// keep the drawn one instead of converting it for the screen once more. Vector
+    /// icons reach the cache as bitmaps, so one instance always draws the same.
+    private func show(_ newImage: NSImage?, tint: NSColor?) {
+        if image !== newImage {
+            image = newImage
+        }
+        if contentTintColor != tint {
+            contentTintColor = tint
         }
     }
 }

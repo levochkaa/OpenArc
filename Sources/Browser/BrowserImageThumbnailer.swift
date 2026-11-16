@@ -191,8 +191,10 @@ enum BrowserImageThumbnailer {
         context.imageInterpolation = .high
         image.draw(in: NSRect(x: 0, y: 0, width: width, height: height))
         NSGraphicsContext.restoreGraphicsState()
-        let rasterized = NSImage(size: NSSize(width: width, height: height))
-        rasterized.addRepresentation(bitmap)
+        // A finished picture, as decoded icons are: a bitmap rep handed to an image view
+        // a second time is not drawn again.
+        guard let cgImage = bitmap.cgImage else { return nil }
+        let rasterized = NSImage(cgImage: cgImage, size: NSSize(width: width, height: height))
         rasterized.isTemplate = image.isTemplate
         return rasterized
     }

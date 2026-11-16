@@ -144,6 +144,24 @@ private func makeFaviconTab(
     #expect(history.image != nil && history.image === clock)
 }
 
+/// A refresh that asks for the same icon does not hand the view its picture again,
+/// which made it convert the picture for the screen on every tab switch.
+@MainActor @Test func aRefreshWithTheSameIconLeavesTheViewAlone() {
+    let view = BrowserFaviconNSView(cache: BrowserFaviconCache())
+    view.update(url: nil, pageURLString: "https://example.com")
+    var sets = 0
+    let observation = view.observe(\.image) { _, _ in
+        MainActor.assumeIsolated { sets += 1 }
+    }
+    defer { observation.invalidate() }
+    for _ in 0..<3 {
+        view.update(url: nil, pageURLString: "https://example.com")
+    }
+    #expect(sets == 0)
+    view.update(url: nil, pageURLString: "openarc://history/")
+    #expect(sets == 1)
+}
+
 /// A sidebar row shows the plain square until the page's icon arrives, then the icon
 /// itself, untinted.
 @MainActor @Test func anArrivingIconReplacesTheSquare() throws {
