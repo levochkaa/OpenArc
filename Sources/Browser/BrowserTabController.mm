@@ -2973,6 +2973,20 @@ bool IsOpenArcBookmarksURL(const CefString &url) {
 
 /// Where a web sign-in ends: `openarc-auth://callback?…`. The app takes it
 /// instead of the page.
+/// A link to an app, such as slack://, opens the app instead of an error page. Returns
+/// whether the navigation is the app's.
+bool HandOverExternalAppURL(CefRefPtr<CefRequest> request, NSWindow *window) {
+  NSString *targetURLString = ToNSString(request->GetURL().ToString());
+  if (![BrowserExternalAppLauncher.shared handles:targetURLString]) {
+    return false;
+  }
+  __weak NSWindow *weakWindow = window;
+  dispatch_async(dispatch_get_main_queue(), ^{
+    [BrowserExternalAppLauncher.shared open:targetURLString in:weakWindow];
+  });
+  return true;
+}
+
 bool IsSignInCallbackURL(const CefString &url) {
   CefURLParts parts;
   return CefParseURL(url, parts) && CefString(&parts.scheme).ToString() == "openarc-auth";
@@ -3991,6 +4005,7 @@ struct TabRecord {
 - (void)expectDevToolsForTabID:(NSString *)tabID;
 - (void)updateBrowserVisibility;
 - (void)updateBrowserVisibilityFocusingActiveTab:(BOOL)focusActive;
+- (NSWindow *)tabWindow;
 - (void)handleFocusForTabID:(NSString *)tabID;
 - (void)requestSitePermissionForTabID:(NSString *)tabID
                                origin:(NSString *)origin
@@ -7528,6 +7543,10 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
   }
 }
 
+- (NSWindow *)tabWindow {
+  return _hostView.window;
+}
+
 - (void)updateBrowserVisibilityFocusingActiveTab:(BOOL)focusActive {
   dispatch_async(dispatch_get_main_queue(), ^{
     [self presentWaitingDialogs];
@@ -8172,13 +8191,22 @@ bool BrowserTabClient::OnBeforeBrowse(CefRefPtr<CefBrowser> browser,
                                       bool is_redirect) {
   CEF_REQUIRE_UI_THREAD();
 
-  if (!frame || !frame->IsMain() || !request) {
+  if (!frame || !request) {
     return false;
   }
 
   if (IsSignInCallbackURL(request->GetURL())) {
     PostSignInCallback(request->GetURL());
     return true;
+  }
+
+  // In any frame: sites hand an app link over from a redirect or a hidden frame.
+  if (HandOverExternalAppURL(request, [controller_ tabWindow])) {
+    return true;
+  }
+
+  if (!frame->IsMain()) {
+    return false;
   }
 
   if (allow_next_chromium_internal_navigation_ &&
@@ -8759,6 +8787,9 @@ bool BrowserPeekClient::OnBeforeBrowse(CefRefPtr<CefBrowser>,
                                        bool,
                                        bool) {
   CEF_REQUIRE_UI_THREAD();
+  if (frame && request && HandOverExternalAppURL(request, NSApp.keyWindow)) {
+    return true;
+  }
   if (!frame || !frame->IsMain() || !request || !IsSignInCallbackURL(request->GetURL())) {
     return false;
   }
