@@ -82,13 +82,13 @@ import Testing
 
         #expect(f.model.importArcSidebar(sidebar).spaceCount == 1, "Work is already there; the untitled Space is not")
 
-        // Selecting a dormant tab loads it.
+        // Opening a Space of unloaded tabs shows none; selecting one loads it.
         let mail = try #require(f.model.tabs.first { $0.urlString == "https://mail.example" && $0.spaceID == work.id })
         f.model.selectSpace(id: work.id)
-        #expect(
-            f.model.tabs.first { $0.syncID == mail.syncID }?.id != mail.id,
-            "Opening a Space of unloaded tabs loads the one it shows",
-        )
+        #expect(f.model.selectedTabID == nil)
+        #expect(f.driver.createdTabRequests.count == createdBefore)
+        f.model.selectTab(id: mail.id)
+        #expect(f.model.tabs.first { $0.syncID == mail.syncID }?.id != mail.id)
         #expect(f.model.selectedTabID == f.model.tabs.first { $0.syncID == mail.syncID }?.id)
     }
 

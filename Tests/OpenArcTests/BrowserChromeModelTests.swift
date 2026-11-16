@@ -531,6 +531,42 @@ import Testing
 }
 
 @Test
+@MainActor func spaceWithoutOpenTabStaysEmptyWhenSelected() {
+    let driver = FakeBrowserTabDriver()
+    let model = makeModel(
+        driver: driver,
+        snapshotStore: InMemorySessionSnapshotStore(),
+        preferencesStore: InMemorySessionPreferencesStore(),
+        spaceIDProvider: { "space-2" },
+    )
+
+    model.handleContextReady()
+    driver.flushPendingCreateEvents()
+    let firstTabID = model.tabs[0].id
+    model.createNewSpace()
+    model.createNewTab()
+    driver.flushPendingCreateEvents()
+    let pinnedTabID = model.tabs[1].id
+    let pinnedSyncID = model.tabs[1].syncID
+    model.moveTab(withID: pinnedTabID, toPlacement: .spacePinned, atSectionIndex: 0, targetSpaceID: "space-2")
+    #expect(model.closePinnedTabProcessOrReset(id: pinnedTabID, forceClose: true))
+    model.createNewTab()
+    driver.flushPendingCreateEvents()
+    // Closing the last open tab leaves the Space empty.
+    model.closeTab(id: model.selectedTabID ?? "")
+    #expect(model.selectedTabID == nil)
+    #expect(model.tabs.contains {
+        $0.syncID == pinnedSyncID && $0.spaceID == "space-2" && $0.placement == .spacePinned
+    })
+
+    model.selectSpace(id: BrowserChromeModel.defaultSpaceID)
+    #expect(model.selectedTabID == firstTabID)
+    model.selectSpace(id: "space-2")
+
+    #expect(model.selectedTabID == nil)
+}
+
+@Test
 @MainActor func spaceMetadataMutationsPersistAndRestore() {
     let driver = FakeBrowserTabDriver()
     let snapshotStore = InMemorySessionSnapshotStore()

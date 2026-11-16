@@ -5286,7 +5286,7 @@ enum BrowserWindowMode: Equatable {
             let remoteIndex = snapshot.spaces?.first { $0.id == spaces[index].id }?.selectedTabIndex
             spaces[index].selectedTabID = remoteIndex.flatMap {
                 visibleTabs.indices.contains($0) ? visibleTabs[$0].id : nil
-            } ?? visibleTabs.first?.id
+            } ?? visibleTabs.first { !hasNoPage($0.id) }?.id
         }
         if let selectedTab = tabs.first(where: { $0.id == selectedTabID }) {
             selectedSpaceID = selectedTab.spaceID
@@ -7939,9 +7939,10 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
                 return nil
             }
             return tabID
-        } ?? sidebarTabs(forSpaceID: selectedSpaceID).first?.id
-        // An unloaded tab has no page to show: the Space's remembered tab, or
-        // its first, loads through the same path as a click.
+        } ?? sidebarTabs(forSpaceID: selectedSpaceID).first { !hasNoPage($0.id) }?.id
+        // An unloaded tab has no page to show: the Space's remembered tab loads
+        // through the same path as a click. A Space without a remembered tab or
+        // an open page stays empty.
         if let candidate, hasNoPage(candidate), !isApplyingRemoteSync, !isReconcilingRemoteProjection,
            !(isAdditionalWindow && isRestoringSession), !isPageInAnotherWindow(candidate)
         {
