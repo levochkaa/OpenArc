@@ -73,6 +73,15 @@ final class BrowserRootView: NSView {
     private let extensionVisibility = BrowserNativeVisibilityAnimation()
     /// Model changes refresh the window once per run loop pass.
     private lazy var coalescedRefresh = BrowserCoalescedRefresh { [weak self] in self?.refresh() }
+    /// The command bars draw their own text and suggestions; the window only follows
+    /// them opening and closing.
+    private lazy var commandBarPresenceRefresh = BrowserCoalescedRefresh(
+        key: { [weak self] in
+            guard let self else { return nil }
+            return [commandBarModel.isPresented, currentPageCommandBarModel.isPresented]
+        },
+        { [weak self] in self?.refresh() },
+    )
     private var revealTask: Task<Void, Never>?
     private var previousLayoutState: [LayoutFlag: Bool]?
     private let presentationMotion = BrowserNativeFrameTransitions()
@@ -388,12 +397,14 @@ final class BrowserRootView: NSView {
         extensionResize.setAccessibilityIdentifier("browser.extensions.resize")
         coalescedRefresh.observe([
             model.objectWillChange.eraseToAnyPublisher(),
-            commandBarModel.objectWillChange.eraseToAnyPublisher(),
-            currentPageCommandBarModel.objectWillChange.eraseToAnyPublisher(),
             preferences.objectWillChange.eraseToAnyPublisher(),
             shortcutStore.objectWillChange.eraseToAnyPublisher(),
             model.bookmarksModel.objectWillChange.eraseToAnyPublisher(),
             updateController.objectWillChange.eraseToAnyPublisher(),
+        ])
+        commandBarPresenceRefresh.observe([
+            commandBarModel.objectWillChange.eraseToAnyPublisher(),
+            currentPageCommandBarModel.objectWillChange.eraseToAnyPublisher(),
         ])
         refresh()
     }

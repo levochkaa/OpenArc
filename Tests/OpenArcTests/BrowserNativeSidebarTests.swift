@@ -30,6 +30,26 @@ import Testing
         #expect(refreshes == 2)
     }
 
+    /// Typing in the command bar redraws only the bar; the window follows the bar opening
+    /// and closing.
+    @Test func aKeyedRefreshRunsOnlyWhenItsKeyChanges() {
+        var isPresented = false
+        var refreshes = 0
+        let refresh = BrowserCoalescedRefresh(key: { isPresented }) { refreshes += 1 }
+        let changes = PassthroughSubject<Void, Never>()
+        refresh.observe([changes.eraseToAnyPublisher()])
+        changes.send()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        #expect(refreshes == 1, "The first change sets the key")
+        changes.send()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        #expect(refreshes == 1, "Same key, nothing to redraw")
+        isPresented = true
+        changes.send()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        #expect(refreshes == 2)
+    }
+
     @Test func clearRequiresSecondActionForActiveTemporaryTab() throws {
         let (model, _) = makeModel()
         let active = try #require(model.temporaryTabs.last)

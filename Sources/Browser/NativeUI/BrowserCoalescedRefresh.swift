@@ -15,13 +15,25 @@ import Foundation
 
     private let requests = PassthroughSubject<Void, Never>()
     private var isRequested = false
+    private var hasRun = false
+    private var lastKey: AnyHashable?
     private var observations = Set<AnyCancellable>()
 
-    init(_ action: @escaping @MainActor () -> Void) {
+    /// With `key`, the action runs only when the key differs from the last run's.
+    init(
+        key: (@MainActor () -> AnyHashable?)? = nil,
+        _ action: @escaping @MainActor () -> Void,
+    ) {
         requests.receive(on: RunLoop.main)
             .sink { [weak self] in
                 guard let self else { return }
                 self.isRequested = false
+                if let key {
+                    let current = key()
+                    guard !hasRun || current != lastKey else { return }
+                    self.lastKey = current
+                }
+                self.hasRun = true
                 runCount += 1
                 action()
             }
