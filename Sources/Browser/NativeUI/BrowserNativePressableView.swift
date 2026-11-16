@@ -34,6 +34,8 @@ class BrowserNativePressableView: BrowserNativeSurface {
     private(set) var isDragging = false
     var onClick: (NSEvent?) -> Void = { _ in }
     var onDoubleClick: ((NSEvent?) -> Void)?
+    /// Acts on the press itself; returning true drops the single click its release would send.
+    var onPress: ((NSEvent) -> Bool)?
     var onHoverChanged: (Bool) -> Void = { _ in }
     var onBeginDragSession: ((BrowserNativeDragValue) -> Bool)?
     var onDragChanged: ((BrowserNativeDragValue) -> Void)?
@@ -64,6 +66,7 @@ class BrowserNativePressableView: BrowserNativeSurface {
     private let pressAnimation = BrowserNativeAnimation()
     private var displayedScale: CGFloat = 1
     private var downEvent: NSEvent?
+    private var pressActedOnDown = false
     private var dragGrabAnchor: CGPoint?
     private var hasExternalDragSession = false
     private var previousDragSample: (point: CGPoint, time: TimeInterval)?
@@ -161,6 +164,7 @@ class BrowserNativePressableView: BrowserNativeSurface {
         velocity = .zero
         isDragging = false
         setPressed(true)
+        pressActedOnDown = onPress?(event) ?? false
     }
 
     override func mouseDragged(with event: NSEvent) {
@@ -207,7 +211,7 @@ class BrowserNativePressableView: BrowserNativeSurface {
             BrowserNativeTooltipPresenter.shared.end(id: tooltipID, detached: true)
             if event.clickCount >= 2, let onDoubleClick {
                 onDoubleClick(event)
-            } else {
+            } else if !pressActedOnDown {
                 onClick(event)
             }
         }

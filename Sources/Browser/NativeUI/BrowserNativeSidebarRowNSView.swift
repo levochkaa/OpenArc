@@ -218,6 +218,7 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
             }
         }
         onClick = { [weak self] event in self?.primaryClick(event) }
+        onPress = { [weak self] event in self?.selectOnPress(event) ?? false }
         onDoubleClick = { [weak self] event in
             guard let self else { return }
             if kind == .tab, let event, !event.modifierFlags.intersection([.command, .shift]).isEmpty {
@@ -839,6 +840,36 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
         let chip = point.flatMap { point in splitChips.first { $0.frame.contains(point) } }
         if let id = chip?.tabID ?? splitChips.first(where: \.isFocused)?.tabID ?? splitMemberIDs.first {
             onSelectSplitMember(id)
+        }
+    }
+
+    /// A plain press shows its page at once instead of on release; a press on
+    /// the shown tab still renames it on release.
+    private func selectOnPress(_ event: NSEvent) -> Bool {
+        guard !isRenaming, event.clickCount == 1,
+              event.modifierFlags.intersection([.command, .shift, .control, .option]).isEmpty
+        else { return false }
+        switch kind {
+        case .tab:
+            if selected {
+                return false
+            }
+            if splitPinnedControls {
+                let point = convert(event.locationInWindow, from: nil)
+                if point.x >= indent, point.x < indent + BrowserChromeLayout.sidebarPinnedURLIconButtonSize {
+                    return false
+                }
+            }
+            onSelect()
+            return true
+        case .appTab:
+            onSelect()
+            return true
+        case .split:
+            selectSplitMember(at: event)
+            return true
+        case .folder, .newTab, .space:
+            return false
         }
     }
 

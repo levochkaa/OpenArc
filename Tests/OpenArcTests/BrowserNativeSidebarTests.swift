@@ -180,6 +180,32 @@ import Testing
         #expect(toggles == 1)
     }
 
+    @Test func pressingATabShowsItBeforeRelease() throws {
+        let row = BrowserNativeSidebarRowNSView(frame: NSRect(x: 0, y: 0, width: 240, height: 36))
+        var selections = 0
+        var renames = 0
+        row.onSelect = { selections += 1 }
+        row.onBeginRename = { renames += 1 }
+        func event(_ type: NSEvent.EventType) throws -> NSEvent {
+            try #require(NSEvent.mouseEvent(
+                with: type, location: CGPoint(x: 120, y: 18), modifierFlags: [], timestamp: 1,
+                windowNumber: 0, context: nil, eventNumber: 1, clickCount: 1, pressure: 1,
+            ))
+        }
+        row.update(tab: tab(), selected: false, isResizing: false, closeDescriptor: BrowserCommands.archiveTab)
+        try row.mouseDown(with: event(.leftMouseDown))
+        #expect(selections == 1)
+        try row.mouseUp(with: event(.leftMouseUp))
+        #expect(selections == 1)
+        #expect(renames == 0)
+
+        row.update(tab: tab(), selected: true, isResizing: false, closeDescriptor: BrowserCommands.archiveTab)
+        try row.mouseDown(with: event(.leftMouseDown))
+        #expect(selections == 1)
+        try row.mouseUp(with: event(.leftMouseUp))
+        #expect(renames == 1)
+    }
+
     @Test func activeRowRenamesAndOtherRowsSelect() {
         let row = BrowserNativeSidebarRowNSView(frame: NSRect(x: 0, y: 0, width: 240, height: 36))
         var selections = 0
