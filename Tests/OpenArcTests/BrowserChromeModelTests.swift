@@ -1093,6 +1093,33 @@ import Testing
 }
 
 @Test
+@MainActor func aFolderOpensBeforeItIsSaved() throws {
+    let driver = FakeBrowserTabDriver()
+    let snapshotStore = InMemorySessionSnapshotStore()
+    let model = makeModel(
+        driver: driver,
+        snapshotStore: snapshotStore,
+        preferencesStore: InMemorySessionPreferencesStore(),
+    )
+    model.handleContextReady()
+    driver.flushPendingCreateEvents()
+    model.createNewTab()
+    driver.flushPendingCreateEvents()
+    let tabID = model.tabs[0].id
+    model.togglePinned(forTabID: tabID)
+    let folderID = try #require(model.createPinnedTabFolder(containingTabIDs: [tabID]))
+    let saves = snapshotStore.savedSnapshots.count
+    let expanded = model.pinnedTabFolders.first { $0.id == folderID }?.isExpanded
+
+    model.togglePinnedTabFolderExpanded(id: folderID)
+    #expect(model.pinnedTabFolders.first { $0.id == folderID }?.isExpanded == expanded.map { !$0 })
+    #expect(snapshotStore.savedSnapshots.count == saves, "Not while the rows move")
+    RunLoop.main.run(until: Date().addingTimeInterval(BrowserChromeModel.selectionPersistDelay + 0.1))
+    #expect(snapshotStore.savedSnapshots.count == saves + 1)
+    #expect(snapshotStore.savedSnapshots.last?.pinnedTabFolders?.first?.isExpanded == expanded.map { !$0 })
+}
+
+@Test
 @MainActor func createSelectAndClosePersistState() {
     let driver = FakeBrowserTabDriver()
     let snapshotStore = InMemorySessionSnapshotStore()

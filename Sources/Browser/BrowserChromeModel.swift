@@ -2445,7 +2445,7 @@ enum BrowserWindowMode: Equatable {
         }
 
         pinnedTabFolders[index].isExpanded.toggle()
-        persistCurrentSessionIfAllowed()
+        persistSessionSoon()
     }
 
     func setTitle(_ title: String?, forPinnedTabFolderID folderID: String) {
@@ -4084,7 +4084,7 @@ enum BrowserWindowMode: Equatable {
         recordSelectedTab(id)
         updateWindowTitle()
         BrowserTelemetry.captureUsage(.tabSelected, properties: telemetryProperties(for: tab))
-        persistSelectionSoon()
+        persistSessionSoon()
         runFind(forward: true, findNext: false)
     }
 
@@ -4643,7 +4643,9 @@ enum BrowserWindowMode: Equatable {
         return closeTab(id: id)
     }
 
-    private func persistSelectionSoon() {
+    /// Saves shortly after a change that shows at once: the save reads and rewrites the
+    /// whole session on the main thread, about 10 ms that would hold its first frames.
+    private func persistSessionSoon() {
         pendingSelectionPersist?.invalidate()
         let timer = Timer(timeInterval: Self.selectionPersistDelay, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated {
