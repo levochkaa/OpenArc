@@ -7535,9 +7535,11 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
         }
 
         var didChangePersistentURL = false
+        var didChangeTitle = false
 
         if let title, tabs[index].title != title {
             tabs[index].title = title
+            didChangeTitle = true
             windowGroup?.pageTitleDidChange(title, syncID: tabs[index].syncID, from: self)
         }
 
@@ -7560,12 +7562,14 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
             }
         }
 
-        if let faviconURLString {
+        // The engine repeats unchanged values, as while a page resizes; an unchanged tab
+        // publishes nothing.
+        if let faviconURLString, tabs[index].faviconURLString != faviconURLString {
             tabs[index].faviconURLString = faviconURLString
         }
 
         // The engine's history file lags; this session's pages stay searchable.
-        if windowMode != .incognito, title != nil || urlString != nil {
+        if windowMode != .incognito, didChangeTitle || didChangePersistentURL {
             historyStore.noteVisit(title: tabs[index].displayTitle, urlString: tabs[index].urlString)
         }
 

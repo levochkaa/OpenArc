@@ -722,6 +722,38 @@ import Testing
 }
 
 @Test
+@MainActor func anUnchangedEngineUpdateLeavesTheModelAlone() throws {
+    let driver = FakeBrowserTabDriver()
+    let model = makeModel(
+        driver: driver,
+        snapshotStore: InMemorySessionSnapshotStore(),
+        preferencesStore: InMemorySessionPreferencesStore(),
+    )
+    model.handleContextReady()
+    driver.flushPendingCreateEvents()
+    let tab = try #require(model.tabs.first)
+    driver.emitUpdate(
+        id: tab.id,
+        title: "Page",
+        urlString: "https://example.com/",
+        faviconURLString: "https://example.com/icon.png",
+    )
+    var changes = 0
+    let observation = model.objectWillChange.sink { changes += 1 }
+    defer { observation.cancel() }
+    driver.emitUpdate(
+        id: tab.id,
+        title: "Page",
+        urlString: "https://example.com/",
+        faviconURLString: "https://example.com/icon.png",
+    )
+    #expect(changes == 0, "The engine repeated what the tab already shows")
+    driver.emitUpdate(id: tab.id, title: nil, urlString: nil, faviconURLString: "https://example.com/new.png")
+    #expect(changes > 0)
+    #expect(model.tabs.first { $0.id == tab.id }?.faviconURLString == "https://example.com/new.png")
+}
+
+@Test
 @MainActor func clearTemporaryTabsCanPreserveSelectedTemporaryTab() throws {
     let driver = FakeBrowserTabDriver()
     let snapshotStore = InMemorySessionSnapshotStore()
