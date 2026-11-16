@@ -93,6 +93,46 @@ import Testing
     ], "The favicon before a larger touch icon, the site's icon for its other pages, none for unknown sites")
 }
 
+@Test func aLockedHistoryAnswersAtOnceAndIconsComeOnceItIsFree() throws {
+    let harness = try ChromiumHistoryHarness()
+    defer { harness.cleanup() }
+    try harness.insertHistory(
+        urlString: "https://a.example/",
+        title: "A",
+        visitCount: 1,
+        typedCount: 0,
+        lastVisitTime: 1,
+    )
+    let favicons = try DatabaseQueue(path: harness.profileDirectoryURL.appendingPathComponent("Favicons").path)
+    let png = Data([0x89, 0x50, 0x4E, 0x47])
+    try favicons.write { db in
+        try db.execute(sql: "CREATE TABLE favicons (id INTEGER PRIMARY KEY, url LONGVARCHAR, icon_type INTEGER)")
+        try db.execute(sql: "CREATE TABLE icon_mapping (page_url LONGVARCHAR, icon_id INTEGER)")
+        try db.execute(sql: "CREATE TABLE favicon_bitmaps (icon_id INTEGER, image_data BLOB, width INTEGER)")
+        try db.execute(sql: "INSERT INTO favicons VALUES (1, 'https://a.example/favicon.png', 1)")
+        try db.execute(sql: "INSERT INTO icon_mapping VALUES ('https://a.example/', 1)")
+        try db.execute(sql: "INSERT INTO favicon_bitmaps VALUES (1, ?, 32)", arguments: [png])
+    }
+    let store = BrowserChromiumHistoryStore(profileDirectoryCandidates: [harness.profileDirectoryURL])
+
+    // The engine writing: both databases locked.
+    try harness.dbQueue.inTransaction(.exclusive) { db in
+        try db.execute(sql: "UPDATE urls SET title = title")
+        try favicons.inTransaction(.exclusive) { db in
+            try db.execute(sql: "UPDATE favicons SET icon_type = icon_type")
+            let start = Date()
+            _ = store.recentSuggestions(maximumCount: 5)
+            #expect(store.pageIcons(for: ["https://a.example/"]).isEmpty)
+            #expect(Date().timeIntervalSince(start) < 0.05, "No wait for the lock")
+            return .rollback
+        }
+        return .rollback
+    }
+
+    #expect(store.pageIcons(for: ["https://a.example/"]) == ["https://a.example/": png])
+    try favicons.close()
+}
+
 // MARK: - ChromiumHistoryHarness
 
 private struct ChromiumHistoryHarness {

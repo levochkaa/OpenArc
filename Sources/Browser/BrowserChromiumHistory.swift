@@ -53,6 +53,15 @@ final class BrowserChromiumHistoryStore: BrowserHistorySearching, @unchecked Sen
 
     private static let maximumSessionPages = 500
 
+    /// Reads on the main thread don't wait while the engine writes: a locked
+    /// database answers from the index at once.
+    private static var mainThreadReading: Configuration {
+        var configuration = Configuration()
+        configuration.readonly = true
+        configuration.busyMode = .immediateError
+        return configuration
+    }
+
     private let profileDirectoryCandidates: [URL]
     private let fileManager: FileManager
     private var searchIndex: BrowserSearchIndex?
@@ -295,10 +304,7 @@ final class BrowserChromiumHistoryStore: BrowserHistorySearching, @unchecked Sen
     private func storedRecentSuggestions(maximumCount: Int) -> [BrowserCommandSuggestion] {
         guard maximumCount > 0, let historyURL = existingHistoryURL else { return [] }
         do {
-            var configuration = Configuration()
-            configuration.readonly = true
-            configuration.busyMode = .timeout(0.1)
-            let dbQueue = try DatabaseQueue(path: historyURL.path, configuration: configuration)
+            let dbQueue = try DatabaseQueue(path: historyURL.path, configuration: Self.mainThreadReading)
             defer { try? dbQueue.close() }
             let rows = try dbQueue.read { db in
                 try Row.fetchAll(
@@ -343,10 +349,7 @@ final class BrowserChromiumHistoryStore: BrowserHistorySearching, @unchecked Sen
             .replacingOccurrences(of: "%", with: "\\%")
             .replacingOccurrences(of: "_", with: "\\_") + "%"
         do {
-            var configuration = Configuration()
-            configuration.readonly = true
-            configuration.busyMode = .timeout(0.1)
-            let dbQueue = try DatabaseQueue(path: historyURL.path, configuration: configuration)
+            let dbQueue = try DatabaseQueue(path: historyURL.path, configuration: Self.mainThreadReading)
             defer { try? dbQueue.close() }
             let rows = try dbQueue.read { db in
                 try Row.fetchAll(
@@ -412,10 +415,7 @@ final class BrowserChromiumHistoryStore: BrowserHistorySearching, @unchecked Sen
         }
 
         do {
-            var configuration = Configuration()
-            configuration.readonly = true
-            configuration.busyMode = .timeout(0.1)
-            let dbQueue = try DatabaseQueue(path: historyURL.path, configuration: configuration)
+            let dbQueue = try DatabaseQueue(path: historyURL.path, configuration: Self.mainThreadReading)
             defer { try? dbQueue.close() }
             let pattern = Self.likePattern(for: trimmedQuery)
             let rows = try dbQueue.read { db in
@@ -488,30 +488,16 @@ final class BrowserChromiumHistoryStore: BrowserHistorySearching, @unchecked Sen
         let missing = urlStrings.filter { iconCache[$0] == nil }
         if !missing.isEmpty, let historyURL = existingHistoryURL {
             let path = historyURL.deletingLastPathComponent().appendingPathComponent("Favicons").path
-            var configuration = Configuration()
-            configuration.readonly = true
-            configuration.busyMode = .timeout(0.1)
             if FileManager.default.fileExists(atPath: path),
-               let dbQueue = try? DatabaseQueue(path: path, configuration: configuration)
+               let dbQueue = try? DatabaseQueue(path: path, configuration: Self.mainThreadReading)
             {
                 defer { try? dbQueue.close() }
                 for urlString in missing {
-                    iconCache[urlString] = .some(try? dbQueue.read { db in
-                        // The page's own favicon before touch icons, which are larger but
-                        // drawn on a plate; a page never visited takes its site's icon.
-                        try Data.fetchOne(
-                            db,
-                            sql: """
-                            SELECT b.image_data
-                            FROM favicon_bitmaps b
-                            JOIN icon_mapping m ON m.icon_id = b.icon_id
-                            JOIN favicons f ON f.id = b.icon_id
-                            WHERE m.page_url = ?
-                            ORDER BY f.icon_type = 1 DESC, b.width DESC
-                            LIMIT 1
-                            """,
-                            arguments: [urlString],
-                        ) ?? Self.originPrefix(of: urlString).flatMap { prefix in
+                    // A locked database is asked again next time; its pages aren't taken as iconless.
+                    do {
+                        iconCache[urlString] = try .some(dbQueue.read { db in
+                            // The page's own favicon before touch icons, which are larger but
+                            // drawn on a plate; a page never visited takes its site's icon.
                             try Data.fetchOne(
                                 db,
                                 sql: """
@@ -519,14 +505,30 @@ final class BrowserChromiumHistoryStore: BrowserHistorySearching, @unchecked Sen
                                 FROM favicon_bitmaps b
                                 JOIN icon_mapping m ON m.icon_id = b.icon_id
                                 JOIN favicons f ON f.id = b.icon_id
-                                WHERE substr(m.page_url, 1, length(?)) = ? AND f.icon_type = 1
-                                ORDER BY b.width DESC
+                                WHERE m.page_url = ?
+                                ORDER BY f.icon_type = 1 DESC, b.width DESC
                                 LIMIT 1
                                 """,
-                                arguments: [prefix, prefix],
-                            )
-                        }
-                    })
+                                arguments: [urlString],
+                            ) ?? Self.originPrefix(of: urlString).flatMap { prefix in
+                                try Data.fetchOne(
+                                    db,
+                                    sql: """
+                                    SELECT b.image_data
+                                    FROM favicon_bitmaps b
+                                    JOIN icon_mapping m ON m.icon_id = b.icon_id
+                                    JOIN favicons f ON f.id = b.icon_id
+                                    WHERE substr(m.page_url, 1, length(?)) = ? AND f.icon_type = 1
+                                    ORDER BY b.width DESC
+                                    LIMIT 1
+                                    """,
+                                    arguments: [prefix, prefix],
+                                )
+                            }
+                        })
+                    } catch {
+                        break
+                    }
                 }
             }
         }
