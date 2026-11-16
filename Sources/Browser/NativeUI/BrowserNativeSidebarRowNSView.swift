@@ -132,7 +132,6 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
     private var tabIcon: String?
     private var accessoryHovered = false
     private var hasPinnedTabs = false
-    private let opacityAnimation = BrowserNativeAnimation()
     private var appearanceProgress: CGFloat = 1
     private let captionAnimation = BrowserNativeAnimation()
     private let disclosureAnimation = BrowserNativeAnimation()
@@ -451,15 +450,22 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
         needsDisplay = true
     }
 
+    /// Fades the row in on the render server, so a busy main thread, as when a
+    /// folder opens, cannot hold its frames.
     func animateInsertion() {
         guard window != nil else { return }
-        appearanceProgress = 0
-        alphaValue = 0
-        opacityAnimation.start(.rowFade) { [weak self] progress in
-            guard let self else { return }
-            appearanceProgress = min(max(progress, 0), 1)
-            alphaValue = dragOpacity * appearanceProgress
+        appearanceProgress = 1
+        wantsLayer = true
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        alphaValue = dragOpacity
+        if let layer, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            let fade = BrowserNativeAnimation.Curve.rowFade.layerAnimation(keyPath: "opacity")
+            fade.fromValue = 0
+            fade.toValue = Float(dragOpacity)
+            layer.add(fade, forKey: "insertion")
         }
+        CATransaction.commit()
     }
 
     /// Fades the row out. With `rising`, it also moves up that far, its title gone at
@@ -483,12 +489,7 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
             layer?.add(animation, forKey: "fold")
         }
         if rising > 0 {
-            let from = appearanceProgress
-            opacityAnimation.start(.rowFade) { [weak self] progress in
-                guard let self else { return }
-                appearanceProgress = from * min(max(1 - progress, 0), 1)
-                alphaValue = dragOpacity * appearanceProgress
-            } completion: { [weak self] in self?.removeFromSuperview() }
+            fadeOutAndRemove(curve: .rowFade)
             return
         }
         fadeOutAndRemove()
@@ -751,8 +752,8 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
     /// A closed row is gone within a few frames, before the rows below arrive in its
     /// place, and sits under them meanwhile. The fade runs in the render server, so the
     /// work the close starts on the main thread does not hold it.
-    private func fadeOutAndRemove() {
-        opacityAnimation.cancel()
+    /// Without a curve, the quick ease-out of a closed row.
+    private func fadeOutAndRemove(curve: BrowserNativeAnimation.Curve? = nil) {
         wantsLayer = true
         superview?.addSubview(self, positioned: .below, relativeTo: nil)
         guard let layer, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
@@ -765,11 +766,16 @@ final class BrowserNativeSidebarRowNSView: BrowserNativePressableView, NSTextFie
         CATransaction.setDisableActions(true)
         CATransaction.setCompletionBlock { [weak self] in self?.removeFromSuperview() }
         alphaValue = 0
-        let fade = CABasicAnimation(keyPath: "opacity")
+        let fade: CABasicAnimation
+        if let curve {
+            fade = curve.layerAnimation(keyPath: "opacity")
+        } else {
+            fade = CABasicAnimation(keyPath: "opacity")
+            fade.duration = Self.removalFadeDuration
+            fade.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        }
         fade.fromValue = from
         fade.toValue = 0
-        fade.duration = Self.removalFadeDuration
-        fade.timingFunction = CAMediaTimingFunction(name: .easeOut)
         layer.add(fade, forKey: "removal")
         CATransaction.commit()
     }

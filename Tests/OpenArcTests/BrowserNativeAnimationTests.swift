@@ -92,4 +92,27 @@ import Testing
         #expect(!view.isHidden)
         #expect(view.alphaValue == 1)
     }
+
+    @Test func rowsFadeInAndOutOnTheRenderServer() throws {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 240, height: 100),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false,
+        )
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let content = try #require(window.contentView)
+        let row = BrowserNativeSidebarRowNSView(frame: NSRect(x: 0, y: 0, width: 240, height: 36))
+        content.addSubview(row)
+
+        row.animateInsertion()
+        #expect(row.alphaValue == 1, "Its final look is set at once")
+        #expect(row.layer?.animation(forKey: "insertion") != nil)
+
+        row.removeAnimated(rising: 36)
+        #expect(row.alphaValue == 0)
+        #expect(row.layer?.animation(forKey: "removal") != nil)
+        #expect(row.superview != nil, "It leaves once the fade ends")
+    }
 }
