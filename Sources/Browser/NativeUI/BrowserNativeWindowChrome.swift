@@ -110,6 +110,13 @@ final class BrowserChromeBackgroundNSView: NSView {
         }
     }
 
+    /// The theme's gradient is drawn for a shape and stretched to near ones: redrawing it
+    /// at every step of a sidebar resize cost more than the 3% stretch shows.
+    static func themeNeedsRender(aspect: CGFloat, renderedAspect: CGFloat) -> Bool {
+        guard renderedAspect > 0 else { return true }
+        return abs(aspect - renderedAspect) / renderedAspect > 0.03
+    }
+
     /// The selected Space's theme, nil for neutral. A different Space's theme
     /// cross-fades as its page slides in; edits in progress apply at once.
     func setTheme(_ theme: BrowserSpaceTheme?, animated: Bool, delay: CFTimeInterval = 0) {
@@ -176,7 +183,8 @@ final class BrowserChromeBackgroundNSView: NSView {
         guard bounds.width > 0, bounds.height > 0 else { return }
         let aspect = bounds.width / bounds.height
         let isDark = appliedDark(theme)
-        guard force || abs(aspect - renderedAspect) > 0.005 || isDark != renderedIsDark else { return }
+        guard force || Self.themeNeedsRender(aspect: aspect, renderedAspect: renderedAspect)
+            || isDark != renderedIsDark else { return }
         currentTheme.alphaValue = 1
         currentTheme.render(theme, aspect: aspect, isDark: isDark)
         renderedAspect = aspect

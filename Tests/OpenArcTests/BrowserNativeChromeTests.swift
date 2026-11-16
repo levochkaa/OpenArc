@@ -9,6 +9,15 @@ import Testing
 @MainActor struct BrowserNativeChromeTests {
     // MARK: Internal
 
+    /// A sidebar resize stretches the drawn theme until its shape changes by 3%.
+    @Test func aThemeRedrawsOnlyForAClearlyNewShape() {
+        #expect(BrowserChromeBackgroundNSView.themeNeedsRender(aspect: 0.25, renderedAspect: 0))
+        #expect(!BrowserChromeBackgroundNSView.themeNeedsRender(aspect: 0.2525, renderedAspect: 0.25))
+        #expect(!BrowserChromeBackgroundNSView.themeNeedsRender(aspect: 0.2433, renderedAspect: 0.25))
+        #expect(BrowserChromeBackgroundNSView.themeNeedsRender(aspect: 0.26, renderedAspect: 0.25))
+        #expect(BrowserChromeBackgroundNSView.themeNeedsRender(aspect: 1.6, renderedAspect: 0.25))
+    }
+
     /// Refreshes set a surface's colors on every pass; only a new value redraws it.
     @Test func settingTheSameLookDoesNotRedrawASurface() {
         let surface = RedrawCountingSurface(frame: NSRect(x: 0, y: 0, width: 40, height: 20))
@@ -380,10 +389,10 @@ private final class RedrawCountingSurface: BrowserNativeSurface {
         }
     }
 
+    private(set) var redrawRequests = 0
+
     override func setNeedsDisplay(_ invalidRect: NSRect) {
         redrawRequests += 1
         super.setNeedsDisplay(invalidRect)
     }
-
-    private(set) var redrawRequests = 0
 }

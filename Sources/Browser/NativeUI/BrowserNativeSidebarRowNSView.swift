@@ -1276,6 +1276,9 @@ private final class BrowserDeveloperRowBorder: NSView {
     private let base = CAShapeLayer()
     private let dashes = CAShapeLayer()
 
+    /// The bounds the dashes were laid out for; every row has a border, mostly hidden.
+    private var shapedBounds: CGRect?
+
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
@@ -1295,8 +1298,15 @@ private final class BrowserDeveloperRowBorder: NSView {
 
     override func hitTest(_: NSPoint) -> NSView? { nil }
 
+    override func viewDidUnhide() {
+        super.viewDidUnhide()
+        needsLayout = true
+    }
+
     override func layout() {
         super.layout()
+        guard !isHidden, shapedBounds != bounds else { return }
+        shapedBounds = bounds
         let radius = BrowserChromeLayout.sidebarRowCornerRadius
         let path = CGPath(
             roundedRect: bounds.insetBy(dx: 1, dy: 1),
