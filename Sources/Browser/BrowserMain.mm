@@ -94,6 +94,8 @@ static void BrowserNameDefaultProfile(NSString* cache_root) {
 }
 
 int main(int argc, char* argv[]) {
+  // Runs while the engine loads, before a restored page can ask for the same.
+  BrowserStartLaunchWarmup();
   CefScopedLibraryLoader library_loader;
   if (!library_loader.LoadInMain()) {
     return 1;

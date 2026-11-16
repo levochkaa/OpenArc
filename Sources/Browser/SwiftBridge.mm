@@ -17,6 +17,10 @@ BOOL gHasPendingContextInitialization = NO;
 
 }  // namespace
 
+void BrowserStartLaunchWarmup(void) {
+  [BrowserLaunchWarmup start];
+}
+
 void BrowserCreateApplication(void) {
   gController = [[BrowserApplicationController alloc] init];
   [(NSObject*)gController performSelectorOnMainThread:@selector(createApplication)

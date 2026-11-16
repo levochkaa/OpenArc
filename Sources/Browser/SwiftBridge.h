@@ -5,6 +5,7 @@
 extern "C" {
 #endif
 
+void BrowserStartLaunchWarmup(void);
 void BrowserCreateApplication(void);
 void BrowserContextInitialized(void);
 int BrowserHasOpenBrowsers(void);
