@@ -7769,8 +7769,20 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
             return
         }
 
-        tabs[index].canGoBack = canGoBack
-        tabs[index].canGoForward = canGoForward
+        updateTab(at: index) {
+            $0.canGoBack = canGoBack
+            $0.canGoForward = canGoForward
+        }
+    }
+
+    /// Writes a tab back only when it changed: each write publishes the whole model,
+    /// and the engine repeats unchanged states, many per tab while a session loads.
+    private func updateTab(at index: Int, _ change: (inout Tab) -> Void) {
+        var tab = tabs[index]
+        change(&tab)
+        if tab != tabs[index] {
+            tabs[index] = tab
+        }
     }
 
     func handleTabCreationStateChange(id: String, state: BrowserTabCreationState) {
@@ -7792,22 +7804,25 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
         case (.creating, .failed),
              (.creating, .ready),
              (.failed, .creating):
-            tabs[index].creationState = state
+            break
         default:
             // Duplicates and obsolete outcomes cannot regress an attached page
             // or revive a refused attempt. Only explicit Retry starts another.
             return
         }
-        if state == .ready {
-            tabs[index].hasPendingLocalNavigation = false
-            if mutedTabSyncIDs.contains(tabs[index].syncID) {
-                tabDriver.setAudioMuted(true, forTabWithID: id)
+        updateTab(at: index) { tab in
+            tab.creationState = state
+            if state == .ready {
+                tab.hasPendingLocalNavigation = false
+            }
+            if state == .failed {
+                tab.isLoading = false
+                tab.canGoBack = false
+                tab.canGoForward = false
             }
         }
-        if state == .failed {
-            tabs[index].isLoading = false
-            tabs[index].canGoBack = false
-            tabs[index].canGoForward = false
+        if state == .ready, mutedTabSyncIDs.contains(tabs[index].syncID) {
+            tabDriver.setAudioMuted(true, forTabWithID: id)
         }
     }
 
@@ -7821,7 +7836,7 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
             crashedTabErrorCodes.removeValue(forKey: id)
             tabsNeedingReloadAfterCrash.remove(id)
         }
-        tabs[index].isLoading = isLoading
+        updateTab(at: index) { $0.isLoading = isLoading }
         guard id == selectedTabID else {
             return
         }
@@ -8657,25 +8672,30 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
             }
         }
 
-        for index in tabs.indices {
-            tabs[index].pinnedURLString =
-                if tabs[index].placement == .spacePinned {
-                    effectivePinnedURLString(forPinnedTab: tabs[index])
+        // One write for all tabs, and none when every tab is already valid.
+        var checkedTabs = tabs
+        for index in checkedTabs.indices {
+            checkedTabs[index].pinnedURLString =
+                if checkedTabs[index].placement == .spacePinned {
+                    effectivePinnedURLString(forPinnedTab: checkedTabs[index])
                 } else {
                     nil
                 }
 
-            guard let folderID = tabs[index].pinnedFolderID else {
+            guard let folderID = checkedTabs[index].pinnedFolderID else {
                 continue
             }
 
             guard
-                tabs[index].placement == .spacePinned,
-                folderSpaceIDsByID[folderID] == tabs[index].spaceID
+                checkedTabs[index].placement == .spacePinned,
+                folderSpaceIDsByID[folderID] == checkedTabs[index].spaceID
             else {
-                tabs[index].pinnedFolderID = nil
+                checkedTabs[index].pinnedFolderID = nil
                 continue
             }
+        }
+        if checkedTabs != tabs {
+            tabs = checkedTabs
         }
     }
 

@@ -754,6 +754,36 @@ import Testing
 }
 
 @Test
+@MainActor func repeatedEngineStatesLeaveTheModelAlone() throws {
+    let driver = FakeBrowserTabDriver()
+    let model = makeModel(
+        driver: driver,
+        snapshotStore: InMemorySessionSnapshotStore(),
+        preferencesStore: InMemorySessionPreferencesStore(),
+    )
+    model.handleContextReady()
+    driver.flushPendingCreateEvents()
+    let tab = try #require(model.tabs.first)
+    driver.emitTabCreationState(id: tab.id, state: .ready)
+    driver.emitNavigationStateChange(id: tab.id, canGoBack: true, canGoForward: false)
+    driver.emitLoadingStateChange(id: tab.id, isLoading: false)
+    var changes = 0
+    let observation = model.objectWillChange.sink { changes += 1 }
+    defer { observation.cancel() }
+    driver.emitNavigationStateChange(id: tab.id, canGoBack: true, canGoForward: false)
+    driver.emitTabCreationState(id: tab.id, state: .ready)
+    #expect(changes == 0, "Repeated states publish nothing")
+    var tabWrites = 0
+    let tabsObservation = model.$tabs.dropFirst().sink { _ in tabWrites += 1 }
+    defer { tabsObservation.cancel() }
+    driver.emitLoadingStateChange(id: tab.id, isLoading: false)
+    #expect(tabWrites == 0, "A repeated loading state leaves the tabs as they are")
+    driver.emitNavigationStateChange(id: tab.id, canGoBack: true, canGoForward: true)
+    #expect(changes > 0)
+    #expect(model.tabs.first { $0.id == tab.id }?.canGoForward == true)
+}
+
+@Test
 @MainActor func clearTemporaryTabsCanPreserveSelectedTemporaryTab() throws {
     let driver = FakeBrowserTabDriver()
     let snapshotStore = InMemorySessionSnapshotStore()
