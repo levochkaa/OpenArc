@@ -29,6 +29,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
     }
 
     private var aboutWindow: NSWindow?
+    private lazy var extensionsMenuDelegate = BrowserOnOpenMenuDelegate { [weak self] in
+        self?.updateExtensionsMenu($0)
+    }
+
     private let windowCommandTarget = BrowserWindowCommandTarget()
     private let undoCommandTarget = BrowserUndoCommandTarget()
     private var settingsWindowController: SettingsWindowController?
@@ -286,10 +290,6 @@ NSMenuDelegate, NSUserInterfaceValidations {
         }
         if menu.identifier == Self.spacesMenuIdentifier {
             updateSpacesMenu(menu)
-            return
-        }
-        if menu.identifier == Self.extensionsMenuIdentifier {
-            updateExtensionsMenu(menu)
             return
         }
         guard let installWebAppItem = menu.items.first(where: {
@@ -2174,7 +2174,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
     private func addExtensionsMenu(to menubar: NSMenu) {
         let menu = NSMenu(title: BrowserStrings.menuExtensions)
         menu.identifier = Self.extensionsMenuIdentifier
-        menu.delegate = self
+        menu.delegate = extensionsMenuDelegate
         let item = NSMenuItem()
         item.title = menu.title
         item.submenu = menu

@@ -7,6 +7,35 @@ import Testing
 @MainActor struct BrowserNativeChromeTests {
     // MARK: Internal
 
+    /// A menu without shortcuts is filled when it opens, not while AppKit looks for the
+    /// shortcut of each Command key press.
+    @Test func aMenuWithoutShortcutsFillsOnlyWhenItOpens() throws {
+        var fills = 0
+        let delegate = BrowserOnOpenMenuDelegate { menu in
+            fills += 1
+            menu.removeAllItems()
+            menu.addItem(withTitle: "Extension", action: nil, keyEquivalent: "")
+        }
+        let menu = NSMenu(title: "Extensions")
+        menu.delegate = delegate
+        let event = try #require(NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: .command,
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            characters: "k",
+            charactersIgnoringModifiers: "k",
+            isARepeat: false,
+            keyCode: 40,
+        ))
+        #expect(!menu.performKeyEquivalent(with: event))
+        #expect(fills == 0)
+        delegate.menuNeedsUpdate(menu)
+        #expect(fills == 1 && menu.items.map(\.title) == ["Extension"])
+    }
+
     /// A hovered row refreshes its tooltip with every sidebar redraw; the same tooltip in
     /// the same place stays as it is, and a new title lays it out again.
     @Test func refreshingAShownTooltipLeavesItAlone() async throws {
