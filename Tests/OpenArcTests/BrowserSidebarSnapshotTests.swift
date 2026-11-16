@@ -213,3 +213,70 @@ private func browserSidebarSnapshotTestTab(
         lastActivityAt: Date(timeIntervalSince1970: 0),
     )
 }
+
+/// A snapshot works out its pinned rows once per request: asking again, from a copy or
+/// with other revealed tabs, gives the same rows a fresh snapshot gives.
+@Test func pinnedRowsKeptForASnapshotMatchFreshlyWorkedOutRows() {
+    let space = BrowserChromeModel.Space(
+        id: "space",
+        title: "Space",
+        systemImageName: "square.grid.2x2",
+        isPinnedSectionCollapsed: false,
+        selectedTabID: "loose",
+    )
+    let folder = BrowserChromeModel.PinnedTabFolder(
+        id: "folder",
+        spaceID: space.id,
+        parentFolderID: nil,
+        title: "Folder",
+        systemImageName: nil,
+        isExpanded: false,
+    )
+    let inside = browserSidebarSnapshotTestTab(
+        id: "inside",
+        spaceID: space.id,
+        title: "Inside",
+        urlString: "https://inside.example",
+        placement: .spacePinned,
+        pinnedFolderID: folder.id,
+    )
+    let loose = browserSidebarSnapshotTestTab(
+        id: "loose",
+        spaceID: space.id,
+        title: "Loose",
+        urlString: "https://loose.example",
+        placement: .spacePinned,
+    )
+    func makeSnapshot() -> BrowserSidebarSnapshot {
+        BrowserSidebarSnapshot(
+            spaces: [space],
+            selectedSpaceID: space.id,
+            activeSpace: space,
+            isActiveSpacePinnedSectionCollapsed: false,
+            allTabs: [inside, loose],
+            pinnedTabFolders: [folder],
+            appTabs: [],
+            spacePinnedTabs: [inside, loose],
+            temporaryTabs: [],
+            selectedTabID: loose.id,
+            archivableTabIDs: [],
+            canGoBack: false,
+            canGoForward: false,
+            canStopLoading: false,
+            canReload: false,
+        )
+    }
+    let snapshot = makeSnapshot()
+    let closed = snapshot.visiblePinnedRows(in: space.id)
+    #expect(closed.map(\.id) == ["folder-\(folder.id)", "tab-\(loose.id)"])
+    var copy = snapshot
+    copy.tabIcons = [loose.id: "star"]
+    #expect(copy.visiblePinnedRows(in: space.id) == closed)
+    let revealed = copy.visiblePinnedRows(in: space.id, revealedTabIDsByFolderID: [folder.id: [inside.id]])
+    #expect(revealed.map(\.id) == ["folder-\(folder.id)", "tab-\(inside.id)", "tab-\(loose.id)"])
+    #expect(revealed == makeSnapshot().visiblePinnedRows(
+        in: space.id,
+        revealedTabIDsByFolderID: [folder.id: [inside.id]],
+    ))
+    #expect(snapshot == makeSnapshot(), "What a snapshot keeps does not change how it compares")
+}

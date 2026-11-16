@@ -41,6 +41,9 @@ struct BrowserSidebarSnapshot: Equatable {
     /// Symbols chosen in place of favicons, by runtime tab ID.
     var tabIcons = [String: String]()
 
+    /// Pinned rows already worked out from this snapshot, shared by its copies.
+    private let pinnedRowsCache = BrowserSidebarPinnedRowsCache()
+
     var selectedTab: BrowserChromeModel.Tab? {
         guard let selectedTabID else {
             return nil
@@ -82,9 +85,50 @@ struct BrowserSidebarSnapshot: Equatable {
         pinnedTabFolders.first { $0.id == folderID }
     }
 
+    /// The pinned section's rows in order: folders, their open children and the tabs
+    /// they reveal. Worked out once per snapshot and request, since a sidebar refresh
+    /// asks for every Space page more than once.
     func visiblePinnedRows(
         in spaceID: String,
         revealedTabIDsByFolderID: [String: Set<String>] = [:],
+    ) -> [BrowserSidebarPinnedRow] {
+        let key = BrowserSidebarPinnedRowsCache.Key(spaceID: spaceID, revealed: revealedTabIDsByFolderID)
+        if let rows = pinnedRowsCache.rows(for: key) {
+            return rows
+        }
+        let rows = computeVisiblePinnedRows(in: spaceID, revealedTabIDsByFolderID: revealedTabIDsByFolderID)
+        pinnedRowsCache.store(rows, for: key)
+        return rows
+    }
+
+    func replacingTabs(
+        _ tabs: [BrowserChromeModel.Tab],
+        pinnedTabFolders folders: [BrowserChromeModel.PinnedTabFolder]? = nil,
+    ) -> BrowserSidebarSnapshot {
+        let tabIDs = Set(tabs.map(\.id))
+        return BrowserSidebarSnapshot(
+            spaces: spaces,
+            selectedSpaceID: selectedSpaceID,
+            activeSpace: activeSpace,
+            isActiveSpacePinnedSectionCollapsed: isActiveSpacePinnedSectionCollapsed,
+            allTabs: tabs,
+            pinnedTabFolders: folders ?? pinnedTabFolders,
+            appTabs: tabs.filter { $0.placement == .app },
+            spacePinnedTabs: tabs.filter { $0.spaceID == selectedSpaceID && $0.placement == .spacePinned },
+            temporaryTabs: tabs.filter { $0.spaceID == selectedSpaceID && $0.placement == .temporary },
+            selectedTabID: selectedTabID,
+            archivableTabIDs: archivableTabIDs,
+            canGoBack: canGoBack,
+            canGoForward: canGoForward,
+            canStopLoading: canStopLoading,
+            canReload: canReload,
+            splitGroups: splitGroups.map { $0.filter(tabIDs.contains) }.filter { $0.count > 1 },
+        )
+    }
+
+    private func computeVisiblePinnedRows(
+        in spaceID: String,
+        revealedTabIDsByFolderID: [String: Set<String>],
     ) -> [BrowserSidebarPinnedRow] {
         let tree = BrowserSidebarTabTree(snapshot: self)
         let pinned = spacePinnedTabs(in: spaceID)
@@ -165,31 +209,6 @@ struct BrowserSidebarSnapshot: Equatable {
         return result
     }
 
-    func replacingTabs(
-        _ tabs: [BrowserChromeModel.Tab],
-        pinnedTabFolders folders: [BrowserChromeModel.PinnedTabFolder]? = nil,
-    ) -> BrowserSidebarSnapshot {
-        let tabIDs = Set(tabs.map(\.id))
-        return BrowserSidebarSnapshot(
-            spaces: spaces,
-            selectedSpaceID: selectedSpaceID,
-            activeSpace: activeSpace,
-            isActiveSpacePinnedSectionCollapsed: isActiveSpacePinnedSectionCollapsed,
-            allTabs: tabs,
-            pinnedTabFolders: folders ?? pinnedTabFolders,
-            appTabs: tabs.filter { $0.placement == .app },
-            spacePinnedTabs: tabs.filter { $0.spaceID == selectedSpaceID && $0.placement == .spacePinned },
-            temporaryTabs: tabs.filter { $0.spaceID == selectedSpaceID && $0.placement == .temporary },
-            selectedTabID: selectedTabID,
-            archivableTabIDs: archivableTabIDs,
-            canGoBack: canGoBack,
-            canGoForward: canGoForward,
-            canStopLoading: canStopLoading,
-            canReload: canReload,
-            splitGroups: splitGroups.map { $0.filter(tabIDs.contains) }.filter { $0.count > 1 },
-        )
-    }
-
     // MARK: Private
 
     private func descendantTabCount(
@@ -228,6 +247,30 @@ struct BrowserSidebarSnapshot: Equatable {
                 visitedFolderIDs: visitedFolderIDs,
             )
         }
+    }
+}
+
+// MARK: - BrowserSidebarPinnedRowsCache
+
+/// Rows a snapshot worked out. Every field they come from is a constant of the
+/// snapshot, so copies share them; snapshots compare equal whatever is cached.
+final class BrowserSidebarPinnedRowsCache: Equatable, @unchecked Sendable {
+    struct Key: Hashable {
+        let spaceID: String
+        let revealed: [String: Set<String>]
+    }
+
+    private let lock = NSLock()
+    private var rowsByKey = [Key: [BrowserSidebarPinnedRow]]()
+
+    static func == (_: BrowserSidebarPinnedRowsCache, _: BrowserSidebarPinnedRowsCache) -> Bool { true }
+
+    func rows(for key: Key) -> [BrowserSidebarPinnedRow]? {
+        lock.withLock { rowsByKey[key] }
+    }
+
+    func store(_ rows: [BrowserSidebarPinnedRow], for key: Key) {
+        lock.withLock { rowsByKey[key] = rows }
     }
 }
 
