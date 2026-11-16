@@ -47,8 +47,6 @@ import Combine
     private static let pageScale: CGFloat = 0.9881
     private static let pageOpacity: Float = 0.3
 
-    private static let closeDelay: TimeInterval = 0.035
-
     private static let searchAddressAction = Selector(("searchSmallWindowAddress:"))
 
     override var canBecomeKey: Bool { true }
@@ -670,7 +668,7 @@ import Combine
         }
         isClosingAnimated = true
         stopWatchingParent()
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.closeDelay) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + BrowserChromeLayout.peekCloseDelay) { [weak self] in
             guard let self else {
                 completion()
                 return

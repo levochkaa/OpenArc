@@ -9,6 +9,14 @@ import Testing
 @MainActor struct BrowserNativeChromeTests {
     // MARK: Internal
 
+    /// Hiding the sidebar and closing a Peek card answer in the frame of the key; only
+    /// showing the sidebar waits a moment.
+    @Test func hidingTheSidebarAndClosingPeekStartAtOnce() {
+        #expect(BrowserChromeLayout.sidebarHideDelay == 0)
+        #expect(BrowserChromeLayout.peekCloseDelay == 0)
+        #expect(BrowserChromeLayout.sidebarShowDelay > BrowserChromeLayout.sidebarHideDelay)
+    }
+
     /// A sidebar resize stretches the drawn theme until its shape changes by 3%.
     @Test func aThemeRedrawsOnlyForAClearlyNewShape() {
         #expect(BrowserChromeBackgroundNSView.themeNeedsRender(aspect: 0.25, renderedAspect: 0))

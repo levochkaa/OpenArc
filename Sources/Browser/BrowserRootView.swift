@@ -1076,7 +1076,9 @@ final class BrowserRootView: NSView {
             // moves the page and keeps the shared ease.
             nextLayoutCurve = changed == [.hoverSidebar] ? .floatingSidebar : .sidebar
             if changed == [.sidebarVisible] {
-                nextLayoutDelay = model.isSidebarVisible ? 0.075 : 0.015
+                nextLayoutDelay = model.isSidebarVisible
+                    ? BrowserChromeLayout.sidebarShowDelay
+                    : BrowserChromeLayout.sidebarHideDelay
             }
             // The toolbar and bookmarks bar appear and leave at once.
             if changed.isSubset(of: [.bookmarksBar, .siteToolbar]) {

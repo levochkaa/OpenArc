@@ -126,6 +126,12 @@ enum BrowserChromeLayout {
     static let sidebarOverlayCornerRadius: CGFloat = 12
     /// The sidebar edge snaps to the default width within 14 pt.
     static let sidebarSnapThreshold: CGFloat = 14
+    /// The pinned sidebar starts sliding in this long after Command-S shows it, and at
+    /// once when Command-S hides it.
+    static let sidebarShowDelay: TimeInterval = 0.075
+    static let sidebarHideDelay: TimeInterval = 0
+    /// A Peek card starts closing at once on Escape, Close or a click behind it.
+    static let peekCloseDelay: TimeInterval = 0
     /// Dragging the sidebar edge below this width hides the sidebar (82 pt).
     static let sidebarCollapseDragWidth: CGFloat = 82
     static let browserContentEdgeInset: CGFloat = BrowserWindowGeometry.browserContentEdgeInset
