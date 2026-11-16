@@ -18,7 +18,13 @@ import QuartzCore
     var isSidebarResizing = false
     var onChange: (Bool) -> Void = { _ in }
     let drag: BrowserSidebarDragState
-    var selectedSidebarTabIDs = Set<String>() { didSet { invalidate() } }
+    var selectedSidebarTabIDs = Set<String>() {
+        didSet {
+            invalidate()
+            model.sidebarMultiSelection = selectedSidebarTabIDs
+        }
+    }
+
     var sidebarTabSelectionAnchorID: String?
     var spacePagerRawDragTranslation: CGFloat = 0
     /// How the Space pager moves next: a slide, or settling after a swipe.

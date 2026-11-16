@@ -359,6 +359,8 @@ enum BrowserWindowMode: Equatable {
     /// UI-only mirror of the sidebar's tabs that stay visible in collapsed
     /// folders, so keyboard navigation counts the rows the sidebar shows.
     var sidebarRevealedPinnedTabIDsByFolderID = [String: Set<String>]()
+    /// Tabs picked together in the sidebar with Command- or Shift-click.
+    var sidebarMultiSelection = Set<String>()
     /// Muted tabs by sync ID, for this run only; a reopened dormant tab keeps it.
     /// Only `setTabMuted(_:id:)` writes it.
     @Published var mutedTabSyncIDs = Set<String>()
@@ -3871,22 +3873,23 @@ enum BrowserWindowMode: Equatable {
         }
     }
 
+    /// Command-W: the tabs picked in the sidebar together, or else the shown one.
     @discardableResult func archiveSelectedTab() -> Bool {
-        guard canArchiveSelectedTab, let selectedTabID,
-              let selectedTab = tabs.first(where: { $0.id == selectedTabID })
-        else {
+        let picked = tabs.filter { sidebarMultiSelection.contains($0.id) }.map(\.id)
+        if picked.count > 1, !isShuttingDown {
+            var archived = false
+            // Their rows leave the sidebar in one step.
+            changingTabRowsTogether {
+                for id in picked {
+                    archived = archiveTab(id: id) || archived
+                }
+            }
+            return archived
+        }
+        guard canArchiveSelectedTab, let selectedTabID else {
             return false
         }
-
-        if selectedTab.placement == .app {
-            return closeAppTabProcess(id: selectedTabID)
-        }
-
-        if selectedTab.placement == .spacePinned, effectivePinnedURLString(forPinnedTab: selectedTab) != nil {
-            return closePinnedTabProcessOrReset(id: selectedTabID)
-        }
-
-        return closeTab(id: selectedTabID)
+        return archiveTab(id: selectedTabID)
     }
 
     @discardableResult func closeAppTabProcess(
@@ -4622,6 +4625,22 @@ enum BrowserWindowMode: Equatable {
             tabRowsChangedInBatch = false
             onTabRowsChanged?()
         }
+    }
+
+    @discardableResult private func archiveTab(id: String) -> Bool {
+        guard let tab = tabs.first(where: { $0.id == id }) else {
+            return false
+        }
+
+        if tab.placement == .app {
+            return closeAppTabProcess(id: id)
+        }
+
+        if tab.placement == .spacePinned, effectivePinnedURLString(forPinnedTab: tab) != nil {
+            return closePinnedTabProcessOrReset(id: id)
+        }
+
+        return closeTab(id: id)
     }
 
     private func persistSelectionSoon() {

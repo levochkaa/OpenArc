@@ -722,6 +722,36 @@ import Testing
 }
 
 @Test
+@MainActor func commandWClosesTabsPickedTogetherInOneStep() throws {
+    let driver = FakeBrowserTabDriver()
+    driver.automaticallyConfirmsCloseRequests = false
+    let model = makeModel(
+        driver: driver,
+        snapshotStore: InMemorySessionSnapshotStore(),
+        preferencesStore: InMemorySessionPreferencesStore(),
+    )
+    model.handleContextReady()
+    driver.flushPendingCreateEvents()
+    for _ in 0..<4 {
+        model.createNewTab()
+        driver.flushPendingCreateEvents()
+    }
+    var redraws = 0
+    model.onTabRowsChanged = { redraws += 1 }
+    let ids = model.temporaryTabs.map(\.id)
+    model.sidebarMultiSelection = [ids[1], ids[3]]
+    #expect(model.archiveSelectedTab())
+    #expect(redraws == 1, "Both rows leave in one step")
+    #expect(model.presentedSidebarSnapshot.temporaryTabs.map(\.id) == [ids[0], ids[2]] + ids.dropFirst(4))
+
+    redraws = 0
+    model.sidebarMultiSelection = []
+    let shown = try #require(model.selectedTabID)
+    #expect(model.archiveSelectedTab())
+    #expect(!model.presentedSidebarSnapshot.temporaryTabs.map(\.id).contains(shown), "Without a pick, the shown tab")
+}
+
+@Test
 @MainActor func anUnchangedEngineUpdateLeavesTheModelAlone() throws {
     let driver = FakeBrowserTabDriver()
     let model = makeModel(
