@@ -1738,8 +1738,11 @@ final class BrowserNativeSidebarNSView: NSView {
         for page in pages.values {
             let visible = page.scroll.documentVisibleRect
             let threshold = BrowserChromeLayout.sidebarTopChromeDividerScrollThreshold
-            let top = visible.minY > threshold
-            let bottom = visible.maxY < page.document.bounds.height - threshold
+            // A scroll stretched past either end counts as resting at that end.
+            let maxOffset = max(page.document.bounds.height - visible.height, 0)
+            let offset = min(max(visible.minY, 0), maxOffset)
+            let top = offset > threshold
+            let bottom = offset < maxOffset - threshold
             if state
                 .topChromeDividerVisibilityBySpaceID[page.spaceID] !=
                 top
@@ -2290,6 +2293,7 @@ private final class BrowserNativeSidebarPage: NSView, BrowserSpaceThemedChrome {
 
     private let frameTransitions = BrowserNativeFrameTransitions()
     private var hasLaidOutRows = false
+    private var laidOutMaxOffset: CGFloat?
 
     init(spaceID: String) {
         self.spaceID = spaceID
@@ -2373,9 +2377,13 @@ private final class BrowserNativeSidebarPage: NSView, BrowserSpaceThemedChrome {
         }
         let height = max(y - BrowserChromeLayout.sidebarListSpacing + endInset, scroll.contentSize.height)
         document.frame = NSRect(x: 0, y: 0, width: bounds.width, height: height)
+        // Only a shorter scroll range moves the offset: a scroll stretched past the end,
+        // which a layout during the scroll would otherwise snap back, keeps its offset.
+        let maxOffset = max(height - scroll.contentSize.height, 0)
+        defer { laidOutMaxOffset = maxOffset }
         let origin = scroll.contentView.bounds.origin
-        if origin.y > max(height - scroll.contentSize.height, 0) {
-            scroll.contentView.scroll(to: NSPoint(x: 0, y: max(height - scroll.contentSize.height, 0)))
+        if maxOffset < laidOutMaxOffset ?? .infinity, origin.y > maxOffset {
+            scroll.contentView.scroll(to: NSPoint(x: 0, y: maxOffset))
             scroll.reflectScrolledClipView(scroll.contentView)
         }
     }
