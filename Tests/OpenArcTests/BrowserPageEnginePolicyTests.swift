@@ -40,13 +40,13 @@ import Testing
     }
 
     @Test func theFairPlayBridgeKeepsItsSitesInChromium() {
+        #expect(!BrowserPageEnginePolicy.bridgesFairPlay(forURLString: "https://open.spotify.com/track/1"))
         BrowserPageEnginePolicy.playsProtectedMediaInChromium = true
-        #expect(BrowserPageEnginePolicy.engine(forURLString: "https://www.netflix.com/watch/1") == .chromium)
-        #expect(BrowserPageEnginePolicy.engine(forURLString: "https://open.spotify.com") == .chromium)
-        #expect(BrowserPageEnginePolicy.bridgesFairPlay(forURLString: "https://www.disneyplus.com/video"))
-        // Only the exact origins the bridge serves.
-        #expect(BrowserPageEnginePolicy.engine(forURLString: "https://help.netflix.com") == .webKit)
-        #expect(!BrowserPageEnginePolicy.bridgesFairPlay(forURLString: "https://www.primevideo.com"))
+        #expect(BrowserPageEnginePolicy.engine(forURLString: "https://open.spotify.com/track/1") == .chromium)
+        #expect(BrowserPageEnginePolicy.bridgesFairPlay(forURLString: "https://open.spotify.com/album/2"))
+        // Only the exact origins the bridge serves; video sites stay in WebKit.
+        #expect(BrowserPageEnginePolicy.engine(forURLString: "https://www.netflix.com/watch/1") == .webKit)
+        #expect(!BrowserPageEnginePolicy.bridgesFairPlay(forURLString: "https://spotify.com"))
     }
 
     @Test func aSiteRuleWinsForItsOriginOnly() {

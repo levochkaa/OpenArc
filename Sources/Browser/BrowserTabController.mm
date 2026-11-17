@@ -3863,6 +3863,8 @@ struct TabRecord {
   std::string engineBackURL;
   // A page's script opened this WebKit page; it may close it again.
   bool openedByPage = false;
+  // Plays the Chromium page's FairPlay audio, once the page asks for it.
+  __strong BrowserFairPlayAudioBridge *fairPlayBridge = nil;
 };
 
 NSView *PageViewForRecord(const TabRecord &record) {
@@ -3955,6 +3957,7 @@ bool RecordHasPage(const TabRecord &record) {
 @interface BrowserTabController () <BrowserWebKitPageDelegate>
 - (BOOL)shouldMoveNavigationToWebKitFromTabID:(NSString *)tabID toURLString:(NSString *)urlString;
 - (void)handleProtectedMediaRefusedForTabID:(NSString *)tabID keySystem:(NSString *)keySystem;
+- (void)handleFairPlayMessage:(NSString *)json forTabID:(NSString *)tabID;
 - (void)moveTabWithID:(NSString *)tabID toWebKitWithURLString:(NSString *)urlString;
 
 - (void)startBrowserCreationForTabID:(NSString *)tabID
@@ -4523,6 +4526,7 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
 /// Takes the tab's page out of its engine for good, so the other engine can show
 /// the tab. Its late events reach no tab.
 - (void)retirePageForTabID:(NSString *)tabID record:(TabRecord &)record {
+  [self stopFairPlayForRecord:record];
   if ([_protectedVideoPromptTabID isEqualToString:tabID]) {
     [self dismissProtectedVideoPrompt];
   }
@@ -4673,6 +4677,68 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
   record.navigationPending = true;
   [self scheduleNavigationForTabID:tabID];
   return YES;
+}
+
+#pragma mark - FairPlay bridge
+
+/// A request from the FairPlay bridge script in a tab's Chromium page. The script
+/// first asks whether the bridge is on for the page; the setting decides.
+- (void)handleFairPlayMessage:(NSString *)json forTabID:(NSString *)tabID {
+  auto it = _tabRecords.find(ToStdString(tabID));
+  if (it == _tabRecords.end() || it->second.isClosing || !it->second.browser) {
+    return;
+  }
+  TabRecord &record = it->second;
+  NSDictionary *message = [NSJSONSerialization JSONObjectWithData:[json dataUsingEncoding:NSUTF8StringEncoding]
+                                                          options:0
+                                                            error:nil];
+  if (![message isKindOfClass:NSDictionary.class]) {
+    return;
+  }
+  NSString *operation = message[@"op"];
+  NSString *urlString = ToNSString(record.browser->GetMainFrame()->GetURL().ToString());
+  const BOOL on = [BrowserPageEnginePolicy bridgesFairPlayForURLString:urlString];
+  if ([operation isEqualToString:@"hello"]) {
+    [self sendFairPlayEvent:on ? @"{\"event\":\"config\",\"on\":true}" : @"{\"event\":\"config\",\"on\":false}"
+                   toTabKey:it->first];
+    return;
+  }
+  if (!on) {
+    [record.fairPlayBridge stop];
+    record.fairPlayBridge = nil;
+    return;
+  }
+  if (record.fairPlayBridge == nil) {
+    if ([operation isEqualToString:@"stop"]) {
+      return;
+    }
+    __weak BrowserTabController *weakSelf = self;
+    const std::string tabKey = it->first;
+    record.fairPlayBridge = [[BrowserFairPlayAudioBridge alloc] initWithSend:^(NSString *event) {
+      [weakSelf sendFairPlayEvent:event toTabKey:tabKey];
+    }];
+    record.fairPlayBridge.tabMuted = record.audioMuted;
+  }
+  [record.fairPlayBridge receive:json];
+}
+
+- (void)sendFairPlayEvent:(NSString *)json toTabKey:(const std::string &)tabKey {
+  auto it = _tabRecords.find(tabKey);
+  if (it == _tabRecords.end() || !it->second.browser) {
+    return;
+  }
+  CefRefPtr<CefFrame> frame = it->second.browser->GetMainFrame();
+  if (!frame || !frame->IsValid()) {
+    return;
+  }
+  CefRefPtr<CefProcessMessage> message = CefProcessMessage::Create(shared::kFairPlayEventMessage);
+  message->GetArgumentList()->SetString(0, ToStdString(json));
+  frame->SendProcessMessage(PID_RENDERER, message);
+}
+
+- (void)stopFairPlayForRecord:(TabRecord &)record {
+  [record.fairPlayBridge stop];
+  record.fairPlayBridge = nil;
 }
 
 #pragma mark - Protected video prompt
@@ -7040,6 +7106,10 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
 
 - (void)handleRenderProcessTerminatedForTabID:(NSString *)tabID errorCode:(int)errorCode {
   [self forgetPageFullscreenForTabID:tabID];
+  auto record = _tabRecords.find(ToStdString(tabID));
+  if (record != _tabRecords.end()) {
+    [self stopFairPlayForRecord:record->second];
+  }
   id<BrowserTabControllerDelegate> delegate = self.delegate;
   if ([delegate respondsToSelector:@selector(browserTabController:renderProcessTerminatedForTabWithID:errorCode:)]) {
     [delegate browserTabController:self renderProcessTerminatedForTabWithID:tabID errorCode:errorCode];
@@ -7072,6 +7142,7 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
   }
 
   it->second.audioMuted = muted;
+  it->second.fairPlayBridge.tabMuted = muted;
   if (it->second.webKitPage != nil) {
     [it->second.webKitPage setAudioMuted:muted];
     return;
@@ -7697,6 +7768,7 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
   }
 
   record.keptVisibleForPictureInPicture = false;
+  [self stopFairPlayForRecord:record];
   // Docked tools belong to this window; the page leaves without them.
   if (_dockedDevTools[tabID] != nil) {
     record.browser->GetHost()->CloseDevTools();
@@ -7994,6 +8066,7 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
   for (const auto &entry : _tabRecords) {
     tabIDs.push_back(entry.first);
     [entry.second.webKitPage close];
+    [entry.second.fairPlayBridge stop];
     // DevTools browsers have no client of ours; close them before CEF shuts down.
     if (entry.second.browser && entry.second.browser->GetHost()) {
       entry.second.browser->GetHost()->CloseDevTools();
@@ -8065,6 +8138,7 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
       !it->second.browser->IsSame(browser)) return;
   NSString *requestID = ToNSString(it->second.closeRequestID);
   BrowserBeforeUnloadConfirmation *confirmation = it->second.closeConfirmation;
+  [self stopFairPlayForRecord:it->second];
   const BOOL wasActive = [_activeTabID isEqualToString:tabID];
   _tabRecords.erase(it);
   [confirmation cancel];
@@ -8921,6 +8995,12 @@ bool BrowserTabClient::OnProcessMessageReceived(CefRefPtr<CefBrowser>,
   if (source_process == PID_RENDERER && frame && frame->IsMain() &&
       message->GetName() == shared::kRendererProcessMessage) {
     [controller_ noteRendererProcessID:message->GetArgumentList()->GetInt(0) forTabID:ToNSString(tab_id_)];
+    return true;
+  }
+  if (source_process == PID_RENDERER && frame && frame->IsMain() &&
+      message->GetName() == shared::kFairPlayMessage) {
+    [controller_ handleFairPlayMessage:ToNSString(message->GetArgumentList()->GetString(0).ToString())
+                              forTabID:ToNSString(tab_id_)];
     return true;
   }
   if (source_process == PID_RENDERER && frame &&

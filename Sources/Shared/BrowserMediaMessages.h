@@ -33,6 +33,10 @@ inline constexpr char kAddressFillMessage[] = "OpenArc.AddressFill";
 // To the browser: a page with video asked for a protected key system, such as
 // Widevine, which Chromium refused: the key system's name.
 inline constexpr char kProtectedMediaRefusedMessage[] = "OpenArc.ProtectedMediaRefused";
+// To the browser: a FairPlay bridge request from the page's script, as JSON.
+inline constexpr char kFairPlayMessage[] = "OpenArc.FairPlay";
+// To the renderer: a FairPlay bridge event for the page's script, as JSON.
+inline constexpr char kFairPlayEventMessage[] = "OpenArc.FairPlayEvent";
 
 }  // namespace shared
 

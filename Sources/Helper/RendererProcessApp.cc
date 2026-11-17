@@ -6,6 +6,7 @@
 #include "Shared/AppFactory.h"
 #include "Shared/BrowserMediaMessages.h"
 #include "Shared/BrowserSchemes.h"
+#include "Helper/FairPlayBridgeScript.h"
 #include "include/cef_render_process_handler.h"
 #include "include/cef_v8.h"
 
@@ -408,6 +409,39 @@ class ProtectedMediaReporter final : public CefV8Handler {
   IMPLEMENT_REFCOUNTING(ProtectedMediaReporter);
 };
 
+/// Origins whose FairPlay audio the bridge plays in Chromium.
+bool BridgesFairPlay(const std::string& url) {
+  for (const char* origin : {"https://open.spotify.com/"}) {
+    if (url.rfind(origin, 0) == 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/// The FairPlay bridge's `send`: its JSON goes to the browser.
+class FairPlaySender final : public CefV8Handler {
+ public:
+  bool Execute(const CefString&,
+               CefRefPtr<CefV8Value>,
+               const CefV8ValueList& arguments,
+               CefRefPtr<CefV8Value>&,
+               CefString&) override {
+    CefRefPtr<CefV8Context> context = CefV8Context::GetCurrentContext();
+    CefRefPtr<CefFrame> frame = context ? context->GetFrame() : nullptr;
+    if (!frame || !frame->IsMain() || arguments.size() != 1 || !arguments[0]->IsString()) {
+      return true;
+    }
+    CefRefPtr<CefProcessMessage> message = CefProcessMessage::Create(kFairPlayMessage);
+    message->GetArgumentList()->SetString(0, arguments[0]->GetStringValue());
+    frame->SendProcessMessage(PID_BROWSER, message);
+    return true;
+  }
+
+ private:
+  IMPLEMENT_REFCOUNTING(FairPlaySender);
+};
+
 /// Pages whose media the sidebar follows; extension, DevTools and internal
 /// pages are left alone.
 bool ObservesMedia(const std::string& url) {
@@ -515,6 +549,8 @@ class RendererProcessApp : public CefApp, public CefRenderProcessHandler {
       return;
     }
     InstallPasswordObserver(frame, context);
+    // Before the media observer, which then sees the bridge's element state.
+    InstallFairPlayBridge(frame, context);
     InstallProtectedMediaObserver(frame, context);
     CefRefPtr<CefV8Value> factory;
     CefRefPtr<CefV8Exception> exception;
@@ -545,6 +581,14 @@ class RendererProcessApp : public CefApp, public CefRenderProcessHandler {
     if (fill != password_fills_.end() && fill->second.context->IsSame(context)) {
       password_fills_.erase(fill);
     }
+    auto fairPlay = fair_play_receivers_.find(id);
+    if (fairPlay != fair_play_receivers_.end() && fairPlay->second.context->IsSame(context)) {
+      fair_play_receivers_.erase(fairPlay);
+      // The page left: its native player stops.
+      CefRefPtr<CefProcessMessage> stop = CefProcessMessage::Create(kFairPlayMessage);
+      stop->GetArgumentList()->SetString(0, "{\"op\":\"stop\"}");
+      frame->SendProcessMessage(PID_BROWSER, stop);
+    }
     // A page that leaves while playing stops playing.
     auto active = active_frames_.find(id);
     if (active != active_frames_.end()) {
@@ -572,6 +616,14 @@ class RendererProcessApp : public CefApp, public CefRenderProcessHandler {
         CefV8ValueList arguments = {CefV8Value::CreateString(values->GetString(0)),
                                     CefV8Value::CreateString(values->GetString(1))};
         fill->second.function->ExecuteFunctionWithContext(fill->second.context, nullptr, arguments);
+      }
+      return true;
+    }
+    if (frame && message->GetName() == kFairPlayEventMessage) {
+      auto receiver = fair_play_receivers_.find(frame->GetIdentifier().ToString());
+      if (receiver != fair_play_receivers_.end()) {
+        CefV8ValueList arguments = {CefV8Value::CreateString(message->GetArgumentList()->GetString(0))};
+        receiver->second.function->ExecuteFunctionWithContext(receiver->second.context, nullptr, arguments);
       }
       return true;
     }
@@ -637,6 +689,24 @@ class RendererProcessApp : public CefApp, public CefRenderProcessHandler {
     factory->ExecuteFunctionWithContext(context, nullptr, arguments);
   }
 
+  void InstallFairPlayBridge(CefRefPtr<CefFrame> frame, CefRefPtr<CefV8Context> context) {
+    if (!frame->IsMain() || !BridgesFairPlay(frame->GetURL().ToString())) {
+      return;
+    }
+    CefRefPtr<CefV8Value> factory;
+    CefRefPtr<CefV8Exception> exception;
+    if (!context->Eval(kFairPlayBridgeScript, CefString(), 0, factory, exception) || !factory ||
+        !factory->IsFunction()) {
+      return;
+    }
+    CefV8ValueList arguments = {CefV8Value::CreateFunction("send", new FairPlaySender())};
+    CefRefPtr<CefV8Value> receive = factory->ExecuteFunctionWithContext(context, nullptr, arguments);
+    if (receive && receive->IsFunction()) {
+      fair_play_receivers_[frame->GetIdentifier().ToString()] = {context, receive};
+    }
+  }
+
+  std::map<std::string, MediaControl> fair_play_receivers_;
   std::map<std::string, MediaControl> password_fills_;
   std::map<std::string, MediaControl> controls_;
   // Frames whose last report said they were playing, by frame identifier.
