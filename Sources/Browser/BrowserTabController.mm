@@ -6,6 +6,8 @@
 #import <Sparkle/Sparkle.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
+#import <WebKit/WebKit.h>
+
 #import "OpenArc-Swift.h"
 #import "Browser/SwiftBridge.h"
 #include "Shared/BrowserMediaMessages.h"
@@ -1814,14 +1816,8 @@ class RuntimeEvaluateObserver final : public CefDevToolsMessageObserver {
   IMPLEMENT_REFCOUNTING(RuntimeEvaluateObserver);
 };
 
-void SyncBrowserViewFrame(BrowserTabHostView *hostView,
-                          CefRefPtr<CefBrowser> browser) {
-  if (hostView == nil || !browser) {
-    return;
-  }
-
-  NSView *browserView = BrowserViewForBrowser(browser);
-  if (browserView == nil) {
+void SyncPageViewFrame(BrowserTabHostView *hostView, NSView *browserView) {
+  if (hostView == nil || browserView == nil) {
     return;
   }
 
@@ -1832,6 +1828,13 @@ void SyncBrowserViewFrame(BrowserTabHostView *hostView,
   browserView.frame = targetFrame;
   // The viewport rounds the outer corners of a single page.
   SetBrowserViewCornerRadius(browserView, 0, 0);
+}
+
+void SyncBrowserViewFrame(BrowserTabHostView *hostView,
+                          CefRefPtr<CefBrowser> browser) {
+  if (browser) {
+    SyncPageViewFrame(hostView, BrowserViewForBrowser(browser));
+  }
 }
 
 // A Split View pane's page rounds its bottom corners; the pane bar above it
@@ -1868,8 +1871,7 @@ CACornerMask BottomCornersOfLayer(CALayer *layer) {
 
 // A Split View pane is laid out on every host layout, so it must not also
 // autoresize to the whole host.
-void SyncBrowserViewPaneFrame(CefRefPtr<CefBrowser> browser, NSRect frame) {
-  NSView *browserView = BrowserViewForBrowser(browser);
+void SyncPageViewPaneFrame(NSView *browserView, NSRect frame) {
   if (browserView == nil) {
     return;
   }
@@ -1884,8 +1886,7 @@ void SyncBrowserViewPaneFrame(CefRefPtr<CefBrowser> browser, NSRect frame) {
 
 // A page beside docked Developer Tools takes only its part of the pane; the
 // viewport still rounds the outer corners.
-void SyncBrowserViewFrameInRect(CefRefPtr<CefBrowser> browser, NSRect frame) {
-  NSView *browserView = BrowserViewForBrowser(browser);
+void SyncPageViewFrameInRect(NSView *browserView, NSRect frame) {
   if (browserView == nil) {
     return;
   }
@@ -3854,7 +3855,26 @@ struct TabRecord {
   CefRefPtr<CefJSDialogCallback> closeDialogCallback;
   int rendererProcessID = 0;
   __strong BrowserBeforeUnloadConfirmation *closeConfirmation = nil;
+  // The page when WebKit shows it instead of Chromium, for protected video.
+  __strong BrowserWebKitPage *webKitPage = nil;
+  // The profile's data path the tab was made with, nil for the window's own.
+  __strong NSString *profileCachePath = nil;
+  // The address the tab showed in its other engine, which Back returns to.
+  std::string engineBackURL;
+  // A page's script opened this WebKit page; it may close it again.
+  bool openedByPage = false;
 };
+
+NSView *PageViewForRecord(const TabRecord &record) {
+  if (record.webKitPage != nil) {
+    return record.webKitPage.view;
+  }
+  return BrowserViewForBrowser(record.browser);
+}
+
+bool RecordHasPage(const TabRecord &record) {
+  return record.browser || record.webKitPage != nil;
+}
 
 }  // namespace
 
@@ -3878,18 +3898,25 @@ struct TabRecord {
 }
 
 - (BOOL)canGoBack {
+  if (_record.webKitPage != nil) return _record.webKitPage.canGoBack || !_record.engineBackURL.empty();
   return _record.browser && _record.browser->CanGoBack();
 }
 
 - (BOOL)canGoForward {
+  if (_record.webKitPage != nil) return _record.webKitPage.canGoForward;
   return _record.browser && _record.browser->CanGoForward();
 }
 
 - (BOOL)isLoading {
+  if (_record.webKitPage != nil) return _record.webKitPage.isLoading;
   return _record.browser && _record.browser->IsLoading();
 }
 
 - (void)capturePictureWithCompletion:(void (^)(NSData *))completion {
+  if (_record.webKitPage != nil) {
+    [_record.webKitPage capturePictureWithCompletion:completion];
+    return;
+  }
   if (!_record.browser || !_record.browser->IsValid()) {
     completion(nil);
     return;
@@ -3901,6 +3928,12 @@ struct TabRecord {
 
 - (void)dealloc {
   // No window took the page; nothing else holds it, so it closes.
+  if (!_adopted && _record.webKitPage != nil) {
+    BrowserWebKitPage *page = _record.webKitPage;
+    dispatch_async(dispatch_get_main_queue(), ^{
+      [page close];
+    });
+  }
   if (!_adopted && _record.browser && _record.browser->IsValid()) {
     NSView *browserView = CAST_CEF_WINDOW_HANDLE_TO_NSVIEW(_record.browser->GetHost()->GetWindowHandle());
     if (browserView.superview == nil) {
@@ -3919,7 +3952,10 @@ struct TabRecord {
 
 @class BrowserPeekSession;
 
-@interface BrowserTabController ()
+@interface BrowserTabController () <BrowserWebKitPageDelegate>
+- (BOOL)shouldMoveNavigationToWebKitFromTabID:(NSString *)tabID toURLString:(NSString *)urlString;
+- (void)handleProtectedMediaRefusedForTabID:(NSString *)tabID keySystem:(NSString *)keySystem;
+- (void)moveTabWithID:(NSString *)tabID toWebKitWithURLString:(NSString *)urlString;
 
 - (void)startBrowserCreationForTabID:(NSString *)tabID
                          URLString:(NSString *)urlString;
@@ -4296,6 +4332,14 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
   NSDictionary<NSString *, NSString *> *_reportedPeekPages;
   std::map<int, PendingSitePermission> _sitePermissions;
   int _nextSitePermissionID;
+  // WebKit pages keep their data with the controller's profile, or none.
+  NSString *_profileCachePath;
+  BOOL _usesEphemeralRequestContext;
+  id _enginePolicyObserver;
+  // Offers the page whose protected video Chromium refused in WebKit.
+  BrowserProtectedVideoPromptView *_protectedVideoPrompt;
+  NSString *_protectedVideoPromptTabID;
+  NSString *_protectedVideoPromptSite;
 }
 
 - (instancetype)initWithHostView:(BrowserTabHostView *)hostView {
@@ -4315,6 +4359,16 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
 
   _hostView = hostView;
   _hostView.controller = self;
+  _profileCachePath = [profileCachePath copy];
+  _usesEphemeralRequestContext = usesEphemeralRequestContext;
+  __weak BrowserTabController *weakSelf = self;
+  _enginePolicyObserver = [NSNotificationCenter.defaultCenter
+      addObserverForName:BrowserPageEnginePolicy.didChangeNotification
+                  object:nil
+                   queue:NSOperationQueue.mainQueue
+              usingBlock:^(NSNotification *) {
+                [weakSelf reapplyEnginePolicy];
+              }];
   CenterPageModalWindowsOver(hostView);
   if (usesEphemeralRequestContext) {
     CefRequestContextSettings settings;
@@ -4339,6 +4393,7 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
   TabRecord record;
   record.client = client;
   record.requestContext = [self requestContextForNewTab];
+  record.profileCachePath = [self.profileCachePathForNewTabs copy];
   record.latestURL = ToStdString(resolvedURLString);
   record.navigationPending = true;
   _tabRecords[tabKey] = record;
@@ -4354,8 +4409,493 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
                                urlString:resolvedURLString
                                 isActive:isActive];
 
-  [self startBrowserCreationForTabID:tabID URLString:resolvedURLString];
+  if ([self engineForURLString:resolvedURLString] == BrowserPageEngineWebKit) {
+    [self startWebKitPageForTabID:tabID page:nil];
+  } else {
+    [self startBrowserCreationForTabID:tabID URLString:resolvedURLString];
+  }
   return tabID;
+}
+
+#pragma mark - WebKit pages
+
+- (BrowserPageEngine)engineForURLString:(NSString *)urlString {
+  if (!self.webKitPagesEnabled || _autoResizesPages ||
+      !([urlString hasPrefix:@"https://"] || [urlString hasPrefix:@"http://"])) {
+    return BrowserPageEngineChromium;
+  }
+  return [BrowserPageEnginePolicy engineForURLString:urlString];
+}
+
+/// After a setting or a site's rule changed, each page moves to the engine it now
+/// opens in, at the address it shows.
+- (void)reapplyEnginePolicy {
+  std::vector<std::pair<std::string, BrowserPageEngine>> moves;
+  for (auto &entry : _tabRecords) {
+    TabRecord &record = entry.second;
+    if (record.isClosing || record.creationState != BrowserTabEngineCreationStateReady || !RecordHasPage(record) ||
+        !record.hasIssuedNavigation) {
+      continue;
+    }
+    NSString *urlString = record.webKitPage != nil ? record.webKitPage.urlString
+                                                   : ToNSString(record.browser->GetMainFrame()->GetURL().ToString());
+    if (!([urlString hasPrefix:@"https://"] || [urlString hasPrefix:@"http://"])) {
+      continue;
+    }
+    const BrowserPageEngine engine = [self engineForURLString:urlString];
+    if (engine != [self engineOfRecord:record]) {
+      record.latestURL = ToStdString(urlString);
+      moves.emplace_back(entry.first, engine);
+    }
+  }
+  for (const auto &move : moves) {
+    [self switchTabWithID:ToNSString(move.first) toEngine:move.second];
+  }
+}
+
+- (BrowserPageEngine)engineOfRecord:(const TabRecord &)record {
+  return record.webKitPage != nil ? BrowserPageEngineWebKit : BrowserPageEngineChromium;
+}
+
+- (nullable NSString *)tabIDForWebKitPage:(BrowserWebKitPage *)page {
+  for (const auto &entry : _tabRecords) {
+    if (entry.second.webKitPage == page) {
+      return ToNSString(entry.first);
+    }
+  }
+  return nil;
+}
+
+/// Shows the tab's page in WebKit: a new page, or one WebKit made for a window
+/// another page opened. Like a Chromium page, it becomes ready a turn later, and
+/// the first app navigation waits for the model to acknowledge that.
+- (void)startWebKitPageForTabID:(NSString *)tabID page:(nullable BrowserWebKitPage *)existingPage {
+  auto it = _tabRecords.find(ToStdString(tabID));
+  if (it == _tabRecords.end() || it->second.isClosing) {
+    return;
+  }
+  BrowserWebKitPage *page = existingPage;
+  if (page == nil) {
+    NSString *profilePath = it->second.profileCachePath ?: _profileCachePath;
+    page = [[BrowserWebKitPage alloc] initWithProfileKey:profilePath ephemeral:_usesEphemeralRequestContext];
+  }
+  page.delegate = self;
+  it->second.webKitPage = page;
+  it->second.creationState = BrowserTabEngineCreationStateCreating;
+  it->second.creationTimedOut = false;
+  [self.delegate browserTabController:self
+       didChangeCreationStateForTabWithID:tabID
+                                   state:BrowserTabEngineCreationStateCreating];
+  NSView *view = page.view;
+  BrowserTabHostView *hostView = _hostView;
+  if (hostView != nil) {
+    view.hidden = YES;
+    [hostView addSubview:view positioned:NSWindowBelow relativeTo:nil];
+    SyncPageViewFrame(hostView, view);
+  }
+  __weak BrowserTabController *weakSelf = self;
+  dispatch_async(dispatch_get_main_queue(), ^{
+    [weakSelf finishStartingWebKitPage:page forTabID:tabID];
+  });
+}
+
+- (void)finishStartingWebKitPage:(BrowserWebKitPage *)page forTabID:(NSString *)tabID {
+  auto it = _tabRecords.find(ToStdString(tabID));
+  if (it == _tabRecords.end() || it->second.webKitPage != page ||
+      it->second.creationState != BrowserTabEngineCreationStateCreating) {
+    return;
+  }
+  it->second.creationState = BrowserTabEngineCreationStateReady;
+  if (it->second.audioMuted) {
+    [page setAudioMuted:YES];
+  }
+  NSNumber *volume = _mediaVolumes[tabID];
+  if (volume != nil) {
+    [page setMediaVolume:volume.doubleValue];
+  }
+  [self.delegate browserTabController:self
+       didChangeCreationStateForTabWithID:tabID
+                                   state:BrowserTabEngineCreationStateReady];
+  [self reportNavigationStateForTabID:tabID];
+  [self updateBrowserVisibilityFocusingActiveTab:[_activeTabID isEqualToString:tabID]];
+}
+
+/// Takes the tab's page out of its engine for good, so the other engine can show
+/// the tab. Its late events reach no tab.
+- (void)retirePageForTabID:(NSString *)tabID record:(TabRecord &)record {
+  if ([_protectedVideoPromptTabID isEqualToString:tabID]) {
+    [self dismissProtectedVideoPrompt];
+  }
+  [self cancelSitePermissionsForTabID:tabID];
+  [self closePeekSessionsOwnedByTabID:tabID];
+  [self forgetPageFullscreenForTabID:tabID];
+  record.mediaFrames.clear();
+  record.mediaControlFrameID.clear();
+  record.lastAudibleMediaFrameID.clear();
+  [self reportMedia:MediaFrameState() forTabID:tabID record:record];
+  id<BrowserTabControllerDelegate> delegate = self.delegate;
+  if ([delegate respondsToSelector:@selector(browserTabController:didChangeCaptureForTabWithID:video:audio:)]) {
+    [delegate browserTabController:self didChangeCaptureForTabWithID:tabID video:NO audio:NO];
+  }
+  record.keptVisibleForPictureInPicture = false;
+  if (record.webKitPage != nil) {
+    BrowserWebKitPage *page = record.webKitPage;
+    record.webKitPage = nil;
+    page.delegate = nil;
+    [page close];
+    return;
+  }
+  CefRefPtr<CefBrowser> browser = record.browser;
+  record.browser = nullptr;
+  if (record.client) {
+    static_cast<BrowserTabClient *>(record.client.get())->Retarget(nil, std::string());
+  }
+  if (!browser) {
+    return;
+  }
+  if (_dockedDevTools[tabID] != nil) {
+    browser->GetHost()->CloseDevTools();
+    [self forgetDockedDevToolsForTabID:tabID];
+  }
+  BrowserViewForBrowser(browser).hidden = YES;
+  if (browser->IsValid()) {
+    CloseBrowserAfterPageModalWindows(browser, true);
+  }
+}
+
+/// The tab's pending navigation goes to the other engine: the old page closes and
+/// the new one loads the address once ready.
+- (void)switchTabWithID:(NSString *)tabID toEngine:(BrowserPageEngine)engine {
+  auto it = _tabRecords.find(ToStdString(tabID));
+  if (it == _tabRecords.end() || it->second.isClosing) {
+    return;
+  }
+  TabRecord &record = it->second;
+  NSString *leaving = record.webKitPage != nil ? record.webKitPage.urlString
+                      : record.browser       ? ToNSString(record.browser->GetMainFrame()->GetURL().ToString())
+                                             : @"";
+  record.engineBackURL = ([leaving hasPrefix:@"https://"] || [leaving hasPrefix:@"http://"]) ? ToStdString(leaving)
+                                                                                           : std::string();
+  [self retirePageForTabID:tabID record:record];
+  it = _tabRecords.find(ToStdString(tabID));
+  if (it == _tabRecords.end()) {
+    return;
+  }
+  TabRecord &next = it->second;
+  next.navigationPending = true;
+  next.navigationDrainScheduled = false;
+  next.initialNavigationEnabled = false;
+  next.hasIssuedNavigation = false;
+  next.openedByPage = false;
+  if (engine == BrowserPageEngineWebKit) {
+    [self startWebKitPageForTabID:tabID page:nil];
+    return;
+  }
+  next.creationState = BrowserTabEngineCreationStateCreating;
+  next.client = new BrowserTabClient(self, ToStdString(tabID));
+  [self startBrowserCreationForTabID:tabID URLString:ToNSString(next.latestURL)];
+}
+
+/// A Chromium page is about to leave for a site that opens in WebKit.
+- (BOOL)shouldMoveNavigationToWebKitFromTabID:(NSString *)tabID toURLString:(NSString *)urlString {
+  auto it = _tabRecords.find(ToStdString(tabID));
+  return it != _tabRecords.end() && !it->second.isClosing && it->second.browser &&
+         it->second.hasIssuedNavigation && [self engineForURLString:urlString] == BrowserPageEngineWebKit;
+}
+
+- (void)moveTabWithID:(NSString *)tabID toWebKitWithURLString:(NSString *)urlString {
+  auto it = _tabRecords.find(ToStdString(tabID));
+  if (it == _tabRecords.end() || it->second.isClosing || it->second.webKitPage != nil) {
+    return;
+  }
+  it->second.latestURL = ToStdString(urlString);
+  [self switchTabWithID:tabID toEngine:BrowserPageEngineWebKit];
+}
+
+/// Opens the shown page in the other engine and keeps that choice for its site.
+- (void)openActiveTabInEngine:(NSInteger)rawEngine {
+  const BrowserPageEngine engine = rawEngine == BrowserPageEngineWebKit ? BrowserPageEngineWebKit
+                                                                       : BrowserPageEngineChromium;
+  auto it = _tabRecords.find(ToStdString(_activeTabID));
+  if (it == _tabRecords.end() || it->second.isClosing || [self engineOfRecord:it->second] == engine) {
+    return;
+  }
+  NSString *urlString = it->second.webKitPage != nil ? it->second.webKitPage.urlString
+                        : it->second.browser ? ToNSString(it->second.browser->GetMainFrame()->GetURL().ToString())
+                                             : ToNSString(it->second.latestURL);
+  if (!([urlString hasPrefix:@"https://"] || [urlString hasPrefix:@"http://"])) {
+    return;
+  }
+  [BrowserPageEnginePolicy setEngine:engine forURLString:urlString];
+  it->second.latestURL = ToStdString(urlString);
+  [self switchTabWithID:_activeTabID toEngine:engine];
+}
+
+- (NSInteger)activeTabEngine {
+  auto it = _tabRecords.find(ToStdString(_activeTabID));
+  return it == _tabRecords.end() ? BrowserPageEngineChromium : [self engineOfRecord:it->second];
+}
+
+- (BOOL)activeTabCanSwitchEngine {
+  auto it = _tabRecords.find(ToStdString(_activeTabID));
+  if (it == _tabRecords.end() || it->second.isClosing || !self.webKitPagesEnabled || _autoResizesPages) {
+    return NO;
+  }
+  NSString *urlString = it->second.webKitPage != nil ? it->second.webKitPage.urlString
+                        : it->second.browser ? ToNSString(it->second.browser->GetMainFrame()->GetURL().ToString())
+                                             : @"";
+  return [urlString hasPrefix:@"https://"] || [urlString hasPrefix:@"http://"];
+}
+
+- (void)reportNavigationStateForTabID:(NSString *)tabID {
+  auto it = _tabRecords.find(ToStdString(tabID));
+  if (it == _tabRecords.end()) {
+    return;
+  }
+  if (it->second.webKitPage != nil) {
+    [self handleNavigationStateChangeForTabID:tabID
+                                    canGoBack:it->second.webKitPage.canGoBack
+                                 canGoForward:it->second.webKitPage.canGoForward];
+  } else if (it->second.browser) {
+    [self handleNavigationStateChangeForTabID:tabID
+                                    canGoBack:it->second.browser->CanGoBack()
+                                 canGoForward:it->second.browser->CanGoForward()];
+  }
+}
+
+/// A tab with no earlier page in its engine goes back to the page it showed in the other one.
+- (BOOL)goBackAcrossEnginesForRecord:(TabRecord &)record tabID:(NSString *)tabID {
+  if (record.engineBackURL.empty()) {
+    return NO;
+  }
+  record.latestURL = record.engineBackURL;
+  record.engineBackURL.clear();
+  record.navigationPending = true;
+  [self scheduleNavigationForTabID:tabID];
+  return YES;
+}
+
+#pragma mark - Protected video prompt
+
+/// Sites whose prompt was answered with Stay on Page this run, or in a
+/// private window, where nothing is saved.
+NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
+  static NSMutableSet<NSString *> *sites = [NSMutableSet set];
+  return sites;
+}
+
+- (void)handleProtectedMediaRefusedForTabID:(NSString *)tabID keySystem:(NSString *)keySystem {
+  auto it = _tabRecords.find(ToStdString(tabID));
+  if (it == _tabRecords.end() || it->second.isClosing || !it->second.browser || !self.webKitPagesEnabled ||
+      _autoResizesPages) {
+    return;
+  }
+  NSString *urlString = ToNSString(it->second.browser->GetMainFrame()->GetURL().ToString());
+  NSString *site = [BrowserPageEnginePolicy siteForURLString:urlString];
+  // The bridge refuses Widevine on purpose, so the site asks for FairPlay instead.
+  if (site == nil || [BrowserPageEnginePolicy bridgesFairPlayForURLString:urlString] ||
+      [ProtectedVideoSitesNotAskedAgain() containsObject:site] || [BrowserPageEnginePolicy hasRuleForURLString:urlString]) {
+    return;
+  }
+  [self dismissProtectedVideoPrompt];
+  NSString *host = [NSURL URLWithString:urlString].host ?: site;
+  BrowserProtectedVideoPromptView *prompt = [[BrowserProtectedVideoPromptView alloc] initWithHost:host];
+  __weak BrowserTabController *weakSelf = self;
+  prompt.onOpenInWebKit = ^{
+    BrowserTabController *controller = weakSelf;
+    [controller dismissProtectedVideoPrompt];
+    auto found = controller->_tabRecords.find(ToStdString(tabID));
+    if (found == controller->_tabRecords.end() || found->second.isClosing) return;
+    if (!controller->_usesEphemeralRequestContext) {
+      [BrowserPageEnginePolicy setEngine:BrowserPageEngineWebKit forURLString:urlString];
+    }
+    found->second.latestURL = ToStdString(urlString);
+    [controller switchTabWithID:tabID toEngine:BrowserPageEngineWebKit];
+  };
+  prompt.onStay = ^{
+    [ProtectedVideoSitesNotAskedAgain() addObject:site];
+    [weakSelf dismissProtectedVideoPrompt];
+  };
+  prompt.onNeverAsk = ^{
+    BrowserTabController *controller = weakSelf;
+    if (controller != nil && !controller->_usesEphemeralRequestContext) {
+      [BrowserPageEnginePolicy setEngine:BrowserPageEngineChromium forURLString:urlString];
+    }
+    [ProtectedVideoSitesNotAskedAgain() addObject:site];
+    [controller dismissProtectedVideoPrompt];
+  };
+  _protectedVideoPrompt = prompt;
+  _protectedVideoPromptTabID = [tabID copy];
+  _protectedVideoPromptSite = [site copy];
+  [_hostView addSubview:prompt positioned:NSWindowAbove relativeTo:nil];
+  [self layoutProtectedVideoPrompt];
+}
+
+- (void)dismissProtectedVideoPrompt {
+  [_protectedVideoPrompt removeFromSuperview];
+  _protectedVideoPrompt = nil;
+  _protectedVideoPromptTabID = nil;
+  _protectedVideoPromptSite = nil;
+}
+
+/// Over the prompting tab's pane, hidden while that tab is off screen.
+- (void)layoutProtectedVideoPrompt {
+  if (_protectedVideoPrompt == nil) {
+    return;
+  }
+  auto it = _tabRecords.find(ToStdString(_protectedVideoPromptTabID));
+  if (it == _tabRecords.end() || !it->second.browser) {
+    [self dismissProtectedVideoPrompt];
+    return;
+  }
+  NSView *page = PageViewForRecord(it->second);
+  const BOOL visible = [self isVisiblePaneTabID:_protectedVideoPromptTabID] && page != nil && !page.hidden;
+  _protectedVideoPrompt.hidden = !visible;
+  if (!visible) {
+    return;
+  }
+  const NSRect pane = page.frame;
+  const CGFloat width = MIN(BrowserProtectedVideoPromptView.width, MAX(NSWidth(pane) - 24, 0));
+  const CGFloat height = BrowserProtectedVideoPromptView.height;
+  const CGFloat y = _hostView.isFlipped ? NSMinY(pane) + 12 : NSMaxY(pane) - 12 - height;
+  _protectedVideoPrompt.frame = NSMakeRect(NSMaxX(pane) - width - 12, y, width, height);
+  [_hostView addSubview:_protectedVideoPrompt positioned:NSWindowAbove relativeTo:nil];
+}
+
+#pragma mark - BrowserWebKitPageDelegate
+
+- (void)webKitPageDidChangeTitle:(BrowserWebKitPage *)page {
+  NSString *tabID = [self tabIDForWebKitPage:page];
+  if (tabID != nil) {
+    [self handleTitleChange:page.title forTabID:tabID];
+  }
+}
+
+- (void)webKitPageDidChangeURL:(BrowserWebKitPage *)page {
+  NSString *tabID = [self tabIDForWebKitPage:page];
+  if (tabID != nil) {
+    [self handleAddressChange:page.urlString forTabID:tabID];
+  }
+}
+
+- (void)webKitPageDidChangeLoading:(BrowserWebKitPage *)page {
+  NSString *tabID = [self tabIDForWebKitPage:page];
+  if (tabID != nil) {
+    [self handleLoadingStateChangeForTabID:tabID isLoading:page.isLoading];
+  }
+}
+
+- (void)webKitPageDidChangeNavigationState:(BrowserWebKitPage *)page {
+  NSString *tabID = [self tabIDForWebKitPage:page];
+  if (tabID != nil) {
+    [self reportNavigationStateForTabID:tabID];
+  }
+}
+
+- (void)webKitPage:(BrowserWebKitPage *)page didChangeFaviconURLString:(NSString *)urlString {
+  NSString *tabID = [self tabIDForWebKitPage:page];
+  if (tabID != nil && urlString.length > 0) {
+    [self handleFaviconURLChange:urlString forTabID:tabID];
+  }
+}
+
+- (nullable BrowserWebKitPage *)webKitPage:(BrowserWebKitPage *)page
+                         createPageWith:(WKWebViewConfiguration *)configuration
+                              urlString:(NSString *)urlString
+                           inBackground:(BOOL)inBackground {
+  NSString *openerID = [self tabIDForWebKitPage:page];
+  if (openerID == nil) {
+    return nil;
+  }
+  auto opener = _tabRecords.find(ToStdString(openerID));
+  NSString *tabID = NSUUID.UUID.UUIDString;
+  TabRecord record;
+  record.profileCachePath = opener->second.profileCachePath;
+  record.requestContext = opener->second.requestContext;
+  record.latestURL = ToStdString(urlString.length > 0 ? urlString : @"about:blank");
+  // WebKit loads the opened page itself.
+  record.navigationPending = false;
+  record.hasIssuedNavigation = true;
+  record.openedByPage = true;
+  _tabRecords[ToStdString(tabID)] = record;
+  const BOOL isActive = !inBackground || _activeTabID == nil;
+  if (isActive) {
+    _activeTabID = [tabID copy];
+  }
+  [self.delegate browserTabController:self
+                      didCreateTabWithID:tabID
+                                   title:DefaultTitleForURLString(urlString)
+                               urlString:urlString.length > 0 ? urlString : @"about:blank"
+                                isActive:isActive];
+  id<BrowserTabControllerDelegate> delegate = self.delegate;
+  if ([delegate respondsToSelector:@selector(browserTabController:didOpenTabWithID:fromTabWithID:)]) {
+    [delegate browserTabController:self didOpenTabWithID:tabID fromTabWithID:openerID];
+  }
+  BrowserWebKitPage *opened = [[BrowserWebKitPage alloc] initWithConfiguration:configuration];
+  [self startWebKitPageForTabID:tabID page:opened];
+  return opened;
+}
+
+- (void)webKitPage:(BrowserWebKitPage *)page openURLStringInNewTab:(NSString *)urlString inBackground:(BOOL)inBackground {
+  NSString *tabID = [self tabIDForWebKitPage:page];
+  if (tabID != nil) {
+    [self openTabWithURLString:urlString fromTabID:tabID makeActive:!inBackground];
+  }
+}
+
+- (void)webKitPageDidRequestClose:(BrowserWebKitPage *)page {
+  NSString *tabID = [self tabIDForWebKitPage:page];
+  auto it = _tabRecords.find(ToStdString(tabID));
+  if (tabID != nil && it != _tabRecords.end() && it->second.openedByPage) {
+    [self closeTabWithID:tabID forceClose:YES];
+  }
+}
+
+- (void)webKitPage:(BrowserWebKitPage *)page
+    didChangeMediaAudible:(BOOL)audible
+                  playing:(BOOL)playing
+                   paused:(BOOL)paused
+                    video:(BOOL)video
+                    title:(NSString *)title {
+  NSString *tabID = [self tabIDForWebKitPage:page];
+  auto it = _tabRecords.find(ToStdString(tabID));
+  if (tabID == nil || it == _tabRecords.end()) {
+    return;
+  }
+  MediaFrameState state;
+  state.audible = audible;
+  state.playing = playing;
+  state.paused = paused;
+  state.video = video;
+  state.title = ToStdString(title);
+  [self reportMedia:state forTabID:tabID record:it->second];
+}
+
+- (void)webKitPage:(BrowserWebKitPage *)page didChangeFullscreen:(BOOL)fullscreen {
+  // WebKit shows a page in fullscreen in a window of its own.
+}
+
+- (void)webKitPage:(BrowserWebKitPage *)page didChangeCaptureVideo:(BOOL)video audio:(BOOL)audio {
+  NSString *tabID = [self tabIDForWebKitPage:page];
+  id<BrowserTabControllerDelegate> delegate = self.delegate;
+  if (tabID != nil &&
+      [delegate respondsToSelector:@selector(browserTabController:didChangeCaptureForTabWithID:video:audio:)]) {
+    [delegate browserTabController:self didChangeCaptureForTabWithID:tabID video:video audio:audio];
+  }
+}
+
+- (void)webKitPage:(BrowserWebKitPage *)page didFindMatch:(BOOL)found {
+  NSString *tabID = [self tabIDForWebKitPage:page];
+  if (tabID != nil) {
+    [self handleFindResultForTabID:tabID
+                        matchCount:found ? 1 : 0
+                activeMatchOrdinal:found ? 1 : 0
+                       finalUpdate:YES];
+  }
+}
+
+- (void)webKitPageDidBecomeFocused:(BrowserWebKitPage *)page {
+  [self handleFocusForTabID:[self tabIDForWebKitPage:page]];
 }
 
 - (BOOL)retryTabCreationWithID:(NSString *)tabID urlString:(NSString *)urlString {
@@ -4511,7 +5051,7 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
     for (NSString *tabID in _visibleLayoutTabIDs) {
       auto it = _tabRecords.find(ToStdString(tabID));
       if (it != _tabRecords.end() && !it->second.isClosing &&
-          BrowserViewForBrowser(it->second.browser) != nil) {
+          PageViewForRecord(it->second) != nil) {
         keys.push_back(it->first);
       }
     }
@@ -4556,9 +5096,9 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
       if ([self showsDockedDevToolsForKey:keys.front()]) {
         const NSRect pane = hostView.bounds;
         devToolsPanes[keys.front()] = pane;
-        SyncBrowserViewFrameInRect(it->second.browser, [self pageFrameBesideDevToolsInPane:pane]);
+        SyncPageViewFrameInRect(PageViewForRecord(it->second), [self pageFrameBesideDevToolsInPane:pane]);
       } else {
-        SyncBrowserViewFrame(hostView, it->second.browser);
+        SyncPageViewFrame(hostView, PageViewForRecord(it->second));
       }
     }
     [self layoutDockedDevToolsInPanes:devToolsPanes split:NO];
@@ -4595,7 +5135,7 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
         devToolsPanes[keys[index]] = pane;
         pane = [self pageFrameBesideDevToolsInPane:pane];
       }
-      SyncBrowserViewPaneFrame(it->second.browser, pane);
+      SyncPageViewPaneFrame(PageViewForRecord(it->second), pane);
     }
     if (keys[index] == activeKey) {
       [self showSplitFocusRingInHostView:hostView frame:frames[index].rectValue];
@@ -5193,7 +5733,7 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
   if (it == _tabRecords.end() || it->second.isClosing ||
       it->second.creationState != BrowserTabEngineCreationStateReady ||
       !it->second.initialNavigationEnabled ||
-      !it->second.browser || !it->second.navigationPending ||
+      !RecordHasPage(it->second) || !it->second.navigationPending ||
       it->second.navigationDrainScheduled) {
     return;
   }
@@ -5213,13 +5753,23 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
   if (it->second.isClosing || !it->second.navigationPending ||
       !it->second.initialNavigationEnabled ||
       it->second.creationState != BrowserTabEngineCreationStateReady ||
-      !it->second.browser) {
+      !RecordHasPage(it->second)) {
     return;
   }
 
   const std::string target = it->second.latestURL;
+  // An address the other engine shows moves the tab there, still pending.
+  const BrowserPageEngine engine = [self engineForURLString:ToNSString(target)];
+  if (engine != [self engineOfRecord:it->second]) {
+    [self switchTabWithID:tabID toEngine:engine];
+    return;
+  }
   it->second.navigationPending = false;
   it->second.hasIssuedNavigation = true;
+  if (it->second.webKitPage != nil) {
+    [it->second.webKitPage loadWithUrlString:ToNSString(target)];
+    return;
+  }
   NavigateBrowserOnUI(it->second.browser, target);
 }
 
@@ -5232,6 +5782,10 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
 - (void)visitNavigationEntriesForActiveTab:(void (^)(NSArray<NSDictionary<NSString *, NSString *> *> *,
                                                      NSInteger))completion {
   auto it = _tabRecords.find(ToStdString(_activeTabID));
+  if (it != _tabRecords.end() && it->second.webKitPage != nil) {
+    completion(it->second.webKitPage.navigationEntries, it->second.webKitPage.currentNavigationIndex);
+    return;
+  }
   if (it == _tabRecords.end() || !it->second.browser) {
     completion(@[], 0);
     return;
@@ -5246,6 +5800,10 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
   }
   _mediaVolumes[tabID] = @(volume);
   auto it = _tabRecords.find(ToStdString(tabID));
+  if (it != _tabRecords.end() && it->second.webKitPage != nil) {
+    [it->second.webKitPage setMediaVolume:volume];
+    return;
+  }
   if (it == _tabRecords.end() || !it->second.browser) {
     return;
   }
@@ -5371,6 +5929,11 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
 
 - (void)goToHistoryOffsetInActiveTab:(NSInteger)offset {
   auto it = _tabRecords.find(ToStdString(_activeTabID));
+  if (it != _tabRecords.end() && it->second.closeRequestID.empty() && it->second.webKitPage != nil) {
+    it->second.navigationPending = false;
+    [it->second.webKitPage goToHistoryOffset:offset];
+    return;
+  }
   if (it == _tabRecords.end() || !it->second.closeRequestID.empty() || !it->second.browser) {
     return;
   }
@@ -5481,6 +6044,10 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
               inTabWithID:(NSString *)tabID
                completion:(void (^)(NSString *))completion {
   auto it = _tabRecords.find(ToStdString(tabID));
+  if (it != _tabRecords.end() && it->second.webKitPage != nil) {
+    [it->second.webKitPage evaluate:code completion:completion];
+    return;
+  }
   if (it == _tabRecords.end() || !it->second.browser) {
     completion(nil);
     return;
@@ -5497,9 +6064,20 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
     return;
   }
 
+  if (it->second.webKitPage != nil) {
+    if (it->second.webKitPage.canGoBack) {
+      it->second.navigationPending = false;
+      [it->second.webKitPage goBack];
+    } else {
+      [self goBackAcrossEnginesForRecord:it->second tabID:_activeTabID];
+    }
+    return;
+  }
   if (it->second.browser && it->second.browser->CanGoBack()) {
     it->second.navigationPending = false;
     GoBackBrowserOnUI(it->second.browser);
+  } else if (it->second.browser) {
+    [self goBackAcrossEnginesForRecord:it->second tabID:_activeTabID];
   }
 }
 
@@ -5510,6 +6088,11 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
     return;
   }
 
+  if (it->second.webKitPage != nil && it->second.webKitPage.canGoForward) {
+    it->second.navigationPending = false;
+    [it->second.webKitPage goForward];
+    return;
+  }
   if (it->second.browser && it->second.browser->CanGoForward()) {
     it->second.navigationPending = false;
     GoForwardBrowserOnUI(it->second.browser);
@@ -5523,6 +6106,10 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
     return;
   }
 
+  if (it->second.webKitPage != nil) {
+    [it->second.webKitPage reloadWithIgnoringCache:NO];
+    return;
+  }
   ReloadBrowserOnUI(it->second.browser, false);
 }
 
@@ -5533,6 +6120,10 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
     return;
   }
 
+  if (it->second.webKitPage != nil) {
+    [it->second.webKitPage reloadWithIgnoringCache:YES];
+    return;
+  }
   ReloadBrowserOnUI(it->second.browser, true);
 }
 
@@ -5543,6 +6134,10 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
     return;
   }
 
+  if (it->second.webKitPage != nil) {
+    [it->second.webKitPage reloadWithIgnoringCache:YES];
+    return;
+  }
   CefRefPtr<CefRequestContext> requestContext = [self activeTabRequestContext];
   ClearHttpCacheAndReloadBrowserOnUI(it->second.browser, requestContext);
 }
@@ -5554,6 +6149,10 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
     return;
   }
 
+  if (it->second.webKitPage != nil) {
+    [it->second.webKitPage reloadWithIgnoringCache:YES];
+    return;
+  }
   CefRefPtr<CefRequestContext> requestContext = [self activeTabRequestContext];
   ClearCookiesAndReloadBrowserOnUI(it->second.browser, requestContext);
 }
@@ -5565,7 +6164,10 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
     return;
   }
 
-  if (it->second.browser) {
+  if (it->second.webKitPage != nil) {
+    it->second.navigationPending = false;
+    [it->second.webKitPage stopLoading];
+  } else if (it->second.browser) {
     it->second.navigationPending = false;
     StopLoadingBrowserOnUI(it->second.browser);
   }
@@ -5600,6 +6202,10 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
 
 - (BOOL)sendActionToActivePage:(SEL)action {
   auto it = _tabRecords.find(ToStdString(_activeTabID));
+  if (it != _tabRecords.end() && it->second.webKitPage != nil) {
+    NSView *page = it->second.webKitPage.view;
+    return [page respondsToSelector:action] && [NSApp sendAction:action to:page from:nil];
+  }
   if (it == _tabRecords.end() || !it->second.browser) {
     return NO;
   }
@@ -5609,7 +6215,9 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
 
 - (void)focusActivePage {
   auto it = _tabRecords.find(ToStdString(_activeTabID));
-  if (it != _tabRecords.end() && it->second.browser) {
+  if (it != _tabRecords.end() && it->second.webKitPage != nil) {
+    [it->second.webKitPage focus];
+  } else if (it != _tabRecords.end() && it->second.browser) {
     it->second.browser->GetHost()->SetFocus(true);
   }
 }
@@ -5617,6 +6225,16 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
 - (void)captureActiveTabRegionToPasteboard:(CGRect)fraction {
   std::string activeKey = ToStdString(_activeTabID);
   auto it = _tabRecords.find(activeKey);
+  if (it != _tabRecords.end() && it->second.webKitPage != nil) {
+    [it->second.webKitPage capturePictureWithFraction:fraction
+                                           completion:^(NSData *png) {
+                                             if (png.length == 0) return;
+                                             NSPasteboard *pasteboard = NSPasteboard.generalPasteboard;
+                                             [pasteboard clearContents];
+                                             [pasteboard setData:png forType:NSPasteboardTypePNG];
+                                           }];
+    return;
+  }
   if (it == _tabRecords.end() || !it->second.browser) {
     return;
   }
@@ -5646,6 +6264,10 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
 
 - (void)captureActiveTabPictureWithCompletion:(void (^)(NSData *))completion {
   auto it = _tabRecords.find(ToStdString(_activeTabID));
+  if (it != _tabRecords.end() && it->second.webKitPage != nil) {
+    [it->second.webKitPage capturePictureWithCompletion:completion];
+    return;
+  }
   if (it == _tabRecords.end() || !it->second.browser) {
     completion(nil);
     return;
@@ -5673,6 +6295,10 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
     return;
   }
 
+  if (it->second.webKitPage != nil) {
+    [it->second.webKitPage print];
+    return;
+  }
   PrintBrowserOnUI(it->second.browser);
 }
 
@@ -5704,7 +6330,9 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
 
 - (void)togglePictureInPictureInActiveTab {
   auto it = _tabRecords.find(ToStdString(_activeTabID));
-  if (it != _tabRecords.end() && it->second.browser) {
+  if (it != _tabRecords.end() && it->second.webKitPage != nil) {
+    [it->second.webKitPage togglePictureInPicture];
+  } else if (it != _tabRecords.end() && it->second.browser) {
     EvaluateInPage(it->second.browser, kTogglePictureInPictureScript, true);
   }
 }
@@ -6245,6 +6873,9 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
 
 - (NSArray<NSData *> *)activeTabCertificateChain {
   auto it = _tabRecords.find(ToStdString(_activeTabID));
+  if (it != _tabRecords.end() && it->second.webKitPage != nil) {
+    return it->second.webKitPage.certificateChain;
+  }
   if (it == _tabRecords.end() || !it->second.browser) {
     return @[];
   }
@@ -6299,6 +6930,10 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
 
 - (void)requestActiveTabSelectedTextWithCompletion:(void (^)(NSString *))completion {
   auto it = _tabRecords.find(ToStdString(_activeTabID));
+  if (it != _tabRecords.end() && it->second.webKitPage != nil) {
+    [it->second.webKitPage selectedTextWithCompletion:completion];
+    return;
+  }
   if (it == _tabRecords.end() || !it->second.browser) {
     completion(nil);
     return;
@@ -6413,6 +7048,10 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
 
 - (void)controlMediaInTabWithID:(NSString *)tabID action:(NSString *)action {
   auto it = _tabRecords.find(ToStdString(tabID));
+  if (it != _tabRecords.end() && it->second.webKitPage != nil) {
+    [it->second.webKitPage controlMedia:action];
+    return;
+  }
   if (it == _tabRecords.end() || !it->second.browser || it->second.mediaControlFrameID.empty() ||
       !CefCurrentlyOn(TID_UI)) {
     return;
@@ -6433,6 +7072,10 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
   }
 
   it->second.audioMuted = muted;
+  if (it->second.webKitPage != nil) {
+    [it->second.webKitPage setAudioMuted:muted];
+    return;
+  }
   SetBrowserAudioMutedOnUI(it->second.browser, muted);
 }
 
@@ -6577,6 +7220,9 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
 
 - (double)zoomLevelForTabWithID:(NSString *)tabID {
   auto it = _tabRecords.find(ToStdString(tabID));
+  if (it != _tabRecords.end() && it->second.webKitPage != nil) {
+    return it->second.webKitPage.zoomLevel;
+  }
   if (it == _tabRecords.end() || !it->second.browser || !CefCurrentlyOn(TID_UI)) {
     return NAN;
   }
@@ -6592,6 +7238,10 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
     return;
   }
 
+  if (it->second.webKitPage != nil) {
+    it->second.webKitPage.zoomLevel = zoomLevel;
+    return;
+  }
   SetBrowserZoomLevelOnUI(it->second.browser, zoomLevel);
 }
 
@@ -6605,6 +7255,10 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
     return;
   }
 
+  if (it->second.webKitPage != nil) {
+    [it->second.webKitPage find:text forward:forward matchCase:matchCase];
+    return;
+  }
   FindBrowserOnUI(it->second.browser, text, forward, matchCase, findNext);
 }
 
@@ -6615,6 +7269,10 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
     return;
   }
 
+  if (it->second.webKitPage != nil) {
+    if (clearSelection) [it->second.webKitPage stopFinding];
+    return;
+  }
   StopFindingBrowserOnUI(it->second.browser, clearSelection);
 }
 
@@ -6633,6 +7291,9 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
     CloseBrowserAfterPageModalWindows(it->second.browser, false);
   } else {
     const BOOL wasActive = [_activeTabID isEqualToString:tabID];
+    [self retirePageForTabID:tabID record:it->second];
+    it = _tabRecords.find(ToStdString(tabID));
+    if (it == _tabRecords.end()) return YES;
     _tabRecords.erase(it);
     [self notifyCloseRequestForTabID:tabID requestID:requestID
                             outcome:BrowserTabCloseRequestOutcomeClosed];
@@ -6998,6 +7659,9 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
   }
 
   const BOOL wasActive = [_activeTabID isEqualToString:tabID];
+  if (it->second.webKitPage != nil) {
+    [self retirePageForTabID:tabID record:it->second];
+  }
   _tabRecords.erase(tabKey);
   [self.delegate browserTabController:self didCloseTabWithID:tabID];
   [self updateBrowserVisibilityFocusingActiveTab:wasActive];
@@ -7008,6 +7672,10 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
   auto it = _tabRecords.find(tabKey);
   if (it == _tabRecords.end()) return nil;
   TabRecord &record = it->second;
+  if (record.webKitPage != nil && record.creationState == BrowserTabEngineCreationStateReady &&
+      !record.isClosing && record.closeRequestID.empty()) {
+    return [self detachWebKitTabWithID:tabID record:record];
+  }
   if (record.creationState != BrowserTabEngineCreationStateReady || record.isClosing ||
       !record.browser || !record.browser->IsValid() || !record.closeRequestID.empty() ||
       record.closeDialogCallback || record.closeConfirmation != nil || _pageDialogs[tabID] != nil ||
@@ -7057,7 +7725,76 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
   return transfer;
 }
 
+- (BrowserTabPageTransfer *)detachWebKitTabWithID:(NSString *)tabID record:(TabRecord &)record {
+  [self closePeekSessionsOwnedByTabID:tabID];
+  const MediaFrameState media = record.reportedMedia;
+  [self reportMedia:MediaFrameState() forTabID:tabID record:record];
+  record.reportedMedia = media;
+  record.webKitPage.delegate = nil;
+  BrowserTabPageTransfer *transfer = [[BrowserTabPageTransfer alloc] initWithRecord:record
+                                                                       mediaVolume:_mediaVolumes[tabID]];
+  [_mediaVolumes removeObjectForKey:tabID];
+  NSView *view = record.webKitPage.view;
+  _tabRecords.erase(ToStdString(tabID));
+  [view removeFromSuperview];
+  if ([_activeTabID isEqualToString:tabID]) {
+    _activeTabID = nil;
+  }
+  if ([_visibleLayoutTabIDs containsObject:tabID]) {
+    NSMutableArray<NSString *> *remaining = [_visibleLayoutTabIDs mutableCopy];
+    [remaining removeObject:tabID];
+    _visibleLayoutTabIDs = remaining.count > 1 ? remaining : nil;
+    _visibleLayoutFractions = nil;
+  }
+  [self updateBrowserVisibilityFocusingActiveTab:NO];
+  return transfer;
+}
+
+- (NSString *)adoptWebKitTabPage:(BrowserTabPageTransfer *)transfer makeActive:(BOOL)makeActive {
+  NSString *tabID = NSUUID.UUID.UUIDString;
+  TabRecord record = transfer->_record;
+  transfer->_adopted = YES;
+  BrowserWebKitPage *page = record.webKitPage;
+  page.delegate = self;
+  const MediaFrameState media = record.reportedMedia;
+  record.reportedMedia = MediaFrameState();
+  _tabRecords[ToStdString(tabID)] = record;
+  if (transfer->_mediaVolume != nil) {
+    if (_mediaVolumes == nil) _mediaVolumes = [NSMutableDictionary dictionary];
+    _mediaVolumes[tabID] = transfer->_mediaVolume;
+  }
+  if (makeActive || _activeTabID == nil) {
+    _activeTabID = [tabID copy];
+  }
+  BrowserTabHostView *hostView = _hostView;
+  if (hostView != nil) {
+    page.view.hidden = YES;
+    [hostView addSubview:page.view positioned:NSWindowBelow relativeTo:nil];
+    SyncPageViewFrame(hostView, page.view);
+  }
+  [self updateBrowserVisibilityFocusingActiveTab:[_activeTabID isEqualToString:tabID]];
+  __weak BrowserTabController *weakSelf = self;
+  dispatch_async(dispatch_get_main_queue(), ^{
+    BrowserTabController *controller = weakSelf;
+    if (controller == nil) return;
+    auto it = controller->_tabRecords.find(ToStdString(tabID));
+    if (it == controller->_tabRecords.end() || it->second.webKitPage != page) return;
+    [controller reportMedia:media forTabID:tabID record:it->second];
+    NSString *favicon = ToNSString(it->second.faviconURL);
+    [controller.delegate browserTabController:controller
+                           didUpdateTabWithID:tabID
+                                        title:page.title.length > 0 ? page.title : nil
+                                    urlString:page.urlString.length > 0 ? page.urlString : nil
+                             faviconURLString:favicon.length > 0 ? favicon : nil];
+    [controller reportNavigationStateForTabID:tabID];
+  });
+  return tabID;
+}
+
 - (NSString *)adoptTabPage:(BrowserTabPageTransfer *)transfer makeActive:(BOOL)makeActive {
+  if (transfer->_record.webKitPage != nil) {
+    return [self adoptWebKitTabPage:transfer makeActive:makeActive];
+  }
   NSString *tabID = NSUUID.UUID.UUIDString;
   std::string tabKey = ToStdString(tabID);
   TabRecord record = transfer->_record;
@@ -7207,6 +7944,11 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
 }
 
 - (void)exitPageFullscreen {
+  for (auto &entry : _tabRecords) {
+    if (entry.second.webKitPage.isFullscreen) {
+      [entry.second.webKitPage exitFullscreen];
+    }
+  }
   auto it = _tabRecords.find(ToStdString(_pageFullscreenTabID));
   if (it == _tabRecords.end() || !it->second.browser) return;
   it->second.browser->GetHost()->ExitFullscreen(true);
@@ -7226,6 +7968,10 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
 
 - (void)prepareForCefShutdown {
   self.delegate = nil;
+  if (_enginePolicyObserver != nil) {
+    [NSNotificationCenter.defaultCenter removeObserver:_enginePolicyObserver];
+    _enginePolicyObserver = nil;
+  }
   [_splitFocusRing removeFromSuperview];
   _splitFocusRing = nil;
   [self closeAllPeeks];
@@ -7247,6 +7993,7 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
   std::vector<std::string> tabIDs;
   for (const auto &entry : _tabRecords) {
     tabIDs.push_back(entry.first);
+    [entry.second.webKitPage close];
     // DevTools browsers have no client of ours; close them before CEF shuts down.
     if (entry.second.browser && entry.second.browser->GetHost()) {
       entry.second.browser->GetHost()->CloseDevTools();
@@ -7268,6 +8015,7 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
 
 - (void)syncBrowserFrames {
   [self layoutVisiblePanes:[self visiblePaneKeys]];
+  [self layoutProtectedVideoPrompt];
 }
 
 - (void)handleBrowserCreated:(CefRefPtr<CefBrowser>)browser
@@ -7362,6 +8110,10 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
     return;
   }
 
+  if ([_protectedVideoPromptTabID isEqualToString:tabID] &&
+      ![_protectedVideoPromptSite isEqualToString:[BrowserPageEnginePolicy siteForURLString:urlString]]) {
+    [self dismissProtectedVideoPrompt];
+  }
   // Before the first app load, CEF may report its empty bootstrap document.
   // After that load starts, forward every address, including redirects/back.
   [self.delegate browserTabController:self
@@ -7394,6 +8146,10 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
 - (void)handleNavigationStateChangeForTabID:(NSString *)tabID
                                   canGoBack:(BOOL)canGoBack
                                canGoForward:(BOOL)canGoForward {
+  auto it = _tabRecords.find(ToStdString(tabID));
+  if (it != _tabRecords.end() && !it->second.engineBackURL.empty()) {
+    canGoBack = YES;
+  }
   [self.delegate browserTabController:self
       didUpdateNavigationStateForTabWithID:tabID
                                  canGoBack:canGoBack
@@ -7560,7 +8316,7 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
       continue;
     }
 
-    NSView *browserView = BrowserViewForBrowser(entry.second.browser);
+    NSView *browserView = PageViewForRecord(entry.second);
     if (browserView != nil) {
       const bool keptVisible = entry.second.keptVisibleForPictureInPicture;
       // The shown tab of another Space stays drawn below the page on screen, so
@@ -7574,7 +8330,7 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
         [browserView.superview addSubview:browserView positioned:NSWindowBelow relativeTo:nil];
       }
       if (warm && _hostView != nil) {
-        SyncBrowserViewFrame(_hostView, entry.second.browser);
+        SyncPageViewFrame(_hostView, browserView);
       }
     }
   }
@@ -7584,19 +8340,22 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
     if (it == _tabRecords.end()) {
       continue;
     }
-    NSView *browserView = BrowserViewForBrowser(it->second.browser);
+    NSView *browserView = PageViewForRecord(it->second);
     if (browserView != nil) {
       browserView.hidden = NO;
     }
   }
   [self layoutVisiblePanes:visibleKeys];
+  [self layoutProtectedVideoPrompt];
 
   auto activeIt = _tabRecords.find(activeKey);
   if (activeIt == _tabRecords.end()) {
     return;
   }
 
-  if (focusActive && activeIt->second.browser) {
+  if (focusActive && activeIt->second.webKitPage != nil) {
+    [activeIt->second.webKitPage focus];
+  } else if (focusActive && activeIt->second.browser) {
     activeIt->second.browser->GetHost()->SetFocus(true);
   }
 }
@@ -8164,6 +8923,12 @@ bool BrowserTabClient::OnProcessMessageReceived(CefRefPtr<CefBrowser>,
     [controller_ noteRendererProcessID:message->GetArgumentList()->GetInt(0) forTabID:ToNSString(tab_id_)];
     return true;
   }
+  if (source_process == PID_RENDERER && frame &&
+      message->GetName() == shared::kProtectedMediaRefusedMessage) {
+    [controller_ handleProtectedMediaRefusedForTabID:ToNSString(tab_id_)
+                                           keySystem:ToNSString(message->GetArgumentList()->GetString(0).ToString())];
+    return true;
+  }
   if (source_process != PID_RENDERER || !frame || message->GetName() != shared::kMediaStateMessage) {
     return false;
   }
@@ -8244,9 +9009,24 @@ bool BrowserTabClient::OnBeforeBrowse(CefRefPtr<CefBrowser> browser,
     return true;
   }
 
+  const int transition = request->GetTransitionType();
+  // A site that plays its video in WebKit: the page moves there. Back and
+  // Forward stay in Chromium, where the user went before.
+  if ((transition & TT_FORWARD_BACK_FLAG) == 0 && request->GetMethod() == "GET") {
+    BrowserTabController *controller = controller_;
+    NSString *tabID = ToNSString(tab_id_);
+    NSString *urlString = ToNSString(request->GetURL().ToString());
+    if (controller != nil && [controller shouldMoveNavigationToWebKitFromTabID:tabID toURLString:urlString]) {
+      __weak BrowserTabController *weakController = controller;
+      dispatch_async(dispatch_get_main_queue(), ^{
+        [weakController moveTabWithID:tabID toWebKitWithURLString:urlString];
+      });
+      return true;
+    }
+  }
+
   // A clicked link or its server redirect, such as a site's outbound link
   // page; not typed, restored, scripted or a form post.
-  const int transition = request->GetTransitionType();
   const int qualifiers = TT_FORWARD_BACK_FLAG | TT_DIRECT_LOAD_FLAG | TT_CLIENT_REDIRECT_FLAG;
   if (user_gesture && (transition & TT_SOURCE_MASK) == TT_LINK && (transition & qualifiers) == 0 &&
       request->GetMethod() == "GET") {

@@ -30,6 +30,9 @@ inline constexpr char kCardFormMessage[] = "OpenArc.CardForm";
 inline constexpr char kAddressSubmittedMessage[] = "OpenArc.AddressSubmitted";
 // To the renderer: put these in the frame's address or card fields: JSON.
 inline constexpr char kAddressFillMessage[] = "OpenArc.AddressFill";
+// To the browser: a page with video asked for a protected key system, such as
+// Widevine, which Chromium refused: the key system's name.
+inline constexpr char kProtectedMediaRefusedMessage[] = "OpenArc.ProtectedMediaRefused";
 
 }  // namespace shared
 

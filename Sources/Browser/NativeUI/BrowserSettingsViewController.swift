@@ -85,6 +85,9 @@ struct BrowserSettingsIcon {
         "bookmarks-bar": .init("bookmark.fill", .systemRed),
         "toolbar-full-url": .init("ellipsis.rectangle.fill", .systemRed),
         "picture-in-picture": .init("pip.fill", .systemPurple),
+        "streaming-in-webkit": .init("play.tv.fill", .systemRed),
+        "fairplay-in-chromium": .init("lock.shield.fill", .systemIndigo),
+        "site-engines-reset": .init("arrow.uturn.backward", .systemGray),
         "share-theme-with-websites": .init("paintpalette.fill", .systemPurple),
         "agent-access": .init("terminal.fill", .systemGray),
         // Accounts
@@ -1489,6 +1492,29 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                     BrowserStrings.settingsShareThemeWithWebsites,
                     get: { preferences.sharesThemeWithWebsites },
                     set: { preferences.sharesThemeWithWebsites = $0 },
+                ),
+            ]),
+            section(BrowserStrings.settingsProtectedVideoSection, rows: [
+                toggle(
+                    "streaming-in-webkit",
+                    BrowserStrings.settingsStreamingInWebKit,
+                    detail: BrowserStrings.settingsStreamingInWebKitDetail,
+                    get: { BrowserPageEnginePolicy.opensStreamingSitesInWebKit },
+                    set: { BrowserPageEnginePolicy.opensStreamingSitesInWebKit = $0 },
+                ),
+                toggle(
+                    "fairplay-in-chromium",
+                    BrowserStrings.settingsFairPlayInChromium,
+                    detail: BrowserStrings.settingsFairPlayInChromiumDetail,
+                    get: { BrowserPageEnginePolicy.playsProtectedMediaInChromium },
+                    set: { BrowserPageEnginePolicy.playsProtectedMediaInChromium = $0 },
+                ),
+                row(
+                    BrowserStrings.settingsSiteEnginesResetDetail,
+                    icon: "site-engines-reset",
+                    control: BrowserActionButton(BrowserStrings.settingsSiteEnginesReset) {
+                        BrowserPageEnginePolicy.resetSiteEngines()
+                    },
                 ),
             ]),
             section(BrowserStrings.settingsSitePermissionsTitle, body: sitePermissionsBody),

@@ -5,6 +5,71 @@ import Foundation
 // MARK: - BrowserStrings
 
 enum BrowserStrings {
+    static let menuOpenPageInWebKit = NSLocalizedString(
+        "browser.menu.open_page_in_webkit",
+        comment: "View menu: show the page in WebKit, which plays protected video.",
+    )
+    static let menuOpenPageInChromium = NSLocalizedString(
+        "browser.menu.open_page_in_chromium",
+        comment: "View menu: show a WebKit page in Chromium again.",
+    )
+    static let settingsProtectedVideoSection = NSLocalizedString(
+        "browser.settings.protected_video.section",
+        comment: "Settings section about DRM video.",
+    )
+    static let settingsStreamingInWebKit = NSLocalizedString(
+        "browser.settings.protected_video.webkit",
+        comment: "Settings toggle: streaming sites open in WebKit.",
+    )
+    static let settingsStreamingInWebKitDetail = NSLocalizedString(
+        "browser.settings.protected_video.webkit.detail",
+        comment: "Explains the streaming sites toggle.",
+    )
+    static let settingsFairPlayInChromium = NSLocalizedString(
+        "browser.settings.protected_video.fairplay",
+        comment: "Settings toggle: play protected media in Chromium through FairPlay.",
+    )
+    static let settingsFairPlayInChromiumDetail = NSLocalizedString(
+        "browser.settings.protected_video.fairplay.detail",
+        comment: "Explains the FairPlay in Chromium toggle.",
+    )
+    static let settingsSiteEnginesReset = NSLocalizedString(
+        "browser.settings.protected_video.reset",
+        comment: "Settings button: forget the engine chosen for each website.",
+    )
+    static let settingsSiteEnginesResetDetail = NSLocalizedString(
+        "browser.settings.protected_video.reset.detail",
+        comment: "Explains the reset of website engine choices.",
+    )
+    static let protectedVideoPromptTitle = NSLocalizedString(
+        "browser.protected_video.prompt.title",
+        comment: "Prompt title when Chromium cannot play a page's protected video.",
+    )
+    static let protectedVideoPromptDetail = NSLocalizedString(
+        "browser.protected_video.prompt.detail",
+        comment: "Prompt detail; the argument is the site's host.",
+    )
+    static let protectedVideoPromptOpen = NSLocalizedString(
+        "browser.protected_video.prompt.open",
+        comment: "Prompt button: open the page in WebKit and keep that for the site.",
+    )
+    static let protectedVideoPromptStay = NSLocalizedString(
+        "browser.protected_video.prompt.stay",
+        comment: "Prompt button: keep the page in Chromium.",
+    )
+    static let protectedVideoPromptNever = NSLocalizedString(
+        "browser.protected_video.prompt.never",
+        comment: "Prompt button: keep the site in Chromium and stop asking.",
+    )
+    static let webKitDialogOK = NSLocalizedString("browser.webkit.dialog.ok", comment: "Accept a page's alert.")
+    static let webKitDialogCancel = NSLocalizedString(
+        "browser.webkit.dialog.cancel",
+        comment: "Dismiss a page's confirmation or prompt.",
+    )
+    static let webKitDialogTitle = NSLocalizedString(
+        "browser.webkit.dialog.title",
+        comment: "Title of a page's alert without a host.",
+    )
     static let beforeUnloadTitle = NSLocalizedString(
         "browser.before_unload.title",
         comment: "Manual tab close confirmation.",

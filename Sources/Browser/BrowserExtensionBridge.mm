@@ -4,6 +4,8 @@
 
 #import <Sparkle/Sparkle.h>
 
+#import <WebKit/WebKit.h>
+
 #import "OpenArc-Swift.h"
 
 #include <dlfcn.h>

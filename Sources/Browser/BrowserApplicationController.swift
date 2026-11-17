@@ -1004,6 +1004,11 @@ NSMenuDelegate, NSUserInterfaceValidations {
             return activeChromeModel?.canOpenLocation ?? false
         case #selector(createNewWindow(_:)):
             return !isTerminationRequested
+        case #selector(openPageInOtherEngine(_:)):
+            if let title = activeChromeModel?.otherEngineMenuTitle {
+                (item as? NSMenuItem)?.title = title
+            }
+            return activeChromeModel?.canOpenPageInOtherEngine ?? false
         case #selector(togglePictureInPicture(_:)):
             if let title = activeChromeModel?.pictureInPictureMenuTitle {
                 (item as? NSMenuItem)?.title = title
@@ -1228,6 +1233,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
         default:
             return true
         }
+    }
+
+    func openPageInOtherEngine(_: Any?) {
+        activeChromeModel?.openPageInOtherEngine()
     }
 
     func dockDeveloperToolsAgain(_: Any?) {
@@ -2001,6 +2010,13 @@ NSMenuDelegate, NSUserInterfaceValidations {
         )
         castItem.target = self
         viewMenu.addItem(castItem)
+        let engineItem = NSMenuItem(
+            title: BrowserStrings.menuOpenPageInWebKit,
+            action: #selector(openPageInOtherEngine(_:)),
+            keyEquivalent: "",
+        )
+        engineItem.target = self
+        viewMenu.addItem(engineItem)
         // Groups: Cast | Developer | Enter Full Screen.
         viewMenu.addItem(.separator())
         addDeveloperMenu(to: viewMenu)

@@ -969,6 +969,17 @@ enum BrowserWindowMode: Equatable {
         isContextReady && isPersistenceEnabled && !isRestoringSession && !isShuttingDown
     }
 
+    /// View › Open Page in WebKit, or in Chromium for a page WebKit shows.
+    var otherEngineMenuTitle: String {
+        tabDriver.activeTabEngine == .webKit
+            ? BrowserStrings.menuOpenPageInChromium
+            : BrowserStrings.menuOpenPageInWebKit
+    }
+
+    var canOpenPageInOtherEngine: Bool {
+        selectedTabID != nil && tabDriver.activeTabCanSwitchEngine
+    }
+
     private var canAdmitLocalAutomaticArchive: Bool {
         isContextReady && windowMode.persistsSession && isPersistenceEnabled && !isShuttingDown &&
             !hasDiscardedSessionForClosure && !hasUncommittedSessionWrites && !isRestoringSession &&
@@ -4267,6 +4278,12 @@ enum BrowserWindowMode: Equatable {
         guard showsTab, !takenOver, selectedTabID != tabID, !isShuttingDown else { return }
         selectTab(id: tabID)
         hostView.window?.makeKeyAndOrderFront(nil)
+    }
+
+    /// Shows the page in the other engine and keeps that engine for its site.
+    func openPageInOtherEngine() {
+        guard canOpenPageInOtherEngine else { return }
+        tabDriver.openActiveTab(in: tabDriver.activeTabEngine == .webKit ? .chromium : .webKit)
     }
 
     @discardableResult func togglePictureInPicture() -> Bool {

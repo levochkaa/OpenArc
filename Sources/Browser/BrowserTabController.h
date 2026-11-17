@@ -218,6 +218,15 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
 
 @interface BrowserTabController : NSObject
 
+/// Streaming sites open in WebKit, which plays protected video with FairPlay.
+/// Off for pages that size themselves, such as extension popups.
+@property(nonatomic) BOOL webKitPagesEnabled;
+/// The engine of the shown tab's page: a `BrowserPageEngine` raw value.
+@property(nonatomic, readonly) NSInteger activeTabEngine;
+/// The shown tab's page is a website that the other engine can show.
+@property(nonatomic, readonly) BOOL activeTabCanSwitchEngine;
+/// Shows the shown tab's page in `engine` and keeps that choice for its site.
+- (void)openActiveTabInEngine:(NSInteger)engine;
 /// Runs in this controller's pages as they start to load.
 @property(nonatomic, copy, nullable) NSString *pageLoadStartScript;
 /// Pages size themselves to their content, as an extension's popup does.

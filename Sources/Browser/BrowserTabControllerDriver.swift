@@ -67,6 +67,14 @@ import Foundation
         browserHostView
     }
 
+    var activeTabEngine: BrowserPageEngine {
+        BrowserPageEngine(rawValue: controller.activeTabEngine) ?? .chromium
+    }
+
+    var activeTabCanSwitchEngine: Bool {
+        controller.activeTabCanSwitchEngine
+    }
+
     init(
         hostView: BrowserTabHostView,
         usesEphemeralRequestContext: Bool = false,
@@ -80,6 +88,7 @@ import Foundation
         )
         super.init()
         controller.delegate = self
+        controller.webKitPagesEnabled = true
     }
 
     override convenience init() {
@@ -98,6 +107,10 @@ import Foundation
             hostView: BrowserTabHostView(frame: .zero),
             profileCachePath: profileCachePath,
         )
+    }
+
+    func openActiveTab(in engine: BrowserPageEngine) {
+        controller.openActiveTab(inEngine: engine.rawValue)
     }
 
     func createTab(withURLString urlString: String, makeActive: Bool) -> String {

@@ -344,6 +344,70 @@ constexpr char kPasswordObserverScript[] = R"JS(
 })
 )JS";
 
+// Notices when Chromium refuses a page the protected video it asked for: a
+// Widevine, PlayReady or FairPlay request that fails while the page has a video,
+// or gets one within seconds. Pages that only probe for a key system have none.
+// It reports once per document; the browser may offer the page in WebKit.
+constexpr char kProtectedMediaObserverScript[] = R"JS(
+(function (report) {
+  'use strict';
+  const proto = Navigator.prototype;
+  const native = proto.requestMediaKeySystemAccess;
+  if (typeof native !== 'function') return;
+  const apply = Reflect.apply;
+  const protectedSystem = /^(com\.widevine\.alpha|com\.microsoft\.playready|com\.apple\.fps)/;
+  let reported = false;
+  const hasVideo = () => !!document.querySelector('video');
+  function refused(system) {
+    if (reported) return;
+    if (hasVideo()) {
+      reported = true;
+      report(system);
+      return;
+    }
+    setTimeout(() => {
+      if (!reported && hasVideo()) {
+        reported = true;
+        report(system);
+      }
+    }, 3000);
+  }
+  proto.requestMediaKeySystemAccess = new Proxy(native, {
+    apply(target, navigator, args) {
+      const result = apply(target, navigator, args);
+      const system = String(args[0] || '');
+      if (protectedSystem.test(system) && result && typeof result.then === 'function') {
+        result.then(null, () => refused(system));
+      }
+      return result;
+    },
+  });
+})
+)JS";
+
+/// Reports a refused key system to the browser.
+class ProtectedMediaReporter final : public CefV8Handler {
+ public:
+  bool Execute(const CefString&,
+               CefRefPtr<CefV8Value>,
+               const CefV8ValueList& arguments,
+               CefRefPtr<CefV8Value>&,
+               CefString&) override {
+    CefRefPtr<CefV8Context> context = CefV8Context::GetCurrentContext();
+    CefRefPtr<CefFrame> frame = context ? context->GetFrame() : nullptr;
+    if (!frame || arguments.size() != 1 || !arguments[0]->IsString()) {
+      return true;
+    }
+    CefRefPtr<CefProcessMessage> message = CefProcessMessage::Create(kProtectedMediaRefusedMessage);
+    message->GetArgumentList()->SetString(0, arguments[0]->GetStringValue());
+    frame->SendProcessMessage(PID_BROWSER, message);
+    return true;
+  }
+
+ private:
+  IMPLEMENT_REFCOUNTING(ProtectedMediaReporter);
+};
+
 /// Pages whose media the sidebar follows; extension, DevTools and internal
 /// pages are left alone.
 bool ObservesMedia(const std::string& url) {
@@ -451,6 +515,7 @@ class RendererProcessApp : public CefApp, public CefRenderProcessHandler {
       return;
     }
     InstallPasswordObserver(frame, context);
+    InstallProtectedMediaObserver(frame, context);
     CefRefPtr<CefV8Value> factory;
     CefRefPtr<CefV8Exception> exception;
     if (!context->Eval(kMediaObserverScript, CefString(), 0, factory, exception) || !factory ||
@@ -555,6 +620,21 @@ class RendererProcessApp : public CefApp, public CefRenderProcessHandler {
     if (fill && fill->IsFunction()) {
       password_fills_[frame->GetIdentifier().ToString()] = {context, fill};
     }
+  }
+
+  void InstallProtectedMediaObserver(CefRefPtr<CefFrame> frame, CefRefPtr<CefV8Context> context) {
+    const std::string url = frame->GetURL().ToString();
+    if (url.rfind("https://", 0) != 0 && url.rfind("http://", 0) != 0) {
+      return;
+    }
+    CefRefPtr<CefV8Value> factory;
+    CefRefPtr<CefV8Exception> exception;
+    if (!context->Eval(kProtectedMediaObserverScript, CefString(), 0, factory, exception) || !factory ||
+        !factory->IsFunction()) {
+      return;
+    }
+    CefV8ValueList arguments = {CefV8Value::CreateFunction("report", new ProtectedMediaReporter())};
+    factory->ExecuteFunctionWithContext(context, nullptr, arguments);
   }
 
   std::map<std::string, MediaControl> password_fills_;

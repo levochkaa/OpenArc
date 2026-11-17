@@ -261,6 +261,18 @@ enum BrowserPageTranslationState: Int {
     /// A picture of a page on its way to another window, as PNG.
     func capturePicture(of handoff: BrowserTabPageHandoff, completion: @escaping @MainActor (Data?) -> Void)
     func prepareForCefShutdown()
+    /// The engine that shows the active tab's page.
+    var activeTabEngine: BrowserPageEngine { get }
+    /// The active tab shows a website, which either engine can show.
+    var activeTabCanSwitchEngine: Bool { get }
+    /// Shows the active tab's page in `engine` and keeps that choice for its site.
+    func openActiveTab(in engine: BrowserPageEngine)
+}
+
+extension BrowserTabDriving {
+    var activeTabEngine: BrowserPageEngine { .chromium }
+    var activeTabCanSwitchEngine: Bool { false }
+    func openActiveTab(in _: BrowserPageEngine) {}
 }
 
 // MARK: - BrowserTabPageHandoff
