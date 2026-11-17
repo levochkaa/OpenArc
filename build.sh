@@ -56,6 +56,7 @@ Options:
   --full-output         Print complete xcodebuild output instead of warnings/errors only.
   --skip-build          For run/debug/logs/telemetry/verify, launch the existing app bundle.
   --runtime-suffix ID   Override the stable per-worktree CEF/session identity.
+                        Such an instance syncs only when OPENARC_SYNC_BASE_URL is set.
   --ios-destination DEST
                         Simulator destination, e.g. 'platform=iOS Simulator,id=UUID'.
                         Required for ios-test; ios-build defaults to a generic simulator.

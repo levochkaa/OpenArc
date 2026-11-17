@@ -21,11 +21,15 @@ struct BrowserSyncConfiguration {
     }
 
     /// The server the build ships with, unless `OPENARC_SYNC_BASE_URL`
-    /// names another; an empty value turns sync off.
+    /// names another; an empty value turns sync off. An instance started with
+    /// `--runtime-suffix` has a profile of its own but shares the account's
+    /// sign-in, so it syncs only with `OPENARC_SYNC_BASE_URL` set.
     static func current(
         environment: [String: String] = ProcessInfo.processInfo.environment,
+        arguments: [String] = ProcessInfo.processInfo.arguments,
         packagedBaseURL: String? = Bundle.main.object(forInfoDictionaryKey: "OpenArcSyncBaseURL") as? String,
     ) -> BrowserSyncConfiguration? {
+        let packagedBaseURL = BrowserRuntimeIdentity.suffix(arguments: arguments) == nil ? packagedBaseURL : nil
         guard
             let rawBaseURL = environment["OPENARC_SYNC_BASE_URL"] ?? packagedBaseURL,
             let baseURL = URL(string: rawBaseURL)

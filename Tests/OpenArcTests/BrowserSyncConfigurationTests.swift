@@ -57,6 +57,21 @@ import Testing
     #expect(BrowserSyncConfiguration.current(environment: [:], packagedBaseURL: nil) == nil)
 }
 
+@Test func aRuntimeSuffixInstanceSyncsOnlyWithAServerNamedInTheEnvironment() {
+    let packaged = "https://api.openarc.su"
+    let arguments = ["/OpenArc", "--runtime-suffix=probe"]
+    #expect(BrowserSyncConfiguration.current(environment: [:], arguments: arguments, packagedBaseURL: packaged) == nil)
+    #expect(BrowserSyncConfiguration.current(
+        environment: ["OPENARC_SYNC_BASE_URL": "http://127.0.0.1:8080"],
+        arguments: arguments,
+        packagedBaseURL: packaged,
+    )?.baseURL
+        .absoluteString == "http://127.0.0.1:8080")
+    #expect(BrowserSyncConfiguration.current(environment: [:], arguments: ["/OpenArc"], packagedBaseURL: packaged)?
+        .baseURL
+        .absoluteString == packaged)
+}
+
 @Test func legacyAuthSessionDecodesWithoutIssuerButCannotAuthorizeSync() throws {
     let legacy = Data(
         #"{"accessToken":"legacy-token","userID":"user-1","deviceID":"device-1","userEmail":"user@example.test"}"#
