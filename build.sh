@@ -399,9 +399,9 @@ resolve_swift_packages() {
 }
 
 # Builds use the shared package graph prepared by resolve_swift_packages, so xcodebuild must not
-# resolve again. They also share one compilation cache across checkouts: prefix mapping records
-# the checkout path, which also holds DerivedData, as /^root in Swift and /^src in Objective-C++
-# debug info, so a new worktree reuses modules compiled in another one. LLDB needs
+# resolve again. They also share one compilation cache across checkouts: in Debug, prefix mapping
+# records the checkout path, which also holds DerivedData, as /^root in Swift and /^src in
+# Objective-C++ debug info, so a new worktree reuses modules compiled in another one. LLDB needs
 # `settings set target.source-map /^root <checkout> /^src <checkout>` for full-path breakpoints;
 # the debug action sets it.
 shared_cache_arguments() {
@@ -416,6 +416,12 @@ shared_cache_arguments() {
     COMPILATION_CACHE_ENABLE_CACHING=YES
     "COMPILATION_CACHE_CAS_PATH=$OPENARC_BUILD_CACHE_ROOT/CompilationCache/$(xcode_build_version)"
     COMPILATION_CACHE_LIMIT_SIZE=20G
+  )
+  # Release keeps real paths in its debug info: dsymutil copies the Swift
+  # interfaces of binary frameworks such as Sentry into the dSYM only from paths
+  # that exist, and crash reports symbolicate against the checkout's sources.
+  [[ "$CONFIGURATION" != "Release" ]] || return 0
+  SHARED_CACHE_ARGS+=(
     SWIFT_ENABLE_PREFIX_MAPPING=YES
     SWIFT_ENABLE_PROJECT_PREFIX_MAPPING=YES
     CLANG_ENABLE_PREFIX_MAPPING=YES
