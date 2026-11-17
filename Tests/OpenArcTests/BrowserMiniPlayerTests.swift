@@ -81,6 +81,28 @@ import Testing
         #expect(f.model.selectedTabID == x, "It keeps playing, so the window asked for the tab")
     }
 
+    @Test func aVideoPushedOutOfPictureInPictureByAnotherStaysBehind() {
+        let f = SidebarDragFixture(pinned: [], temporary: ["x", "y", "z"])
+        let x = f.id("x")
+        let y = f.id("y")
+        let z = f.id("z")
+        let playing = BrowserTabMediaState(
+            isPlaying: true, audible: true, video: true, hasPreviousTrack: false, hasNextTrack: false, title: "",
+        )
+        var inWindow = playing
+        inWindow.inPictureInPicture = true
+        f.model.selectTab(id: x)
+        f.model.handleMediaStateChange(tabID: x, state: playing)
+        f.model.handleMediaStateChange(tabID: y, state: playing)
+        f.model.selectTab(id: y)
+        f.model.handleMediaStateChange(tabID: x, state: inWindow)
+        // Leaving the second video moves it into the one window, which x leaves still playing.
+        f.model.selectTab(id: z)
+        f.model.handleMediaStateChange(tabID: y, state: inWindow)
+        f.model.handleMediaStateChange(tabID: x, state: playing)
+        #expect(f.model.selectedTabID == z, "Not taken back to x, which would push y out in turn")
+    }
+
     @Test func pictureInPictureCanBeOpenedByHand() {
         let f = SidebarDragFixture(pinned: [], temporary: ["x"])
         let x = f.id("x")

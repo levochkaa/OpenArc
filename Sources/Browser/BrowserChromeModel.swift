@@ -4253,7 +4253,12 @@ enum BrowserWindowMode: Equatable {
     /// Whether leaving the tab moved its video to Picture in Picture.
     func pictureInPictureDidEnd(tabID: String, showsTab: Bool) {
         pictureInPictureTabIDs.remove(tabID)
-        guard showsTab, selectedTabID != tabID, !isShuttingDown else { return }
+        // A video still playing came back through "back to tab", unless another tab's
+        // video took the one window: going back would push that one out in turn, and
+        // two playing videos would switch tabs back and forth without end.
+        let takenOver = pictureInPictureTabIDs.contains { $0 != tabID }
+            || tabMediaStates.contains { $0.key != tabID && $0.value.inPictureInPicture }
+        guard showsTab, !takenOver, selectedTabID != tabID, !isShuttingDown else { return }
         selectTab(id: tabID)
         hostView.window?.makeKeyAndOrderFront(nil)
     }
