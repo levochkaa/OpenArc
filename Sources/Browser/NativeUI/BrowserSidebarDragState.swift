@@ -39,6 +39,11 @@ import AppKit
     /// keeps a drag passing over the dock from switching Spaces.
     static let dockSpringDelay: TimeInterval = 0.1
 
+    /// A drag resting in the sidebar's side margin switches to the Space on that
+    /// side, then on to the next one while it stays there.
+    static let edgeSpringDelay: TimeInterval = 0.5
+    static let edgeSpringRepeatInterval: TimeInterval = 0.9
+
     private(set) var phase = Phase.idle
     private(set) var payload: BrowserSidebarDragPayload?
     private(set) var proposal: BrowserSidebarDropProposal?
@@ -74,6 +79,9 @@ import AppKit
     private var splitCandidateSince = Date.distantFuture
     private var splitDelayWork: DispatchWorkItem?
     private var dockSpringWork: DispatchWorkItem?
+    /// The side margin the pointer rests in: -1 before the selected Space, 1 after it.
+    private var edgeDirection: Int?
+    private var edgeSpringWork: DispatchWorkItem?
 
     var isDragging: Bool { phase == .dragging }
     var hiddenTabIDs: Set<String> { payload?.tabIDs ?? [] }
@@ -181,6 +189,18 @@ import AppKit
             DispatchQueue.main.asyncAfter(deadline: .now() + Self.dockSpringDelay, execute: work)
         }
         updatePointer(pointer)
+    }
+
+    /// Follows the pointer into the sidebar's side margins: resting in one
+    /// switches to the Space on that side, and on while it stays.
+    func updateEdgeTarget(_ direction: Int?) {
+        guard isDragging, direction != edgeDirection else { return }
+        edgeDirection = direction
+        edgeSpringWork?.cancel()
+        edgeSpringWork = nil
+        if let direction {
+            scheduleEdgeSpring(direction, after: Self.edgeSpringDelay)
+        }
     }
 
     func updatePointer(_ pointer: CGPoint) {
@@ -304,6 +324,23 @@ import AppKit
         dockSpringWork?.cancel()
         dockSpringWork = nil
         dockSpaceID = nil
+        edgeSpringWork?.cancel()
+        edgeSpringWork = nil
+        edgeDirection = nil
+    }
+
+    private func scheduleEdgeSpring(_ direction: Int, after delay: TimeInterval) {
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, isDragging, edgeDirection == direction, dockSpaceID == nil else { return }
+            let spaces = model.sidebarSnapshot.spaces
+            guard let index = spaces.firstIndex(where: { $0.id == model.selectedSpaceID }),
+                  spaces.indices.contains(index + direction)
+            else { return }
+            model.selectSpace(id: spaces[index + direction].id)
+            scheduleEdgeSpring(direction, after: Self.edgeSpringRepeatInterval)
+        }
+        edgeSpringWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
     }
 
     private func resetSplitDrop() {

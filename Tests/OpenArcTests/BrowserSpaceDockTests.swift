@@ -131,6 +131,40 @@ import Testing
         _ = drag.release(at: CGPoint(x: 20, y: 500), cancel: true)
     }
 
+    @Test func restingInASideMarginSwitchesToTheSpaceOnThatSide() async throws {
+        let f = SidebarDragFixture()
+        let drag = BrowserSidebarDragState(model: f.model)
+        drag.begin(
+            payload: f.payload("x"),
+            sourceFrame: CGRect(x: 0, y: 200, width: 220, height: 36),
+            start: CGPoint(x: 20, y: 210),
+            pointer: CGPoint(x: 20, y: 500),
+        )
+        // Passing through a margin does not switch, and no Space lies before the first.
+        drag.updateEdgeTarget(1)
+        drag.updateEdgeTarget(nil)
+        drag.updateEdgeTarget(-1)
+        try await Task.sleep(for: .seconds(BrowserSidebarDragState.edgeSpringDelay + 0.2))
+        #expect(f.model.selectedSpaceID == "s")
+
+        drag.updateEdgeTarget(1)
+        for _ in 0..<100 where f.model.selectedSpaceID != "t" {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(f.model.selectedSpaceID == "t")
+        #expect(drag.isDragging)
+        // Staying past the last Space goes no further.
+        try await Task.sleep(for: .seconds(BrowserSidebarDragState.edgeSpringRepeatInterval + 0.2))
+        #expect(f.model.selectedSpaceID == "t")
+
+        drag.updateEdgeTarget(-1)
+        for _ in 0..<100 where f.model.selectedSpaceID != "s" {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(f.model.selectedSpaceID == "s")
+        _ = drag.release(at: CGPoint(x: 20, y: 500), cancel: true)
+    }
+
     @Test func droppingOnASpaceIconMovesItemsToTheTopOfTheirSectionThere() throws {
         let f = SidebarDragFixture()
         f.model.selectSpace(id: "t")

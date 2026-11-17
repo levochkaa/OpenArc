@@ -572,12 +572,29 @@ final class BrowserNativeSidebarNSView: NSView {
         guard state.drag.isDragging else { return }
         lastWindowDragPoint = point
         state.drag.updateDockTarget(spaceDock?.spaceID(atWindowPoint: point))
+        state.drag.updateEdgeTarget(spaceEdgeDirection(atWindowPoint: point))
         state.drag.updatePointer(content.convert(point, from: nil))
         showPageUnderDrag(atWindowPoint: point)
         state.drag.updatePageDrop(atWindowPoint: point)
         if state.model.appTabs.isEmpty {
             needsLayout = true
         }
+    }
+
+    /// The side margins beside the tab list, outside the rows: the left one leads
+    /// to the Space before the selected one, the right one to the Space after it.
+    func spaceEdgeDirection(atWindowPoint point: CGPoint) -> Int? {
+        guard state.snapshot.spaces.count > 1 else { return nil }
+        let local = convert(point, from: nil)
+        let list = convert(pagerClip.frame, from: content)
+        guard local.y >= list.minY, local.y <= list.maxY else { return nil }
+        if local.x >= bounds.minX, local.x < content.frame.minX {
+            return -1
+        }
+        if local.x <= bounds.maxX, local.x > content.frame.maxX {
+            return 1
+        }
+        return nil
     }
 
     func finishDragging(atWindowPoint point: CGPoint) {
