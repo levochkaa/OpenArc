@@ -75,11 +75,43 @@ describe("App", () => {
 
     expect(screen.getByRole("heading", { name: /the browser you loved, still open/i })).toBeInTheDocument();
     expect(screen.getByRole("navigation", { name: /primary/i })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /download for macos/i })).toHaveAttribute(
-      "href",
-      "https://github.com/levochkaa/OpenArc/releases/latest",
-    );
+    expect(screen.getByRole("link", { name: /download for macos/i })).toHaveAttribute("href", "#releases");
     expect(screen.getByText("Loading release notes...")).toBeInTheDocument();
+  });
+
+  it("points download actions at the newest beta until a stable release ships", async () => {
+    mockFetchResponse({
+      releases: [
+        {
+          ...releaseResponse.releases[0],
+          id: 3,
+          name: "OpenArc 0.3.0 (3)",
+          tagName: "v0.3.0-3",
+          channel: "beta",
+          isLatestStable: false,
+          assets: [
+            {
+              id: 301,
+              name: "OpenArc-0.3.0-3.zip",
+              contentType: "application/zip",
+              size: 160_000_000,
+              downloadCount: 1,
+              downloadURL: "https://api.openarc.su/downloads/OpenArc-0.3.0-3.zip",
+            },
+          ],
+        },
+        { ...releaseResponse.releases[0], id: 2, channel: "beta", isLatestStable: false },
+      ],
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("link", { name: /download for macos/i })).toHaveAttribute(
+        "href",
+        "https://api.openarc.su/downloads/OpenArc-0.3.0-3.zip",
+      );
+    });
   });
 
   it("loads release notes and points landing download actions at the latest stable installer asset", async () => {

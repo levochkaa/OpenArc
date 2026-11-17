@@ -124,11 +124,16 @@ function App() {
     };
   }, []);
 
-  const latestStableRelease = useMemo(
-    () => releases.find((release) => release.isLatestStable) ?? releases.find((release) => release.channel === "stable"),
+  // Until a stable release ships, downloads offer the newest beta.
+  const latestDownloadRelease = useMemo(
+    () =>
+      releases.find((release) => release.isLatestStable) ??
+      releases.find((release) => release.channel === "stable") ??
+      releases[0],
     [releases],
   );
-  const latestDownloadUrl = getPrimaryMacOSAsset(latestStableRelease?.assets ?? [])?.downloadURL ?? fallbackDownloadUrl;
+  // The repository is private, so its GitHub pages are not a download; the list below is.
+  const latestDownloadUrl = getPrimaryMacOSAsset(latestDownloadRelease?.assets ?? [])?.downloadURL ?? "#releases";
 
   return (
     <main>
