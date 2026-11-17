@@ -1738,11 +1738,8 @@ final class BrowserNativeSidebarNSView: NSView {
         for page in pages.values {
             let visible = page.scroll.documentVisibleRect
             let threshold = BrowserChromeLayout.sidebarTopChromeDividerScrollThreshold
-            // A scroll stretched past either end counts as resting at that end.
-            let maxOffset = max(page.document.bounds.height - visible.height, 0)
-            let offset = min(max(visible.minY, 0), maxOffset)
-            let top = offset > threshold
-            let bottom = offset < maxOffset - threshold
+            let top = visible.minY > threshold
+            let bottom = visible.maxY < page.document.bounds.height - threshold
             if state
                 .topChromeDividerVisibilityBySpaceID[page.spaceID] !=
                 top
