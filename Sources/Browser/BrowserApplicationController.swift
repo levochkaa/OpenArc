@@ -922,7 +922,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
     }
 
     public func clearTemporaryTabs(_: Any?) {
-        activeChromeModel?.clearTemporaryTabs()
+        activeChromeModel?.clearTemporaryTabsKeepingShownTab()
     }
 
     public func installCurrentSiteAsApp(_: Any?) {

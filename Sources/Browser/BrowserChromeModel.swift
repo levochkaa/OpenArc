@@ -2808,6 +2808,12 @@ enum BrowserWindowMode: Equatable {
         commitSidebarDrop(payload: plan.payload, destination: plan.destination)
     }
 
+    /// The Clear command and its shortcut, as the sidebar's Clear button: the shown tab
+    /// stays, and goes on the next Clear, when it is the only one left.
+    func clearTemporaryTabsKeepingShownTab() {
+        clearTemporaryTabs(includingActiveTab: temporaryTabs.count <= 1)
+    }
+
     func clearTemporaryTabs(includingActiveTab: Bool = true) {
         let activeTemporaryTabID = includingActiveTab || selectedTab?.placement != .temporary
             ? nil

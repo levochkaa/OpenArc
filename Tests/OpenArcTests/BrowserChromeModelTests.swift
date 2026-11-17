@@ -722,6 +722,27 @@ import Testing
 }
 
 @Test
+@MainActor func theClearCommandKeepsTheShownTabUntilItIsTheLastOne() throws {
+    let driver = FakeBrowserTabDriver()
+    let model = makeModel(
+        driver: driver,
+        snapshotStore: InMemorySessionSnapshotStore(),
+        preferencesStore: InMemorySessionPreferencesStore(),
+    )
+    model.handleContextReady()
+    driver.flushPendingCreateEvents()
+    for _ in 0..<3 {
+        model.createNewTab()
+        driver.flushPendingCreateEvents()
+    }
+    let shown = try #require(model.selectedTabID)
+    model.clearTemporaryTabsKeepingShownTab()
+    #expect(model.temporaryTabs.map(\.id) == [shown], "As the sidebar's Clear: the shown tab stays")
+    model.clearTemporaryTabsKeepingShownTab()
+    #expect(model.temporaryTabs.isEmpty, "The next Clear takes the last one")
+}
+
+@Test
 @MainActor func commandWClosesTabsPickedTogetherInOneStep() throws {
     let driver = FakeBrowserTabDriver()
     driver.automaticallyConfirmsCloseRequests = false
