@@ -810,10 +810,9 @@ final class BrowserNativeChromeButton: NSButton {
                 onAction()
             }
             if let window {
-                hovered = visibleRect.contains(convert(
-                    window.convertPoint(fromScreen: NSEvent.mouseLocation),
-                    from: nil,
-                ))
+                // Not `visibleRect` alone: a view that doesn't clip reports its ancestors' visible area.
+                let point = convert(window.convertPoint(fromScreen: NSEvent.mouseLocation), from: nil)
+                hovered = bounds.contains(point) && visibleRect.contains(point)
             }
         }
     }

@@ -251,7 +251,9 @@ class BrowserNativePressableView: BrowserNativeSurface {
         guard let window, !isHiddenOrHasHiddenAncestor else { setHovered(false)
             return
         }
-        setHovered(visibleRect.contains(convert(window.convertPoint(fromScreen: NSEvent.mouseLocation), from: nil)))
+        let point = convert(window.convertPoint(fromScreen: NSEvent.mouseLocation), from: nil)
+        // `visibleRect` alone is not enough: a view that doesn't clip reports its ancestors' visible area.
+        setHovered(bounds.contains(point) && visibleRect.contains(point))
     }
 
     func refreshTooltip() {

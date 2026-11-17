@@ -2380,7 +2380,11 @@ private final class BrowserNativeSidebarPage: NSView, BrowserSpaceThemedChrome {
         }
     }
 
-    @objc private func scrolled() { onScroll() }
+    @objc private func scrolled() {
+        // Rows scrolled under a still pointer take and drop its hover.
+        rows.values.forEach { $0.syncHoverWithPointer() }
+        onScroll()
+    }
 }
 
 // MARK: - BrowserNativeNoninteractiveSurface
