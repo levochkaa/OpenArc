@@ -37,6 +37,16 @@ inline constexpr char kProtectedMediaRefusedMessage[] = "OpenArc.ProtectedMediaR
 inline constexpr char kFairPlayMessage[] = "OpenArc.FairPlay";
 // To the renderer: a FairPlay bridge event for the page's script, as JSON.
 inline constexpr char kFairPlayEventMessage[] = "OpenArc.FairPlayEvent";
+// To the browser: a protected video bridge request as JSON, then for media
+// fragments their bytes.
+inline constexpr char kProtectedVideoMessage[] = "OpenArc.ProtectedVideo";
+// To the renderer: a protected video bridge event for the page's script, as JSON.
+inline constexpr char kProtectedVideoEventMessage[] = "OpenArc.ProtectedVideoEvent";
+// The app's preferences, which the renderer reads for the bridge's switch.
+inline constexpr char kAppPreferencesDomain[] = "com.levochkaa.OpenArc";
+inline constexpr char kProtectedMediaPreference[] = "browser.settings.playsProtectedMediaInChromium";
+// Extra origins the video bridge serves, for testing it with local pages.
+inline constexpr char kProtectedVideoTestOriginsPreference[] = "browser.debug.protectedVideoTestOrigins";
 
 }  // namespace shared
 

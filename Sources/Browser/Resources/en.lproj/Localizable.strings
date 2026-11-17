@@ -995,8 +995,8 @@
 "browser.settings.protected_video.section" = "Protected Video";
 "browser.settings.protected_video.webkit" = "Open streaming sites in WebKit";
 "browser.settings.protected_video.webkit.detail" = "Netflix, Disney+, Prime Video and other streaming sites open in WebKit, which plays protected video with Apple's FairPlay. WebKit pages keep their own sign-ins and have no extensions.";
-"browser.settings.protected_video.fairplay" = "Play Spotify in Chromium with FairPlay";
-"browser.settings.protected_video.fairplay.detail" = "Spotify stays in Chromium, with your extensions: the page gets Apple's FairPlay, and a native player plays its songs. Experimental.";
+"browser.settings.protected_video.fairplay" = "Play protected media in Chromium with FairPlay";
+"browser.settings.protected_video.fairplay.detail" = "Spotify, Netflix and Disney+ stay in Chromium, with your extensions: the page gets Apple's FairPlay, and a native player plays its songs and draws its video. Experimental.";
 "browser.settings.protected_video.reset" = "Forget Website Choices";
 "browser.settings.protected_video.reset.detail" = "Websites you opened in the other engine with View › Open Page in WebKit or Chromium open as recommended again.";
 "browser.protected_video.prompt.title" = "This video may need WebKit";

@@ -6,11 +6,14 @@
 #import <Sparkle/Sparkle.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
+#import <AVFoundation/AVFoundation.h>
+#import <CoreMedia/CoreMedia.h>
 #import <WebKit/WebKit.h>
 
 #import "OpenArc-Swift.h"
 #import "Browser/SwiftBridge.h"
 #include "Shared/BrowserMediaMessages.h"
+#include "Shared/BrowserProtectedMedia.h"
 #include "Shared/BrowserSchemes.h"
 #include "Shared/ClientManager.h"
 #include "Shared/ClientUtil.h"
@@ -3434,6 +3437,30 @@ class BrowserTextRequestClient final : public CefURLRequestClient {
   IMPLEMENT_REFCOUNTING(BrowserTextRequestClient);
 };
 
+/// Requests to a video site whose protected video the bridge plays: they go out
+/// with Safari's user agent and without Chrome's client hints, as Safari's do.
+class SafariUserAgentRequestHandler final : public CefResourceRequestHandler {
+ public:
+  cef_return_value_t OnBeforeResourceLoad(CefRefPtr<CefBrowser>,
+                                          CefRefPtr<CefFrame>,
+                                          CefRefPtr<CefRequest> request,
+                                          CefRefPtr<CefCallback>) override {
+    CefRequest::HeaderMap headers;
+    request->GetHeaderMap(headers);
+    for (auto it = headers.begin(); it != headers.end();) {
+      std::string name = it->first.ToString();
+      std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) { return std::tolower(c); });
+      it = name == "user-agent" || name.rfind("sec-ch-ua", 0) == 0 ? headers.erase(it) : std::next(it);
+    }
+    headers.insert(std::make_pair(CefString("User-Agent"), CefString(shared::SafariUserAgent())));
+    request->SetHeaderMap(headers);
+    return RV_CONTINUE;
+  }
+
+ private:
+  IMPLEMENT_REFCOUNTING(SafariUserAgentRequestHandler);
+};
+
 class BrowserTabClient final : public CefClient,
                                public CefContextMenuHandler,
                                public CefDisplayHandler,
@@ -3469,6 +3496,25 @@ class BrowserTabClient final : public CefClient,
   CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override { return this; }
   CefRefPtr<CefLoadHandler> GetLoadHandler() override { return this; }
   CefRefPtr<CefRequestHandler> GetRequestHandler() override { return this; }
+  CefRefPtr<CefResourceRequestHandler> GetResourceRequestHandler(CefRefPtr<CefBrowser>,
+                                                                 CefRefPtr<CefFrame> frame,
+                                                                 CefRefPtr<CefRequest> request,
+                                                                 bool,
+                                                                 bool,
+                                                                 const CefString &,
+                                                                 bool &) override {
+    // The site's own requests, and those of its pages: the top document decides.
+    const std::string url = request->GetURL().ToString();
+    const std::string top = frame ? frame->GetURL().ToString() : std::string();
+    if (!shared::NeedsSafariUserAgent(url) && !shared::NeedsSafariUserAgent(top)) {
+      return nullptr;
+    }
+    if (!shared::ProtectedMediaBridgeOn()) {
+      return nullptr;
+    }
+    static CefRefPtr<SafariUserAgentRequestHandler> handler = new SafariUserAgentRequestHandler();
+    return handler;
+  }
   CefRefPtr<CefPermissionHandler> GetPermissionHandler() override {
     return this;
   }
@@ -3865,6 +3911,8 @@ struct TabRecord {
   bool openedByPage = false;
   // Plays the Chromium page's FairPlay audio, once the page asks for it.
   __strong BrowserFairPlayAudioBridge *fairPlayBridge = nil;
+  // Plays the Chromium page's protected video over it, once the page asks.
+  __strong BrowserProtectedVideoBridge *protectedVideo = nil;
 };
 
 NSView *PageViewForRecord(const TabRecord &record) {
@@ -3958,6 +4006,7 @@ bool RecordHasPage(const TabRecord &record) {
 - (BOOL)shouldMoveNavigationToWebKitFromTabID:(NSString *)tabID toURLString:(NSString *)urlString;
 - (void)handleProtectedMediaRefusedForTabID:(NSString *)tabID keySystem:(NSString *)keySystem;
 - (void)handleFairPlayMessage:(NSString *)json forTabID:(NSString *)tabID;
+- (void)handleProtectedVideoMessage:(NSString *)json data:(nullable NSData *)data forTabID:(NSString *)tabID;
 - (void)moveTabWithID:(NSString *)tabID toWebKitWithURLString:(NSString *)urlString;
 
 - (void)startBrowserCreationForTabID:(NSString *)tabID
@@ -4739,6 +4788,54 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
 - (void)stopFairPlayForRecord:(TabRecord &)record {
   [record.fairPlayBridge stop];
   record.fairPlayBridge = nil;
+  [record.protectedVideo reset];
+  record.protectedVideo = nil;
+}
+
+/// A request from the protected video bridge script in a tab's Chromium page.
+/// The renderer installs the script only while the bridge is on.
+- (void)handleProtectedVideoMessage:(NSString *)json data:(NSData *)data forTabID:(NSString *)tabID {
+  auto it = _tabRecords.find(ToStdString(tabID));
+  if (it == _tabRecords.end() || it->second.isClosing || !it->second.browser) {
+    return;
+  }
+  TabRecord &record = it->second;
+  if (record.protectedVideo == nil) {
+    if ([json containsString:@"\"op\":\"reset\""]) {
+      return;
+    }
+    __weak BrowserTabController *weakSelf = self;
+    const std::string tabKey = it->first;
+    record.protectedVideo = [[BrowserProtectedVideoBridge alloc] initWithSend:^(NSString *event) {
+      [weakSelf sendProtectedVideoEvent:event toTabKey:tabKey];
+    }];
+    record.protectedVideo.tabMuted = record.audioMuted;
+    record.protectedVideo.pageView = PageViewForRecord(record);
+  }
+  [record.protectedVideo receive:json data:data];
+}
+
+- (void)sendProtectedVideoEvent:(NSString *)json toTabKey:(const std::string &)tabKey {
+  auto it = _tabRecords.find(tabKey);
+  if (it == _tabRecords.end() || !it->second.browser) {
+    return;
+  }
+  CefRefPtr<CefFrame> frame = it->second.browser->GetMainFrame();
+  if (!frame || !frame->IsValid()) {
+    return;
+  }
+  CefRefPtr<CefProcessMessage> message = CefProcessMessage::Create(shared::kProtectedVideoEventMessage);
+  message->GetArgumentList()->SetString(0, ToStdString(json));
+  frame->SendProcessMessage(PID_RENDERER, message);
+}
+
+/// Videos the bridge draws follow their pages' place and visibility.
+- (void)layoutProtectedVideos {
+  for (auto &entry : _tabRecords) {
+    if (entry.second.protectedVideo != nil) {
+      entry.second.protectedVideo.pageView = PageViewForRecord(entry.second);
+    }
+  }
 }
 
 #pragma mark - Protected video prompt
@@ -7143,6 +7240,7 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
 
   it->second.audioMuted = muted;
   it->second.fairPlayBridge.tabMuted = muted;
+  it->second.protectedVideo.tabMuted = muted;
   if (it->second.webKitPage != nil) {
     [it->second.webKitPage setAudioMuted:muted];
     return;
@@ -8067,6 +8165,7 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
     tabIDs.push_back(entry.first);
     [entry.second.webKitPage close];
     [entry.second.fairPlayBridge stop];
+    [entry.second.protectedVideo reset];
     // DevTools browsers have no client of ours; close them before CEF shuts down.
     if (entry.second.browser && entry.second.browser->GetHost()) {
       entry.second.browser->GetHost()->CloseDevTools();
@@ -8089,6 +8188,7 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
 - (void)syncBrowserFrames {
   [self layoutVisiblePanes:[self visiblePaneKeys]];
   [self layoutProtectedVideoPrompt];
+  [self layoutProtectedVideos];
 }
 
 - (void)handleBrowserCreated:(CefRefPtr<CefBrowser>)browser
@@ -8421,6 +8521,7 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
   }
   [self layoutVisiblePanes:visibleKeys];
   [self layoutProtectedVideoPrompt];
+  [self layoutProtectedVideos];
 
   auto activeIt = _tabRecords.find(activeKey);
   if (activeIt == _tabRecords.end()) {
@@ -8995,6 +9096,19 @@ bool BrowserTabClient::OnProcessMessageReceived(CefRefPtr<CefBrowser>,
   if (source_process == PID_RENDERER && frame && frame->IsMain() &&
       message->GetName() == shared::kRendererProcessMessage) {
     [controller_ noteRendererProcessID:message->GetArgumentList()->GetInt(0) forTabID:ToNSString(tab_id_)];
+    return true;
+  }
+  if (source_process == PID_RENDERER && frame && frame->IsMain() &&
+      message->GetName() == shared::kProtectedVideoMessage) {
+    CefRefPtr<CefListValue> values = message->GetArgumentList();
+    NSData *data = nil;
+    if (values->GetSize() > 1 && values->GetType(1) == VTYPE_BINARY) {
+      CefRefPtr<CefBinaryValue> binary = values->GetBinary(1);
+      NSMutableData *bytes = [NSMutableData dataWithLength:binary->GetSize()];
+      binary->GetData(bytes.mutableBytes, bytes.length, 0);
+      data = bytes;
+    }
+    [controller_ handleProtectedVideoMessage:ToNSString(values->GetString(0).ToString()) data:data forTabID:ToNSString(tab_id_)];
     return true;
   }
   if (source_process == PID_RENDERER && frame && frame->IsMain() &&

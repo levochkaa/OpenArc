@@ -1,3 +1,4 @@
+#include <CoreFoundation/CoreFoundation.h>
 #include <unistd.h>
 
 #include <map>
@@ -5,8 +6,10 @@
 
 #include "Shared/AppFactory.h"
 #include "Shared/BrowserMediaMessages.h"
+#include "Shared/BrowserProtectedMedia.h"
 #include "Shared/BrowserSchemes.h"
 #include "Helper/FairPlayBridgeScript.h"
+#include "Helper/ProtectedVideoBridgeScript.h"
 #include "include/cef_render_process_handler.h"
 #include "include/cef_v8.h"
 
@@ -419,6 +422,37 @@ bool BridgesFairPlay(const std::string& url) {
   return false;
 }
 
+/// The protected video bridge's `send`: JSON, and for a fragment its bytes.
+class ProtectedVideoSender final : public CefV8Handler {
+ public:
+  bool Execute(const CefString&,
+               CefRefPtr<CefV8Value>,
+               const CefV8ValueList& arguments,
+               CefRefPtr<CefV8Value>&,
+               CefString&) override {
+    CefRefPtr<CefV8Context> context = CefV8Context::GetCurrentContext();
+    CefRefPtr<CefFrame> frame = context ? context->GetFrame() : nullptr;
+    if (!frame || !frame->IsMain() || arguments.empty() || !arguments[0]->IsString()) {
+      return true;
+    }
+    CefRefPtr<CefProcessMessage> message = CefProcessMessage::Create(kProtectedVideoMessage);
+    CefRefPtr<CefListValue> values = message->GetArgumentList();
+    values->SetString(0, arguments[0]->GetStringValue());
+    if (arguments.size() > 1 && arguments[1]->IsArrayBuffer()) {
+      const size_t length = arguments[1]->GetArrayBufferByteLength();
+      void* data = arguments[1]->GetArrayBufferData();
+      if (data && length > 0) {
+        values->SetBinary(1, CefBinaryValue::Create(data, length));
+      }
+    }
+    frame->SendProcessMessage(PID_BROWSER, message);
+    return true;
+  }
+
+ private:
+  IMPLEMENT_REFCOUNTING(ProtectedVideoSender);
+};
+
 /// The FairPlay bridge's `send`: its JSON goes to the browser.
 class FairPlaySender final : public CefV8Handler {
  public:
@@ -551,6 +585,7 @@ class RendererProcessApp : public CefApp, public CefRenderProcessHandler {
     InstallPasswordObserver(frame, context);
     // Before the media observer, which then sees the bridge's element state.
     InstallFairPlayBridge(frame, context);
+    InstallProtectedVideoBridge(frame, context);
     InstallProtectedMediaObserver(frame, context);
     CefRefPtr<CefV8Value> factory;
     CefRefPtr<CefV8Exception> exception;
@@ -580,6 +615,14 @@ class RendererProcessApp : public CefApp, public CefRenderProcessHandler {
     auto fill = password_fills_.find(id);
     if (fill != password_fills_.end() && fill->second.context->IsSame(context)) {
       password_fills_.erase(fill);
+    }
+    auto video = protected_video_receivers_.find(id);
+    if (video != protected_video_receivers_.end() && video->second.context->IsSame(context)) {
+      protected_video_receivers_.erase(video);
+      // The page left: its native players stop.
+      CefRefPtr<CefProcessMessage> reset = CefProcessMessage::Create(kProtectedVideoMessage);
+      reset->GetArgumentList()->SetString(0, "{\"op\":\"reset\"}");
+      frame->SendProcessMessage(PID_BROWSER, reset);
     }
     auto fairPlay = fair_play_receivers_.find(id);
     if (fairPlay != fair_play_receivers_.end() && fairPlay->second.context->IsSame(context)) {
@@ -616,6 +659,14 @@ class RendererProcessApp : public CefApp, public CefRenderProcessHandler {
         CefV8ValueList arguments = {CefV8Value::CreateString(values->GetString(0)),
                                     CefV8Value::CreateString(values->GetString(1))};
         fill->second.function->ExecuteFunctionWithContext(fill->second.context, nullptr, arguments);
+      }
+      return true;
+    }
+    if (frame && message->GetName() == kProtectedVideoEventMessage) {
+      auto receiver = protected_video_receivers_.find(frame->GetIdentifier().ToString());
+      if (receiver != protected_video_receivers_.end()) {
+        CefV8ValueList arguments = {CefV8Value::CreateString(message->GetArgumentList()->GetString(0))};
+        receiver->second.function->ExecuteFunctionWithContext(receiver->second.context, nullptr, arguments);
       }
       return true;
     }
@@ -706,6 +757,25 @@ class RendererProcessApp : public CefApp, public CefRenderProcessHandler {
     }
   }
 
+  void InstallProtectedVideoBridge(CefRefPtr<CefFrame> frame, CefRefPtr<CefV8Context> context) {
+    if (!frame->IsMain() || !BridgesProtectedVideo(frame->GetURL().ToString()) || !ProtectedMediaBridgeOn()) {
+      return;
+    }
+    CefRefPtr<CefV8Value> factory;
+    CefRefPtr<CefV8Exception> exception;
+    if (!context->Eval(kProtectedVideoBridgeScript, CefString(), 0, factory, exception) || !factory ||
+        !factory->IsFunction()) {
+      return;
+    }
+    CefV8ValueList arguments = {CefV8Value::CreateFunction("send", new ProtectedVideoSender()),
+                                CefV8Value::CreateString(SafariUserAgent())};
+    CefRefPtr<CefV8Value> receive = factory->ExecuteFunctionWithContext(context, nullptr, arguments);
+    if (receive && receive->IsFunction()) {
+      protected_video_receivers_[frame->GetIdentifier().ToString()] = {context, receive};
+    }
+  }
+
+  std::map<std::string, MediaControl> protected_video_receivers_;
   std::map<std::string, MediaControl> fair_play_receivers_;
   std::map<std::string, MediaControl> password_fills_;
   std::map<std::string, MediaControl> controls_;

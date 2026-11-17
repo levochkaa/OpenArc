@@ -59,10 +59,12 @@ extension BrowserPageEngine {
         "v.qq.com",
     ]
 
-    /// Origins the FairPlay bridge plays in Chromium; the renderer's
-    /// `BridgesFairPlay` lists the same ones.
+    /// Origins the FairPlay bridges play in Chromium: Spotify's audio (the
+    /// renderer's `BridgesFairPlay`) and the video sites (`BridgesProtectedVideo`).
     static let fairPlayOrigins = [
         "https://open.spotify.com",
+        "https://www.netflix.com",
+        "https://www.disneyplus.com",
     ]
 
     /// Posted on the main thread when a setting or a site's rule changes, so open

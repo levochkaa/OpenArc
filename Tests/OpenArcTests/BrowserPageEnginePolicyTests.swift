@@ -44,8 +44,11 @@ import Testing
         BrowserPageEnginePolicy.playsProtectedMediaInChromium = true
         #expect(BrowserPageEnginePolicy.engine(forURLString: "https://open.spotify.com/track/1") == .chromium)
         #expect(BrowserPageEnginePolicy.bridgesFairPlay(forURLString: "https://open.spotify.com/album/2"))
-        // Only the exact origins the bridge serves; video sites stay in WebKit.
-        #expect(BrowserPageEnginePolicy.engine(forURLString: "https://www.netflix.com/watch/1") == .webKit)
+        #expect(BrowserPageEnginePolicy.engine(forURLString: "https://www.netflix.com/watch/1") == .chromium)
+        #expect(BrowserPageEnginePolicy.bridgesFairPlay(forURLString: "https://www.disneyplus.com/video/3"))
+        // Only the exact origins the bridges serve.
+        #expect(BrowserPageEnginePolicy.engine(forURLString: "https://help.netflix.com") == .webKit)
+        #expect(BrowserPageEnginePolicy.engine(forURLString: "https://www.primevideo.com") == .webKit)
         #expect(!BrowserPageEnginePolicy.bridgesFairPlay(forURLString: "https://spotify.com"))
     }
 
