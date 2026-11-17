@@ -438,7 +438,15 @@ import Testing
         let x = f.id("x")
         let y = f.id("y")
         let z = f.id("z")
+        let video = BrowserTabMediaState(
+            isPlaying: true, audible: true, video: true, hasPreviousTrack: false, hasNextTrack: false, title: "",
+        )
+        f.model.selectTab(id: z)
+        let beforeAnyVideo = f.driver.pictureInPictureRequests.count
         f.model.selectTab(id: x)
+        #expect(f.driver.pictureInPictureRequests.count == beforeAnyVideo, "A tab with no video playing is not asked")
+        f.model.handleMediaStateChange(tabID: x, state: video)
+        f.model.handleMediaStateChange(tabID: y, state: video)
         let start = f.driver.pictureInPictureRequests.count
         f.model.selectTab(id: y)
         #expect(f.driver.pictureInPictureRequests.dropFirst(start).map(\.tabID) == [x])

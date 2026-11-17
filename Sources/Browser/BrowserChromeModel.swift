@@ -4985,7 +4985,10 @@ enum BrowserWindowMode: Equatable {
         if let newID, pictureInPictureTabIDs.remove(newID) != nil {
             tabDriver.setPictureInPicture(false, forTabWithID: newID)
         }
+        // Only a tab playing a video asks its page: the check runs script in the page
+        // through the engine's debugging channel on every tab switch otherwise.
         guard userPreferencesStore.pictureInPictureEnabled, let oldID,
+              tabMediaStates[oldID].map({ $0.isPlaying && $0.video }) == true,
               tabs.contains(where: { $0.id == oldID }), !closingTabIDs.contains(oldID),
               !closedAppTabIDs.contains(oldID), !closedPinnedTabIDs.contains(oldID),
               !(newID.map { splitPaneTabIDs(forTabID: $0).contains(oldID) } ?? false)
