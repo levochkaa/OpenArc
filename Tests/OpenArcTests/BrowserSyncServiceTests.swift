@@ -167,6 +167,23 @@ import Testing
     #expect(h.applier.snapshots.last?.tabs.map(\.id) == ["left"], "A change from elsewhere still reaches the model")
 }
 
+@Test @MainActor func syncServiceStoresServerAnswersOnceInputPauses() async throws {
+    let h = try await SyncServiceHarness()
+    defer { h.cleanup() }
+    let pause = SyncServiceGate()
+    h.inputPause = { await pause.wait() }
+    h.persist(syncServiceSnapshot(tabID: "tab"))
+    for _ in 0..<50 where h.remote.pushes.isEmpty {
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(h.remote.pushes.count == 1, "The request goes out at once")
+    try await Task.sleep(for: .milliseconds(50))
+    #expect(try h.store.pendingSyncMutations(for: h.owner).count == 1, "Its answer waits while the user types")
+    pause.open()
+    await h.service.waitForPendingOperations()
+    #expect(try h.store.pendingSyncMutations(for: h.owner).isEmpty)
+}
+
 @Test @MainActor func syncServicePushReceiptDoesNotSkipUnreadRemoteEvents() async throws {
     let h = try await SyncServiceHarness()
     defer { h.cleanup() }
@@ -705,6 +722,8 @@ private func syncServiceFolder(sequence: Int, title: String) -> BrowserSyncEvent
     var service: BrowserSyncService!
     let errorReporter: BrowserSyncErrorReporter
     let operationDidSucceed: @MainActor (BrowserSyncFailurePhase) -> Void
+    /// Stands for the user's input pausing; tests pass at once unless they hold it.
+    var inputPause: @MainActor () async -> Void = {}
 
     var databaseURL: URL { directoryURL.appendingPathComponent("Browser.sqlite") }
 
@@ -744,6 +763,7 @@ private func syncServiceFolder(sequence: Int, title: String) -> BrowserSyncEvent
             runtimeActive: runtimeActive,
             errorReporter: errorReporter,
             operationDidSucceed: operationDidSucceed,
+            waitForInputPause: { [unowned self] in await inputPause() },
         )
     }
 

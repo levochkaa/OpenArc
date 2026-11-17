@@ -1,5 +1,6 @@
 // BrowserRemoteSyncClient.swift
 
+import CoreGraphics
 import Foundation
 import Gzip
 import HTTPTypes
@@ -636,6 +637,9 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
     private var retryAttempt = 0
     private var pendingPushContext: RequestContext?
     private var pendingPullContext: RequestContext?
+    /// Server answers are stored and shown once input pauses: storing one takes the main
+    /// thread for up to 25 ms, which would hold a click, a scroll or a typed letter.
+    private let waitForInputPause: @MainActor () async -> Void
     private weak var snapshotApplier: (any BrowserSyncSnapshotApplying)?
 
     init(
@@ -651,7 +655,9 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
         dateProvider: @escaping @MainActor () -> Date = Date.init,
         errorReporter: @escaping BrowserSyncErrorReporter = { _, _ in },
         operationDidSucceed: @escaping @MainActor (BrowserSyncFailurePhase) -> Void = { _ in },
+        waitForInputPause: @escaping @MainActor () async -> Void = BrowserSyncService.waitForInputPause,
     ) {
+        self.waitForInputPause = waitForInputPause
         self.localStore = localStore
         self.remoteClient = remoteClient
         self.authSessionStore = authSessionStore
@@ -671,6 +677,17 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
         processingTask?.cancel()
         pollTask?.cancel()
         retryTask?.cancel()
+    }
+
+    /// Waits until no key, click, scroll or pointer move came for 0.3 s, at most 2 s.
+    static func waitForInputPause() async {
+        let anyInput = CGEventType(rawValue: ~0)!
+        let deadline = ContinuousClock.now + .seconds(2)
+        while CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: anyInput) < 0.3,
+              ContinuousClock.now < deadline
+        {
+            try? await Task.sleep(for: .milliseconds(50))
+        }
     }
 
     // MARK: Internal
@@ -1020,6 +1037,8 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
                     expiryResponse = response
                 }
                 guard isCurrent(context), !Task.isCancelled else { return }
+                await waitForInputPause()
+                guard isCurrent(context), !Task.isCancelled else { return }
                 let previous = try localStore.loadSnapshotForSync(for: context.owner)
                 let archiveRevision = try localStore.syncArchiveRevision(for: context.owner)
                 let projected = try localStore.acknowledgeSyncMutation(
@@ -1246,6 +1265,8 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
                     break
                 }
             }
+            await waitForInputPause()
+            guard isCurrent(context), !Task.isCancelled else { return }
             let previous = try localStore.loadSnapshotForSync(for: context.owner)
             let versions = advertisedVersions ?? []
             let events = latestEvents.values.sorted { $0.serverSeq < $1.serverSeq }
