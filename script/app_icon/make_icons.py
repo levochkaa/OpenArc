@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Draws OpenArc's app icons from the mark in mark.py.
 
-Writes the bundle icon set (the Original colors) and one 1024 px PNG for each
-icon Settings offers. Needs `rsvg-convert` (Homebrew librsvg).
+Writes the bundle icon set (the Original colors), one 1024 px PNG for each
+icon Settings offers, and the website's favicon. Needs `rsvg-convert`
+(Homebrew librsvg).
 
     script/app_icon/make_icons.py
 """
@@ -18,6 +19,7 @@ import mark  # noqa: E402
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 ICON_SET = ROOT / "Sources/Browser/Assets.xcassets/AppIcon.appiconset"
 RESOURCES = ROOT / "Sources/Browser/Resources"
+FAVICON = ROOT / "Website/public/favicon.svg"
 
 # macOS icon grid: a 824 px body with a 100 px margin on a 1024 px canvas.
 CANVAS, BODY, MARGIN, RADIUS = 1024, 824, 100, 185
@@ -193,6 +195,29 @@ def monochrome():
     return svg("", content)
 
 
+def favicon():
+    """The Original icon for browser tabs: the body fills the box, without the
+    shadow and the sticker's filter, which blur at 16 px."""
+    defs = (
+        gradient("bg", [(0, "#FFFFFF"), (1, "#F2F3F8")])
+        + gradient("leg", [(0, "#5B6CFF"), (1, "#1B26A8")], 0.2, 0, 0.6, 1)
+        + gradient("arch", [(0, "#FF8A98"), (0.55, "#F2475F"), (1, "#C92A47")], 0.1, 0, 0.9, 1)
+    )
+    outline = 'fill="#FFFFFF" stroke="#FFFFFF" stroke-width="58" stroke-linejoin="round"'
+    content = (
+        f'<rect x="{MARGIN}" y="{MARGIN}" width="{BODY}" height="{BODY}" rx="{RADIUS}" fill="url(#bg)"/>'
+        f'<rect x="{MARGIN + 4}" y="{MARGIN + 4}" width="{BODY - 8}" height="{BODY - 8}" rx="{RADIUS - 4}" '
+        'fill="none" stroke="#1B1F4A" stroke-opacity="0.12" stroke-width="8"/>'
+        f'<g transform="{mark_transform(STICKER_WIDTH)}">'
+        f'<path d="{mark.leg()}" {outline}/><path d="{mark.arch()}" {outline}/>'
+        f'<path d="{mark.leg()}" fill="url(#leg)"/><path d="{mark.arch()}" fill="url(#arch)"/></g>'
+    )
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{MARGIN} {MARGIN} {BODY} {BODY}">'
+        f"<defs>{defs}</defs>{content}</svg>\n"
+    )
+
+
 VARIANTS = {
     "original": original,
     "candy": candy,
@@ -213,6 +238,7 @@ def render(source, size, destination):
 
 
 def main():
+    FAVICON.write_text(favicon())
     with tempfile.TemporaryDirectory() as temporary:
         for name, draw in VARIANTS.items():
             source = pathlib.Path(temporary) / f"{name}.svg"
