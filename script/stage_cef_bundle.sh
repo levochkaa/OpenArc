@@ -148,6 +148,12 @@ sign_app_bundle() {
   if [[ -d "$SENTRY_FRAMEWORK_DEST" ]]; then
     /usr/bin/codesign --force --sign "$identity" --timestamp=none "$SENTRY_FRAMEWORK_DEST"
   fi
+  # The Dock tile plug-in, which Xcode embeds and signs, is sealed again with this identity.
+  local plugin
+  for plugin in "$APP_BUNDLE/Contents/PlugIns/"*; do
+    [[ -e "$plugin" ]] || continue
+    /usr/bin/codesign --force --sign "$identity" --timestamp=none "$plugin"
+  done
   # Xcode has expanded its build settings in the .xcent file and added the identifiers
   # a profile needs. macOS kills an app signed with the raw file's keychain group.
   signing_entitlements="$APP_ENTITLEMENTS"

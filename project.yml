@@ -164,6 +164,22 @@ targets:
         PRODUCT_NAME: openarc
         PRODUCT_BUNDLE_IDENTIFIER: com.levochkaa.OpenArc.agent-cli
         SWIFT_VERSION: "6.0"
+  OpenArcDockTile:
+    type: bundle
+    platform: macOS
+    productName: OpenArcDockTile
+    sources:
+      - path: Sources/DockTile
+      # The Dock tile reads the choice the way the app stores it.
+      - path: Sources/Browser/BrowserAppIcon.swift
+      - path: Sources/Browser/BrowserImageThumbnailer.swift
+    settings:
+      base:
+        PRODUCT_NAME: OpenArcDockTile
+        PRODUCT_BUNDLE_IDENTIFIER: com.levochkaa.OpenArc.dock-tile
+        INFOPLIST_FILE: Support/OpenArcDockTile-Info.plist
+        WRAPPER_EXTENSION: docktileplugin
+        SWIFT_EMIT_LOC_STRINGS: NO
   OpenArcHelper:
     templates:
       - ChromiumTarget
@@ -192,6 +208,10 @@ targets:
     dependencies:
       - target: OpenArcHelper
       - target: OpenArcWebAppLauncher
+      - target: OpenArcDockTile
+        embed: true
+        copy:
+          destination: plugins
       - target: OpenArcAgentCLI
         embed: false
       - package: DomainParser

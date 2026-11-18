@@ -3,7 +3,8 @@
 import AppKit
 
 /// The Dock icon the user picked in Settings. `script/app_icon/make_icons.py`
-/// draws every icon; the bundle's own is the Original.
+/// draws every icon; the bundle's own is the Original. The Dock tile plug-in
+/// compiles this file too, so it uses no other app code but the thumbnailer.
 enum BrowserAppIcon: String, CaseIterable {
     case standard
     case candy
@@ -13,41 +14,27 @@ enum BrowserAppIcon: String, CaseIterable {
     case sticker
     case monochrome
 
-    // MARK: Private
-
-    /// A decoded icon handed to the main thread, which alone uses it from then on.
-    private struct DecodedIcon: @unchecked Sendable {
-        let image: NSImage
-    }
-
-    /// The latest `apply()`, so an earlier pick decoded later is not shown.
-    @MainActor private static var applyGeneration = 0
-
     // MARK: Internal
 
-    static var choices: [Self] { allCases }
+    /// The defaults key in the app's domain that holds the choice.
+    static let preferenceKey = "browser.settings.appIcon"
 
-    var title: String {
-        switch self {
-        case .standard: BrowserStrings.appIconStandard
-        case .candy: BrowserStrings.appIconCandy
-        case .neon: BrowserStrings.appIconNeon
-        case .hologram: BrowserStrings.appIconHologram
-        case .sunset: BrowserStrings.appIconSunset
-        case .sticker: BrowserStrings.appIconSticker
-        case .monochrome: BrowserStrings.appIconMonochrome
-        }
+    /// The PNG in the app's Resources that draws this icon.
+    var resourceName: String { "openarc-icon-\(rawValue)" }
+
+    /// The Dock tile plug-in shows the choice again when the app posts this
+    /// distributed notification, so the tile is right once the app quits.
+    static func changedNotificationName(bundleIdentifier: String) -> Notification.Name {
+        Notification.Name("\(bundleIdentifier).appIconChanged")
     }
 
-    var image: NSImage? {
-        switch self {
-        case .standard: NSImage(named: "AppIcon") ?? NSWorkspace.shared.icon(forFile: Bundle.main.bundlePath)
-        default: imageURL.flatMap(NSImage.init(contentsOf:))
+    /// The PNG for a stored choice. The standard choice, a missing value and
+    /// an unknown one keep the bundle's own icon and return nil.
+    static func resourceName(preferenceValue: String?) -> String? {
+        guard let icon = preferenceValue.flatMap(Self.init(rawValue:)), icon != .standard else {
+            return nil
         }
-    }
-
-    private var imageURL: URL? {
-        Bundle.main.url(forResource: "openarc-icon-\(rawValue)", withExtension: "png")
+        return icon.resourceName
     }
 
     /// The Dock draws icons at most 512 pixels wide.
@@ -56,25 +43,5 @@ enum BrowserAppIcon: String, CaseIterable {
             contentsOf: url,
             maximumPixelSize: BrowserImageThumbnailer.macOSApplicationIconCanvasSize,
         )
-    }
-
-    @MainActor func apply() {
-        Self.applyGeneration &+= 1
-        guard self != .standard, let url = imageURL else {
-            if let image {
-                NSApp.applicationIconImage = image
-            }
-            return
-        }
-        // Drawing the full picture into the Dock took over a frame at launch,
-        // before the window showed; it is decoded at the Dock's size meanwhile.
-        let generation = Self.applyGeneration
-        Task.detached(priority: .userInitiated) {
-            guard let icon = Self.dockImage(contentsOf: url).map(DecodedIcon.init) else { return }
-            await MainActor.run {
-                guard generation == Self.applyGeneration else { return }
-                NSApp.applicationIconImage = icon.image
-            }
-        }
     }
 }

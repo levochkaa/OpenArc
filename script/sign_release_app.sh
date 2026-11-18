@@ -116,6 +116,10 @@ sign --entitlements "$ROOT_DIR/Support/OpenArcHelper-GPU.entitlements" "$framewo
 sign --entitlements "$ROOT_DIR/Support/OpenArcHelper-Renderer.entitlements" "$frameworks/OpenArc Helper (Renderer).app"
 sign "$app/Contents/Resources/OpenArc Web App Launcher"
 sign "$app/Contents/Resources/bin/openarc"
+for plugin in "$app/Contents/PlugIns/"*; do
+  [[ -e "$plugin" ]] || continue
+  sign "$plugin"
+done
 
 # A development build embeds its development profile, which a Developer ID
 # signature must not carry.

@@ -65,6 +65,9 @@
   </dict>
   <key>LSMinimumSystemVersion</key>
   <string>$(MACOSX_DEPLOYMENT_TARGET)</string>
+  <!-- Shows the icon picked in Settings on the Dock tile while the app is not running. -->
+  <key>NSDockTilePlugIn</key>
+  <string>OpenArcDockTile.docktileplugin</string>
   <key>NSHighResolutionCapable</key>
   <true/>
   <key>NSPrincipalClass</key>

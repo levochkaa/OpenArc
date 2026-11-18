@@ -203,7 +203,7 @@ final class BrowserUserPreferencesStore: ObservableObject {
         static let hiddenMediaSources = "browser.settings.hiddenMediaSources"
         static let recentPagesPreviewsEnabled = "browser.settings.recentPagesPreviewsEnabled"
         static let mailPreviewsEnabled = "browser.settings.mailPreviewsEnabled"
-        static let appIcon = "browser.settings.appIcon"
+        static let appIcon = BrowserAppIcon.preferenceKey
         static let showsAISearchSuggestion = "browser.settings.showsAISearchSuggestion"
         static let developerReloadBehavior = "browser.settings.developerReloadBehavior"
         static let opensLittleWindowFromAnyApp = "browser.settings.opensLittleWindowFromAnyApp"
