@@ -128,10 +128,10 @@ strip_framework() {
   done < <(find "$framework" -type f \( -name "Chromium Embedded Framework" -o -name "*.dylib" \) -print0)
 }
 
-# Copies the host's distribution into ThirdParty/cef/export-<major> in the
-# primary checkout and gives it the export layout: local symbols stripped,
-# Debug pointing at Release (only Release CEF is built; the app stages Release
-# CEF for Debug builds too) and the fork marker.
+# Copies the host's distribution into ThirdParty/cef/export-<version> (such as
+# export-156.0.31) in the primary checkout and gives it the export layout:
+# local symbols stripped, Debug pointing at Release (only Release CEF is built;
+# the app stages Release CEF for Debug builds too) and the fork marker.
 pull() {
   local tmp="$CEF_DIR/.export-pull.tmp"
   mkdir -p "$tmp"
@@ -146,27 +146,39 @@ pull() {
   ln -s Release "$tmp/Debug"
   touch "$tmp/$CHROMIUM_FORK_MARKER"
 
-  local major version dest
-  major="$(define_from_header CEF_VERSION_MAJOR "$header")"
+  local version name dest
   version="$(define_from_header CEF_VERSION "$header")"
-  dest="$CEF_DIR/export-$major"
-  if [[ -e "$dest" && "$(cd "$dest" && pwd -P)" == "$(cd "$EXPORT_ROOT" && pwd -P)" ]]; then
-    echo "error: $dest is the current export; pull into it would replace it in place" >&2
-    echo "Run ./script/cef_remote_build.sh install $major after moving it aside." >&2
-    exit 1
-  fi
+  name="$(export_name "$header")"
+  dest="$CEF_DIR/export-$name"
   rm -rf "$dest"
   mv "$tmp" "$dest"
   echo "Pulled $version into $dest"
-  echo "Try it in one checkout with ./script/cef_remote_build.sh use $major,"
-  echo "or make it the export for all with ./script/cef_remote_build.sh install $major."
+  echo "Try it in one checkout with ./script/cef_remote_build.sh use $name,"
+  echo "or make it the export for all with ./script/cef_remote_build.sh install $name."
 }
 
-# Points this checkout's ThirdParty/cef/export at export-<major> only.
+# 156.0.31 for CEF 156.0.31+ge603d97+chromium-156.0.8078.100.
+export_name() {
+  local version
+  version="$(define_from_header CEF_VERSION "$1")"
+  printf '%s' "${version%%+*}"
+}
+
+# export-<version>, or an older export-<major> by its major alone.
+export_dir() {
+  local name="$1"
+  if [[ -d "$CEF_DIR/export-$name" ]]; then
+    printf '%s' "$CEF_DIR/export-$name"
+    return
+  fi
+  echo "error: no $CEF_DIR/export-$name; exports: $(cd "$CEF_DIR" && ls -d export-* 2>/dev/null | tr '\n' ' ')" >&2
+  exit 1
+}
+
+# Points this checkout's ThirdParty/cef/export at export-<version> only.
 use_export() {
-  local major="$1"
-  local target="$CEF_DIR/export-$major"
-  [[ -d "$target" ]] || { echo "error: no $target" >&2; exit 1; }
+  local target
+  target="$(export_dir "$1")"
   local link="$ROOT_DIR/ThirdParty/cef/export"
   if [[ -e "$link" && ! -L "$link" ]]; then
     echo "error: $link is a directory, not a link; use install in the primary checkout" >&2
@@ -177,18 +189,24 @@ use_export() {
   echo "This checkout now builds against $target"
 }
 
-# Makes export-<major> the shared export and keeps the previous one as
-# export-<its major>. Running it again with the old major swaps back.
+# Makes export-<version> the shared export and keeps the previous one as
+# export-<its version>. Running it again with the old version swaps back.
 install_export() {
-  local major="$1"
-  local target="$CEF_DIR/export-$major"
-  [[ -d "$target" ]] || { echo "error: no $target" >&2; exit 1; }
+  local target
+  target="$(export_dir "$1")"
   if [[ -d "$EXPORT_ROOT" && ! -L "$EXPORT_ROOT" ]]; then
     local old
-    old="$(define_from_header CEF_VERSION_MAJOR "$EXPORT_ROOT/include/cef_version.h")"
-    [[ -n "$old" && ! -e "$CEF_DIR/export-$old" ]] || { echo "error: cannot move the current export aside to export-$old" >&2; exit 1; }
-    mv "$EXPORT_ROOT" "$CEF_DIR/export-$old"
-    echo "Moved the previous export to $CEF_DIR/export-$old"
+    old="$(export_name "$EXPORT_ROOT/include/cef_version.h")"
+    [[ -n "$old" ]] || { echo "error: the current export has no CEF version" >&2; exit 1; }
+    local aside="$CEF_DIR/export-$old"
+    # A rebuild of the same version keeps the one it replaces as -previous.
+    if [[ "$aside" == "$target" ]]; then
+      aside="$CEF_DIR/export-$old-previous"
+      rm -rf "$aside"
+    fi
+    [[ ! -e "$aside" ]] || { echo "error: cannot move the current export aside to $aside" >&2; exit 1; }
+    mv "$EXPORT_ROOT" "$aside"
+    echo "Moved the previous export to $aside"
   fi
   mv "$target" "$EXPORT_ROOT"
   "$(primary_checkout_root)/script/chromium.sh" root Release >/dev/null
@@ -217,10 +235,14 @@ case "$COMMAND" in
     pull
     ;;
   use)
-    use_export "${1:?usage: use <major>}"
+    use_export "${1:?usage: use <version>}"
     ;;
   install)
-    install_export "${1:?usage: install <major>}"
+    install_export "${1:?usage: install <version>}"
+    ;;
+  exports)
+    printf 'current: %s\n' "$(define_from_header CEF_VERSION "$EXPORT_ROOT/include/cef_version.h")"
+    (cd "$CEF_DIR" && ls -d export-* 2>/dev/null) || true
     ;;
   help|-h|--help)
     cat <<'EOF'
@@ -238,10 +260,12 @@ Builds CEF for macOS arm64 on a Linux host and brings it to this Mac.
   all              prepare, apply-overrides, build and package
   status           last lines of the running command's log
   wait             wait until the running command ends
-  pull             copy the distribution to ThirdParty/cef/export-<major>
-  use <major>      point this checkout's export at export-<major>
-  install <major>  make export-<major> the shared export; the old one is kept
-                   as export-<old major>
+  pull             copy the distribution to ThirdParty/cef/export-<version>
+  use <version>    point this checkout's export at export-<version>
+  install <version>
+                   make export-<version> the shared export; the old one is
+                   kept as export-<old version>
+  exports          the current export and the ones kept beside it
 
 Remote commands push script/cef_cross and Chromium/chromium_src first and run
 in tmux; set WAIT=1 to wait for them.

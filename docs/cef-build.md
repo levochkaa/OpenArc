@@ -15,12 +15,12 @@ CEF is built on a Linux x64 machine and copied to the Mac. A build there does no
 | Configure | `./script/cef_remote_build.sh prepare` | Copies CEF into `src/cef` with OpenArc's CEF patch overrides, applies the cross-build fixes, runs CEF's hook (patches, version headers, `gn gen`). |
 | Build | `./script/cef_remote_build.sh build` | Copies `Chromium/chromium_src` over the tree and builds `cef_framework`. Incremental. |
 | Package | `./script/cef_remote_build.sh package` | Makes the minimal binary distribution: `include/`, `libcef_dll/`, `cmake/`, `CMakeLists.txt`, `CREDITS.html`, `Release/Chromium Embedded Framework.framework`. |
-| Copy | `./script/cef_remote_build.sh pull` | rsyncs the distribution to `ThirdParty/cef/export-<major>` in the primary checkout, strips local symbols with Xcode 26.6's `strip -x`, links `Debug` to `Release` and adds the `.openarc-chromium-fork` marker. |
-| Switch | `./script/cef_remote_build.sh install <major>` | Makes `export-<major>` the shared export and moves the previous one to `export-<its major>`. Installing the old major swaps back. |
+| Copy | `./script/cef_remote_build.sh pull` | rsyncs the distribution to `ThirdParty/cef/export-<version>` (such as `export-156.0.31`) in the primary checkout, strips local symbols with Xcode 26.6's `strip -x`, links `Debug` to `Release` and adds the `.openarc-chromium-fork` marker. |
+| Switch | `./script/cef_remote_build.sh install <version>` | Makes `export-<version>` the shared export and moves the previous one to `export-<its version>` (`-previous` when it is the same version). Installing the old version swaps back. `exports` lists them. |
 
 `all` runs prepare, overrides, build and package. Remote steps run in a tmux session on the host, so a dropped connection does not stop them. `status` shows the end of the log and `wait` waits for the step to finish; `WAIT=1` makes the step itself wait.
 
-`use <major>` points only the current checkout's `ThirdParty/cef/export` link at `export-<major>`, which tries a new base in one worktree while the others keep the shared export.
+`use <version>` points only the current checkout's `ThirdParty/cef/export` link at `export-<version>`, which tries a new base in one worktree while the others keep the shared export.
 
 After the export changes, run `./build.sh build`, `./build.sh test` and the engine smoke test ([cef-smoke-test.md](cef-smoke-test.md)).
 
@@ -32,7 +32,7 @@ On the WSL host (24 threads, 52 GB) the first build of a new base took about 1.5
 WAIT=1 ./script/cef_remote_build.sh build
 WAIT=1 ./script/cef_remote_build.sh package
 ./script/cef_remote_build.sh pull
-./script/cef_remote_build.sh install 156   # export-156 becomes the export; the old one is kept
+./script/cef_remote_build.sh install 156.0.31   # export-156.0.31 becomes the export; the old one is kept as export-156.0.31-previous
 ./build.sh build
 ```
 
