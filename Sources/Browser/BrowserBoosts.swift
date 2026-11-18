@@ -115,10 +115,11 @@ struct BrowserBoost: Codable, Equatable, Identifiable {
         return BrowserBoostTintFilter(tint: tint, originalSaturation: colors.originalSaturation)
     }
 
-    /// What sync carries besides the identity.
+    /// What sync carries besides the identity: the whole boost, name and styling included.
     var syncRecord: BrowserSyncBoostRecord {
         BrowserSyncBoostRecord(
             host: host, isEnabled: isEnabled, css: css, javaScript: javaScript, zappedSelectors: zappedSelectors,
+            title: title.flatMap { $0.isBlank ? nil : $0 }, style: BrowserSyncBoostStyle(self).nonEmpty,
         )
     }
 
@@ -173,6 +174,11 @@ struct BrowserBoost: Codable, Equatable, Identifiable {
             css: entry.record.css,
             javaScript: entry.record.javaScript,
             zappedSelectors: entry.record.zappedSelectors,
+            title: entry.record.title,
+            colors: entry.record.style?.colors,
+            fontFamily: entry.record.style?.fontFamily,
+            textCase: entry.record.style?.textCase,
+            textZoom: entry.record.style?.textZoom,
             syncID: entry.id,
         )
     }
@@ -215,15 +221,6 @@ struct BrowserBoost: Codable, Equatable, Identifiable {
     func displayTitle(defaultTitle: String) -> String {
         guard let title, !title.isBlank else { return defaultTitle }
         return title
-    }
-
-    /// Takes another copy's name and editor styling: colors, font, case and size.
-    mutating func keepStyle(of other: BrowserBoost) {
-        title = other.title
-        colors = other.colors
-        fontFamily = other.fontFamily
-        textCase = other.textCase
-        textZoom = other.textZoom
     }
 
     /// Keeps the content and name, and drops every edit of the editor's controls.

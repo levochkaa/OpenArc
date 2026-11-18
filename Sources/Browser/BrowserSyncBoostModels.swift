@@ -4,21 +4,26 @@ import Foundation
 
 // MARK: - BrowserSyncBoostRecord
 
-/// A site boost as sync carries it. Identity lives beside it: after a delete,
-/// a new boost for the same host takes a fresh identity, since the server keeps
-/// every deletion forever.
+/// A site boost as sync carries it, name and styling included. Identity lives
+/// beside it: after a delete, a new boost for the same host takes a fresh
+/// identity, since the server keeps every deletion forever.
 struct BrowserSyncBoostRecord: Codable, Equatable {
     /// Limits in UTF-16 code units, as the server counts them.
     static let hostLimit = 253
     static let codeLimit = 262_144
     static let selectorLimit = 4096
     static let selectorCountLimit = 1000
+    static let titleLimit = 1024
 
     var host: String
     var isEnabled: Bool
     var css: String
     var javaScript: String
     var zappedSelectors: [String]
+    /// The name the user gave the boost; nil shows the default name.
+    var title: String?
+    /// What the editor's controls change; nil keeps the site's own look.
+    var style: BrowserSyncBoostStyle?
 
     /// Whether the server accepts it. A boost over the limits stays on this Mac.
     var isSyncable: Bool {
@@ -27,6 +32,106 @@ struct BrowserSyncBoostRecord: Codable, Equatable {
             && javaScript.utf16.count <= Self.codeLimit
             && zappedSelectors.count <= Self.selectorCountLimit
             && zappedSelectors.allSatisfy { (1...Self.selectorLimit).contains($0.utf16.count) }
+            && title.map { (1...Self.titleLimit).contains($0.utf16.count) } ?? true
+            && style?.isSyncable ?? true
+    }
+}
+
+// MARK: - BrowserSyncBoostStyle
+
+/// Colors, a font, a text case and a size. Sync bounds each number more
+/// widely than the editor, so a later editor can widen its own ranges.
+struct BrowserSyncBoostStyle: Codable, Equatable {
+    // MARK: Private
+
+    private enum CodingKeys: String, CodingKey {
+        case colors, fontFamily, textCase, textZoom
+    }
+
+    static let fontFamilyLimit = 256
+    static let hueRange: ClosedRange<Double> = 0...360
+    static let secondaryHueOffsetRange: ClosedRange<Double> = -360...360
+    static let unitRange: ClosedRange<Double> = 0...1
+    static let colorScaleRange: ClosedRange<Double> = 0...4
+    static let textZoomRange: ClosedRange<Double> = 0.25...4
+
+    var colors: BrowserBoostColors?
+    var fontFamily: String?
+    var textCase: BrowserBoostTextCase?
+    var textZoom: Double?
+
+    /// Nil when nothing differs from the site's own look.
+    var nonEmpty: Self? {
+        colors == nil && fontFamily == nil && textCase == nil && textZoom == nil ? nil : self
+    }
+
+    var isSyncable: Bool {
+        fontFamily.map { (1...Self.fontFamilyLimit).contains($0.utf16.count) } ?? true
+            && textZoom.map(Self.textZoomRange.contains) ?? true
+            && colors.map(Self.areSyncable) ?? true
+    }
+
+    /// A boost's style with every number moved into the bounds sync accepts.
+    init(_ boost: BrowserBoost) {
+        self.colors = boost.colors.map(Self.bounded)
+        self.fontFamily = boost.fontFamily
+        self.textCase = boost.textCase
+        self.textZoom = boost.textZoom.map { Self.bounded($0, to: Self.textZoomRange, default: 1) }
+    }
+
+    init(
+        colors: BrowserBoostColors? = nil,
+        fontFamily: String? = nil,
+        textCase: BrowserBoostTextCase? = nil,
+        textZoom: Double? = nil,
+    ) {
+        self.colors = colors
+        self.fontFamily = fontFamily
+        self.textCase = textCase
+        self.textZoom = textZoom
+    }
+
+    /// Reads each field on its own, so a field a later version shapes
+    /// differently drops alone instead of failing the whole boost.
+    init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        self.colors = try? values.decodeIfPresent(BrowserBoostColors.self, forKey: .colors)
+        self.fontFamily = try? values.decodeIfPresent(String.self, forKey: .fontFamily)
+        self.textCase = (try? values.decodeIfPresent(String.self, forKey: .textCase))
+            .flatMap(BrowserBoostTextCase.init(rawValue:))
+        self.textZoom = try? values.decodeIfPresent(Double.self, forKey: .textZoom)
+    }
+
+    private static func areSyncable(_ colors: BrowserBoostColors) -> Bool {
+        colorScaleRange.contains(colors.contrast) && colorScaleRange.contains(colors.brightness)
+            && unitRange.contains(colors.originalSaturation)
+            && colors.tint.map {
+                hueRange.contains($0.hue) && unitRange.contains($0.saturation)
+                    && secondaryHueOffsetRange.contains($0.secondaryHueOffset)
+            } ?? true
+    }
+
+    private static func bounded(_ colors: BrowserBoostColors) -> BrowserBoostColors {
+        BrowserBoostColors(
+            tint: colors.tint.map {
+                .init(
+                    hue: bounded($0.hue, to: hueRange, default: 0),
+                    saturation: bounded($0.saturation, to: unitRange, default: 0),
+                    secondaryHueOffset: bounded(
+                        $0.secondaryHueOffset, to: secondaryHueOffsetRange,
+                        default: BrowserBoostColors.Tint.defaultSecondaryHueOffset,
+                    ),
+                )
+            },
+            invertsLightness: colors.invertsLightness,
+            contrast: bounded(colors.contrast, to: colorScaleRange, default: 1),
+            brightness: bounded(colors.brightness, to: colorScaleRange, default: 1),
+            originalSaturation: bounded(colors.originalSaturation, to: unitRange, default: 0),
+        )
+    }
+
+    private static func bounded(_ value: Double, to range: ClosedRange<Double>, default fallback: Double) -> Double {
+        value.isFinite ? min(max(value, range.lowerBound), range.upperBound) : fallback
     }
 }
 
@@ -173,11 +278,41 @@ struct BrowserSyncEventBoostData: Codable, Equatable {
     let css: String?
     let javaScript: String?
     let zappedSelectors: [String]?
+    let title: String?
+    let style: BrowserSyncBoostStyle?
 
     var record: BrowserSyncBoostRecord? {
         guard let host, let isEnabled, let css, let javaScript, let zappedSelectors else { return nil }
         return BrowserSyncBoostRecord(
             host: host, isEnabled: isEnabled, css: css, javaScript: javaScript, zappedSelectors: zappedSelectors,
+            title: title, style: style?.nonEmpty,
+        )
+    }
+
+    init(
+        id: String,
+        host: String?,
+        isEnabled: Bool?,
+        css: String?,
+        javaScript: String?,
+        zappedSelectors: [String]?,
+        title: String? = nil,
+        style: BrowserSyncBoostStyle? = nil,
+    ) {
+        self.id = id
+        self.host = host
+        self.isEnabled = isEnabled
+        self.css = css
+        self.javaScript = javaScript
+        self.zappedSelectors = zappedSelectors
+        self.title = title
+        self.style = style
+    }
+
+    init(id: String, record: BrowserSyncBoostRecord) {
+        self.init(
+            id: id, host: record.host, isEnabled: record.isEnabled, css: record.css, javaScript: record.javaScript,
+            zappedSelectors: record.zappedSelectors, title: record.title, style: record.style,
         )
     }
 }

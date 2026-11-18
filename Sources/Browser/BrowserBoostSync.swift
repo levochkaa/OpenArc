@@ -68,11 +68,7 @@ enum BrowserBoostSyncMerge {
         var shownHosts = Set<String>()
         for boost in local where !shownHosts.contains(boost.host) {
             if let winner = winnerByHost[boost.host] {
-                // Sync does not carry the editor's colors, font, case, size and
-                // name yet, so this Mac keeps its own.
-                var synced = BrowserBoost(winner)
-                synced.keepStyle(of: boost)
-                result.append(synced)
+                result.append(BrowserBoost(winner))
                 shownHosts.insert(boost.host)
             } else if !state.knows(boost.syncID) {
                 result.append(boost)

@@ -93,6 +93,97 @@ import Testing
     #expect(throws: BrowserRemoteSyncError.self) { try foreign.validate(for: mutation) }
 }
 
+// MARK: - Name and styling
+
+private let styledRecord = BrowserSyncBoostRecord(
+    host: "example.com", isEnabled: true, css: "", javaScript: "", zappedSelectors: [], title: "Reader",
+    style: .init(
+        colors: .init(
+            tint: .init(hue: 210.5, saturation: 0.4), invertsLightness: true, contrast: 1.2, brightness: 0.9,
+            originalSaturation: 0.25,
+        ),
+        fontFamily: "Georgia", textCase: .uppercase, textZoom: 1.25,
+    ),
+)
+
+@Test func boostNamesAndStylingTravelInTheRecordAndOlderShapesStillDecode() throws {
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys]
+    let upsert = try String(
+        decoding: encoder.encode(BrowserSyncBoostOperation.upsert(id: "b", record: styledRecord)),
+        as: UTF8.self,
+    )
+    #expect(upsert == #"{"data":{"css":"","host":"example.com","isEnabled":true,"javaScript":"","#
+        + #""style":{"colors":{"brightness":0.9,"contrast":1.2,"invertsLightness":true,"originalSaturation":0.25,"#
+        + #""tint":{"hue":210.5,"saturation":0.4,"secondaryHueOffset":30}},"fontFamily":"Georgia","#
+        + #""textCase":"uppercase","textZoom":1.25},"title":"Reader","zappedSelectors":[]},"#
+        + #""entityID":"b","entityType":"boost","kind":"upsert"}"#)
+    #expect(try JSONDecoder().decode(BrowserSyncBoostOperation.self, from: Data(upsert.utf8)) == .upsert(
+        id: "b",
+        record: styledRecord,
+    ))
+
+    // Rows queued and baselines stored before records carried a name or style read as plain boosts.
+    let plain = Data(#"{"host":"example.com","isEnabled":true,"css":"a {}","javaScript":"","zappedSelectors":[]}"#.utf8)
+    let decoded = try JSONDecoder().decode(BrowserSyncBoostRecord.self, from: plain)
+    #expect(decoded == BoostSyncServer.record("example.com"))
+    #expect(decoded.title == nil && decoded.style == nil)
+    let baseline = Data(#"{"entries":{"b":{"serverSeq":3,"record":\#(String(decoding: plain, as: UTF8.self))}}}"#.utf8)
+    #expect(try JSONDecoder().decode(BrowserSyncBoostBaseline.self, from: baseline).entries["b"]?.record == decoded)
+}
+
+@Test func boostEventsCarryStylingAndDropOnlyTheFieldsTheyCannotRead() throws {
+    let json = Data(#"""
+    [{"serverSeq":4,"deviceID":null,"entityType":"boost","entityID":"b","op":"upsert","createdAt":"2026-11-19T00:00:00Z",
+      "data":{"id":"b","host":"example.com","isEnabled":true,"css":"","javaScript":"","zappedSelectors":[],
+              "title":"Reader","style":{"fontFamily":"Georgia","textCase":"smallcaps","textZoom":1.25,"shadow":true}}},
+     {"serverSeq":5,"deviceID":null,"entityType":"boost","entityID":"c","op":"upsert","createdAt":"2026-11-19T00:00:00Z",
+      "data":{"id":"c","host":"example.org","isEnabled":true,"css":"","javaScript":"","zappedSelectors":[],"style":{}}}]
+    """#.utf8)
+    let events = try JSONDecoder().decode([BrowserSyncEvent].self, from: json)
+    guard case .boost(let styled) = events[0].data, case .boost(let empty) = events[1].data else {
+        Issue.record("Boost upserts decode as boosts")
+        return
+    }
+    #expect(styled.record?.title == "Reader")
+    #expect(styled.record?.style == .init(fontFamily: "Georgia", textZoom: 1.25), "An unknown case drops alone")
+    #expect(empty.record?.style == nil, "An empty style is the site's own look")
+    let reencoded = try JSONDecoder().decode(BrowserSyncEventData.self, from: JSONEncoder().encode(events[0].data))
+    #expect(reencoded == events[0].data)
+}
+
+@Test func aBoostsSyncRecordKeepsItsWholeLookWithinTheBoundsSyncAccepts() throws {
+    let styled = BrowserBoost(
+        host: "example.com", css: "a {}", title: "Reader", colors: styledRecord.style?.colors,
+        fontFamily: "Georgia", textCase: .uppercase, textZoom: 1.25, syncID: "b",
+    )
+    #expect(styled.syncRecord.title == "Reader")
+    #expect(styled.syncRecord.style == styledRecord.style)
+    #expect(BrowserBoost(BrowserSyncBoostEntry(id: "b", record: styled.syncRecord)) == styled, "Nothing is lost")
+
+    let plain = BrowserBoost(host: "example.com", title: "  ")
+    #expect(plain.syncRecord.title == nil && plain.syncRecord.style == nil)
+
+    var wild = styled
+    wild.textZoom = 10
+    wild.colors?.contrast = .nan
+    wild.colors?.tint?.secondaryHueOffset = 1000
+    let bounded = try #require(wild.syncRecord.style)
+    #expect(bounded.textZoom == 4)
+    #expect(bounded.colors?.contrast == 1)
+    #expect(bounded.colors?.tint?.secondaryHueOffset == 360)
+    #expect(wild.syncRecord.isSyncable)
+
+    var long = styled
+    long.title = String(repeating: "a", count: BrowserSyncBoostRecord.titleLimit + 1)
+    #expect(!long.syncRecord.isSyncable, "A boost over a limit stays on this Mac")
+    var outside = styledRecord
+    outside.style?.textZoom = 9
+    #expect(!outside.isSyncable)
+    outside.style = .init(fontFamily: "")
+    #expect(!outside.isSyncable)
+}
+
 // MARK: - Merge and conflict rules
 
 @Test func boostDeletionsArePermanentAndOlderEventsNeverWin() throws {
@@ -209,6 +300,40 @@ import Testing
     #expect(BrowserBoostSyncMerge.merged(local: merged, state: state) == merged, "Merging is stable")
 }
 
+@Test func syncedNamesAndStylingReplaceThisMacsAndAStylingEditIsAWrite() throws {
+    var baseline = BrowserSyncBoostBaseline()
+    try baseline.apply([BoostSyncServer.event(seq: 1, id: "a", record: styledRecord)])
+    let state = BrowserSyncBoostState(baseline: baseline, pending: [])
+    let local = BrowserBoost(
+        host: "example.com", title: "Mine", fontFamily: "Menlo", textCase: .lowercase, syncID: "a",
+    )
+    let merged = try #require(BrowserBoostSyncMerge.merged(local: [local], state: state).first)
+    #expect(merged.syncRecord == styledRecord, "The synced boost shows whole, name and styling included")
+    #expect(merged.title == "Reader" && merged.fontFamily == "Georgia" && merged.zoom == 1.25)
+
+    // Clearing the styling elsewhere clears it here.
+    var plain = styledRecord
+    plain.title = nil
+    plain.style = nil
+    try baseline.apply([BoostSyncServer.event(seq: 2, id: "a", record: plain)])
+    let cleared = try #require(BrowserBoostSyncMerge.merged(
+        local: [merged], state: BrowserSyncBoostState(baseline: baseline, pending: []),
+    )
+    .first)
+    #expect(cleared.title == nil && cleared.colors == nil && cleared.fontFamily == nil && !cleared.hasStyle)
+
+    // A change of the name or styling alone goes up.
+    var renamed = merged
+    renamed.title = "Night"
+    #expect(BrowserBoostSyncMerge.operations(changedIDs: ["a"], removed: [:], local: [renamed], state: state) == [
+        .upsert(id: "a", record: renamed.syncRecord),
+    ])
+    var restyled = merged
+    restyled.resetStyle()
+    #expect(BrowserBoostSyncMerge.operations(changedIDs: ["a"], removed: [:], local: [restyled], state: state)
+        .map(\.entityID) == ["a"])
+}
+
 // MARK: - Outbox and projection
 
 @Test @MainActor func boostWritesWaitForBoostSyncThenQueueAsVersion6Rows() throws {
@@ -323,6 +448,41 @@ import Testing
     #expect(again.syncID != identity && again.css == "again")
 }
 
+@Test @MainActor func namesAndStylingSyncAcrossTwoDevices() async throws {
+    let server = BoostSyncServer()
+    let a = try BoostSyncDevice(server: server, name: "a")
+    let b = try BoostSyncDevice(server: server, name: "b")
+    defer {
+        a.close()
+        b.close()
+    }
+    // Device A styled a boost before sync carried styling.
+    a.preferences.boosts.updateBoost(host: "example.com") { boost in
+        boost.title = "Reader"
+        boost.fontFamily = "Georgia"
+        boost.colors = styledRecord.style?.colors
+    }
+    await a.start()
+    await b.start()
+    let synced = try #require(b.preferences.boosts.first)
+    #expect(synced.title == "Reader" && synced.fontFamily == "Georgia")
+    #expect(synced.colors == styledRecord.style?.colors)
+
+    // B changes only the look; A follows, and the content stays.
+    b.preferences.boosts.updateBoost(host: "example.com") { boost in
+        boost.resetStyle()
+        boost.textCase = .uppercase
+        boost.textZoom = 1.1
+    }
+    b.bridge.flush()
+    await b.service.waitForPendingOperations()
+    await a.pull()
+    let followed = try #require(a.preferences.boosts.first)
+    #expect(followed.title == "Reader" && followed.textCase == .uppercase && followed.textZoom == 1.1)
+    #expect(followed.colors == nil && followed.fontFamily == nil)
+    #expect(a.preferences.boosts.map(\.syncRecord) == b.preferences.boosts.map(\.syncRecord))
+}
+
 @Test @MainActor func concurrentBoostsForOneHostSettleOnTheLaterWrite() async throws {
     let server = BoostSyncServer()
     let a = try BoostSyncDevice(server: server, name: "a")
@@ -411,12 +571,7 @@ import Testing
     }
 
     nonisolated static func event(seq: Int, id: String, record: BrowserSyncBoostRecord?) -> BrowserSyncEvent {
-        let data: BrowserSyncEventData = record.map {
-            .boost(.init(
-                id: id, host: $0.host, isEnabled: $0.isEnabled, css: $0.css, javaScript: $0.javaScript,
-                zappedSelectors: $0.zappedSelectors,
-            ))
-        } ?? .deleted(id: id)
+        let data: BrowserSyncEventData = record.map { .boost(.init(id: id, record: $0)) } ?? .deleted(id: id)
         return .init(
             serverSeq: seq, deviceID: "remote", entityType: "boost", entityID: id,
             op: record == nil ? "delete" : "upsert", data: data, createdAt: "2026-11-19T00:00:00Z",
