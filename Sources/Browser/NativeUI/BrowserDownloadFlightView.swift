@@ -1,8 +1,6 @@
 // BrowserDownloadFlightView.swift
 
 import AppKit
-import QuickLookThumbnailing
-import UniformTypeIdentifiers
 
 // MARK: - BrowserDownloadProjectile
 
@@ -72,17 +70,29 @@ enum BrowserDownloadBinMotion {
 
 // MARK: - BrowserDownloadFlightView
 
-/// A new download: a badge flies from the pointer into a thumbnail that sits on the archive button for a while.
+/// A new download: a badge flies from the pointer to the archive button. When the
+/// download finishes, its file's icon pops up over the button for a moment.
+/// None of it takes the pointer, so the button and its tray react as always.
 final class BrowserDownloadFlightView: NSView {
+    /// Where a flown download stands.
+    enum Outcome: Equatable {
+        case running
+        case completed(URL)
+        /// Canceled or failed: nothing to show.
+        case ended
+    }
+
     // MARK: Internal
 
     static let binSize: CGFloat = 32
-    /// How long the thumbnail stays: about 30 s.
-    static let binLifetime: TimeInterval = 30
+    /// How long the finished file's icon shows over the button.
+    static let popDuration: TimeInterval = 0.3
+    static let popFadeDuration: TimeInterval = 0.1
 
     // MARK: Private
 
-    private static let binPopDuration: TimeInterval = 0.5
+    /// How often a landed badge checks whether its download finished.
+    private static let outcomePollInterval: TimeInterval = 0.1
 
     override var isFlipped: Bool { true }
 
@@ -96,9 +106,10 @@ final class BrowserDownloadFlightView: NSView {
     private let sidebarlessIcon = NSImageView()
     private let animation = BrowserNativeAnimation()
     private var binCenter = CGPoint.zero
-    private var dismissTimer: Timer?
-    private var previewTimer: Timer?
+    private var outcomeTimer: Timer?
     private var swipeTravel: CGFloat = 0
+    private var hasLanded = false
+    private var pendingPop: URL?
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -114,16 +125,12 @@ final class BrowserDownloadFlightView: NSView {
         arrow.imageScaling = .scaleProportionallyUpOrDown
         badge.addSubview(arrow)
         bin.wantsLayer = true
-        bin.layer?.backgroundColor = NSColor.white.cgColor
-        bin.layer?.cornerRadius = 7
         bin.layer?.shadowColor = NSColor.black.cgColor
         bin.layer?.shadowOpacity = 0.25
-        bin.layer?.shadowRadius = 4
+        bin.layer?.shadowRadius = 3
         bin.layer?.shadowOffset = CGSize(width: 0, height: -1)
+        bin.isHidden = true
         preview.imageScaling = .scaleProportionallyUpOrDown
-        preview.wantsLayer = true
-        preview.layer?.cornerRadius = 7
-        preview.layer?.masksToBounds = true
         bin.addSubview(preview)
         addSubview(bin)
         sidebarlessBin.wantsLayer = true
@@ -145,17 +152,18 @@ final class BrowserDownloadFlightView: NSView {
 
     @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
+    /// Only the bin that slides in without a sidebar takes clicks; over the archive
+    /// button the pointer goes through to the button and its tray.
     override func hitTest(_ point: NSPoint) -> NSView? {
         let location = convert(point, from: superview)
-        return (!bin.isHidden && bin.frame.contains(location))
-            || (!sidebarlessBin.isHidden && sidebarlessBin.frame.contains(location)) ? self : nil
+        return !sidebarlessBin.isHidden && sidebarlessBin.frame.contains(location) ? self : nil
     }
 
     override func mouseDown(with _: NSEvent) {}
 
     override func mouseUp(with event: NSEvent) {
         let location = convert(event.locationInWindow, from: nil)
-        if bin.frame.contains(location) || sidebarlessBin.frame.contains(location) {
+        if !sidebarlessBin.isHidden, sidebarlessBin.frame.contains(location) {
             dismiss()
             onOpen()
         }
@@ -171,8 +179,7 @@ final class BrowserDownloadFlightView: NSView {
 
     /// No sidebar, so no archive button: a bin comes in from the window's edge for a moment.
     func launchWithoutSidebar(from source: CGPoint, tint: NSColor, fill: NSColor) {
-        previewTimer?.invalidate()
-        dismissTimer?.invalidate()
+        outcomeTimer?.invalidate()
         isHidden = false
         bin.isHidden = true
         badge.isHidden = false
@@ -216,44 +223,78 @@ final class BrowserDownloadFlightView: NSView {
     func launch(
         from source: CGPoint,
         toBinCenter center: CGPoint,
-        fileName: String,
         tint: NSColor,
-        finishedFile: @escaping @MainActor () -> URL?,
+        outcome: @escaping @MainActor () -> Outcome,
     ) {
         badge.layer?.borderColor = tint.cgColor
         arrow.contentTintColor = tint
-        previewTimer?.invalidate()
-        dismissTimer?.invalidate()
+        outcomeTimer?.invalidate()
         isHidden = false
+        alphaValue = 1
         sidebarlessBin.isHidden = true
+        bin.isHidden = true
+        hasLanded = false
+        pendingPop = nil
         binCenter = center
-        preview.image = NSWorkspace.shared.icon(
-            for: UTType(filenameExtension: (fileName as NSString).pathExtension) ?? .data,
-        )
         let projectile = BrowserDownloadProjectile(source: source, destination: center)
-        let duration = max(projectile.duration, Self.binPopDuration)
-        bin.isHidden = false
+        let duration = projectile.duration
         badge.isHidden = false
         animation.start(.bezier(duration, x1: 0, y1: 0, x2: 1, y2: 1)) { [weak self] progress in
             self?.place(projectile, at: progress * duration)
         } completion: { [weak self] in
-            self?.badge.isHidden = true
-            self?.placeBin(at: .infinity)
+            guard let self else { return }
+            badge.isHidden = true
+            hasLanded = true
+            if let url = pendingPop {
+                pop(url)
+            } else if outcomeTimer == nil {
+                dismiss()
+            }
         }
-        dismissTimer = .scheduledTimer(withTimeInterval: duration + Self.binLifetime, repeats: false) { [weak self] _ in
-            MainActor.assumeIsolated { self?.dismiss() }
-        }
-        previewTimer = .scheduledTimer(withTimeInterval: 0.3, repeats: true) { [weak self] _ in
+        // The download may finish before the badge lands; the icon then pops as it lands.
+        outcomeTimer = .scheduledTimer(withTimeInterval: Self.outcomePollInterval, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let self, let url = finishedFile() else { return }
-                self.previewTimer?.invalidate()
-                self.loadPreview(of: url)
+                guard let self else { return }
+                switch outcome() {
+                case .running:
+                    return
+                case .completed(let url):
+                    self.stopPolling()
+                    if self.hasLanded {
+                        self.pop(url)
+                    } else {
+                        self.pendingPop = url
+                    }
+                case .ended:
+                    self.stopPolling()
+                    if self.hasLanded {
+                        self.dismiss()
+                    }
+                }
             }
         }
     }
 
+    /// What a flown download's item says about it; a vanished item counts as ended.
+    static func outcome(of item: BrowserDownloadItem?) -> Outcome {
+        guard let item else { return .ended }
+        switch item.state {
+        case .inProgress:
+            return .running
+        case .completed:
+            return item.fileURL.map(Outcome.completed) ?? .ended
+        case .canceled,
+             .interrupted:
+            return .ended
+        }
+    }
+
+    private func stopPolling() {
+        outcomeTimer?.invalidate()
+        outcomeTimer = nil
+    }
+
     private func place(_ projectile: BrowserDownloadProjectile, at time: TimeInterval) {
-        placeBin(at: time)
         guard time < projectile.duration else {
             badge.isHidden = true
             return
@@ -283,6 +324,24 @@ final class BrowserDownloadFlightView: NSView {
         arrow.frameCenterRotation = 25 * (1 - min(time / projectile.duration / 0.6, 1))
     }
 
+    /// The finished file's icon grows from the button, dips, and goes.
+    private func pop(_ url: URL) {
+        pendingPop = nil
+        preview.image = NSWorkspace.shared.icon(forFile: url.path)
+        bin.isHidden = false
+        bin.alphaValue = 1
+        animation.start(.bezier(Self.popDuration, x1: 0, y1: 0, x2: 1, y2: 1)) { [weak self] progress in
+            self?.placeBin(at: progress * Self.popDuration)
+        } completion: { [weak self] in
+            guard let self else { return }
+            animation.start(.bezier(Self.popFadeDuration, x1: 0, y1: 0, x2: 1, y2: 1)) { [weak self] progress in
+                self?.bin.alphaValue = 1 - progress
+            } completion: { [weak self] in
+                self?.dismiss()
+            }
+        }
+    }
+
     /// It grows from the button, dips and settles.
     private func placeBin(at time: TimeInterval) {
         let grow = min(time / 0.08, 1)
@@ -299,29 +358,9 @@ final class BrowserDownloadFlightView: NSView {
         preview.frame = bin.bounds
     }
 
-    private func loadPreview(of url: URL) {
-        let side = Self.binSize
-        if UTType(filenameExtension: url.pathExtension)?.conforms(to: .image) == true {
-            if let image = BrowserImageThumbnailer.image(contentsOf: url, maximumPixelSize: side * 2) {
-                preview.image = image
-            }
-            return
-        }
-        let request = QLThumbnailGenerator.Request(
-            fileAt: url,
-            size: CGSize(width: side, height: side),
-            scale: 2,
-            representationTypes: .thumbnail,
-        )
-        QLThumbnailGenerator.shared.generateBestRepresentation(for: request) { [weak self] thumbnail, _ in
-            guard let image = thumbnail?.nsImage else { return }
-            DispatchQueue.main.async { self?.preview.image = image }
-        }
-    }
-
     private func dismiss() {
-        dismissTimer?.invalidate()
-        previewTimer?.invalidate()
+        stopPolling()
+        pendingPop = nil
         animation.cancel()
         badge.isHidden = true
         bin.isHidden = true

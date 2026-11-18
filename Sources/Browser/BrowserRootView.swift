@@ -774,13 +774,8 @@ final class BrowserRootView: NSView {
             return
         }
         let downloads = model.downloadsModel
-        downloadFlight.launch(
-            from: source,
-            toBinCenter: binCenter,
-            fileName: launch.fileName,
-            tint: tint,
-        ) {
-            downloads.items.first { $0.id == launch.id && $0.state == .completed }?.fileURL
+        downloadFlight.launch(from: source, toBinCenter: binCenter, tint: tint) {
+            BrowserDownloadFlightView.outcome(of: downloads.items.first { $0.id == launch.id })
         }
     }
 
