@@ -275,7 +275,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         app.finishLaunching()
         updateController?.start()
         BrowserTelemetry.captureUsage(.appBecameActive)
-        app.activate(ignoringOtherApps: true)
+        activateApplication()
     }
 
     public func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
@@ -1411,8 +1411,22 @@ NSMenuDelegate, NSUserInterfaceValidations {
         guard isHoldingWindowsForOnboarding else { return }
         isHoldingWindowsForOnboarding = false
         for session in profileWindowSessions.reversed() {
-            session.window.makeKeyAndOrderFront(nil)
+            present(session.window)
         }
+        activateApplication()
+    }
+
+    /// Brings a window up at launch: in front with the keyboard, or behind other
+    /// apps' windows after `--no-activate`.
+    private func present(_ window: NSWindow) {
+        switch BrowserWindowPresentation.current {
+        case .frontAndActivate: window.makeKeyAndOrderFront(nil)
+        case .behindOthers: window.orderBack(nil)
+        }
+    }
+
+    private func activateApplication() {
+        guard BrowserWindowPresentation.current.activatesApplication else { return }
         NSApp.activate(ignoringOtherApps: true)
     }
 
@@ -1475,7 +1489,11 @@ NSMenuDelegate, NSUserInterfaceValidations {
         }
         if server.start() {
             agentServer = server
-            installAgentCommandLineTool()
+            // A copy on a socket of its own, such as an automated check, leaves the
+            // shell's `openarc` with the browser on the default socket.
+            if socketArgument == nil {
+                installAgentCommandLineTool()
+            }
         }
     }
 
@@ -3862,8 +3880,8 @@ NSMenuDelegate, NSUserInterfaceValidations {
                 restoring: record,
             )
         }
-        if !isHoldingWindowsForOnboarding {
-            profileWindowSessions.first?.window.makeKeyAndOrderFront(nil)
+        if !isHoldingWindowsForOnboarding, let window = profileWindowSessions.first?.window {
+            present(window)
         }
     }
 
@@ -4096,8 +4114,8 @@ NSMenuDelegate, NSUserInterfaceValidations {
             // Shown once the engine says whether this is someone new.
             isHoldingWindowsForOnboarding = true
         } else {
-            window.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
+            present(window)
+            activateApplication()
         }
         BrowserTelemetry.captureUsage(
             .profileWindowOpened,
