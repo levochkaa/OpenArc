@@ -12,6 +12,7 @@ tags:
   - name: Devices
   - name: Sync
   - name: Updates
+  - name: Shares
 paths:
   /health:
     get:
@@ -235,6 +236,76 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         default:
           $ref: "#/components/responses/Error"
+  /v1/shares:
+    post:
+      operationId: publishShare
+      description: >-
+        Publishes a Space, a folder or a quote as a public link. Sharing the same Space or folder (`sourceID`) or the
+        same quote again updates its link. An account can publish 60 times an hour and keep 1,000 links.
+      tags: [Shares]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SharePublishRequest"
+      responses:
+        "201":
+          description: The link.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShareSummary"
+        default:
+          $ref: "#/components/responses/Error"
+    get:
+      operationId: listShares
+      description: The account's links, the most recently shared first.
+      tags: [Shares]
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The account's links.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShareListResponse"
+        default:
+          $ref: "#/components/responses/Error"
+  /v1/shares/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      operationId: readShare
+      description: A link's content, readable by anyone with the link.
+      tags: [Shares]
+      responses:
+        "200":
+          description: The shared content.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SharedContent"
+        default:
+          $ref: "#/components/responses/Error"
+    delete:
+      operationId: deleteShare
+      description: Removes one of the account's links; its page then says it was removed.
+      tags: [Shares]
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: Removed.
+        default:
+          $ref: "#/components/responses/Error"
   /v1/releases:
     get:
       operationId: listReleases
@@ -275,6 +346,160 @@ components:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
   schemas:
+    ShareItem:
+      type: object
+      description: >-
+        A tab or a folder. `parent` is the index of an earlier folder in the same list; items without one sit at the
+        top level.
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [tab, folder]
+        title:
+          type: string
+          nullable: true
+          maxLength: 300
+        url:
+          type: string
+          nullable: true
+          description: An http or https address; tabs only.
+        favicon:
+          type: string
+          nullable: true
+          description: A PNG of at most 12 KiB as a `data:image/png;base64,` URL; tabs only.
+        icon:
+          type: string
+          nullable: true
+          description: An emoji or a symbol name; folders only.
+        parent:
+          type: integer
+          nullable: true
+          minimum: 0
+    SharePublishRequest:
+      type: object
+      required: [kind]
+      properties:
+        kind:
+          type: string
+          enum: [space, folder, quote]
+        sourceID:
+          type: string
+          description: The shared Space or folder; required for both.
+          minLength: 1
+          maxLength: 200
+        title:
+          type: string
+          nullable: true
+          description: The Space or folder name, required for both; for a quote, its page's title.
+          maxLength: 300
+        icon:
+          type: string
+          nullable: true
+          description: An emoji or a symbol name.
+        iconImage:
+          type: string
+          nullable: true
+          description: The icon drawn as a PNG data URL, for viewers without the symbol.
+        colors:
+          type: array
+          maxItems: 8
+          items:
+            type: string
+            description: "#RRGGBB"
+        items:
+          type: array
+          description: Space and folder only, at least one tab.
+          maxItems: 1000
+          items:
+            $ref: "#/components/schemas/ShareItem"
+        text:
+          type: string
+          description: The quote; quote only.
+          maxLength: 2000
+        url:
+          type: string
+          description: The quoted page, with a text fragment that opens it at the quote; quote only.
+        favicon:
+          type: string
+          nullable: true
+          description: The quoted site's icon as a PNG data URL; quote only.
+    ShareSummary:
+      type: object
+      required: [id, kind, url, sourceID, title, itemCount, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+          enum: [space, folder, quote]
+        url:
+          type: string
+          description: The public page.
+        sourceID:
+          type: string
+        title:
+          type: string
+        excerpt:
+          type: string
+          nullable: true
+          description: A quote's opening words.
+        itemCount:
+          type: integer
+          description: The tabs a Space or folder shares.
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    ShareListResponse:
+      type: object
+      required: [shares]
+      properties:
+        shares:
+          type: array
+          items:
+            $ref: "#/components/schemas/ShareSummary"
+    SharedContent:
+      type: object
+      required: [id, kind, shareURL, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+          enum: [space, folder, quote]
+        shareURL:
+          type: string
+          description: The public page.
+        url:
+          type: string
+          description: The quoted page; quote only.
+        title:
+          type: string
+        icon:
+          type: string
+        iconImage:
+          type: string
+        colors:
+          type: array
+          items:
+            type: string
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ShareItem"
+        text:
+          type: string
+        favicon:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
     ErrorResponse:
       type: object
       additionalProperties: true

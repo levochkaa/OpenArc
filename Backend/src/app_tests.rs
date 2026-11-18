@@ -4,6 +4,7 @@
 use crate::app::{AppState, router};
 use crate::auth::AuthService;
 use crate::config::Config;
+use crate::shares::ShareService;
 use crate::signin::SignInService;
 use crate::sync::SyncService;
 use crate::updates::UpdatesService;
@@ -52,7 +53,8 @@ fn app_with(github_api: &str, extra: &[(&str, &str)]) -> Router {
     let pool = crate::db::pool(&config.database_url).unwrap();
     router(AppState {
         sync: Arc::new(SyncService::new(pool.clone(), auth.clone())),
-        sign_in: SignInService::new(pool, auth.clone(), config.clone(), http.clone()).unwrap(),
+        sign_in: SignInService::new(pool.clone(), auth.clone(), config.clone(), http.clone()).unwrap(),
+        shares: Arc::new(ShareService::new(pool, &config.share_base_url)),
         updates: UpdatesService::new(config.clone(), http, github_api),
         auth,
         config,
@@ -476,4 +478,40 @@ mod apple {
         }
         output
     }
+}
+
+#[tokio::test]
+async fn shares_check_the_body_before_the_token() {
+    let invalid = json!({"kind": "space", "sourceID": "S", "title": "Work", "items": []});
+    let (status, _, body) = send(app(), post("/v1/shares", json_bytes(&invalid), false, None)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert!(body.contains("items"), "{body}");
+    let unknown = json!({"kind": "note", "text": "x"});
+    let (status, _, _) = send(app(), post("/v1/shares", json_bytes(&unknown), false, None)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let valid = json!({"kind": "quote", "text": "Words", "url": "https://example.com/"});
+    let (status, _, body) = send(app(), post("/v1/shares", json_bytes(&valid), false, None)).await;
+    assert_eq!((status, body.as_str()), (StatusCode::UNAUTHORIZED, r#"{"error":"unauthorized"}"#));
+    let (status, _, _) = send(app(), Request::get("/v1/shares").body(Body::empty()).unwrap()).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    let (status, _, _) = send(app(), Request::delete("/v1/shares/AbCdEfGh12").body(Body::empty()).unwrap()).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn malformed_share_links_are_missing_without_storage() {
+    // Identifiers of the wrong shape never reach the database.
+    let (status, headers, body) = send(app(), Request::get("/s/not-an-id").body(Body::empty()).unwrap()).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(headers["content-type"], "text/html; charset=utf-8");
+    assert!(headers["content-security-policy"].to_str().unwrap().contains("default-src 'none'"));
+    assert_eq!(headers["x-robots-tag"], "noindex");
+    assert!(body.contains("This link was removed"));
+    let (status, _, _) = send(app(), Request::get("/Q/short/").body(Body::empty()).unwrap()).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, headers, body) = send(app(), Request::get("/v1/shares/short").body(Body::empty()).unwrap()).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert!(headers["content-type"].to_str().unwrap().starts_with("application/json"));
+    assert_eq!(body, r#"{"statusCode":404,"message":"Share not found"}"#);
 }

@@ -12,6 +12,7 @@ mod error;
 mod js_json;
 mod requests;
 mod schema;
+mod shares;
 mod signin;
 mod sync;
 mod time;
@@ -20,6 +21,7 @@ mod updates;
 use crate::app::{AppState, router};
 use crate::auth::AuthService;
 use crate::config::Config;
+use crate::shares::ShareService;
 use crate::signin::SignInService;
 use crate::sync::SyncService;
 use crate::updates::{GITHUB_API_URL, UpdatesService};
@@ -91,6 +93,7 @@ async fn serve() -> anyhow::Result<()> {
     let state = AppState {
         sync: Arc::new(SyncService::new(pool.clone(), auth.clone())),
         sign_in: SignInService::new(pool.clone(), auth.clone(), config.clone(), http.clone())?,
+        shares: Arc::new(ShareService::new(pool.clone(), &config.share_base_url)),
         updates: UpdatesService::new(config.clone(), http, GITHUB_API_URL),
         auth,
         config: config.clone(),

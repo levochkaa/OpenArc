@@ -20,6 +20,8 @@ pub struct Config {
     pub github_release_repository: Option<String>,
     pub github_release_token: String,
     pub public_base_url: Option<String>,
+    /// Where the pages of shared links live, without a trailing slash.
+    pub share_base_url: String,
     pub update_appcast_asset: String,
     pub sign_in: SignInConfig,
 }
@@ -133,6 +135,11 @@ impl Config {
         {
             issues.push("OPENARC_PUBLIC_BASE_URL: Invalid URL".to_string());
         }
+        let share_base_url = value("OPENARC_SHARE_BASE_URL").unwrap_or_else(|| "https://openarc.su".to_string());
+        if !url::Url::parse(&share_base_url).is_ok_and(|url| matches!(url.scheme(), "http" | "https")) {
+            issues.push("OPENARC_SHARE_BASE_URL: Invalid URL".to_string());
+        }
+        let share_base_url = share_base_url.trim_end_matches('/').to_string();
         let update_appcast_asset = value("OPENARC_UPDATE_APPCAST_ASSET").unwrap_or_else(|| "appcast.xml".to_string());
         if update_appcast_asset.is_empty() {
             issues.push("OPENARC_UPDATE_APPCAST_ASSET: must not be empty".to_string());
@@ -155,6 +162,7 @@ impl Config {
             github_release_repository: value("GITHUB_RELEASE_REPOSITORY"),
             github_release_token: value("GITHUB_RELEASE_TOKEN").unwrap_or_default(),
             public_base_url,
+            share_base_url,
             update_appcast_asset,
             sign_in,
         })

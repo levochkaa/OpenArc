@@ -104,3 +104,19 @@ Every sign-in method ends in an identity: a provider (`apple`, `google`, `github
 - Email codes: `POST /v1/auth/email/start` sends a six-digit code over SMTP, and `POST /v1/auth/email/verify` signs in. A code lasts ten minutes and allows five tries. Codes can be resent after a minute, at most five an hour per address.
 
 Configuration, each method enabled only when set: `OPENARC_PUBLIC_BASE_URL` (the base of the provider redirect URIs, required for web sign-in), `OPENARC_APPLE_SERVICES_ID` (whose return URL is `{base}/v1/auth/apple/callback`), `OPENARC_GOOGLE_CLIENT_ID` and `OPENARC_GOOGLE_CLIENT_SECRET`, `OPENARC_GITHUB_CLIENT_ID` and `OPENARC_GITHUB_CLIENT_SECRET`, `OPENARC_SMTP_HOST` with `OPENARC_SMTP_PORT`, `OPENARC_SMTP_SECURITY` (`tls` or `starttls`; by default TLS on port 465 and STARTTLS otherwise, with port 587), `OPENARC_SMTP_USERNAME` and `OPENARC_SMTP_PASSWORD`, and `OPENARC_EMAIL_FROM` (default `OpenArc <support@openarc.su>`). Any provider's SMTP works, for example Resend, Brevo, Postmark, Amazon SES or Mailgun. The `OPENARC_*_URL` endpoint overrides exist for the integration tests, which stand in for the providers.
+
+## Shared links
+
+A signed-in account can publish a Space, a folder or a quote as a public link (`POST /v1/shares`), list its links (`GET /v1/shares`) and remove one (`DELETE /v1/shares/{id}`); anyone can read a link's content (`GET /v1/shares/{id}`), which the app reads to add a shared Space or folder. A share is a snapshot: sharing the same Space or folder (`sourceID`) or the same quote again updates its link and keeps its address. Content is checked before it is stored: http and https addresses only, icons as PNG data URLs of at most 12 KiB, folders at most eight deep, at most 1,000 items and 2 MiB. An account can publish 60 times an hour and keep 1,000 links; links are deleted with the account.
+
+The server renders each link's page: `/s/{id}` for Spaces and folders, `/q/{id}` for quotes, with Open Graph tags for link previews and an Add to OpenArc button that opens `openarc://share/{id}`. The pages run no script, load nothing from other sites (icons are inline) and are marked `noindex`. `OPENARC_SHARE_BASE_URL` (default `https://openarc.su`) is the address the links use; the site's web server proxies `/s/*` and `/q/*` there to this server:
+
+```caddyfile
+openarc.su {
+  @shares path /s/* /q/*
+  handle @shares {
+    reverse_proxy 127.0.0.1:8080
+  }
+  # … the site's other routes
+}
+```

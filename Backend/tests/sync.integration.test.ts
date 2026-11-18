@@ -11,6 +11,7 @@ import { registerActivitySyncTests } from "./sync-activity.js";
 import { registerExpirySyncTests } from "./sync-expiry.js";
 import { registerBoostSyncTests } from "./sync-boosts.js";
 import { registerSignInTests } from "./sign-in.js";
+import { registerShareTests } from "./shares.js";
 
 type SyncEvent = {
   serverSeq: number;
@@ -122,6 +123,7 @@ describe("PostgreSQL sync convergence over authenticated localhost HTTP", {
   registerExpirySyncTests({ pool: () => pool, account, post, startServerProcess });
   registerBoostSyncTests({ pool: () => pool, account, post });
   registerSignInTests({ pool: () => pool, startServer: (extra) => startSyncServer(testDatabaseURL!, extra) });
+  registerShareTests({ pool: () => pool, baseURL: () => baseURL, account, post });
 
   async function storedTabs(userID: string): Promise<StoredTab[]> {
     const result = await pool.query<StoredTab>(`

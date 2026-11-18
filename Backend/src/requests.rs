@@ -590,6 +590,48 @@ pub static SYNC_PULL_REQUEST: LazyLock<Schema> = LazyLock::new(|| {
     ])
 });
 
+// MARK: Shares
+
+const SHARE_ITEM_TYPES: &[&str] = &["tab", "folder"];
+
+fn share_item() -> Schema {
+    object(vec![
+        ("type", options(SHARE_ITEM_TYPES)),
+        ("title", optional(nullable(string_between(None, Some(300))))),
+        ("url", optional(nullable(string_between(Some(1), Some(4096))))),
+        ("favicon", optional(nullable(string_between(Some(1), Some(16_416))))),
+        ("icon", optional(nullable(string_between(Some(1), Some(64))))),
+        ("parent", optional(nullable(integer(Some((0.0, true)), Some((1000.0, false)))))),
+    ])
+}
+
+fn share_collection(kind: &'static str) -> Schema {
+    object(vec![
+        ("kind", literal(json!(kind))),
+        ("sourceID", string_between(Some(1), Some(200))),
+        ("title", string_between(Some(1), Some(200))),
+        ("icon", optional(nullable(string_between(Some(1), Some(64))))),
+        ("iconImage", optional(nullable(string_between(Some(1), Some(16_416))))),
+        ("colors", with_default(array(string_between(Some(7), Some(7)), None, Some(8)), json!([]))),
+        ("items", array(share_item(), Some(1), Some(1000))),
+    ])
+}
+
+pub static SHARE_PUBLISH_REQUEST: LazyLock<Schema> = LazyLock::new(|| Schema::Discriminated {
+    key: "kind",
+    options: vec![
+        share_collection("space"),
+        share_collection("folder"),
+        object(vec![
+            ("kind", literal(json!("quote"))),
+            ("text", string_between(Some(1), Some(2000))),
+            ("title", optional(nullable(string_between(None, Some(300))))),
+            ("url", string_between(Some(1), Some(8192))),
+            ("favicon", optional(nullable(string_between(Some(1), Some(16_416))))),
+        ]),
+    ],
+});
+
 #[cfg(test)]
 mod tests {
     use super::*;

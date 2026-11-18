@@ -27,6 +27,7 @@ services:
       JWT_ISSUER: ${JWT_ISSUER:-openarc-sync}
       JWT_AUDIENCE: ${JWT_AUDIENCE:-openarc-clients}
       CORS_ORIGIN: ${CORS_ORIGIN:-}
+      OPENARC_SHARE_BASE_URL: ${OPENARC_SHARE_BASE_URL:-https://openarc.su}
     depends_on:
       postgres:
         condition: service_healthy

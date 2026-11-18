@@ -7,9 +7,10 @@ use crate::config::Config;
 use crate::error::{ApiError, ApiResult, json_response};
 use crate::requests::{
     AUTH_APPLE_REQUEST, AUTH_EMAIL_START_REQUEST, AUTH_EMAIL_VERIFY_REQUEST, AUTH_WEB_EXCHANGE_REQUEST,
-    REGISTER_DEVICE_REQUEST, SYNC_PULL_REQUEST, SYNC_PUSH_REQUEST,
+    REGISTER_DEVICE_REQUEST, SHARE_PUBLISH_REQUEST, SYNC_PULL_REQUEST, SYNC_PUSH_REQUEST,
 };
 use crate::schema::{Schema, format_issues};
+use crate::shares::{Kind, ShareService, page};
 use crate::signin::{SignInService, WebProvider};
 use crate::sync::{SyncService, parse_uuid};
 use crate::updates::{Channel, Download, UpdatesService, content_disposition, parse_channel};
@@ -39,6 +40,7 @@ pub struct AppState {
     pub sync: Arc<SyncService>,
     pub sign_in: SignInService,
     pub updates: UpdatesService,
+    pub shares: Arc<ShareService>,
 }
 
 pub fn router(state: AppState) -> Router {
@@ -61,6 +63,10 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/devices", post(register_device))
         .route("/v1/sync/push", post(push))
         .route("/v1/sync/pull", post(pull))
+        .route("/v1/shares", post(publish_share).get(list_shares))
+        .route("/v1/shares/{id}", get(read_share).delete(delete_share))
+        .route("/s/{id}", get(share_page))
+        .route("/q/{id}", get(quote_page))
         .route("/appcast.xml", get(appcast))
         .route("/updates/appcast.xml", get(appcast))
         .route("/appcast-beta.xml", get(beta_appcast))
@@ -200,6 +206,88 @@ async fn pull(State(state): State<AppState>, headers: HeaderMap, JsonBody(body):
     let request = parse(&SYNC_PULL_REQUEST, body)?;
     let user_id = authorized_user(&state, &headers)?;
     Ok(created(&state.sync.pull(user_id, &request).await?))
+}
+
+// MARK: Shares
+
+async fn publish_share(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    JsonBody(body): JsonBody,
+) -> ApiResult<Response> {
+    let request = parse(&SHARE_PUBLISH_REQUEST, body)?;
+    let user_id = authorized_user(&state, &headers)?;
+    Ok(no_store(created(&state.shares.publish(user_id, &request).await?)))
+}
+
+async fn list_shares(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Response> {
+    let user_id = authorized_user(&state, &headers)?;
+    Ok(no_store(json_response(StatusCode::OK, &state.shares.list(user_id).await?)))
+}
+
+async fn delete_share(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    id: Result<Path<String>, PathRejection>,
+) -> ApiResult<Response> {
+    let id = path_value(id)?;
+    let user_id = authorized_user(&state, &headers)?;
+    state.shares.delete(user_id, &id).await?;
+    Ok(no_store(StatusCode::NO_CONTENT.into_response()))
+}
+
+/// The content of a link, which the app reads to add it.
+async fn read_share(State(state): State<AppState>, id: Result<Path<String>, PathRejection>) -> ApiResult<Response> {
+    let id = path_value(id)?;
+    let share = state.shares.find(&id).await?.ok_or_else(|| ApiError::status(404, "Share not found"))?;
+    let mut response = json_response(StatusCode::OK, &state.shares.public_json(&share));
+    response.headers_mut().insert(header::CACHE_CONTROL, HeaderValue::from_static("public, max-age=60"));
+    Ok(response)
+}
+
+async fn share_page(State(state): State<AppState>, id: Result<Path<String>, PathRejection>) -> ApiResult<Response> {
+    public_page(&state, Kind::Space, id).await
+}
+
+async fn quote_page(State(state): State<AppState>, id: Result<Path<String>, PathRejection>) -> ApiResult<Response> {
+    public_page(&state, Kind::Quote, id).await
+}
+
+/// `/s/` shows Spaces and folders, `/q/` quotes; the other path redirects.
+async fn public_page(
+    state: &AppState,
+    path_kind: Kind,
+    id: Result<Path<String>, PathRejection>,
+) -> ApiResult<Response> {
+    let id = path_value(id).unwrap_or_default();
+    let Some(share) = state.shares.find(&id).await? else {
+        return Ok(html_response(StatusCode::NOT_FOUND, page::missing()));
+    };
+    let url = state.shares.page_url(share.kind, &share.id);
+    if share.kind.path() != path_kind.path() {
+        let mut response = StatusCode::MOVED_PERMANENTLY.into_response();
+        if let Ok(value) = HeaderValue::from_str(&url) {
+            response.headers_mut().insert(header::LOCATION, value);
+        }
+        return Ok(response);
+    }
+    let html = match share.kind {
+        Kind::Quote => page::quote(&share, &url),
+        Kind::Space | Kind::Folder => page::collection(&share, &url),
+    };
+    Ok(html_response(StatusCode::OK, html))
+}
+
+fn html_response(status: StatusCode, html: String) -> Response {
+    let mut response = (status, html).into_response();
+    let headers = response.headers_mut();
+    headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("text/html; charset=utf-8"));
+    headers.insert(header::CONTENT_SECURITY_POLICY, HeaderValue::from_static(page::CONTENT_SECURITY_POLICY));
+    headers.insert(header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff"));
+    headers.insert(header::REFERRER_POLICY, HeaderValue::from_static("strict-origin-when-cross-origin"));
+    headers.insert("x-robots-tag", HeaderValue::from_static("noindex"));
+    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("public, max-age=60"));
+    response
 }
 
 // MARK: OpenAPI
@@ -365,9 +453,10 @@ const STATIC_ROUTES: &[&str] = &[
     "/appcast-beta.xml",
     "/updates/appcast-beta.xml",
     "/v1/releases",
+    "/v1/shares",
 ];
 const PARAMETER_ROUTE_PREFIXES: &[&str] =
-    &["/downloads/", "/updates/downloads/", "/v1/releases/assets/", "/v1/auth/web/"];
+    &["/downloads/", "/updates/downloads/", "/v1/releases/assets/", "/v1/auth/web/", "/v1/shares/", "/s/", "/q/"];
 
 /// Express routes match without regard to case and with one optional
 /// trailing slash; parameters keep their case.
