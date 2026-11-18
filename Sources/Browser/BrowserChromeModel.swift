@@ -1327,7 +1327,7 @@ enum BrowserWindowMode: Equatable {
         var page = BrowserCommandSuggestion(
             kind: .history,
             displayText: suggestion.displayText,
-            detailText: BrowserURLDisplayFormatter.displayString(for: suggestion.resolvedURLString),
+            detailText: BrowserCommandSuggestion.addressText(for: suggestion.resolvedURLString),
             resolvedURLString: suggestion.resolvedURLString,
         )
         page.faviconURL = suggestion.faviconURL
@@ -6149,64 +6149,45 @@ enum BrowserWindowMode: Equatable {
         return true
     }
 
+    /// Pages first, then commands and actions, each with a budget of its
+    /// own, so a word many commands share leaves room for pages.
     private func localCommandSuggestions(for query: String, maximumCount: Int) -> [BrowserCommandSuggestion] {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedQuery.isEmpty, maximumCount > 0 else {
             return []
         }
 
-        var suggestions = [BrowserCommandSuggestion]()
-        suggestions.append(
-            contentsOf: commandActionSuggestions(
+        // Tabs leave room for history.
+        var pages = openTabSuggestions(for: trimmedQuery, maximumCount: min(maximumCount, 7))
+        if pages.count < maximumCount {
+            pages += bookmarksModel.suggestions(for: trimmedQuery, maximumCount: maximumCount - pages.count)
+        }
+        if pages.count < maximumCount {
+            // The search engine's results pages are searches, not pages to list:
+            // their address up to the query, such as "https://www.google.com/search?".
+            let resultsPrefix = navigationResolver.resolve("openarc")?
+                .resolvedURLString
+                .components(separatedBy: "openarc")
+                .first
+                .map { prefix in prefix.firstIndex(of: "?").map { String(prefix[...$0]) } ?? prefix }
+                .flatMap { $0.isEmpty ? nil : $0 }
+            pages += historyStore.suggestions(
                 for: trimmedQuery,
-                maximumCount: maximumCount,
-            ),
-        )
-
-        suggestions
-            .append(contentsOf: newDocumentSuggestions(for: trimmedQuery).prefix(maximumCount - suggestions.count))
-
-        let remainingAfterCommands = maximumCount - suggestions.count
-        if remainingAfterCommands > 0 {
-            suggestions.append(
-                contentsOf: internalPageSuggestions(
-                    for: trimmedQuery,
-                    maximumCount: remainingAfterCommands,
-                ),
+                maximumCount: maximumCount - pages.count,
+                excludingURLPrefix: resultsPrefix,
             )
         }
 
-        let remainingAfterInternalPages = maximumCount - suggestions.count
-        if remainingAfterInternalPages > 0 {
-            suggestions.append(
-                contentsOf: openTabSuggestions(
-                    for: trimmedQuery,
-                    maximumCount: remainingAfterInternalPages,
-                ),
-            )
+        let maximumActions = 6
+        var actions = commandActionSuggestions(for: trimmedQuery, maximumCount: maximumActions)
+        let documentsAndPages = newDocumentSuggestions(for: trimmedQuery)
+            + internalPageSuggestions(for: trimmedQuery, maximumCount: maximumActions)
+        actions += documentsAndPages.prefix(max(maximumActions - actions.count, 0)).map { suggestion in
+            var action = suggestion
+            action.isAction = true
+            return action
         }
-
-        let remainingAfterTabs = maximumCount - suggestions.count
-        if remainingAfterTabs > 0 {
-            suggestions.append(
-                contentsOf: bookmarksModel.suggestions(
-                    for: trimmedQuery,
-                    maximumCount: remainingAfterTabs,
-                ),
-            )
-        }
-
-        let remainingAfterBookmarks = maximumCount - suggestions.count
-        if remainingAfterBookmarks > 0 {
-            suggestions.append(
-                contentsOf: historyStore.suggestions(
-                    for: trimmedQuery,
-                    maximumCount: remainingAfterBookmarks,
-                ),
-            )
-        }
-
-        return Array(suggestions.prefix(maximumCount))
+        return Array(pages.prefix(maximumCount)) + actions
     }
 
     private func newDocumentSuggestions(for query: String) -> [BrowserCommandSuggestion] {
@@ -6358,7 +6339,7 @@ enum BrowserWindowMode: Equatable {
                 var page = BrowserCommandSuggestion(
                     kind: .history,
                     displayText: tab.displayTitle,
-                    detailText: BrowserURLDisplayFormatter.displayString(for: tab.urlString),
+                    detailText: BrowserCommandSuggestion.addressText(for: tab.urlString),
                     resolvedURLString: tab.urlString,
                 )
                 page.faviconURL = tab.faviconURL

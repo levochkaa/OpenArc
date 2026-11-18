@@ -293,7 +293,9 @@ private let gitLab = BrowserSiteSearch(
     #expect(hint.isHidden)
     #expect(chip.isHidden)
     let editor = NSTextView()
-    #expect(!view.control(view.queryField, textView: editor, doCommandBy: #selector(NSResponder.insertTab(_:))))
+    // With no site and nothing completed, Tab does nothing and the field keeps the focus.
+    #expect(view.control(view.queryField, textView: editor, doCommandBy: #selector(NSResponder.insertTab(_:))))
+    #expect(model.query == "pla" && model.activeSiteSearch == nil)
 
     model.query = "@y"
     try await siteSearchWait { !hint.isHidden }

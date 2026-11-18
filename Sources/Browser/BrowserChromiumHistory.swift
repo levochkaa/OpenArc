@@ -7,6 +7,10 @@ import GRDB
 
 protocol BrowserHistorySearching {
     func suggestions(for query: String, maximumCount: Int) -> [BrowserCommandSuggestion]
+    /// Pages whose address starts with `prefix`, such as the search engine's
+    /// results pages, are left out before the count is taken.
+    func suggestions(for query: String, maximumCount: Int, excludingURLPrefix prefix: String?)
+        -> [BrowserCommandSuggestion]
     /// The pages to offer before anything is typed, latest first.
     func recentSuggestions(maximumCount: Int) -> [BrowserCommandSuggestion]
     /// Recent pages whose address starts with `prefix`, latest first, one per title:
@@ -25,6 +29,18 @@ protocol BrowserHistorySearching {
 
 extension BrowserHistorySearching {
     func pageIcons(for _: [String]) -> [String: Data] { [:] }
+
+    func suggestions(for query: String, maximumCount: Int, excludingURLPrefix prefix: String?)
+        -> [BrowserCommandSuggestion]
+    {
+        guard let prefix else { return suggestions(for: query, maximumCount: maximumCount) }
+        return Array(suggestions(for: query, maximumCount: maximumCount + Self.excludedPageAllowance)
+            .filter { !$0.resolvedURLString.hasPrefix(prefix) }
+            .prefix(maximumCount))
+    }
+
+    /// How many more pages are read so that left-out ones don't empty the list.
+    static var excludedPageAllowance: Int { 40 }
 }
 
 extension BrowserHistorySearching {
@@ -100,7 +116,7 @@ final class BrowserChromiumHistoryStore: BrowserHistorySearching, @unchecked Sen
     private static func displayTitle(title: String, urlString: String) -> String {
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmedTitle.isEmpty {
-            return trimmedTitle
+            return BrowserCommandSuggestion.cleanedPageTitle(trimmedTitle, urlString: urlString)
         }
 
         guard
@@ -193,7 +209,7 @@ final class BrowserChromiumHistoryStore: BrowserHistorySearching, @unchecked Sen
         BrowserCommandSuggestion(
             kind: .history,
             displayText: displayTitle(title: document.title, urlString: document.urlString),
-            detailText: BrowserURLDisplayFormatter.displayString(for: document.urlString),
+            detailText: BrowserCommandSuggestion.addressText(for: document.urlString),
             resolvedURLString: document.urlString,
         )
     }
@@ -265,14 +281,28 @@ final class BrowserChromiumHistoryStore: BrowserHistorySearching, @unchecked Sen
     }
 
     func suggestions(for query: String, maximumCount: Int) -> [BrowserCommandSuggestion] {
+        suggestions(for: query, maximumCount: maximumCount, excludingURLPrefix: nil)
+    }
+
+    func suggestions(for query: String, maximumCount: Int, excludingURLPrefix prefix: String?)
+        -> [BrowserCommandSuggestion]
+    {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedQuery.isEmpty, maximumCount > 0 else { return [] }
+        let include: (String) -> Bool = { urlString in prefix.map { !urlString.hasPrefix($0) } ?? true }
+        let readCount = prefix == nil ? maximumCount : maximumCount + Self.excludedPageAllowance
         let session = sessionIndex.map { index in
-            index.search(trimmedQuery, limit: maximumCount).map { Self.suggestion(for: index.documents[$0]) }
+            index.search(trimmedQuery, limit: maximumCount) { include($0.urlString) }
+                .map { Self.suggestion(for: index.documents[$0]) }
         } ?? []
         let sessionURLs = Set(session.map(\.resolvedURLString))
-        let stored = storedSuggestions(for: trimmedQuery, maximumCount: maximumCount)
-            .filter { !sessionURLs.contains($0.resolvedURLString) }
+        let stored = storedSuggestions(
+            for: trimmedQuery,
+            maximumCount: maximumCount,
+            readCount: readCount,
+            include: include,
+        )
+        .filter { !sessionURLs.contains($0.resolvedURLString) }
         return withIcons(Array((session + stored).prefix(maximumCount)))
     }
 
@@ -330,7 +360,7 @@ final class BrowserChromiumHistoryStore: BrowserHistorySearching, @unchecked Sen
                 return BrowserCommandSuggestion(
                     kind: .history,
                     displayText: Self.displayTitle(title: title, urlString: urlString),
-                    detailText: BrowserURLDisplayFormatter.displayString(for: urlString),
+                    detailText: BrowserCommandSuggestion.addressText(for: urlString),
                     resolvedURLString: urlString,
                 )
             })
@@ -374,7 +404,7 @@ final class BrowserChromiumHistoryStore: BrowserHistorySearching, @unchecked Sen
                 return BrowserCommandSuggestion(
                     kind: .history,
                     displayText: title,
-                    detailText: BrowserURLDisplayFormatter.displayString(for: urlString),
+                    detailText: BrowserCommandSuggestion.addressText(for: urlString),
                     resolvedURLString: urlString,
                 )
             }
@@ -399,16 +429,22 @@ final class BrowserChromiumHistoryStore: BrowserHistorySearching, @unchecked Sen
         return Array((session + stored.filter { !urls.contains($0.resolvedURLString) }).prefix(maximumCount))
     }
 
-    private func storedSuggestions(for trimmedQuery: String, maximumCount: Int) -> [BrowserCommandSuggestion] {
+    private func storedSuggestions(
+        for trimmedQuery: String,
+        maximumCount: Int,
+        readCount: Int,
+        include: (String) -> Bool,
+    ) -> [BrowserCommandSuggestion] {
         guard let historyURL = existingHistoryURL else { return [] }
 
         if let searchIndex {
-            return withIcons(searchIndex.search(trimmedQuery, limit: maximumCount).map { index in
-                let document = searchIndex.documents[index]
-                return BrowserCommandSuggestion(
+            let documents = searchIndex.search(trimmedQuery, limit: maximumCount) { include($0.urlString) }
+                .map { searchIndex.documents[$0] }
+            return withIcons(documents.map { document in
+                BrowserCommandSuggestion(
                     kind: .history,
                     displayText: Self.displayTitle(title: document.title, urlString: document.urlString),
-                    detailText: BrowserURLDisplayFormatter.displayString(for: document.urlString),
+                    detailText: BrowserCommandSuggestion.addressText(for: document.urlString),
                     resolvedURLString: document.urlString,
                 )
             })
@@ -432,13 +468,13 @@ final class BrowserChromiumHistoryStore: BrowserHistorySearching, @unchecked Sen
                     ORDER BY typed_count DESC, visit_count DESC, last_visit_time DESC
                     LIMIT ?
                     """,
-                    arguments: [pattern, pattern, maximumCount],
+                    arguments: [pattern, pattern, readCount],
                 )
             }
 
-            return withIcons(rows.compactMap { row in
+            let pages = rows.compactMap { row -> BrowserCommandSuggestion? in
                 let urlString: String = row["url"]
-                guard !urlString.isEmpty else {
+                guard !urlString.isEmpty, include(urlString) else {
                     return nil
                 }
 
@@ -446,10 +482,11 @@ final class BrowserChromiumHistoryStore: BrowserHistorySearching, @unchecked Sen
                 return BrowserCommandSuggestion(
                     kind: .history,
                     displayText: Self.displayTitle(title: title, urlString: urlString),
-                    detailText: BrowserURLDisplayFormatter.displayString(for: urlString),
+                    detailText: BrowserCommandSuggestion.addressText(for: urlString),
                     resolvedURLString: urlString,
                 )
-            })
+            }
+            return withIcons(Array(pages.prefix(maximumCount)))
         } catch {
             return []
         }
@@ -468,7 +505,7 @@ final class BrowserChromiumHistoryStore: BrowserHistorySearching, @unchecked Sen
                 BrowserCommandSuggestion(
                     kind: .history,
                     displayText: Self.displayTitle(title: $0.title, urlString: $0.urlString),
-                    detailText: BrowserURLDisplayFormatter.displayString(for: $0.urlString),
+                    detailText: BrowserCommandSuggestion.addressText(for: $0.urlString),
                     resolvedURLString: $0.urlString,
                 )
             })

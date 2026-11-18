@@ -384,7 +384,7 @@ struct BrowserEmptyBookmarkStore: BrowserBookmarkStoring {
                 BrowserCommandSuggestion(
                     kind: .bookmark,
                     displayText: item.displayTitle,
-                    detailText: item.urlString.map(BrowserURLDisplayFormatter.displayString),
+                    detailText: item.urlString.map(BrowserCommandSuggestion.addressText(for:)),
                     resolvedURLString: item.urlString ?? "",
                 )
             }

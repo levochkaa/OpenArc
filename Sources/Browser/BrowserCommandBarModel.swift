@@ -35,6 +35,10 @@ struct BrowserCommandSuggestion: Identifiable, Equatable {
     var completionText: String?
     /// The page's icon from the browser's own records.
     var iconData: Data?
+    /// An entry that does something, such as opening a new document or a
+    /// settings page: listed with the commands, after pages and searches,
+    /// and, like a command, it leaves the typed text in the field.
+    var isAction = false
 
     var tabID: String? {
         tabIDs.first
@@ -64,6 +68,27 @@ struct BrowserCommandSuggestion: Identifiable, Equatable {
         }
     }
 
+    /// A page is shown in the field by its address, a search by its text.
+    /// Commands and actions leave the typed text, so they have none.
+    var fieldText: String? {
+        if let completionText {
+            return completionText
+        }
+        switch kind {
+        case .aiSearch,
+             .command:
+            return nil
+        case .bookmark,
+             .history,
+             .openTab:
+            return Self.address(for: resolvedURLString) ?? displayText
+        case .googleSuggestion,
+             .search,
+             .url:
+            return isAction ? nil : displayText
+        }
+    }
+
     init(
         kind: Kind,
         displayText: String,
@@ -90,6 +115,52 @@ struct BrowserCommandSuggestion: Identifiable, Equatable {
             }
     }
 
+    /// The address as the field and the rows show it: no scheme, "www." or
+    /// trailing slash, such as "github.com/openarc/pulls". Nil for addresses
+    /// other than web pages.
+    static func address(for urlString: String) -> String? {
+        guard var components = URLComponents(string: urlString),
+              let scheme = components.scheme?.lowercased(), scheme == "https" || scheme == "http",
+              var host = components.host, !host.isEmpty
+        else { return nil }
+        if host.lowercased().hasPrefix("www.") {
+            host.removeFirst(4)
+        }
+        components.scheme = nil
+        components.host = host
+        var address = components.string ?? host
+        if address.hasPrefix("//") {
+            address.removeFirst(2)
+        }
+        if address.hasSuffix("/") {
+            address.removeLast()
+        }
+        return address
+    }
+
+    /// The address after a page's title: the whole address of a web page,
+    /// the address as is otherwise.
+    static func addressText(for urlString: String) -> String {
+        address(for: urlString) ?? BrowserURLDisplayFormatter.displayString(for: urlString)
+    }
+
+    /// A page title without the parts that repeat the address: a pull
+    /// request's author, number and repository, and a video site's name.
+    static func cleanedPageTitle(_ title: String, urlString: String) -> String {
+        guard let host = URLComponents(string: urlString)?.host?.lowercased() else { return title }
+        let site = host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+        if site == "github.com",
+           let range = title.range(of: #" by \S+ · Pull Request #\d+ · \S+/\S+$"#, options: .regularExpression),
+           range.lowerBound > title.startIndex
+        {
+            return String(title[..<range.lowerBound])
+        }
+        if site == "youtube.com" || site.hasSuffix(".youtube.com"), title.hasSuffix(" - YouTube"), title.count > 10 {
+            return String(title.dropLast(10))
+        }
+        return title
+    }
+
     // MARK: Private
 
     private static func normalizedTabIDs(_ ids: [String]) -> [String] {
@@ -105,8 +176,7 @@ struct BrowserCommandSuggestion: Identifiable, Equatable {
     }
 
     func inlineCompletionSuffix(relativeTo query: String) -> String? {
-        let displayText = completionText ?? displayText
-        guard kind != .command,
+        guard let displayText = fieldText,
               !query.isEmpty,
               let matchedRange = displayText.range(
                   of: query,
@@ -187,7 +257,14 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
 @MainActor final class BrowserCommandBarModel: ObservableObject {
     // MARK: Internal
 
-    static let maximumSuggestions = 10
+    /// The list scrolls past the first five rows.
+    static let maximumSuggestions = 18
+    /// Pages from tabs, bookmarks and history, besides the top hit.
+    static let maximumPages = 9
+    /// The search engine's suggestions.
+    static let maximumRemoteSuggestions = 8
+    /// Commands and actions listed after the pages and searches.
+    static let maximumTrailingActions = 5
     static let maximumRecentPages = 5
     nonisolated static let maximumVisibleSuggestions = 5
 
@@ -232,6 +309,11 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
 
     private var suggestionLoadTask: Task<Void, Never>?
     private var siteSearchTriggerQuery: String?
+    /// The text whose completion Delete removed: until more is typed, the
+    /// field keeps it as is and the search comes first.
+    private var completionRemovedQuery: String?
+    /// The search engine's latest suggestions and the text they answer.
+    private var remoteSuggestions: (query: String, texts: [String])?
 
     var selectedSuggestion: BrowserCommandSuggestion? {
         guard
@@ -261,12 +343,8 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
     var previewDisplayText: String? {
         // Before anything is typed, the field keeps its placeholder over the recent pages.
         guard !query.isEmpty, let selectedSuggestion, selectedSuggestion.kind != .aiSearch,
-              selectedSuggestion.kind != .command
-        else {
-            return nil
-        }
-
-        let previewDisplayText = selectedSuggestion.completionText ?? selectedSuggestion.displayText
+              selectedSuggestion.kind != .command,
+              let previewDisplayText = selectedSuggestion.fieldText else { return nil }
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard
             selectionWasChosen || inlineCompletionSuffix != nil,
@@ -331,21 +409,37 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
     }
 
     @discardableResult func acceptSelectedSuggestion() -> Bool {
-        guard let selectedSuggestion, selectedSuggestion.kind != .aiSearch, selectedSuggestion.kind != .command else {
+        guard let selectedSuggestion, let fieldText = selectedSuggestion.fieldText else {
             return false
         }
 
         if let completionSuffix = inlineCompletionSuffix {
             query += completionSuffix
         } else {
-            guard selectedSuggestion.displayText != query else {
+            guard fieldText != query else {
                 return false
             }
 
-            query = selectedSuggestion.displayText
+            query = fieldText
         }
 
         selectPrimarySuggestionIfNeeded()
+        return true
+    }
+
+    /// Delete over the completed part of the field: the text stays as typed,
+    /// the page that completed it leaves the top, and the search comes first.
+    @discardableResult func removeInlineCompletion() -> Bool {
+        guard activeSiteSearch == nil, inlineCompletionSuffix != nil, !selectionWasChosen else { return false }
+        completionRemovedQuery = query
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let remote = remoteSuggestions?.query == trimmedQuery ? remoteSuggestions?.texts ?? [] : []
+        suggestions = assembledSuggestions(
+            for: trimmedQuery,
+            localSuggestions: localSuggestionProvider(trimmedQuery, Self.localSuggestionLimit),
+            remoteSuggestions: remote,
+        )
+        selectedSuggestionIndex = suggestions.isEmpty ? nil : 0
         return true
     }
 
@@ -382,6 +476,8 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
         isPresented = false
         activeSiteSearch = nil
         siteSearchTriggerQuery = nil
+        completionRemovedQuery = nil
+        remoteSuggestions = nil
         query = ""
         suggestions = []
         selectedSuggestionIndex = nil
@@ -520,12 +616,16 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
             selectedSuggestionIndex = suggestions.isEmpty ? nil : 0
             return
         }
-        let localSuggestionLimit = max(Self.maximumSuggestions - 2, 0)
-        let localSuggestions = localSuggestionProvider(trimmedQuery, localSuggestionLimit)
+        let localSuggestions = localSuggestionProvider(trimmedQuery, Self.localSuggestionLimit)
+        // The last suggestions stay while the next ones load, when they still
+        // start with the text, so the list doesn't jump on every key.
+        let carriedRemote = remoteSuggestions.map { previous in
+            previous.texts.filter { $0.lowercased().hasPrefix(trimmedQuery.lowercased()) }
+        } ?? []
         suggestions = assembledSuggestions(
             for: trimmedQuery,
             localSuggestions: localSuggestions,
-            remoteSuggestions: [],
+            remoteSuggestions: carriedRemote,
         )
         selectedSuggestionIndex = suggestions.isEmpty ? nil : 0
 
@@ -551,10 +651,9 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
                 return
             }
 
-            let remoteSuggestionLimit = max(Self.maximumSuggestions - 2, 0)
             let remoteSuggestions = await suggestionProvider.suggestions(
                 for: currentQuery,
-                maximumCount: remoteSuggestionLimit,
+                maximumCount: Self.maximumRemoteSuggestions,
             )
 
             guard !Task.isCancelled else {
@@ -566,18 +665,26 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
                 return
             }
 
-            let localSuggestions = localSuggestionProvider(currentQuery, localSuggestionLimit)
+            self.remoteSuggestions = (currentQuery, remoteSuggestions)
+            let previousSelection = selectedSuggestion
+            let localSuggestions = localSuggestionProvider(currentQuery, Self.localSuggestionLimit)
             suggestions = assembledSuggestions(
                 for: currentQuery,
                 localSuggestions: localSuggestions,
                 remoteSuggestions: remoteSuggestions,
             )
+            // The chosen row stays chosen where it moved.
             selectedSuggestionIndex = suggestions.isEmpty
                 ? nil
-                : min(selectedSuggestionIndex ?? 0, suggestions.count - 1)
+                : previousSelection.flatMap { selected in suggestions.firstIndex { $0.id == selected.id } }
+                    ?? min(selectedSuggestionIndex ?? 0, suggestions.count - 1)
         }
     }
 
+    /// One top hit, the search for the text, then pages: those that start
+    /// with the text first, then the others taking turns with the search
+    /// engine's suggestions. Commands and actions that did not make the top
+    /// come last.
     func assembledSuggestions(
         for query: String,
         localSuggestions: [BrowserCommandSuggestion],
@@ -591,7 +698,8 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
         var seenDisplayTexts = Set<String>()
         var seenSuggestionKeys = Set<String>()
 
-        func appendSuggestion(_ suggestion: BrowserCommandSuggestion) {
+        var limit = Self.maximumSuggestions
+        @discardableResult func appendSuggestion(_ suggestion: BrowserCommandSuggestion) -> Bool {
             let displayKey = suggestion.displayText.lowercased()
             let suggestionKey = duplicateKey(for: suggestion)
             if suggestion.kind == .openTab,
@@ -600,7 +708,7 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
                })
             {
                 assembledSuggestions[existingIndex].appendTabIDs(suggestion.tabIDs)
-                return
+                return false
             }
 
             // Pages with one title on different sites stay apart; they
@@ -609,29 +717,36 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
             guard
                 !shouldDedupeDisplayText || !seenDisplayTexts.contains(displayKey),
                 !seenSuggestionKeys.contains(suggestionKey),
-                assembledSuggestions.count < Self.maximumSuggestions
+                assembledSuggestions.count < limit
             else {
-                return
+                return false
             }
 
             assembledSuggestions.append(suggestion)
             seenDisplayTexts.insert(displayKey)
             seenSuggestionKeys.insert(suggestionKey)
+            return true
         }
 
-        // A visited page whose address starts with the text comes first, and the
-        // field completes the text to that address. A typed space ends the word, so
-        // the text is a search, not the start of an address.
-        if self.query.last?.isWhitespace != true,
-           let completed = Self.addressCompletion(for: query, in: localSuggestions)
-        {
-            appendSuggestion(completed)
-        }
-
+        let pages = localSuggestions.filter { $0.kind != .command && !$0.isAction }
+        let actions = localSuggestions.filter { $0.kind == .command || $0.isAction }
         let primary = primarySuggestion(for: query)
-        // A command that answers the query comes before searching for it, unless it is an address.
-        if primary?.kind != .url, let command = localSuggestions.first(where: { Self.commandAnswers($0, query) }) {
-            appendSuggestion(command)
+        let endsWord = self.query.last?.isWhitespace == true
+
+        // The top hit. A visited page whose address starts with the text
+        // completes the field to that address. A typed space ends the word,
+        // so the text is a search, not the start of an address; Delete over
+        // the completion keeps the search first as well.
+        if completionRemovedQuery != self.query {
+            if !endsWord, let completed = Self.addressCompletion(for: query, in: pages) {
+                appendSuggestion(completed)
+            } else if primary?.kind != .url {
+                if !endsWord, let tab = pages.first(where: { $0.kind == .openTab && Self.wordStarts(query, in: $0) }) {
+                    appendSuggestion(tab)
+                } else if let command = actions.first(where: { Self.commandAnswers($0, query) }) {
+                    appendSuggestion(command)
+                }
+            }
         }
         if let primary {
             appendSuggestion(primary)
@@ -641,46 +756,55 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
             appendSuggestion(aiSearchSuggestion(for: query))
         }
 
-        // Pages come before the commands that matched less well.
-        for localSuggestion in localSuggestions where localSuggestion.kind != .command {
-            appendSuggestion(localSuggestion)
-        }
-        for localSuggestion in localSuggestions where localSuggestion.kind == .command {
-            appendSuggestion(localSuggestion)
-        }
-
-        for remoteSuggestion in remoteSuggestions {
+        let remote = remoteSuggestions.compactMap { remoteSuggestion -> BrowserCommandSuggestion? in
             let trimmedSuggestion = remoteSuggestion.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard
-                !trimmedSuggestion.isEmpty,
-                !seenDisplayTexts.contains(trimmedSuggestion.lowercased()),
-                let resolvedSuggestion = navigationResolver.resolve(trimmedSuggestion)
+            guard !trimmedSuggestion.isEmpty, let resolvedSuggestion = navigationResolver.resolve(trimmedSuggestion)
             else {
-                continue
+                return nil
             }
-
-            let suggestionKind: BrowserCommandSuggestion.Kind =
-                switch resolvedSuggestion.kind {
-                case .url:
-                    .url
-                case .search:
-                    .googleSuggestion
-                }
-
-            let suggestion = BrowserCommandSuggestion(
-                kind: suggestionKind,
+            return BrowserCommandSuggestion(
+                kind: resolvedSuggestion.kind == .url ? .url : .googleSuggestion,
                 displayText: trimmedSuggestion,
                 resolvedURLString: resolvedSuggestion.resolvedURLString,
             )
-            appendSuggestion(suggestion)
+        }
+        .prefix(Self.maximumRemoteSuggestions)
 
-            if assembledSuggestions.count == Self.maximumSuggestions {
-                break
+        // The commands that did not make the top keep their rows at the end.
+        let remainingActions = actions.filter { action in
+            !assembledSuggestions.contains { duplicateKey(for: $0) == duplicateKey(for: action) }
+        }
+        limit = Self.maximumSuggestions - min(remainingActions.count, Self.maximumTrailingActions)
+        var pageCount = 0
+        func appendPage(_ page: BrowserCommandSuggestion) {
+            guard pageCount < Self.maximumPages else { return }
+            if appendSuggestion(page) {
+                pageCount += 1
             }
         }
-
+        let strong = pages.filter { Self.startsWith(query, $0) }
+        let weak = pages.filter { !Self.startsWith(query, $0) }
+        strong.forEach(appendPage)
+        var weakPages = weak.makeIterator()
+        var remoteRows = remote.makeIterator()
+        var nextWeak = weakPages.next()
+        var nextRemote = remoteRows.next()
+        while nextWeak != nil || nextRemote != nil {
+            if let page = nextWeak {
+                appendPage(page)
+                nextWeak = weakPages.next()
+            }
+            if let suggestion = nextRemote {
+                appendSuggestion(suggestion)
+                nextRemote = remoteRows.next()
+            }
+        }
+        limit = Self.maximumSuggestions
+        remainingActions.forEach { appendSuggestion($0) }
         return assembledSuggestions
     }
+
+    static var localSuggestionLimit: Int { maximumPages + 6 }
 
     /// The first page among these whose address, without its scheme and
     /// "www.", starts with the text.
@@ -691,7 +815,7 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
         let needle = query.lowercased()
         guard needle.count >= 2, !needle.contains(where: \.isWhitespace) else { return nil }
         for suggestion in suggestions where [.openTab, .history, .bookmark].contains(suggestion.kind) {
-            guard let address = completionAddress(for: suggestion.resolvedURLString),
+            guard let address = BrowserCommandSuggestion.address(for: suggestion.resolvedURLString),
                   address.lowercased().hasPrefix(needle), address.count > needle.count
             else { continue }
             var completed = suggestion
@@ -701,24 +825,25 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
         return nil
     }
 
-    private static func completionAddress(for urlString: String) -> String? {
-        guard var components = URLComponents(string: urlString),
-              let scheme = components.scheme?.lowercased(), scheme == "https" || scheme == "http",
-              var host = components.host
-        else { return nil }
-        if host.lowercased().hasPrefix("www.") {
-            host.removeFirst(4)
+    /// The page's address or title starts with the text.
+    static func startsWith(_ query: String, _ suggestion: BrowserCommandSuggestion) -> Bool {
+        let needle = BrowserSearchIndex.normalized(query)
+        guard !needle.isEmpty else { return false }
+        if let address = BrowserCommandSuggestion.address(for: suggestion.resolvedURLString),
+           BrowserSearchIndex.normalized(address).hasPrefix(needle)
+        {
+            return true
         }
-        components.scheme = nil
-        components.host = host
-        var address = components.string ?? host
-        if address.hasPrefix("//") {
-            address.removeFirst(2)
-        }
-        if address.hasSuffix("/") {
-            address.removeLast()
-        }
-        return address
+        return BrowserSearchIndex.normalized(suggestion.displayText).hasPrefix(needle)
+    }
+
+    /// Every word of the text starts a word of the page's title or address.
+    static func wordStarts(_ query: String, in suggestion: BrowserCommandSuggestion) -> Bool {
+        let terms = BrowserSearchIndex.words(in: query)
+        guard !terms.isEmpty, terms.joined().count >= 2 else { return false }
+        let words = BrowserSearchIndex.words(in: suggestion.displayText)
+            + BrowserSearchIndex.words(in: BrowserCommandSuggestion.address(for: suggestion.resolvedURLString) ?? "")
+        return terms.allSatisfy { term in words.contains { $0.hasPrefix(term) } }
     }
 
     private static func commandAnswers(_ suggestion: BrowserCommandSuggestion, _ query: String) -> Bool {
@@ -778,8 +903,15 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
             return urlString.lowercased()
         }
 
-        components.scheme = components.scheme?.lowercased()
-        components.host = components.host?.lowercased()
+        // One page whatever its scheme, "www." or the part after "#".
+        components.scheme = components.scheme?.lowercased() == "http" ? "https" : components.scheme?.lowercased()
+        if var host = components.host?.lowercased() {
+            if host.hasPrefix("www.") {
+                host.removeFirst(4)
+            }
+            components.host = host
+        }
+        components.fragment = nil
         if components.path == "/" {
             components.path = ""
         }

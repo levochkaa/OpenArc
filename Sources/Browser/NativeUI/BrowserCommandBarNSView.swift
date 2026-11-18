@@ -303,16 +303,27 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
     func control(_: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
         switch selector {
         case #selector(NSResponder.insertTab(_:)):
-            // Site search; otherwise Tab keeps its usual meaning.
-            guard !textView.hasMarkedText(), model.beginSiteSearch() else { return false }
-            // The next key may arrive before the deferred refresh.
-            refresh()
+            // Site search, else the completed text is taken; the field keeps the focus.
+            guard !textView.hasMarkedText() else { return false }
+            if model.beginSiteSearch() || queryField.hasSuggestionPreview && model.acceptSelectedSuggestion() {
+                // The next key may arrive before the deferred refresh.
+                refresh()
+            }
             return true
         case #selector(NSResponder.deleteBackward(_:)):
-            guard !textView.hasMarkedText(), textView.string.isEmpty,
-                  model.endSiteSearch(restoringQuery: true) else { return false }
-            refresh()
-            return true
+            guard !textView.hasMarkedText() else { return false }
+            if textView.string.isEmpty, model.endSiteSearch(restoringQuery: true) {
+                refresh()
+                return true
+            }
+            // Delete over the completed part removes it and its page from the top.
+            if let completion = queryField.previewSelectionRange, queryField.hasSuggestionPreview,
+               textView.selectedRange() == completion, model.removeInlineCompletion()
+            {
+                refresh()
+                return true
+            }
+            return false
         case #selector(NSResponder.moveUp(_:)): model.moveSelection(by: -1)
             return true
         case #selector(NSResponder.moveDown(_:)): model.moveSelection(by: 1)

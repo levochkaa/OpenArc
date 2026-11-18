@@ -322,7 +322,7 @@ private let defaultAISuggestionTitle = BrowserStrings.commandBarAskAI(BrowserAIS
     // Chosen with the arrows, the page fills the field.
     model.moveSelection(by: 2)
     #expect(model.selectedSuggestion?.displayText == "Docs")
-    #expect(model.previewDisplayText == "Docs")
+    #expect(model.previewDisplayText == "docs.example", "A page fills the field with its address")
 }
 
 @Test
@@ -753,4 +753,221 @@ private struct BrowserEmptySuggestionProviderForTests: BrowserSuggestionProvidin
     model.submitSelectionInBackground()
     #expect(background.count == 1 && background[0].contains("example.net"))
     #expect(model.isPresented && model.query == "example.net", "The bar stays for the next page")
+}
+
+// MARK: - Ranking, field text and keys
+
+@MainActor private func rankingModel(
+    pages: [BrowserCommandSuggestion],
+    remote: [String] = [],
+    query: String,
+    submitHandler: @escaping (String) -> Void = { _ in },
+) async -> BrowserCommandBarModel {
+    let model = BrowserCommandBarModel(
+        suggestionProvider: FakeSuggestionProvider(suggestionsByQuery: [query: remote]),
+        suggestionDebounceNanoseconds: 0,
+        localSuggestionProvider: { text, _ in text == query ? pages : [] },
+        aiSearchEnabledProvider: { false },
+        submitHandler: submitHandler,
+    )
+    model.present()
+    model.query = query
+    await model.waitForPendingSuggestionLoad()
+    return model
+}
+
+private func page(_ title: String, _ url: String, kind: BrowserCommandSuggestion.Kind = .history)
+    -> BrowserCommandSuggestion
+{
+    BrowserCommandSuggestion(
+        kind: kind,
+        displayText: title,
+        resolvedURLString: url,
+        tabID: kind == .openTab
+            ? title
+            : nil,
+    )
+}
+
+private func command(_ title: String) -> BrowserCommandSuggestion {
+    let ids: [String: BrowserCommandID] = [
+        "New Tab": .newTab, "New Window": .blankWindow, "New Space": .manageSpaces,
+        "Alpha Command": .viewMedia, "Beta Command": .shareTab, "View History": .openSettings,
+    ]
+    return BrowserCommandSuggestion(kind: .command, displayText: title, commandID: ids[title] ?? .newTab)
+}
+
+@MainActor @Test func pagesThatStartWithTheTextLeadAndTheOthersTakeTurnsWithSuggestions() async {
+    let model = await rankingModel(
+        pages: [
+            page("Read the docs", "https://example.com/readme"),
+            page("Docs Home", "https://docs.example/"),
+            page("More docs here", "https://example.com/more"),
+            page("Docs archive", "https://example.org/archive"),
+        ],
+        remote: ["docs a", "docs b", "docs c"],
+        query: "docs",
+    )
+    #expect(model.suggestions.map(\.displayText) == [
+        "Docs Home", "docs", "Docs archive", "Read the docs", "docs a", "More docs here", "docs b", "docs c",
+    ])
+    #expect(model.inlineCompletionSuffix == ".example")
+}
+
+@MainActor @Test func commandsThatMissTheTopComeAfterPagesAndSearches() async {
+    let model = await rankingModel(
+        pages: [page("Headlines", "https://example.com/new")],
+        remote: ["new york"],
+        query: "new",
+    )
+    #expect(model.suggestions.map(\.kind) == [.search, .history, .googleSuggestion])
+
+    let commands = ["New Tab", "New Window", "New Space"].map(command)
+    let withCommands = BrowserCommandBarModel(
+        suggestionProvider: FakeSuggestionProvider(suggestionsByQuery: ["new": ["new york"]]),
+        suggestionDebounceNanoseconds: 0,
+        localSuggestionProvider: { _, _ in [page("Headlines", "https://example.com/new")] + commands },
+        aiSearchEnabledProvider: { false },
+        submitHandler: { _ in },
+    )
+    withCommands.present()
+    withCommands.query = "new"
+    await withCommands.waitForPendingSuggestionLoad()
+    #expect(withCommands.suggestions.map(\.displayText) == [
+        "New Tab", "new", "Headlines", "new york", "New Window", "New Space",
+    ])
+}
+
+@MainActor @Test func anOpenTabWithAWordStartingWithTheTextIsTheTopHit() async {
+    let model = await rankingModel(
+        pages: [
+            page("Weekly report", "https://example.com/w"),
+            page("Monorepo", "https://git.example/repo", kind: .openTab),
+        ],
+        query: "monor",
+    )
+    #expect(model.suggestions.first?.displayText == "Monorepo")
+    #expect(model.suggestions.dropFirst().first?.kind == .search)
+    #expect(model.inlineCompletionSuffix == nil, "Only an address completes the field")
+}
+
+@MainActor @Test func trailingCommandsKeepTheirRowsWhenPagesAndSuggestionsFillTheList() async {
+    let pages = (0..<20).map { page("Item \($0) of new", "https://example.com/\($0)") }
+    let remote = (0..<10).map { "new \($0)" }
+    let model = BrowserCommandBarModel(
+        suggestionProvider: FakeSuggestionProvider(suggestionsByQuery: ["new": remote]),
+        suggestionDebounceNanoseconds: 0,
+        localSuggestionProvider: { _, _ in pages + ["Alpha Command", "Beta Command"].map(command) },
+        aiSearchEnabledProvider: { false },
+        submitHandler: { _ in },
+    )
+    model.present()
+    model.query = "new"
+    await model.waitForPendingSuggestionLoad()
+    #expect(model.suggestions.count == BrowserCommandBarModel.maximumSuggestions)
+    #expect(model.suggestions.suffix(2).map(\.displayText) == ["Alpha Command", "Beta Command"])
+    #expect(model.suggestions.count { $0.kind == .history } <= BrowserCommandBarModel.maximumPages)
+}
+
+@MainActor @Test func deleteOverTheCompletionKeepsTheTextAndPutsTheSearchFirst() async {
+    var submitted = [String]()
+    let model = await rankingModel(
+        pages: [page("YouTube", "https://www.youtube.com/")],
+        query: "you",
+        submitHandler: { submitted.append($0) },
+    )
+    #expect(model.inlineCompletionSuffix == "tube.com")
+    #expect(model.removeInlineCompletion())
+    #expect(model.inlineCompletionSuffix == nil)
+    #expect(model.previewDisplayText == nil)
+    #expect(model.selectedSuggestion?.kind == .search)
+    #expect(model.suggestions.map(\.displayText) == ["you", "YouTube"], "The page stays, below the search")
+    model.submitSelection()
+    #expect(queryValue(from: submitted.first, name: "q") == "you")
+
+    // Typing again completes again.
+    model.present()
+    model.query = "you"
+    #expect(model.inlineCompletionSuffix == "tube.com")
+}
+
+@MainActor @Test func tabAcceptsTheCompletion() async {
+    let model = await rankingModel(pages: [page("YouTube", "https://www.youtube.com/")], query: "you")
+    #expect(model.acceptSelectedSuggestion())
+    #expect(model.query == "youtube.com")
+}
+
+@MainActor @Test func theFieldShowsAPageByItsAddressAndACommandLeavesTheText() async {
+    let model = BrowserCommandBarModel(
+        suggestionProvider: FakeSuggestionProvider(suggestionsByQuery: ["hist": ["history"]]),
+        suggestionDebounceNanoseconds: 0,
+        localSuggestionProvider: { _, _ in
+            [page("CI metrics history", "https://www.github.com/org/repo/pull/271/"), command("View History")]
+        },
+        aiSearchEnabledProvider: { false },
+        submitHandler: { _ in },
+    )
+    model.present()
+    model.query = "hist"
+    await model.waitForPendingSuggestionLoad()
+    #expect(model.suggestions.map(\.displayText) == ["View History", "hist", "CI metrics history", "history"])
+    #expect(model.previewDisplayText == nil, "A command leaves the typed text")
+    model.moveSelection(by: 2)
+    #expect(model.previewDisplayText == "github.com/org/repo/pull/271")
+    model.moveSelection(by: 1)
+    #expect(model.previewDisplayText == "history")
+}
+
+@MainActor @Test func pagesThatDifferOnlyInSchemeWWWOrFragmentAreListedOnce() async {
+    let model = await rankingModel(
+        pages: [
+            page("Pull 279", "https://github.com/org/repo/pull/279"),
+            page("Pull 279", "http://www.github.com/org/repo/pull/279#review-1"),
+            page("Pull 279", "https://github.com/org/repo/pull/279/changes"),
+        ],
+        query: "pull",
+    )
+    #expect(model.suggestions.filter { $0.kind == .history }.map(\.resolvedURLString) == [
+        "https://github.com/org/repo/pull/279",
+        "https://github.com/org/repo/pull/279/changes",
+    ])
+}
+
+@Test func pageTitlesDropWhatTheAddressAlreadySays() {
+    let title = "Feature / Step-Based Energy for iOS by someone · Pull Request #98 · org/repo"
+    #expect(BrowserCommandSuggestion.cleanedPageTitle(title, urlString: "https://github.com/org/repo/pull/98")
+        == "Feature / Step-Based Energy for iOS")
+    #expect(BrowserCommandSuggestion.cleanedPageTitle(title, urlString: "https://example.com/") == title)
+    #expect(BrowserCommandSuggestion.cleanedPageTitle(
+        "Pull requests · org/repo",
+        urlString: "https://github.com/org/repo/pulls",
+    )
+        == "Pull requests · org/repo")
+    #expect(BrowserCommandSuggestion.cleanedPageTitle(
+        "(1) theo - YouTube",
+        urlString: "https://www.youtube.com/results?search_query=theo",
+    ) == "(1) theo")
+    #expect(BrowserCommandSuggestion.cleanedPageTitle("Mobile - Shopify", urlString: "https://shopify.engineering/")
+        == "Mobile - Shopify")
+    #expect(BrowserCommandSuggestion
+        .addressText(for: "https://www.github.com/org/repo/pull/1/") == "github.com/org/repo/pull/1")
+}
+
+@MainActor @Test func theSearchEnginesResultsPagesAreNotListedAsPages() {
+    let empty = FileManager.default.temporaryDirectory.appendingPathComponent("NoHistory-\(UUID().uuidString)")
+    let store = BrowserChromiumHistoryStore(profileDirectoryCandidates: [empty])
+    for index in 0..<6 {
+        store.noteVisit(
+            title: "google \(index) - Google Search",
+            urlString: "https://www.google.com/search?q=google+\(index)",
+        )
+    }
+    store.noteVisit(title: "Goodreads", urlString: "https://www.goodreads.com/")
+    let pages = store.suggestions(
+        for: "goo",
+        maximumCount: 3,
+        excludingURLPrefix: "https://www.google.com/search?q=",
+    )
+    #expect(pages.map(\.resolvedURLString) == ["https://www.goodreads.com/"])
+    #expect(store.suggestions(for: "goo", maximumCount: 3).count == 3)
 }

@@ -159,8 +159,14 @@ final class BrowserSearchIndex: Sendable {
         return false
     }
 
-    /// Document indices, best first. Every word of the query must match somewhere.
-    func search(_ query: String, limit: Int, now: Date = Date()) -> [Int] {
+    /// Document indices, best first. Every word of the query must match somewhere;
+    /// documents `include` turns down are left out before the limit.
+    func search(
+        _ query: String,
+        limit: Int,
+        now: Date = Date(),
+        include: (BrowserSearchDocument) -> Bool = { _ in true },
+    ) -> [Int] {
         let terms = Self.words(in: query)
         guard !terms.isEmpty, limit > 0, !documents.isEmpty else { return [] }
         var totals = [Float](repeating: 0, count: documents.count)
@@ -214,7 +220,7 @@ final class BrowserSearchIndex: Sendable {
         let needed = UInt8(terms.count)
         let rawQuery = Array(Self.normalized(query).utf8)
         var scored = [(index: Int, score: Float)]()
-        for index in documents.indices where counts[index] == needed {
+        for index in documents.indices where counts[index] == needed && include(documents[index]) {
             scored.append((index, totals[index] * 4 + importance(of: index, rawQuery: rawQuery, now: now)))
         }
         scored.sort { $0.score == $1.score ? $0.index < $1.index : $0.score > $1.score }
