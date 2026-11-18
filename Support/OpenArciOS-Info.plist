@@ -22,8 +22,18 @@
   <string>$(CURRENT_PROJECT_VERSION)</string>
   <key>OpenArcSyncBaseURL</key>
   <string>$(OPENARC_SYNC_BASE_URL)</string>
+  <key>ITSAppUsesNonExemptEncryption</key>
+  <false/>
   <key>LSRequiresIPhoneOS</key>
   <true/>
+  <key>NSCameraUsageDescription</key>
+  <string>Websites you allow can use your camera.</string>
+  <key>NSLocationWhenInUseUsageDescription</key>
+  <string>Websites you allow can know your location.</string>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Websites you allow can use your microphone.</string>
+  <key>NSPhotoLibraryAddUsageDescription</key>
+  <string>Images you save from websites go to your photo library.</string>
   <key>NSAppTransportSecurity</key>
   <dict>
     <key>NSAllowsArbitraryLoadsInWebContent</key>
