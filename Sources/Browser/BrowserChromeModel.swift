@@ -477,6 +477,12 @@ enum BrowserWindowMode: Equatable {
     var onEditBoost: ((String) -> Void)?
     /// Zapping in a page for a Boost, while it lasts.
     @Published var boostZapSession: BrowserBoostZapSession?
+    /// Easels on disk; tests give the model a store of their own.
+    var easelStoreOverride: BrowserEaselStore?
+    /// The Easel whose capture button started the current area capture.
+    var easelCaptureTargetID: String?
+    /// The latest area capture's page and region.
+    var lastAreaCaptureSource: BrowserEaselCaptureSource?
     /// UI-only: opens the theme editor for the Space being created, beside this view.
     var onEditSpaceCreationTheme: ((NSView) -> Void)?
     /// The Library's section while it replaces the sidebar, nil when closed.
@@ -3354,8 +3360,14 @@ enum BrowserWindowMode: Equatable {
         guard canCreateTab, let selectedTabID, tabID == nil || tabID == selectedTabID,
               fraction.width > 0, fraction.height > 0
         else { return false }
+        noteAreaCapture(fraction: fraction, tabID: selectedTabID)
         tabDriver.captureActiveTabRegionToPasteboard(fraction: fraction)
         return true
+    }
+
+    /// A part of a tab's visible page as PNG data, for a live capture.
+    func captureTabRegion(tabID: String, fraction: CGRect, completion: @escaping @MainActor (Data?) -> Void) {
+        tabDriver.captureTabRegion(tabID: tabID, fraction: fraction, completion: completion)
     }
 
     /// After Capture Area closes, the keys go back to the page.
@@ -4539,6 +4551,10 @@ enum BrowserWindowMode: Equatable {
             canEditBoost
         case .viewBoosts:
             librarySections.contains(.boosts)
+        case .newEasel:
+            canCreateEasel
+        case .viewEasels:
+            librarySections.contains(.easels)
         case .editSpaceTheme:
             supportsSpaces
         case .togglePictureInPicture:
@@ -5226,7 +5242,7 @@ enum BrowserWindowMode: Equatable {
         tabs[index].isLoading = handoff.isLoading
     }
 
-    private func hasNoPage(_ id: String) -> Bool {
+    func hasNoPage(_ id: String) -> Bool {
         closedPinnedTabIDs.contains(id) || closedAppTabIDs.contains(id)
     }
 
@@ -9149,6 +9165,10 @@ extension BrowserCommandID {
             ]
         case .viewBoosts:
             ["boosts", "view boosts", "manage boosts", "library"]
+        case .newEasel:
+            ["easel", "new easel", "whiteboard", "draw", "canvas", "sketch"]
+        case .viewEasels:
+            ["easels", "view easels", "library"]
         case .editSpaceTheme:
             ["theme", "edit theme", "color"]
         case .togglePictureInPicture:
@@ -9355,6 +9375,9 @@ extension BrowserCommandID {
             "paintbrush.pointed"
         case .viewBoosts:
             "paintbrush.pointed"
+        case .newEasel,
+             .viewEasels:
+            "scribble.variable"
         case .editSpaceTheme:
             "paintpalette"
         case .togglePictureInPicture:

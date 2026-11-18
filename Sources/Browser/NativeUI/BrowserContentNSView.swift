@@ -47,6 +47,8 @@ final class BrowserContentNSView: NSView {
     let permissionPrompt = BrowserSitePermissionPromptView()
 
     private(set) var crashPages = [String: BrowserSadTabView]()
+    /// The canvas of each Easel on screen, by tab: the selected one and its split panes.
+    private(set) var easelViews = [String: BrowserEaselView]()
     let movedPage = BrowserMovedPageView()
 
     /// The area with no tab, in place of the usual page color.
@@ -58,6 +60,7 @@ final class BrowserContentNSView: NSView {
 
     private let pageShadow = CALayer()
     private var pageShadowRadius: CGFloat = 0
+    private var easelClipping: BrowserContentClipping?
 
     private var areaCaptureTabID: String?
     private weak var captureModel: BrowserChromeModel?
@@ -181,6 +184,9 @@ final class BrowserContentNSView: NSView {
         for (id, page) in crashPages {
             page.frame = pageFrame(forTabID: id)
         }
+        for (id, easel) in easelViews {
+            easel.frame = pageFrame(forTabID: id)
+        }
         if let request = permissionPrompt.request, !permissionPrompt.isHidden {
             // Over the top of the asking page, or of its pane in a split.
             let page = pageFrame(forTabID: request.tabID)
@@ -212,15 +218,19 @@ final class BrowserContentNSView: NSView {
             .sink { [weak self] in
                 self?.refreshPermissionPrompt()
                 self?.refreshCrashPages()
+                self?.refreshEasels()
             }
         refreshPermissionPrompt()
         refreshCrashPages()
+        refreshEasels()
         model.onBeginAreaCapture = { [weak self, weak model] in
             guard let self, let model else { return false }
             let tabID = model.selectedTabID
             beginAreaCapture(pageTabID: tabID) { fraction in
                 if let fraction {
                     model.captureArea(fraction: fraction, tabID: tabID)
+                } else {
+                    model.easelCaptureTargetID = nil
                 }
                 model.focusSelectedPage()
             }
@@ -289,6 +299,7 @@ final class BrowserContentNSView: NSView {
             overlay.layer?.cornerRadius = clipping.radius
             overlay.layer?.maskedCorners = clipping.corners
         }
+        easelClipping = clipping
         movedPage.isHidden = !isContextReady || movedPagePicture == nil
         empty.isHidden = !isContextReady || hasSelectedTab || !movedPage.isHidden
         movedPage.picture = movedPagePicture ?? nil
@@ -305,6 +316,50 @@ final class BrowserContentNSView: NSView {
         }
         refreshPermissionPrompt()
         refreshCrashPages()
+        refreshEasels()
+        needsLayout = true
+    }
+
+    /// An Easel's canvas covers its tab's empty page, in a split only its pane.
+    func refreshEasels() {
+        guard let model = captureModel else { return }
+        let visible = model.visibleEaselTabIDs
+        for (id, view) in easelViews where !visible.contains(id) || model.easelID(forTabID: id) != view.easelID {
+            view.removeFromSuperview()
+            easelViews.removeValue(forKey: id)
+        }
+        var shown = [BrowserEaselView]()
+        for id in visible {
+            guard let easelID = model.easelID(forTabID: id) else { continue }
+            let view = easelViews[id] ?? {
+                let view = BrowserEaselView(easelID: easelID, store: model.easelStore)
+                view.onDocumentChange = { [weak model] editor in model?.syncEaselTitle(tabID: id, editor: editor) }
+                view.onCapture = { [weak model] easelID in _ = model?.beginEaselCapture(easelID: easelID) }
+                view.onOpenCapture = { [weak model] capture in model?.openCapturedPage(capture) }
+                view.refreshLiveCapture = { [weak model] capture, completion in
+                    guard let model else { return completion(nil) }
+                    model.refreshLiveCapture(capture, completion: completion)
+                }
+                addSubview(view, positioned: .below, relativeTo: movedPage)
+                easelViews[id] = view
+                shown.append(view)
+                return view
+            }()
+            view.isHidden = !empty.isHidden || !movedPage.isHidden
+            view.layer?.cornerRadius = easelClipping?.radius ?? 0
+            view.layer?.maskedCorners = easelClipping?.corners ?? []
+            view.layer?.cornerCurve = .continuous
+            if let editor = view.editor {
+                model.syncEaselTitle(tabID: id, editor: editor)
+            }
+        }
+        if let selected = model.selectedTabID, let view = easelViews[selected], shown.contains(where: { $0 === view }) {
+            // After the engine has given its empty page the keyboard.
+            // The engine gives its new page the keyboard a moment later; take it back.
+            for delay in [0.05, 0.35, 0.8] {
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak view] in view?.focusCanvas() }
+            }
+        }
         needsLayout = true
     }
 

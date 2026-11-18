@@ -283,6 +283,12 @@ NSMenuDelegate, NSUserInterfaceValidations {
         observeAppearancePreference()
         observeBoosts()
         observeContentBlocking()
+        if let session = BrowserRuntimeConfiguration.currentConfiguration()?.sessionStoragePath {
+            BrowserEaselStore.shared = BrowserEaselStore(
+                directory: URL(fileURLWithPath: session, isDirectory: true)
+                    .appendingPathComponent("Easels", isDirectory: true),
+            )
+        }
         installLayoutIndependentKeyMonitor()
         installReservedShortcutMonitor()
         startBatterySaverController()
@@ -658,6 +664,14 @@ NSMenuDelegate, NSUserInterfaceValidations {
 
     public func viewBoosts(_: Any?) {
         activeChromeModel?.viewBoosts()
+    }
+
+    public func createNewEasel(_: Any?) {
+        activeChromeModel?.createEasel()
+    }
+
+    public func viewEasels(_: Any?) {
+        activeChromeModel?.viewEasels()
     }
 
     public func toggleJavaScriptFromAppleEvents(_: Any?) {
@@ -1156,6 +1170,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
             return activeChromeModel?.canEditBoost ?? false
         case #selector(viewBoosts(_:)):
             return activeChromeModel?.librarySections.contains(.boosts) ?? false
+        case #selector(createNewEasel(_:)):
+            return activeChromeModel?.canCreateEasel ?? false
+        case #selector(viewEasels(_:)):
+            return activeChromeModel?.librarySections.contains(.easels) ?? false
         case #selector(toggleDeveloperMode(_:)):
             if let menuItem = item as? NSMenuItem {
                 menuItem.title = activeChromeModel?.isDeveloperModeOn == true
@@ -1808,6 +1826,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
         fileMenu.addItem(makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .newLittleWindow),
             action: #selector(createNewLittleWindow(_:)),
+        ))
+        fileMenu.addItem(makeMenuItem(
+            descriptor: shortcutStore.descriptor(for: .newEasel),
+            action: #selector(createNewEasel(_:)),
         ))
         fileMenu.addItem(makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .restoreLastClosedTab),
@@ -2918,6 +2940,11 @@ NSMenuDelegate, NSUserInterfaceValidations {
             target: windowCommandTarget,
         ))
         windowMenu.addItem(.separator())
+        windowMenu.addItem(makeMenuItem(
+            descriptor: shortcutStore.descriptor(for: .viewEasels),
+            action: #selector(viewEasels(_:)),
+        ))
+        windowMenu.addItem(.separator())
         windowMenu.addItem(makeStandardMenuItem(
             title: BrowserStrings.menuBringAllToFront,
             action: #selector(NSApplication.arrangeInFront(_:)),
@@ -3187,6 +3214,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
             return activeChromeModel?.editCurrentSiteBoost() ?? false
         case .viewBoosts:
             return activeChromeModel?.viewBoosts() ?? false
+        case .newEasel:
+            return activeChromeModel?.createEasel() != nil
+        case .viewEasels:
+            return activeChromeModel?.viewEasels() ?? false
         case .editSpaceTheme:
             return activeChromeModel
                 .flatMap { model in model.selectedSpaceID.map { model.onEditSpaceTheme?($0) } } != nil

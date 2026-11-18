@@ -2875,7 +2875,8 @@ bool URLHasSchemeAndInternalHost(const CefString &url,
   }
 
   std::string host = LowercaseASCII(URLPartToString(parts.host));
-  if (host.empty() || host == shared::kOpenArcCreditsHost) {
+  if (host.empty() || host == shared::kOpenArcCreditsHost ||
+      host == shared::kOpenArcEaselHost) {
     return false;
   }
 
@@ -6661,6 +6662,25 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
                             }
                           },
                           identifier)));
+}
+
+- (void)captureTabWithID:(NSString *)tabID
+                 region:(CGRect)fraction
+             completion:(void (^)(NSData *))completion {
+  auto it = _tabRecords.find(ToStdString(tabID));
+  if (it != _tabRecords.end() && it->second.webKitPage != nil) {
+    [it->second.webKitPage capturePictureWithFraction:fraction completion:completion];
+    return;
+  }
+  if (it == _tabRecords.end() || !it->second.browser ||
+      !it->second.closeRequestID.empty()) {
+    completion(nil);
+    return;
+  }
+  CefRefPtr<RegionScreenshotObserver> observer =
+      new RegionScreenshotObserver(fraction);
+  observer->completion_ = [completion copy];
+  observer->Start(it->second.browser->GetHost());
 }
 
 - (void)captureActiveTabPictureWithCompletion:(void (^)(NSData *))completion {

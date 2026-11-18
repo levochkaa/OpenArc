@@ -376,6 +376,12 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
 - (void)captureFullPageActiveTabToPasteboard;
 /// The visible page as PNG data, for the caller instead of the clipboard.
 - (void)captureActiveTabPictureWithCompletion:(void (^)(NSData *_Nullable png))completion;
+/// Part of a tab's visible page as PNG data, as a live Easel capture refreshes;
+/// nil when the tab has no page.
+- (void)captureTabWithID:(NSString *)tabID
+                  region:(CGRect)fraction
+              completion:(void (^)(NSData *_Nullable png))completion
+    NS_SWIFT_NAME(captureTab(withID:region:completion:));
 // Stops a running download; the engine then reports it canceled.
 - (void)cancelDownloadWithID:(NSString *)downloadID;
 /// Sends a Cocoa action such as `copyToFindPboard:` to the active page's

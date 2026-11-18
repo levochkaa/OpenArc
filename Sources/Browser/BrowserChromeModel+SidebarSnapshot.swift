@@ -33,7 +33,10 @@ extension BrowserChromeModel {
         snapshot.peekPagesByTabID = peekPagesByTabID.filter { id, _ in tabs.contains { $0.id == id } }
         snapshot.miniPlayers = miniPlayerItems
         snapshot.tabIcons = Dictionary(
-            tabs.compactMap { tab in tabIconsBySyncID[tab.syncID].map { (tab.id, $0) } },
+            tabs.compactMap { tab in
+                (tabIconsBySyncID[tab.syncID] ?? (BrowserEaselURL.isEasel(tab.pinnedURLString ?? tab.urlString)
+                        ? "scribble.variable" : nil)).map { (tab.id, $0) }
+            },
             uniquingKeysWith: { first, _ in first },
         )
         snapshot.splitNames = Dictionary(

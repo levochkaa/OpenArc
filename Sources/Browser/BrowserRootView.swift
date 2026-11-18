@@ -283,6 +283,10 @@ final class BrowserRootView: NSView {
             MainActor.assumeIsolated {
                 guard let self, self.window?.isMainWindow == true else { return }
                 self.playCaptureSound()
+                self.model.didCopyAreaCapture(png: png)
+                self.captureToast.onNewEasel = self.model.canCreateEasel
+                    ? { [weak self] png in _ = self?.model.sendCaptureToNewEasel(png: png) }
+                    : nil
                 self.showCaptureToast { $0.showCopied(png: png) }
             }
         }

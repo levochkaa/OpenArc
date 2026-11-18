@@ -243,6 +243,10 @@ enum BrowserInternalURLNormalizer {
     static let passwordManagerHost = "password-manager"
     static let bookmarksHost = "bookmarks"
     static let creditsHost = "credits"
+    /// Easels: the engine shows an empty page there and the window draws the canvas.
+    static let easelHost = "easel"
+    /// Hosts the app serves itself rather than Chromium's internal pages.
+    static let appServedHosts: Set<String> = [creditsHost, easelHost]
 
     static func canonicalURLString(for rawURLString: String) -> String? {
         let trimmedURLString = rawURLString.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -264,7 +268,7 @@ enum BrowserInternalURLNormalizer {
             aliasSchemes.contains(rawScheme),
             let rawHost = components.host?.lowercased(),
             !rawHost.isEmpty,
-            rawHost != creditsHost
+            !appServedHosts.contains(rawHost)
         else {
             return nil
         }
@@ -283,7 +287,7 @@ enum BrowserInternalURLNormalizer {
             components.scheme?.lowercased() == canonicalScheme,
             let host = components.host?.lowercased(),
             !host.isEmpty,
-            host != creditsHost
+            !appServedHosts.contains(host)
         else {
             return nil
         }
@@ -315,7 +319,7 @@ enum BrowserInternalURLNormalizer {
             components.scheme?.lowercased() == canonicalScheme,
             let host = components.host,
             !host.isEmpty,
-            host.lowercased() != creditsHost
+            !appServedHosts.contains(host.lowercased())
         else {
             return nil
         }

@@ -182,6 +182,10 @@ import Foundation
 
     private(set) var canceledDownloadIDs = [String]()
 
+    private(set) var capturedTabRegions = [(tabID: String, fraction: CGRect)]()
+    /// What a live Easel capture's page returns.
+    var tabRegionPNG: Data?
+
     private var pendingCreateRequests = [CreatedTabRequest]()
     private var nextTabNumber = 0
     private var activeTabID: String?
@@ -274,6 +278,11 @@ import Foundation
         createdTabProfilePaths.append(profileCachePathForNewTabs)
         pendingCreateRequests.append(request)
         return tabID
+    }
+
+    func captureTabRegion(tabID: String, fraction: CGRect, completion: @escaping @MainActor (Data?) -> Void) {
+        capturedTabRegions.append((tabID, fraction))
+        completion(tabRegionPNG)
     }
 
     func flushPendingCreateEvents() {

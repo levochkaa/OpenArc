@@ -33,6 +33,9 @@ final class BrowserCaptureToastView: NSView {
     /// White text on a dark fill, as over a dark small window's bar.
     var isDark = false { didSet { applyStyle() } }
 
+    /// Send to New Easel for the copied picture; nil hides the button.
+    var onNewEasel: ((Data) -> Void)?
+
     /// The width it wants, for the root view to place it.
     private(set) var preferredWidth: CGFloat = 0
 
@@ -40,6 +43,10 @@ final class BrowserCaptureToastView: NSView {
     private let label = NSTextField(labelWithString: "")
     private let saveButton = BrowserCaptureToastButton(title: BrowserStrings.captureToastSave)
     private let shareButton = BrowserCaptureToastButton(symbol: "square.and.arrow.up")
+    private let easelButton = BrowserCaptureToastButton(
+        symbol: "scribble.variable",
+        accessibilityTitle: BrowserStrings.captureToastNewEasel,
+    )
     private let keys = BrowserNativeSurface()
     private let keysLabel = NSTextField(labelWithString: "")
     private let trailingLabel = NSTextField(labelWithString: "")
@@ -66,11 +73,19 @@ final class BrowserCaptureToastView: NSView {
         keys.strokeWidth = 0
         keys.fillColor = NSColor.black.withAlphaComponent(0.1)
         keys.addSubview(keysLabel)
-        for view in [label, saveButton, shareButton, keys, trailingLabel] as [NSView] {
+        for view in [label, saveButton, shareButton, easelButton, keys, trailingLabel] as [NSView] {
             surface.addSubview(view)
         }
         saveButton.onClick = { [weak self] in self?.save() }
         shareButton.onClick = { [weak self] in self?.share() }
+        easelButton.onClick = { [weak self] in
+            guard let self, let png else { return }
+            hideWork?.cancel()
+            isHidden = true
+            onNewEasel?(png)
+        }
+        easelButton.toolTip = BrowserStrings.captureToastNewEasel
+        easelButton.isHidden = true
         isHidden = true
     }
 
@@ -93,6 +108,7 @@ final class BrowserCaptureToastView: NSView {
         if !saveButton.isHidden {
             saveButton.frame = NSRect(x: x + 4, y: (height - 28) / 2, width: 48, height: 28)
             shareButton.frame = NSRect(x: saveButton.frame.maxX + 6, y: (height - 28) / 2, width: 32, height: 28)
+            easelButton.frame = NSRect(x: shareButton.frame.maxX + 6, y: (height - 28) / 2, width: 32, height: 28)
         } else if !shareButton.isHidden {
             shareButton.frame = NSRect(x: x + 4, y: (height - 28) / 2, width: 32, height: 28)
         }
@@ -111,6 +127,7 @@ final class BrowserCaptureToastView: NSView {
         trailingLabel.isHidden = true
         saveButton.isHidden = true
         shareButton.isHidden = true
+        easelButton.isHidden = true
         preferredWidth = labelLeading * 2 + textWidth(label)
         show(for: 4.8, fading: true)
     }
@@ -128,6 +145,7 @@ final class BrowserCaptureToastView: NSView {
         trailingLabel.isHidden = true
         saveButton.isHidden = true
         shareButton.isHidden = false
+        easelButton.isHidden = true
         preferredWidth = 12 + textWidth(label) + 10 + 32 + 10
         show(for: 3)
     }
@@ -146,7 +164,8 @@ final class BrowserCaptureToastView: NSView {
         trailingLabel.isHidden = true
         saveButton.isHidden = false
         shareButton.isHidden = false
-        preferredWidth = 12 + textWidth(label) + 10 + 48 + 6 + 32 + 8
+        easelButton.isHidden = onNewEasel == nil
+        preferredWidth = 12 + textWidth(label) + 10 + 48 + 6 + 32 + 8 + (easelButton.isHidden ? 0 : 38)
         show(for: 5)
     }
 
@@ -164,6 +183,7 @@ final class BrowserCaptureToastView: NSView {
         trailingLabel.isHidden = true
         saveButton.isHidden = true
         shareButton.isHidden = true
+        easelButton.isHidden = true
         preferredWidth = labelLeading * 2 + textWidth(label)
         show(for: 4, fading: true)
     }
@@ -184,6 +204,7 @@ final class BrowserCaptureToastView: NSView {
         trailingLabel.isHidden = false
         saveButton.isHidden = true
         shareButton.isHidden = true
+        easelButton.isHidden = true
         preferredWidth = 12 + textWidth(label) + 6 + textWidth(keysLabel) + 12 + 6 + textWidth(trailingLabel) + 12
         show(for: 4)
     }
@@ -194,7 +215,7 @@ final class BrowserCaptureToastView: NSView {
             view.textColor = ink
         }
         keys.fillColor = ink.withAlphaComponent(0.1)
-        for button in [saveButton, shareButton] {
+        for button in [saveButton, shareButton, easelButton] {
             button.ink = ink
         }
     }
@@ -288,10 +309,10 @@ private final class BrowserCaptureToastButton: NSView {
         setUp()
     }
 
-    init(symbol: String) {
+    init(symbol: String, accessibilityTitle: String = BrowserStrings.tabShareAction) {
         let image = NSImageView(image: NSImage(
             systemSymbolName: symbol,
-            accessibilityDescription: BrowserStrings.tabShareAction,
+            accessibilityDescription: accessibilityTitle,
         ) ?? NSImage())
         image.contentTintColor = .black
         self.content = image

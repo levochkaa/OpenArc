@@ -9,6 +9,7 @@ import UniformTypeIdentifiers
 enum BrowserLibrarySection: String, CaseIterable {
     case media
     case downloads
+    case easels
     case spaces
     case boosts
     case archive
@@ -19,6 +20,7 @@ enum BrowserLibrarySection: String, CaseIterable {
         switch self {
         case .media: BrowserStrings.libraryMedia
         case .downloads: BrowserStrings.libraryDownloads
+        case .easels: BrowserStrings.libraryEasels
         case .spaces: BrowserStrings.librarySpaces
         case .boosts: BrowserStrings.libraryBoosts
         case .archive: BrowserStrings.libraryArchive
@@ -29,6 +31,7 @@ enum BrowserLibrarySection: String, CaseIterable {
         switch self {
         case .media: "photo.on.rectangle"
         case .downloads: "arrow.down.circle"
+        case .easels: "scribble.variable"
         case .spaces: "square.on.square"
         case .boosts: "paintbrush.pointed"
         case .archive: "archivebox"
@@ -103,6 +106,8 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
     private(set) var hasDeferredRefresh = false
     /// How many times the list's row views were built, for tests.
     private(set) var documentBuildCount = 0
+    /// Easel pictures by Easel, edit time and appearance.
+    private var easelThumbnails = [String: NSImage?]()
 
     private let model: BrowserChromeModel
     private let listBackground = BrowserNativeSurface()
@@ -226,6 +231,8 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
             model.objectWillChange.eraseToAnyPublisher(),
             model.downloadsModel.objectWillChange.eraseToAnyPublisher(),
             model.userPreferencesStore.objectWillChange.eraseToAnyPublisher(),
+            NotificationCenter.default.publisher(for: BrowserEaselStore.didChangeNotification)
+                .map { _ in () }.eraseToAnyPublisher(),
         ])
     }
 
@@ -460,6 +467,7 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
         case .media: show(mediaRows())
         case .spaces: show([])
         case .boosts: show(boostRows())
+        case .easels: show(easelRows())
         }
         updateEmptyState()
         needsLayout = true
@@ -683,6 +691,46 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
         }
     }
 
+    /// Each Easel with a picture of its top, newest first; a click opens it.
+    private func easelRows() -> [Row] {
+        let model = model
+        let store = model.easelStore
+        let isDark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        return store.allDocuments.compactMap { document -> Row? in
+            let title = document.title
+            if !query.isEmpty, !title.lowercased().contains(query) {
+                return nil
+            }
+            let id = document.id
+            let thumbnailKey = "\(id).\(document.modifiedAt.timeIntervalSince1970).\(isDark)"
+            let thumbnail = easelThumbnails[thumbnailKey] ?? {
+                let image = BrowserEaselRenderer.thumbnail(document, store: store, isDark: isDark)
+                easelThumbnails = easelThumbnails.filter { !$0.key.hasPrefix(id + ".") }
+                easelThumbnails[thumbnailKey] = image
+                return image
+            }()
+            return .item(BrowserLibraryRowContent(
+                title: title,
+                detail: BrowserStrings.easelEdited(document.modifiedAt),
+                faviconPageURL: nil,
+                faviconImage: thumbnail,
+                fileIcon: nil,
+                progress: nil,
+                onOpen: { [weak model] in _ = model?.openEasel(id: id) },
+                menu: { [weak self, weak model] in
+                    let menu = BrowserNativeMenus.menu()
+                    BrowserNativeMenus.add(BrowserStrings.easelOpenMenu, to: menu) { _ = model?.openEasel(id: id) }
+                    menu.addItem(.separator())
+                    BrowserNativeMenus.add(BrowserStrings.easelDeleteMenu, to: menu) {
+                        BrowserEaselDialogs.confirmDelete(in: self?.window) { model?.deleteEasel(id: id) }
+                    }
+                    return menu
+                },
+                identity: "easel.\(id).\(thumbnailKey)",
+            ))
+        }
+    }
+
     /// Pictures and videos in the download folder, newest first.
     private func mediaRows() -> [Row] {
         let preferences = model.userPreferencesStore
@@ -700,6 +748,7 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
             switch section {
             case .media: BrowserStrings.libraryEmptyMedia
             case .boosts: BrowserStrings.libraryEmptyBoosts
+            case .easels: BrowserStrings.libraryEmptyEasels
             default: BrowserStrings.libraryEmptyDetail
             }
         emptyState.configure(symbol: section.symbol, detail: detail)

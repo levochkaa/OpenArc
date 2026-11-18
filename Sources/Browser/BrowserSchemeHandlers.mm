@@ -209,6 +209,13 @@ class OpenArcSchemeHandlerFactory
                                        CefRefPtr<CefRequest> request) override {
     CEF_REQUIRE_IO_THREAD();
 
+    // An Easel's tab shows an empty page; the window draws the canvas over it.
+    if (RequestHost(request) == shared::kOpenArcEaselHost) {
+      return new StringResourceHandler(
+          200, "OK", "text/html",
+          "<!doctype html><meta charset=\"utf-8\"><meta name=\"color-scheme\" "
+          "content=\"light dark\"><title>Easel</title>");
+    }
     if (RequestHost(request) != shared::kOpenArcCreditsHost) {
       return CreateNotFoundHandler();
     }

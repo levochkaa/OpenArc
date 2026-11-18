@@ -615,6 +615,8 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
     case toggleDeveloperMode
     case editBoost
     case viewBoosts
+    case newEasel
+    case viewEasels
     case editSpaceTheme
     case togglePictureInPicture
     case muteAllTabs
@@ -752,6 +754,10 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             BrowserCommands.editBoost
         case .viewBoosts:
             BrowserCommands.viewBoosts
+        case .newEasel:
+            BrowserCommands.newEasel
+        case .viewEasels:
+            BrowserCommands.viewEasels
         case .editSpaceTheme:
             BrowserCommands.editSpaceTheme
         case .togglePictureInPicture:
@@ -956,6 +962,10 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             .editBoost
         case .viewBoosts:
             .viewBoosts
+        case .newEasel:
+            .newEasel
+        case .viewEasels:
+            .viewEasels
         case .editSpaceTheme:
             .editSpaceTheme
         case .togglePictureInPicture:

@@ -197,6 +197,18 @@ enum BrowserCommands {
         shortcut: .unassigned,
     )
 
+    static let newEasel = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuNewEasel,
+        helpTitle: BrowserStrings.menuNewEasel,
+        shortcut: BrowserKeyboardShortcut("e", modifiers: [.control, .shift]),
+    )
+
+    static let viewEasels = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuViewEasels,
+        helpTitle: BrowserStrings.menuViewEasels,
+        shortcut: .unassigned,
+    )
+
     static let networkInspector = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuNetworkInspector,
         helpTitle: BrowserStrings.menuNetworkInspector,
@@ -783,6 +795,8 @@ enum BrowserLayoutIndependentShortcutCommand: Equatable {
     case toggleDeveloperMode
     case editBoost
     case viewBoosts
+    case newEasel
+    case viewEasels
     case editSpaceTheme
     case togglePictureInPicture
     case muteAllTabs

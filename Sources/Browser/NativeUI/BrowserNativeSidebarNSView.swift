@@ -1621,6 +1621,9 @@ final class BrowserNativeSidebarNSView: NSView {
         let model = state.model
         let state = state
         let selected = state.snapshot.selectedTabID == tab.id && (section == .app || !isCommandBarPresented)
+        if let easelID = BrowserEaselURL.easelID(from: tab.pinnedURLString ?? tab.urlString) {
+            return easelMenu(tab, easelID: easelID, row: row)
+        }
         let menu = BrowserNativeMenus.menu()
         let copy = model.shortcutStore.descriptor(for: .copyLink)
         let close = model.shortcutStore.descriptor(for: .archiveTab)
@@ -1719,6 +1722,34 @@ final class BrowserNativeSidebarNSView: NSView {
                     state?.renamingTabID = nil
                     state?.withSidebarAnimation { model.closeTemporaryTabsAbove(id: tab.id) }
                 }
+            }
+        }
+        return menu
+    }
+
+    /// An Easel's row: icon, rename, split and move, then remove or delete.
+    private func easelMenu(_ tab: BrowserChromeModel.Tab, easelID: String, row: BrowserNativeSidebarRowNSView) -> NSMenu {
+        let model = state.model
+        let state = state
+        let menu = BrowserNativeMenus.menu()
+        BrowserNativeMenus.addIconMenu(
+            BrowserStrings.tabChangeIconAction,
+            to: menu,
+            selected: model.icon(forTabID: tab.id),
+            noIconTitle: BrowserStrings.tabSiteIconAction,
+        ) { model.setIcon($0, forTabID: tab.id) }
+        BrowserNativeMenus.add(BrowserStrings.tabRenameAction, to: menu, action: row.onBeginRename)
+        let hasSplitItems = addSplitItems(for: tab, to: menu)
+        addArrangeItems(for: tab, to: menu, startsGroup: !hasSplitItems)
+        menu.addItem(.separator())
+        BrowserNativeMenus.add(BrowserStrings.easelRemoveFromSidebar, to: menu) { [weak state] in
+            state?.renamingTabID = nil
+            state?.withSidebarAnimation { _ = model.closeTab(id: tab.id) }
+        }
+        BrowserNativeMenus.add(BrowserStrings.easelDeleteMenu, to: menu) { [weak self, weak state] in
+            BrowserEaselDialogs.confirmDelete(in: self?.window) {
+                state?.renamingTabID = nil
+                state?.withSidebarAnimation { model.deleteEasel(id: easelID) }
             }
         }
         return menu

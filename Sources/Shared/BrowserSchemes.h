@@ -7,6 +7,7 @@ namespace shared {
 
 extern const char kOpenArcScheme[];
 extern const char kOpenArcCreditsHost[];
+extern const char kOpenArcEaselHost[];
 extern const char kOpenArcCreditsURL[];
 extern const char kOpenArcSettingsHost[];
 extern const char kOpenArcSettingsURL[];

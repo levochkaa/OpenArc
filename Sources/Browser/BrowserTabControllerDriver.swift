@@ -187,6 +187,12 @@ import Foundation
         }
     }
 
+    func captureTabRegion(tabID: String, fraction: CGRect, completion: @escaping @MainActor (Data?) -> Void) {
+        controller.captureTab(withID: tabID, region: fraction) { data in
+            MainActor.assumeIsolated { completion(data) }
+        }
+    }
+
     func captureFullPageActiveTabToPasteboard() {
         controller.captureFullPageActiveTabToPasteboard()
     }

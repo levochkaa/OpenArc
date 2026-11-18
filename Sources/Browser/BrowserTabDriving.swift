@@ -176,6 +176,8 @@ enum BrowserPageTranslationState: Int {
     func saveActiveTab(withSuggestedName suggestedName: String?)
     func captureFullPageActiveTabToPasteboard()
     func captureActiveTabPicture(completion: @escaping @MainActor (Data?) -> Void)
+    /// Part of a tab's visible page as PNG data; nil without a page.
+    func captureTabRegion(tabID: String, fraction: CGRect, completion: @escaping @MainActor (Data?) -> Void)
     func cancelDownload(id: String)
     /// A Cocoa action for the active page's own view; false without one.
     @discardableResult func sendActionToActivePage(_ action: Selector) -> Bool
@@ -271,6 +273,11 @@ enum BrowserPageTranslationState: Int {
 }
 
 extension BrowserTabDriving {
+    /// Part of a tab's visible page as PNG data; nil without a page.
+    func captureTabRegion(tabID _: String, fraction _: CGRect, completion: @escaping @MainActor (Data?) -> Void) {
+        completion(nil)
+    }
+
     var activeTabEngine: BrowserPageEngine { .chromium }
     var activeTabCanSwitchEngine: Bool { false }
     func openActiveTab(in _: BrowserPageEngine) {}
