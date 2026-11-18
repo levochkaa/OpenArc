@@ -83,19 +83,17 @@ extension BrowserChromeModel {
         return .tabs(spaceTitle: space.title, count: moving.count)
     }
 
-    /// Runs `move` at once, or once the user agrees to the profile change. False while it waits.
+    /// Runs `move` at once and returns its result, or runs it once the user
+    /// agrees to the profile change and returns false while it waits.
     @discardableResult func confirmingProfileMove(
         tabIDs: Set<String>,
         toSpaceID spaceID: String,
-        _ move: @escaping @MainActor () -> Void,
+        _ move: @escaping @MainActor () -> Bool,
     ) -> Bool {
         guard let confirmation = profileMoveConfirmation(tabIDs: tabIDs, toSpaceID: spaceID),
               let onConfirmProfileMove
-        else {
-            move()
-            return true
-        }
-        onConfirmProfileMove(confirmation, move)
+        else { return move() }
+        onConfirmProfileMove(confirmation) { _ = move() }
         return false
     }
 
@@ -134,17 +132,15 @@ extension BrowserChromeModel {
             let local = moving.compactMap { tab in tabs.first { $0.syncID == tab.syncID }?.id }
             guard let first = local.first else { return false }
             let payload = BrowserSidebarDragPayload(primary: .tab(first), tabIDs: Set(local))
-            let move = { [weak self] in
+            let move: @MainActor () -> Bool = { [weak self] in
                 guard let self, withArrangementUndo(BrowserStrings.undoMoveAction, {
                     self.commitSidebarDrop(payload: payload, destination: destination)
                 }) else { return false }
                 selectTab(id: first)
                 return true
             }
-            guard let spaceID = destination.container.spaceID,
-                  profileMoveConfirmation(tabIDs: payload.tabIDs, toSpaceID: spaceID) != nil
-            else { return move() }
-            return confirmingProfileMove(tabIDs: payload.tabIDs, toSpaceID: spaceID) { _ = move() }
+            guard let spaceID = destination.container.spaceID else { return move() }
+            return confirmingProfileMove(tabIDs: payload.tabIDs, toSpaceID: spaceID, move)
         }
         guard destination.container.spaceID == selectedSpaceID,
               openURLs(moving.compactMap { URL(string: $0.urlString) }, at: destination)
@@ -287,7 +283,7 @@ extension BrowserChromeModel {
     /// Move to: the tab goes to the top of the same section in another Space.
     @discardableResult func moveTabToSpace(id: String, spaceID: String) -> Bool {
         confirmingProfileMove(tabIDs: [id], toSpaceID: spaceID) { [weak self] in
-            _ = self?.moveToTopOfSpace(tabIDs: [id], primaryID: id, spaceID: spaceID)
+            self?.moveToTopOfSpace(tabIDs: [id], primaryID: id, spaceID: spaceID) ?? false
         }
     }
 
@@ -297,7 +293,7 @@ extension BrowserChromeModel {
         let panes = splitPaneTabIDs(forTabID: tabID)
         guard panes.count > 1 else { return false }
         return confirmingProfileMove(tabIDs: Set(panes), toSpaceID: spaceID) { [weak self] in
-            _ = self?.moveToTopOfSpace(tabIDs: Set(panes), primaryID: tabID, spaceID: spaceID)
+            self?.moveToTopOfSpace(tabIDs: Set(panes), primaryID: tabID, spaceID: spaceID) ?? false
         }
     }
 

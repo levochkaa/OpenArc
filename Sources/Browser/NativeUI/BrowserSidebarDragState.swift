@@ -290,20 +290,15 @@ import AppKit
             } else {
                 !cancel && proposal.map { proposal in
                     let destination = proposal.destination
-                    let commit = { [model, onWillCommitDrop] in
+                    let commit: @MainActor () -> Bool = { [model, onWillCommitDrop] in
                         onWillCommitDrop()
                         return model.withArrangementUndo(BrowserStrings.undoMoveAction) {
                             model.commitSidebarDrop(payload: payload, destination: destination)
                         }
                     }
                     // Another profile's Space asks first; the rows go back until the answer.
-                    if let spaceID = destination.container.spaceID,
-                       model.profileMoveConfirmation(tabIDs: payload.tabIDs, toSpaceID: spaceID) != nil
-                    {
-                        model.confirmingProfileMove(tabIDs: payload.tabIDs, toSpaceID: spaceID) { _ = commit() }
-                        return false
-                    }
-                    return commit()
+                    guard let spaceID = destination.container.spaceID else { return commit() }
+                    return model.confirmingProfileMove(tabIDs: payload.tabIDs, toSpaceID: spaceID, commit)
                 } == true
             }
         resetSplitDrop()
@@ -337,13 +332,9 @@ import AppKit
 
     /// A drop on a Space's icon; another profile's Space asks first.
     private func moveToDockSpace(_ payload: BrowserSidebarDragPayload, spaceID: String) -> Bool {
-        guard model.profileMoveConfirmation(tabIDs: payload.tabIDs, toSpaceID: spaceID) != nil else {
-            return model.moveSidebarItems(payload, toTopOfSpace: spaceID)
-        }
         model.confirmingProfileMove(tabIDs: payload.tabIDs, toSpaceID: spaceID) { [model] in
-            _ = model.moveSidebarItems(payload, toTopOfSpace: spaceID)
+            model.moveSidebarItems(payload, toTopOfSpace: spaceID)
         }
-        return false
     }
 
     private func copyItems(
