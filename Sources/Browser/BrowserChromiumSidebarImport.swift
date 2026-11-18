@@ -141,7 +141,11 @@ extension BrowserImportedSidebar {
             if let profile, let title {
                 profileSpaces[profile, default: []].append(title)
             }
-            var icon = (space["symbol"] as? String).flatMap(Self.trimmed)
+            // A Space drawn as a layered crest keeps a symbol it does not show.
+            let branding = space["branding"] as? [String: Any]
+            var icon = branding?["iconStyle"] as? String == "layeredCrest"
+                ? nil
+                : (space["symbol"] as? String).flatMap(Self.trimmed)
             if let emoji = icon?.dropPrefix("crest.emoji:") {
                 icon = BrowserIconImage.name(emoji: emoji)
             }

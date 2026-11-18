@@ -147,10 +147,10 @@ private let crestSample = """
   {"id": {"rawValue": "22222222-2222-2222-2222-222222222222"},
    "profile": {"id": "BBBBBBBB-0000-0000-0000-000000000002"},
    "sharedProfileID": "aaaaaaaa-0000-0000-0000-000000000001",
-   "name": "Work notes", "symbol": "note.text", "folders": [], "tabs": []},
+   "name": "Work notes", "symbol": "note.text", "branding": {"iconStyle": "simpleSymbol"}, "folders": [], "tabs": []},
   {"id": {"rawValue": "33333333-3333-3333-3333-333333333333"},
    "profile": {"id": "CCCCCCCC-0000-0000-0000-000000000003"},
-   "name": "Home", "symbol": "house", "folders": [], "tabs": []}
+   "name": "Home", "symbol": "house", "branding": {"iconStyle": "layeredCrest"}, "folders": [], "tabs": []}
  ]}
 """
 
@@ -171,6 +171,7 @@ private func writeCrestSession(_ json: String, in home: SidebarHome) throws {
     let work = sidebar.spaces[0]
     #expect(work.icon == BrowserIconImage.name(emoji: "🛠️"))
     #expect(sidebar.spaces[1].icon == "note.text")
+    #expect(sidebar.spaces[2].icon == nil, "A Space shown as a crest does not show its symbol")
     #expect(work.pinned == [
         tab("https://home.example/", "Home", title: "My home"),
         .folder(title: "Docs", icon: nil, children: [
