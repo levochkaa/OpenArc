@@ -65,7 +65,9 @@ extension BrowserSyncHTTPIntegrationTests {
 
         try first.sql("DROP TRIGGER fail_local_automatic_archive")
         #expect(first.model.retrySessionPersistence())
-        #expect(!first.model.hasUncommittedSessionWrites && !first.model.undoManager.canUndo)
+        #expect(!first.model.hasUncommittedSessionWrites)
+        // Only the rename is undoable; the local Archive registers nothing.
+        #expect(first.model.undoManager.undoTabActionName == BrowserStrings.undoRenameAction)
         #expect(try first.store.syncOwner() == nil)
         #expect(try first.outboxBytes().isEmpty)
         let recovered = try #require(try first.store.loadSnapshotStrict())

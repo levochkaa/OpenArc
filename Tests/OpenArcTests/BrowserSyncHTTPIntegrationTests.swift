@@ -491,6 +491,7 @@ import Testing
         driver.flushPendingCreateEvents()
         let anchor = try #require(model.tabs.first { $0.syncID == "anchor" })
         model.selectTab(id: anchor.id)
+        model.persistPendingSelection()
         driver.emitTabCreationState(id: anchor.id, state: .ready)
         first.service.setSnapshotApplier(model)
         await first.service.waitForPendingOperations()

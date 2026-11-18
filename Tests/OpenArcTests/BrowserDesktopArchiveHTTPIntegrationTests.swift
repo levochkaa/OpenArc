@@ -47,6 +47,7 @@ extension BrowserSyncHTTPIntegrationTests {
         let anchor = try #require(live.model.tabs.first { $0.syncID == "anchor" })
         let expired = try #require(live.model.tabs.first { $0.syncID == "expired" })
         live.model.selectTab(id: anchor.id)
+        live.model.persistPendingSelection()
         live.driver.emitTabCreationState(id: anchor.id, state: .ready)
         live.driver.emitNavigationStateChange(id: anchor.id, canGoBack: true, canGoForward: true)
         await first.service.waitForPendingOperations()

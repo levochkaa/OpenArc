@@ -49,6 +49,7 @@ extension BrowserSyncHTTPIntegrationTests {
         let favorite = try #require(live.model.tabs.first { $0.syncID == "favorite" })
         let anchor = try #require(live.model.tabs.first { $0.syncID == "anchor" })
         live.model.selectTab(id: anchor.id)
+        live.model.persistPendingSelection()
         live.driver.emitNavigationStateChange(id: anchor.id, canGoBack: true, canGoForward: true)
         await first.service.waitForPendingOperations()
         await second.pull()

@@ -48,6 +48,7 @@ extension BrowserSyncHTTPIntegrationTests {
         let pinned = try #require(live.model.tabs.first { $0.syncID == "pinned" })
         let expired = try #require(live.model.tabs.first { $0.syncID == "expired" })
         live.model.selectTab(id: selected.id)
+        live.model.persistPendingSelection()
         live.driver.emitTabCreationState(id: selected.id, state: .ready)
         live.driver.emitTabCreationState(id: pinned.id, state: .ready)
         live.driver.emitNavigationStateChange(id: selected.id, canGoBack: true, canGoForward: false)

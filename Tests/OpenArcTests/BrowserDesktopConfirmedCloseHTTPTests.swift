@@ -42,6 +42,7 @@ extension BrowserSyncHTTPIntegrationTests {
         let closing = try #require(live.model.tabs.first { $0.syncID == "closed" })
         let anchor = try #require(live.model.tabs.first { $0.syncID == "anchor" })
         live.model.selectTab(id: closing.id)
+        live.model.persistPendingSelection()
         live.driver.emitUpdate(id: closing.id, title: "Latest live page title")
         live.driver.emitNavigationStateChange(id: anchor.id, canGoBack: true, canGoForward: true)
         await first.service.waitForPendingOperations()
@@ -86,7 +87,11 @@ extension BrowserSyncHTTPIntegrationTests {
         #expect(first.store.loadSnapshot() == initial)
         #expect(try first.store.pendingSyncQueue(for: first.owner).isEmpty)
         #expect(try first.store.loadArchivePage().entries.isEmpty)
+        // Renaming registers its own Undo above the Close. Keep this edit out of
+        // history, so the Undo below takes back the Close.
+        live.model.undoManager.disableUndoRegistration()
         live.model.setUserTitleOverride("Edited while close was blocked", forTabID: anchor.id)
+        live.model.undoManager.enableUndoRegistration()
         #expect(live.model.hasUncommittedSessionWrites)
         #expect(first.store.loadSnapshot() == initial)
         live.driver.emitCloseRequestOutcome(id: confirmed.id, requestID: confirmed.requestID, outcome: .closed)
