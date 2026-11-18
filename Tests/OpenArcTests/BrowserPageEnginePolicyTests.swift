@@ -35,7 +35,7 @@ import Testing
     }
 
     @Test func turningOffWebKitForStreamingSitesKeepsThemInChromium() {
-        BrowserPageEnginePolicy.opensStreamingSitesInWebKit = false
+        BrowserPageEnginePolicy.movesProtectedVideoToWebKit = false
         #expect(BrowserPageEnginePolicy.engine(forURLString: "https://www.netflix.com") == .chromium)
     }
 
@@ -65,11 +65,91 @@ import Testing
         #expect(!BrowserPageEnginePolicy.hasRule(forURLString: "https://example.com:8443/b"))
     }
 
+    @Test func failedProtectedVideoMovesThePageToWebKitAndItsSiteStaysThere() {
+        let url = "https://video.example.com/watch/1"
+        #expect(BrowserPageEnginePolicy.engine(forURLString: url) == .chromium)
+        for reason in [
+            "access",
+            "request",
+            "license",
+            "license-timeout",
+            "key-error",
+            "output-restricted",
+            "media-keys",
+            "playback",
+        ] {
+            #expect(action(url, reason: reason) == .moveToWebKit, "\(reason)")
+        }
+        #expect(action(url, keySystem: "com.microsoft.playready.recommendation") == .moveToWebKit)
+        #expect(action(url, keySystem: "com.apple.fps.1_0") == .moveToWebKit)
+
+        BrowserPageEnginePolicy.rememberProtectedVideoSite(forURLString: url)
+        #expect(BrowserPageEnginePolicy.engine(forURLString: "https://video.example.com/other") == .webKit)
+        // By origin: other hosts and schemes stay.
+        #expect(BrowserPageEnginePolicy.engine(forURLString: "https://www.example.com/") == .chromium)
+        #expect(BrowserPageEnginePolicy.engine(forURLString: "http://video.example.com/") == .chromium)
+
+        BrowserPageEnginePolicy.movesProtectedVideoToWebKit = false
+        #expect(BrowserPageEnginePolicy.engine(forURLString: url) == .chromium)
+        #expect(action(url) == .offer)
+
+        BrowserPageEnginePolicy.movesProtectedVideoToWebKit = true
+        BrowserPageEnginePolicy.resetSiteEngines()
+        #expect(BrowserPageEnginePolicy.engine(forURLString: url) == .chromium)
+    }
+
+    @Test func otherFailuresAndKeySystemsChangeNothing() {
+        let url = "https://video.example.com/watch/1"
+        #expect(action(url, keySystem: "org.w3.clearkey") == .ignore)
+        #expect(action(url, keySystem: "") == .ignore)
+        #expect(action(url, reason: "network") == .ignore)
+        #expect(action("about:blank") == .ignore)
+        #expect(action("file:///tmp/video.html") == .ignore)
+    }
+
+    @Test func rememberedChoicesWinOverAFailure() {
+        let url = "https://video.example.com/watch/1"
+        #expect(action(url, notAskedAgain: ["https://video.example.com"]) == .ignore)
+        #expect(action(url, notAskedAgain: ["https://other.example.com"]) == .moveToWebKit)
+
+        BrowserPageEnginePolicy.setEngine(.chromium, forURLString: url)
+        #expect(action(url) == .ignore)
+        BrowserPageEnginePolicy.removeRule(forURLString: url)
+        #expect(action(url) == .moveToWebKit)
+
+        BrowserPageEnginePolicy.rememberProtectedVideoSite(forURLString: url)
+        BrowserPageEnginePolicy.setEngine(.chromium, forURLString: url)
+        #expect(BrowserPageEnginePolicy.engine(forURLString: url) == .chromium)
+    }
+
+    @Test func theFairPlayBridgeIgnoresFailures() {
+        BrowserPageEnginePolicy.playsProtectedMediaInChromium = true
+        #expect(action("https://www.netflix.com/watch/1") == .ignore)
+        #expect(action("https://open.spotify.com/track/1") == .ignore)
+        #expect(action("https://www.primevideo.com/detail/1") == .moveToWebKit)
+    }
+
     @Test func aSiteIsItsSchemeHostAndPortLowercased() {
         #expect(BrowserPageEnginePolicy
             .site(forURLString: "HTTPS://WWW.Netflix.com/browse?x=1") == "https://www.netflix.com")
         #expect(BrowserPageEnginePolicy.site(forURLString: "http://localhost:3000/a") == "http://localhost:3000")
         #expect(BrowserPageEnginePolicy.site(forURLString: "file:///tmp/a.html") == nil)
         #expect(BrowserPageEnginePolicy.site(forURLString: "about:blank") == nil)
+    }
+
+    // MARK: Private
+
+    private func action(
+        _ url: String,
+        keySystem: String = "com.widevine.alpha",
+        reason: String = "license-timeout",
+        notAskedAgain: Set<String> = [],
+    ) -> BrowserProtectedMediaAction {
+        BrowserPageEnginePolicy.decideProtectedMediaAction(
+            forURLString: url,
+            keySystem: keySystem,
+            reason: reason,
+            notAskedAgain: notAskedAgain,
+        )
     }
 }

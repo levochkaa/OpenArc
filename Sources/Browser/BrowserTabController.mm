@@ -4093,7 +4093,9 @@ bool RecordHasPage(const TabRecord &record) {
 
 @interface BrowserTabController () <BrowserWebKitPageDelegate>
 - (BOOL)shouldMoveNavigationToWebKitFromTabID:(NSString *)tabID toURLString:(NSString *)urlString;
-- (void)handleProtectedMediaRefusedForTabID:(NSString *)tabID keySystem:(NSString *)keySystem;
+- (void)handleProtectedMediaFailureForTabID:(NSString *)tabID
+                                  keySystem:(NSString *)keySystem
+                                     reason:(NSString *)reason;
 - (void)handleFairPlayMessage:(NSString *)json forTabID:(NSString *)tabID;
 - (void)handleProtectedVideoMessage:(NSString *)json data:(nullable NSData *)data forTabID:(NSString *)tabID;
 - (void)moveTabWithID:(NSString *)tabID toWebKitWithURLString:(NSString *)urlString;
@@ -4936,7 +4938,9 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
   return sites;
 }
 
-- (void)handleProtectedMediaRefusedForTabID:(NSString *)tabID keySystem:(NSString *)keySystem {
+- (void)handleProtectedMediaFailureForTabID:(NSString *)tabID
+                                  keySystem:(NSString *)keySystem
+                                     reason:(NSString *)reason {
   auto it = _tabRecords.find(ToStdString(tabID));
   if (it == _tabRecords.end() || it->second.isClosing || !it->second.browser || !self.webKitPagesEnabled ||
       _autoResizesPages) {
@@ -4944,9 +4948,22 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
   }
   NSString *urlString = ToNSString(it->second.browser->GetMainFrame()->GetURL().ToString());
   NSString *site = [BrowserPageEnginePolicy siteForURLString:urlString];
-  // The bridge refuses Widevine on purpose, so the site asks for FairPlay instead.
-  if (site == nil || [BrowserPageEnginePolicy bridgesFairPlayForURLString:urlString] ||
-      [ProtectedVideoSitesNotAskedAgain() containsObject:site] || [BrowserPageEnginePolicy hasRuleForURLString:urlString]) {
+  const BrowserProtectedMediaAction action =
+      [BrowserPageEnginePolicy protectedMediaActionForURLString:urlString
+                                                      keySystem:keySystem
+                                                         reason:reason
+                                                  notAskedAgain:ProtectedVideoSitesNotAskedAgain()];
+  if (site == nil || action == BrowserProtectedMediaActionIgnore) {
+    return;
+  }
+  if (action == BrowserProtectedMediaActionMoveToWebKit) {
+    it->second.latestURL = ToStdString(urlString);
+    [self switchTabWithID:tabID toEngine:BrowserPageEngineWebKit];
+    // Private windows remember nothing; elsewhere the site opens in WebKit from
+    // now on, and its other open pages move too.
+    if (!_usesEphemeralRequestContext) {
+      [BrowserPageEnginePolicy rememberProtectedVideoSiteForURLString:urlString];
+    }
     return;
   }
   [self dismissProtectedVideoPrompt];
@@ -9237,9 +9254,11 @@ bool BrowserTabClient::OnProcessMessageReceived(CefRefPtr<CefBrowser>,
     return true;
   }
   if (source_process == PID_RENDERER && frame &&
-      message->GetName() == shared::kProtectedMediaRefusedMessage) {
-    [controller_ handleProtectedMediaRefusedForTabID:ToNSString(tab_id_)
-                                           keySystem:ToNSString(message->GetArgumentList()->GetString(0).ToString())];
+      message->GetName() == shared::kProtectedMediaFailedMessage) {
+    CefRefPtr<CefListValue> values = message->GetArgumentList();
+    [controller_ handleProtectedMediaFailureForTabID:ToNSString(tab_id_)
+                                           keySystem:ToNSString(values->GetString(0).ToString())
+                                              reason:ToNSString(values->GetString(1).ToString())];
     return true;
   }
   if (source_process != PID_RENDERER || !frame || message->GetName() != shared::kMediaStateMessage) {

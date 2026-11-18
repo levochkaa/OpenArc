@@ -348,48 +348,166 @@ constexpr char kPasswordObserverScript[] = R"JS(
 })
 )JS";
 
-// Notices when Chromium refuses a page the protected video it asked for: a
-// Widevine, PlayReady or FairPlay request that fails while the page has a video,
-// or gets one within seconds. Pages that only probe for a key system have none.
-// It reports once per document; the browser may offer the page in WebKit.
+// Notices when a page's protected video fails in Chromium. Chromium has a
+// Widevine CDM but no VMP signature, so the failure may come at any step:
+// every key system request refused, a license request the CDM can't make, a
+// license the page's server refuses (no usable key in time), a key error or a
+// decode error on an element with keys. Every signal needs a Widevine, PlayReady or FairPlay
+// key system the page asked for, and a video on the page, now or within
+// seconds: pages without protected video, and pages that only probe for a key
+// system, never report. A usable key means Chromium plays the page, which then
+// reports nothing. It reports once per document: the key system and the reason
+// (`BrowserProtectedMediaFailure`); the browser may move the page to WebKit.
 constexpr char kProtectedMediaObserverScript[] = R"JS(
 (function (report) {
   'use strict';
-  const proto = Navigator.prototype;
-  const native = proto.requestMediaKeySystemAccess;
-  if (typeof native !== 'function') return;
+  if (typeof Navigator.prototype.requestMediaKeySystemAccess !== 'function') return;
   const apply = Reflect.apply;
   const protectedSystem = /^(com\.widevine\.alpha|com\.microsoft\.playready|com\.apple\.fps)/;
-  let reported = false;
+  const licenseTimeout = 15000;
+  const keySystems = new WeakMap();
+  const watched = new WeakSet();
+  let finished = false;
+  let granted = false;
+  let licenseTimer = 0;
   const hasVideo = () => !!document.querySelector('video');
-  function refused(system) {
-    if (reported) return;
+  function fail(system, reason) {
+    if (finished) return;
     if (hasVideo()) {
-      reported = true;
-      report(system);
+      finished = true;
+      clearTimeout(licenseTimer);
+      report(system, reason);
       return;
     }
     setTimeout(() => {
-      if (!reported && hasVideo()) {
-        reported = true;
-        report(system);
+      if (!finished && hasVideo()) {
+        finished = true;
+        report(system, reason);
       }
     }, 3000);
   }
-  proto.requestMediaKeySystemAccess = new Proxy(native, {
-    apply(target, navigator, args) {
-      const result = apply(target, navigator, args);
-      const system = String(args[0] || '');
-      if (protectedSystem.test(system) && result && typeof result.then === 'function') {
-        result.then(null, () => refused(system));
+  // Players probe configurations, and some are refused: a refusal counts only
+  // when no request for a protected key system succeeds within seconds.
+  function refused(system) {
+    setTimeout(() => {
+      if (!granted) fail(system, 'access');
+    }, 3000);
+  }
+  function played() {
+    finished = true;
+    clearTimeout(licenseTimer);
+  }
+  // An element plays with these keys: a probe's session alone never fails.
+  const hasKeyedElement = () =>
+    Array.prototype.some.call(document.querySelectorAll('video,audio'), (element) =>
+      !!element.mediaKeys && keySystems.has(element.mediaKeys));
+  function waitForKey(system) {
+    if (finished || licenseTimer) return;
+    licenseTimer = setTimeout(() => {
+      licenseTimer = 0;
+      if (hasKeyedElement()) {
+        fail(system, 'license-timeout');
       }
-      return result;
-    },
+    }, licenseTimeout);
+  }
+  // Chromium installs the secure-context EME interfaces after this script
+  // runs, so each prototype is wrapped when the first object of its kind
+  // reaches the page.
+  const wrapped = new Map();
+  function wrap(proto, name, after) {
+    const native = proto && proto[name];
+    if (typeof native !== 'function') return;
+    let names = wrapped.get(proto);
+    if (!names) wrapped.set(proto, (names = new Set()));
+    if (names.has(name)) return;
+    names.add(name);
+    proto[name] = new Proxy(native, {
+      apply(target, receiver, args) {
+        const result = apply(target, receiver, args);
+        try {
+          after(receiver, args, result);
+        } catch (_) {}
+        return result;
+      },
+    });
+  }
+  function onRejected(result, handler) {
+    if (result && typeof result.then === 'function') result.then(null, handler);
+  }
+  function watchElement(element) {
+    if (watched.has(element)) return;
+    watched.add(element);
+    element.addEventListener('waitingforkey', () => {
+      const system = element.mediaKeys && keySystems.get(element.mediaKeys);
+      if (system) waitForKey(system);
+    });
+    element.addEventListener('error', () => {
+      const system = element.mediaKeys && keySystems.get(element.mediaKeys);
+      const code = element.error && element.error.code;
+      if (system && (code === 3 || code === 4)) fail(system, 'playback');
+    });
+  }
+  function watchSession(session, system) {
+    keySystems.set(session, system);
+    const proto = Object.getPrototypeOf(session);
+    wrap(proto, 'generateRequest', (target, _, result) => {
+      const known = keySystems.get(target);
+      if (known) onRejected(result, () => fail(known, 'request'));
+    });
+    wrap(proto, 'update', (target, _, result) => {
+      const known = keySystems.get(target);
+      if (known) onRejected(result, () => fail(known, 'license'));
+    });
+    session.addEventListener('message', (event) => {
+      if (!event.messageType || event.messageType === 'license-request') waitForKey(system);
+    });
+    session.addEventListener('keystatuseschange', () => {
+      const statuses = [];
+      session.keyStatuses.forEach((status) => statuses.push(status));
+      if (statuses.some((status) => status === 'usable' || status === 'output-downscaled')) {
+        played();
+      } else if (statuses.includes('internal-error')) {
+        fail(system, 'key-error');
+      } else if (statuses.length && statuses.every((status) => status === 'output-restricted')) {
+        fail(system, 'output-restricted');
+      }
+    });
+  }
+  function watchKeys(keys, system) {
+    keySystems.set(keys, system);
+    wrap(Object.getPrototypeOf(keys), 'createSession', (target, _, session) => {
+      const known = keySystems.get(target);
+      if (known && session) watchSession(session, known);
+    });
+    wrap(HTMLMediaElement.prototype, 'setMediaKeys', (element, args, result) => {
+      const known = args[0] && keySystems.get(args[0]);
+      if (!known) return;
+      onRejected(result, () => fail(known, 'media-keys'));
+      watchElement(element);
+    });
+  }
+  function watchAccess(access, system) {
+    wrap(Object.getPrototypeOf(access), 'createMediaKeys', (target, _, result) => {
+      const known = String(target.keySystem || '');
+      if (!protectedSystem.test(known) || !result || typeof result.then !== 'function') return;
+      result.then((keys) => {
+        if (keys) watchKeys(keys, known);
+      }, () => fail(known, 'access'));
+    });
+  }
+  wrap(Navigator.prototype, 'requestMediaKeySystemAccess', (_, args, result) => {
+    const system = String(args[0] || '');
+    if (!protectedSystem.test(system) || !result || typeof result.then !== 'function') return;
+    result.then((access) => {
+      if (!access) return;
+      granted = true;
+      watchAccess(access, system);
+    }, () => refused(system));
   });
 })
 )JS";
 
-/// Reports a refused key system to the browser.
+/// Reports a failed protected video to the browser: key system and reason.
 class ProtectedMediaReporter final : public CefV8Handler {
  public:
   bool Execute(const CefString&,
@@ -399,11 +517,12 @@ class ProtectedMediaReporter final : public CefV8Handler {
                CefString&) override {
     CefRefPtr<CefV8Context> context = CefV8Context::GetCurrentContext();
     CefRefPtr<CefFrame> frame = context ? context->GetFrame() : nullptr;
-    if (!frame || arguments.size() != 1 || !arguments[0]->IsString()) {
+    if (!frame || arguments.size() != 2 || !arguments[0]->IsString() || !arguments[1]->IsString()) {
       return true;
     }
-    CefRefPtr<CefProcessMessage> message = CefProcessMessage::Create(kProtectedMediaRefusedMessage);
+    CefRefPtr<CefProcessMessage> message = CefProcessMessage::Create(kProtectedMediaFailedMessage);
     message->GetArgumentList()->SetString(0, arguments[0]->GetStringValue());
+    message->GetArgumentList()->SetString(1, arguments[1]->GetStringValue());
     frame->SendProcessMessage(PID_BROWSER, message);
     return true;
   }

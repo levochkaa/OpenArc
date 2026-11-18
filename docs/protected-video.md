@@ -1,17 +1,31 @@
 # Protected video
 
-Chromium in OpenArc has no Widevine: Google licenses the CDM only to browsers it signs. Sites that need DRM play through Apple's FairPlay instead, in one of two ways.
+Chromium in OpenArc is built with Widevine, and the component updater downloads the Widevine CDM into the profile, but the app has no VMP signature (the `.sig` files Google issues to licensed browsers). License servers that check the browser, such as the big streaming services', refuse its license requests, so playback fails at license time rather than when the page asks for the key system. Sites that need DRM play through Apple's FairPlay instead, in one of two ways.
 
 ## WebKit pages
 
 A tab can show its page in WebKit (`BrowserWebKitPage`, a `WKWebView`), whose FairPlay plays protected video as Safari does. `BrowserTabController` keeps the WebKit page in the tab's record next to the Chromium fields, so the model, the sidebar, Split View and moving tabs between windows see one kind of tab.
 
-- `BrowserPageEnginePolicy` picks the engine by site: a rule the user saved wins; otherwise streaming sites (`streamingDomains`, https, subdomains included) open in WebKit while Settings › Advanced › Protected Video › Open streaming sites in WebKit is on (the default).
+- `BrowserPageEnginePolicy` picks the engine by site: a rule the user saved wins; otherwise sites with protected video open in WebKit while Settings › Advanced › Protected Video › Move protected video to WebKit is on (the default). Those are sites whose protected video failed in Chromium before (`protectedVideoSites`, by origin) and, as a fast path, known streaming sites (`streamingDomains`, https, subdomains included): in Chromium they would first load, ask for a license and fail, which takes seconds and may show the site's error page.
 - Typed, restored and app-opened addresses choose their engine; a Chromium page that follows a link or redirect to a WebKit site moves there (`OnBeforeBrowse`); links inside a WebKit page stay in WebKit. Moving closes the old page and loads the address in the other engine; Back from the first page returns to the address the other engine showed (`engineBackURL`).
 - View › Open Page in WebKit / Open Page in Chromium switches the shown page and saves a rule for its site. Settings › Forget Website Choices removes the rules. Changing a setting or a rule moves open pages (`reapplyEnginePolicy`).
 - WebKit pages keep one persistent `WKWebsiteDataStore` per profile (an identifier derived from the profile's data path), none in private windows. They use Safari's user agent, open popups as tabs, report media to the sidebar through an injected observer, and support find, zoom, mute, print, snapshots and Picture in Picture. Not in WebKit: extensions, password autofill, Chromium's site settings, translation and DevTools docking (Web Inspector opens from the context menu).
 
-When Chromium refuses a page with a video the Widevine, PlayReady or FairPlay it asked for (`kProtectedMediaObserverScript` in the renderer), a prompt over the page offers Open in WebKit (saves a rule), Stay on Page (not asked again until quit) or Don't Ask Again (saves a Chromium rule). Private windows save no rules.
+### When protected video fails in Chromium
+
+`kProtectedMediaObserverScript` in the renderer watches the page's Encrypted Media Extensions calls for Widevine, PlayReady and FairPlay and reports the first failure, with its reason (`BrowserProtectedMediaFailure`). Chromium installs the secure-context EME interfaces after the script runs, so it wraps `MediaKeySystemAccess`, `MediaKeys`, `MediaKeySession` and `setMediaKeys` when the first object of each kind reaches the page.
+
+- `access`: `createMediaKeys` failed, or `requestMediaKeySystemAccess` refused the key system and no request for a protected key system succeeded within 3 seconds (players probe several configurations, and some are refused);
+- `request`: `generateRequest` failed;
+- `license`: `update` refused the license;
+- `license-timeout`: a license request, or an element waiting for a key, got no usable key in 15 seconds while an element plays with those keys: the license server refused the page's request;
+- `key-error`, `output-restricted`: a key's status is `internal-error`, or every key's is `output-restricted`;
+- `media-keys`, `playback`: `setMediaKeys` failed, or an element with keys failed to decode.
+
+A report needs a video on the page, now or within 3 seconds, and a usable key ends the watch, as Chromium plays that page. Pages without protected video never report, and neither do pages that only probe for a key system: no element plays with their keys.
+
+`BrowserPageEnginePolicy.protectedMediaAction` decides, and logs, what the report does. Nothing, when the FairPlay bridge serves the site (it refuses Widevine on purpose), the site has a rule, or the user answered its prompt this run. Otherwise, with Move protected video to WebKit on, the page moves to WebKit and its site joins `protectedVideoSites`, so its other open pages move too. With the setting off, a prompt over the page offers Open in WebKit (saves a rule), Stay on Page (not asked again until quit) or Don't Ask Again (saves a Chromium rule). Private windows save no rules or sites. Settings › Forget Website Choices clears both. A site that has only Widevine plays in neither engine; View › Open Page in Chromium takes it back and saves a rule.
+
 
 ## FairPlay bridges in Chromium
 

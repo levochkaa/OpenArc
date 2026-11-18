@@ -1601,8 +1601,8 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                     "streaming-in-webkit",
                     BrowserStrings.settingsStreamingInWebKit,
                     detail: BrowserStrings.settingsStreamingInWebKitDetail,
-                    get: { BrowserPageEnginePolicy.opensStreamingSitesInWebKit },
-                    set: { BrowserPageEnginePolicy.opensStreamingSitesInWebKit = $0 },
+                    get: { BrowserPageEnginePolicy.movesProtectedVideoToWebKit },
+                    set: { BrowserPageEnginePolicy.movesProtectedVideoToWebKit = $0 },
                 ),
                 toggle(
                     "fairplay-in-chromium",

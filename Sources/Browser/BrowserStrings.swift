@@ -19,11 +19,11 @@ enum BrowserStrings {
     )
     static let settingsStreamingInWebKit = NSLocalizedString(
         "browser.settings.protected_video.webkit",
-        comment: "Settings toggle: streaming sites open in WebKit.",
+        comment: "Settings toggle: pages whose protected video fails in Chromium move to WebKit.",
     )
     static let settingsStreamingInWebKitDetail = NSLocalizedString(
         "browser.settings.protected_video.webkit.detail",
-        comment: "Explains the streaming sites toggle.",
+        comment: "Explains the protected video toggle.",
     )
     static let settingsFairPlayInChromium = NSLocalizedString(
         "browser.settings.protected_video.fairplay",
