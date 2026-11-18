@@ -7323,16 +7323,46 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
   }
   // Developer Tools open on the panel saved in this preference.
   CefRefPtr<CefRequestContext> context = host->GetRequestContext();
+  const std::string wanted = panel;
+  CefRefPtr<CefDictionaryValue> preferences = CefDictionaryValue::Create();
   if (context) {
-    CefRefPtr<CefDictionaryValue> preferences = CefDictionaryValue::Create();
-    preferences->SetString("panel-selected-tab", panel);
+    CefRefPtr<CefValue> saved = context->GetPreference("devtools.preferences");
+    if (saved && saved->GetType() == VTYPE_DICTIONARY) {
+      preferences = saved->GetDictionary()->Copy(false);
+    }
+  }
+  // The command toggles its panel: open tools showing it close, tools on
+  // another panel reopen on this one, since the panel can't be switched from here.
+  if (host->HasDevTools()) {
+    const std::string shown =
+        preferences->HasKey("panel-selected-tab") ? preferences->GetString("panel-selected-tab").ToString() : "";
+    host->CloseDevTools();
+    if (shown == wanted) {
+      return;
+    }
+  }
+  if (context) {
+    preferences->SetString("panel-selected-tab", wanted);
     CefRefPtr<CefValue> value = CefValue::Create();
     value->SetDictionary(preferences);
     CefString error;
     context->SetPreference("devtools.preferences", value, error);
   }
-  [self expectDevToolsForTabID:_activeTabID];
-  ShowBrowserDevToolsOnUI(browser);
+  NSString *tabID = _activeTabID;
+  __weak BrowserTabController *weakSelf = self;
+  // A closing window takes a moment; the new one waits for it.
+  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+    BrowserTabController *strongSelf = weakSelf;
+    if (strongSelf == nil || ![strongSelf->_activeTabID isEqualToString:tabID]) {
+      return;
+    }
+    CefRefPtr<CefBrowserHost> current = browser->GetHost();
+    if (current && current->HasDevTools()) {
+      return;
+    }
+    [strongSelf expectDevToolsForTabID:tabID];
+    ShowBrowserDevToolsOnUI(browser);
+  });
 }
 
 - (NSArray<NSData *> *)activeTabCertificateChain {
