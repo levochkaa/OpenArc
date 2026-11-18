@@ -28,6 +28,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
         return "OpenArc \(version) (\(build))\nmacOS \(system)"
     }
 
+    private static var isOnboardingForced: Bool {
+        ProcessInfo.processInfo.arguments.contains("--show-onboarding")
+    }
+
     private var aboutWindow: NSWindow?
     private lazy var extensionsMenuDelegate = BrowserOnOpenMenuDelegate { [weak self] in
         self?.updateExtensionsMenu($0)
@@ -53,6 +57,8 @@ NSMenuDelegate, NSUserInterfaceValidations {
     private var pendingNavigationURLs = [URL]()
     private var hasReceivedBrowserContext = false
     private var isTerminationRequested = false
+    /// The first window waits behind a first-run welcome, which shows alone.
+    private var isHoldingWindowsForOnboarding = false
     private var traceRecorder: BrowserTraceRecorder?
     private var taskManager: BrowserTaskManagerWindow?
     private var restoreDataWindow: BrowserRestoreDataWindow?
@@ -1366,18 +1372,29 @@ NSMenuDelegate, NSUserInterfaceValidations {
     }
 
     /// Only for someone new: an existing session marks it done without showing it.
+    /// The welcome shows alone; the browser window comes forward when it closes.
     private func presentOnboardingIfNeeded() {
-        let forced = ProcessInfo.processInfo.arguments.contains("--show-onboarding")
-        guard forced || !userPreferencesStore.onboardingCompleted else { return }
+        let forced = Self.isOnboardingForced
+        guard forced || !userPreferencesStore.onboardingCompleted else {
+            releaseWindowsHeldForOnboarding()
+            return
+        }
         let isNew = allChromeModels.allSatisfy { $0.tabs.count <= 1 && $0.bookmarksModel.bookmarkBarItems.isEmpty }
         if isNew || forced {
-            // After the first window has come forward, which would otherwise cover it.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
-                MainActor.assumeIsolated { self?.showOnboarding() }
-            }
+            showOnboarding()
         } else {
             userPreferencesStore.onboardingCompleted = true
+            releaseWindowsHeldForOnboarding()
         }
+    }
+
+    private func releaseWindowsHeldForOnboarding() {
+        guard isHoldingWindowsForOnboarding else { return }
+        isHoldingWindowsForOnboarding = false
+        for session in profileWindowSessions.reversed() {
+            session.window.makeKeyAndOrderFront(nil)
+        }
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     /// Import from Another Browser: the welcome's import step on its own.
@@ -1395,6 +1412,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         controller.onFinish = { [weak self] in
             self?.userPreferencesStore.onboardingCompleted = true
             self?.onboardingController = nil
+            self?.releaseWindowsHeldForOnboarding()
         }
         onboardingController = controller
         controller.show()
@@ -3813,7 +3831,9 @@ NSMenuDelegate, NSUserInterfaceValidations {
                 restoring: record,
             )
         }
-        profileWindowSessions.first?.window.makeKeyAndOrderFront(nil)
+        if !isHoldingWindowsForOnboarding {
+            profileWindowSessions.first?.window.makeKeyAndOrderFront(nil)
+        }
     }
 
     private func removeFromWindowGroup(_ session: BrowserProfileWindowSession) {
@@ -4036,10 +4056,17 @@ NSMenuDelegate, NSUserInterfaceValidations {
                 createProfile: { store.createProfile().id },
             )
         }
+        let mayWelcome = profileWindowSessions.isEmpty && webAppConfiguration == nil
+            && (!userPreferencesStore.onboardingCompleted || Self.isOnboardingForced)
         profileWindowSessions.append(session)
         window.contentView = contentView
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        if mayWelcome || isHoldingWindowsForOnboarding {
+            // Shown once the engine says whether this is someone new.
+            isHoldingWindowsForOnboarding = true
+        } else {
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+        }
         BrowserTelemetry.captureUsage(
             .profileWindowOpened,
             properties: [
