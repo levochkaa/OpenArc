@@ -7,7 +7,7 @@ import AppKit
 @MainActor @objc final class BrowserProtectedVideoPromptView: NSView {
     // MARK: Internal
 
-    @objc static let width: CGFloat = 340
+    @objc static let width: CGFloat = 420
     @objc static let height: CGFloat = 112
 
     override var isFlipped: Bool { true }
