@@ -433,6 +433,8 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
     private let siteSearchesBody = NSStackView()
     private let sitePermissionsBody = NSStackView()
     private var shownSitePermissions = [BrowserSitePermissionDecision]()
+    private let boostsBody = NSStackView()
+    private var shownBoosts: [BrowserBoost]?
     private var siteSearchFields = [(
         field: NSTextField,
         id: UUID,
@@ -577,6 +579,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
     private func syncControls() {
         updateBindings.forEach { $0() }
         refreshSitePermissions()
+        refreshBoosts()
         for (profile, button) in profileDeleteButtons {
             let isClosed = canDeleteProfile(profile)
             button.isEnabled = profile.id != currentProfileID && !profile.isDefault && isClosed
@@ -740,6 +743,50 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
             [BrowserNativeControls.padded(detail, vertical: 8)]
                 + (rows.isEmpty ? [BrowserNativeControls.padded(empty, vertical: 8)] : rows),
             in: sitePermissionsBody,
+        )
+    }
+
+    // MARK: Boosts
+
+    /// Each site's Boost with a switch and Delete. Rebuilt only when the boosts change.
+    private func refreshBoosts() {
+        guard pane == .advanced else { return }
+        let boosts = preferences.boosts
+        guard boosts != shownBoosts else { return }
+        shownBoosts = boosts
+        let detail = BrowserNativeControls.label(
+            BrowserStrings.settingsBoostsDetail,
+            size: 12,
+            color: .secondaryLabelColor,
+            wraps: true,
+        )
+        let rows = boosts.sorted { $0.host < $1.host }.map { boost -> NSView in
+            let host = boost.host
+            let toggle = BrowserActionToggle()
+            toggle.state = boost.isEnabled ? .on : .off
+            toggle.setAccessibilityLabel(BrowserStrings.boostEditorEnabled)
+            toggle.setAccessibilityIdentifier("browser.settings.boosts.enabled")
+            toggle.onChange = { [weak self] on in
+                self?.preferences.boosts.updateBoost(host: host) { $0.isEnabled = on }
+            }
+            let delete = BrowserActionButton(BrowserStrings.settingsBoostsDelete) { [weak self] in
+                self?.model.removeBoost(host: host)
+            }
+            delete.setAccessibilityIdentifier("browser.settings.boosts.delete")
+            return row(
+                label: titleDetail(host, detail: BrowserStrings.settingsBoostSummary(boost)),
+                control: BrowserNativeControls.stack([toggle, delete], orientation: .horizontal, spacing: 12),
+            )
+        }
+        let empty = BrowserNativeControls.label(
+            BrowserStrings.settingsBoostsEmpty,
+            size: 12,
+            color: .secondaryLabelColor,
+        )
+        replaceRows(
+            [BrowserNativeControls.padded(detail, vertical: 8)]
+                + (rows.isEmpty ? [BrowserNativeControls.padded(empty, vertical: 8)] : rows),
+            in: boostsBody,
         )
     }
 
@@ -1520,6 +1567,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                 ),
             ]),
             section(BrowserStrings.settingsSitePermissionsTitle, body: sitePermissionsBody),
+            section(BrowserStrings.settingsBoostsTitle, body: boostsBody),
             section(
                 BrowserStrings.bookmarksImport,
                 rows: [arcSidebarImportRow()] + BrowserBookmarkImportSource.allCases

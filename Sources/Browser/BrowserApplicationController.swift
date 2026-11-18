@@ -69,6 +69,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
     private var shortcutStoreCancellable: AnyCancellable?
     private var reservedShortcutMonitor: Any?
     private var appearancePreferenceCancellable: AnyCancellable?
+    private var boostsCancellable: AnyCancellable?
     private var littleWindowHotKeyCancellable: AnyCancellable?
     private weak var lastKeyProfileWindow: NSWindow?
     /// Option-Command-N from any app, when turned on in Settings.
@@ -261,6 +262,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         }
         observeShortcutStore()
         observeAppearancePreference()
+        observeBoosts()
         installLayoutIndependentKeyMonitor()
         installReservedShortcutMonitor()
         startBatterySaverController()
@@ -620,6 +622,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
 
     public func toggleDeveloperMode(_: Any?) {
         activeChromeModel?.toggleDeveloperMode()
+    }
+
+    public func editBoost(_: Any?) {
+        activeChromeModel?.editCurrentSiteBoost()
     }
 
     public func toggleJavaScriptFromAppleEvents(_: Any?) {
@@ -1109,6 +1115,13 @@ NSMenuDelegate, NSUserInterfaceValidations {
              #selector(toggleWebAppToolbarInFullscreen(_:)),
              #selector(uninstallCurrentWebApp(_:)):
             return webAppWindowSession != nil && !isTerminationRequested
+        case #selector(editBoost(_:)):
+            if let menuItem = item as? NSMenuItem {
+                menuItem.title = activeChromeModel?.currentSiteHasBoost == true
+                    ? BrowserStrings.menuEditBoost
+                    : BrowserStrings.menuBoostThisSite
+            }
+            return activeChromeModel?.canEditBoost ?? false
         case #selector(toggleDeveloperMode(_:)):
             if let menuItem = item as? NSMenuItem {
                 menuItem.title = activeChromeModel?.isDeveloperModeOn == true
@@ -2035,6 +2048,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
         )
         engineItem.target = self
         viewMenu.addItem(engineItem)
+        viewMenu.addItem(makeMenuItem(
+            descriptor: shortcutStore.descriptor(for: .editBoost),
+            action: #selector(editBoost(_:)),
+        ))
         // Groups: Cast | Developer | Enter Full Screen.
         viewMenu.addItem(.separator())
         addDeveloperMenu(to: viewMenu)
@@ -3095,6 +3112,8 @@ NSMenuDelegate, NSUserInterfaceValidations {
             return activeChromeModel.map { $0.toggleDeveloperMode()
                 return true
             } ?? false
+        case .editBoost:
+            return activeChromeModel?.editCurrentSiteBoost() ?? false
         case .editSpaceTheme:
             return activeChromeModel
                 .flatMap { model in model.selectedSpaceID.map { model.onEditSpaceTheme?($0) } } != nil
@@ -4118,6 +4137,16 @@ NSMenuDelegate, NSUserInterfaceValidations {
             DispatchQueue.main.async { [weak self] in
                 self?.updateProfilePresentationForOpenWindows()
             }
+        }
+    }
+
+    /// Both page engines read the boosts from the catalog, which follows the preferences.
+    private func observeBoosts() {
+        BrowserPageScripts.boostScriptsProvider = { urlString in
+            MainActor.assumeIsolated { BrowserBoostCatalog.shared.documentScripts(forURLString: urlString) }
+        }
+        boostsCancellable = userPreferencesStore.$boosts.sink { boosts in
+            BrowserBoostCatalog.shared.update(boosts)
         }
     }
 

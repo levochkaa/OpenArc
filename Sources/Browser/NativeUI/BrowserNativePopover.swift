@@ -4,6 +4,11 @@ import AppKit
 
 /// Gives native popovers Escape dismissal even when their contents have no enabled first responder.
 final class BrowserNativePopover: NSPopover {
+    // MARK: Internal
+
+    /// Asked first on Escape; true means it handled the key and the popover stays open.
+    var escapeHandler: (() -> Bool)?
+
     // MARK: Private
 
     private weak var anchorWindow: NSWindow?
@@ -22,8 +27,6 @@ final class BrowserNativePopover: NSPopover {
     @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
     isolated deinit { removeKeyMonitor() }
 
-    // MARK: Internal
-
     override func show(relativeTo positioningRect: NSRect, of positioningView: NSView, preferredEdge: NSRectEdge) {
         anchorWindow = positioningView.window
         super.show(relativeTo: positioningRect, of: positioningView, preferredEdge: preferredEdge)
@@ -33,7 +36,9 @@ final class BrowserNativePopover: NSPopover {
                   event.modifierFlags.intersection([.command, .control, .option]).isEmpty,
                   event.window === anchorWindow || event.window === contentViewController?.view.window
             else { return event }
-            performClose(nil)
+            if escapeHandler?() != true {
+                performClose(nil)
+            }
             return nil
         }
     }

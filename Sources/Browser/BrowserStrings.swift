@@ -3708,6 +3708,95 @@ enum BrowserStrings {
         comment: "First-run welcome window: retries an import that brought nothing.",
     )
 
+    static let menuBoostThisSite = NSLocalizedString(
+        "browser.menu.boost_this_site",
+        comment: "View menu and command: open the Boost editor for the current site, which has no Boost yet.",
+    )
+    static let menuEditBoost = NSLocalizedString(
+        "browser.menu.edit_boost",
+        comment: "View menu: open the current site's Boost editor.",
+    )
+    static let boostEditorTitle = NSLocalizedString(
+        "browser.boost_editor.title",
+        comment: "Title of the editor of a site's own CSS, JavaScript and hidden elements.",
+    )
+    static let boostEditorEnabled = NSLocalizedString(
+        "browser.boost_editor.enabled",
+        comment: "Accessibility label of the switch that turns a site's Boost on or off.",
+    )
+    static let boostEditorCSS = NSLocalizedString(
+        "browser.boost_editor.css",
+        comment: "Boost editor: heading of the site's style rules.",
+    )
+    static let boostEditorJavaScript = NSLocalizedString(
+        "browser.boost_editor.javascript",
+        comment: "Boost editor: heading of the site's script.",
+    )
+    static let boostEditorJavaScriptDetail = NSLocalizedString(
+        "browser.boost_editor.javascript_detail",
+        comment: "Boost editor: when the site's script runs.",
+    )
+    static let boostEditorHiddenElements = NSLocalizedString(
+        "browser.boost_editor.hidden_elements",
+        comment: "Boost editor: heading of the page elements the user zapped.",
+    )
+    static let boostEditorNoHiddenElements = NSLocalizedString(
+        "browser.boost_editor.no_hidden_elements",
+        comment: "Boost editor: empty list of hidden elements.",
+    )
+    static let boostEditorRemoveHiddenElement = NSLocalizedString(
+        "browser.boost_editor.remove_hidden_element",
+        comment: "Boost editor: button that stops hiding a zapped element.",
+    )
+    static let boostEditorZap = NSLocalizedString(
+        "browser.boost_editor.zap",
+        comment: "Boost editor: button that lets the user click page elements to hide them.",
+    )
+    static let boostEditorStopZapping = NSLocalizedString(
+        "browser.boost_editor.stop_zapping",
+        comment: "Boost editor: button that ends zapping.",
+    )
+    static let boostEditorZapHint = NSLocalizedString(
+        "browser.boost_editor.zap_hint",
+        comment: "Boost editor: shown while zapping.",
+    )
+    static let boostEditorDelete = NSLocalizedString(
+        "browser.boost_editor.delete",
+        comment: "Boost editor: button that removes the site's Boost.",
+    )
+    static let boostEditorDone = NSLocalizedString(
+        "browser.boost_editor.done",
+        comment: "Boost editor: button that closes the editor.",
+    )
+    static let settingsBoostsTitle = NSLocalizedString(
+        "browser.settings.boosts",
+        comment: "Settings section listing every site's Boost.",
+    )
+    static let settingsBoostsDetail = NSLocalizedString(
+        "browser.settings.boosts.detail",
+        comment: "Settings: what Boosts are.",
+    )
+    static let settingsBoostsEmpty = NSLocalizedString(
+        "browser.settings.boosts.empty",
+        comment: "Settings: no site has a Boost.",
+    )
+    static let settingsBoostsDelete = NSLocalizedString(
+        "browser.settings.boosts.delete",
+        comment: "Settings: button that removes a site's Boost.",
+    )
+    static let settingsBoostOff = NSLocalizedString(
+        "browser.settings.boosts.off",
+        comment: "Settings: a Boost that is turned off.",
+    )
+    static let settingsBoostCSS = NSLocalizedString(
+        "browser.settings.boosts.css",
+        comment: "Settings: a Boost has CSS.",
+    )
+    static let settingsBoostJavaScript = NSLocalizedString(
+        "browser.settings.boosts.javascript",
+        comment: "Settings: a Boost has JavaScript.",
+    )
+
     static func syncAccountLastSynced(_ date: String) -> String {
         String(
             format: NSLocalizedString(
@@ -3858,6 +3947,33 @@ enum BrowserStrings {
             ),
             origin,
         )
+    }
+
+    /// A Boost in Settings: off or not, then what it adds.
+    static func settingsBoostSummary(_ boost: BrowserBoost) -> String {
+        var parts = [String]()
+        if !boost.isEnabled {
+            parts.append(settingsBoostOff)
+        }
+        if !boost.css.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            parts.append(settingsBoostCSS)
+        }
+        if !boost.javaScript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            parts.append(settingsBoostJavaScript)
+        }
+        if !boost.zappedSelectors.isEmpty {
+            let count = boost.zappedSelectors.count
+            parts.append(count == 1
+                ? NSLocalizedString(
+                    "browser.settings.boosts.hidden_element",
+                    comment: "Settings: a Boost hides one element.",
+                )
+                : String.localizedStringWithFormat(NSLocalizedString(
+                    "browser.settings.boosts.hidden_elements",
+                    comment: "Settings: how many elements a Boost hides. %d is the count, more than one.",
+                ), count))
+        }
+        return parts.joined(separator: " · ")
     }
 
     static func settingsSitePermissionsState(camera: Bool?, microphone: Bool?) -> String {

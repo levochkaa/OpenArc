@@ -344,6 +344,12 @@ final class BrowserSiteControlCenterViewController: NSViewController {
                 to: menu,
             ) { [weak model] in model?.toggleDeveloperMode() }
         }
+        if model.canEditBoost {
+            BrowserNativeMenus.add(
+                model.currentSiteHasBoost ? BrowserStrings.menuEditBoost : BrowserStrings.menuBoostThisSite,
+                to: menu,
+            ) { [weak model] in model?.editCurrentSiteBoost() }
+        }
         BrowserNativeMenus.add(BrowserStrings.extensionsManageAction, to: menu) { [weak self] in self?.onManage() }
         BrowserNativeMenus.add(BrowserStrings.extensionsAddAction, to: menu) { [weak self] in self?.onAdd() }
         menu.addItem(.separator())

@@ -1,6 +1,7 @@
 // BrowserWebKitPage.swift
 
 import AppKit
+import Combine
 import CryptoKit
 import WebKit
 
@@ -68,6 +69,7 @@ import WebKit
     private var observations = [NSKeyValueObservation]()
     private var mediaVolume = 1.0
     private var isClosed = false
+    private var boostsObservation: AnyCancellable?
 
     @objc var view: NSView { webView }
 
@@ -120,16 +122,20 @@ import WebKit
         let mediaToken = "__openArcMedia" + UUID().uuidString.replacingOccurrences(of: "-", with: "")
         self.mediaToken = mediaToken
         let controller = configuration.userContentController
-        controller.removeAllUserScripts()
         controller.removeAllScriptMessageHandlers()
-        controller.addUserScript(WKUserScript(
-            source: Self.mediaObserverScript(token: mediaToken),
-            injectionTime: .atDocumentStart,
-            forMainFrameOnly: false,
-        ))
+        Self.installUserScripts(in: controller, mediaToken: mediaToken, boosts: BrowserBoostCatalog.shared.boosts)
         configuration.applicationNameForUserAgent = Self.safariApplicationName
         self.webView = BrowserWebKitWebView(frame: .zero, configuration: configuration)
         super.init()
+        // Later documents run the new boosts; the window restyles or reloads the open one.
+        self.boostsObservation = BrowserBoostCatalog.shared.changes.sink { [weak self] change in
+            guard let self else { return }
+            Self.installUserScripts(
+                in: webView.configuration.userContentController,
+                mediaToken: mediaToken,
+                boosts: change.new,
+            )
+        }
         controller.add(BrowserWebKitMessageProxy(page: self), name: Self.mediaMessageName)
         webView.page = self
         webView.navigationDelegate = self
@@ -149,6 +155,22 @@ import WebKit
             bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
             bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15],
         ))
+    }
+
+    /// The media observer, then the boosts' scripts, all at document start in every frame.
+    private static func installUserScripts(
+        in controller: WKUserContentController,
+        mediaToken: String,
+        boosts: [BrowserBoost],
+    ) {
+        controller.removeAllUserScripts()
+        for source in [mediaObserverScript(token: mediaToken)] + BrowserBoostScript.webKitUserScripts(for: boosts) {
+            controller.addUserScript(WKUserScript(
+                source: source,
+                injectionTime: .atDocumentStart,
+                forMainFrameOnly: false,
+            ))
+        }
     }
 
     private static func dataStore(forProfileKey profileKey: String) -> WKWebsiteDataStore {
@@ -393,6 +415,7 @@ import WebKit
         guard !isClosed else { return }
         isClosed = true
         observations.removeAll()
+        boostsObservation = nil
         webView.stopLoading()
         webView.pauseAllMediaPlayback(completionHandler: nil)
         webView.configuration.userContentController.removeAllScriptMessageHandlers()

@@ -196,6 +196,7 @@ final class BrowserUserPreferencesStore: ObservableObject {
         static let sharesThemeWithWebsites = "browser.settings.sharesThemeWithWebsites"
         static let allowsJavaScriptFromAppleEvents = "browser.settings.allowsJavaScriptFromAppleEvents"
         static let developerModeHosts = "browser.settings.developerModeHosts"
+        static let boosts = "browser.settings.boosts"
         static let passwordNeverOrigins = "browser.settings.passwordNeverOrigins"
         static let soundEffectsEnabled = "browser.settings.soundEffectsEnabled"
         static let gitHubLiveFolderIDs = "browser.settings.gitHubLiveFolderIDs"
@@ -412,6 +413,11 @@ final class BrowserUserPreferencesStore: ObservableObject {
         didSet { userDefaults.set(try? JSONEncoder().encode(siteSearches), forKey: Key.siteSearches) }
     }
 
+    /// Each site's Boost, in the order they were made.
+    @Published var boosts: [BrowserBoost] {
+        didSet { userDefaults.set(try? JSONEncoder().encode(boosts), forKey: Key.boosts) }
+    }
+
     /// Remembered camera and microphone answers of every profile.
     @Published var sitePermissionDecisions: [BrowserSitePermissionDecision] {
         didSet {
@@ -528,6 +534,8 @@ final class BrowserUserPreferencesStore: ObservableObject {
             .map(\.withCurrentDefaultColor) ?? BrowserSiteSearch.arcDefaults
         self.sitePermissionDecisions = userDefaults.data(forKey: Key.sitePermissionDecisions)
             .flatMap { try? JSONDecoder().decode([BrowserSitePermissionDecision].self, from: $0) } ?? []
+        self.boosts = userDefaults.data(forKey: Key.boosts)
+            .flatMap { try? JSONDecoder().decode([BrowserBoost].self, from: $0) } ?? []
     }
 
     private static func loadBool(_ userDefaults: UserDefaults, key: String, defaultValue: Bool) -> Bool {
@@ -573,6 +581,7 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
     case viewMedia
     case networkInspector
     case toggleDeveloperMode
+    case editBoost
     case editSpaceTheme
     case togglePictureInPicture
     case muteAllTabs
@@ -706,6 +715,8 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             BrowserCommands.networkInspector
         case .toggleDeveloperMode:
             BrowserCommands.toggleDeveloperMode
+        case .editBoost:
+            BrowserCommands.editBoost
         case .editSpaceTheme:
             BrowserCommands.editSpaceTheme
         case .togglePictureInPicture:
@@ -906,6 +917,8 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             .networkInspector
         case .toggleDeveloperMode:
             .toggleDeveloperMode
+        case .editBoost:
+            .editBoost
         case .editSpaceTheme:
             .editSpaceTheme
         case .togglePictureInPicture:

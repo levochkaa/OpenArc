@@ -63,9 +63,12 @@ final class BrowserRootView: NSView {
     private let sessionRecovery = BrowserSessionPersistenceStatusView()
     /// Positions popovers whose own button is off screen.
     private let popoverAnchor = NSView()
+    /// The Boost editor's own anchor, which other popovers do not move while it is open.
+    private let boostPopoverAnchor = NSView()
     private lazy var library = BrowserLibraryNSView(model: model)
     private var wasLibraryPresented = false
     private var spaceThemePopover: BrowserNativePopover?
+    private var boostPopover: BrowserNativePopover?
     private let extensionResize = BrowserNativeResizeHandle()
     private var extensionPanel: BrowserExtensionSidePanelNSView?
     private let toolbarVisibility = BrowserNativeVisibilityAnimation()
@@ -255,6 +258,7 @@ final class BrowserRootView: NSView {
             fullscreenReader,
             sessionRecovery,
             popoverAnchor,
+            boostPopoverAnchor,
         ] {
             addSubview(view)
         }
@@ -332,6 +336,7 @@ final class BrowserRootView: NSView {
         }
         model.onPortraitCapture = { [weak self] in self?.presentPortraitCapture(png: $0) }
         model.onEditSpaceTheme = { [weak self] in self?.presentSpaceThemeEditor(spaceID: $0) }
+        model.onEditBoost = { [weak self] in self?.presentBoostEditor(host: $0) }
         model.onShareURL = { [weak self] url in
             guard let self else { return }
             popoverAnchor.frame = CGRect(x: bounds.midX, y: 40, width: 1, height: 1)
@@ -1328,6 +1333,49 @@ final class BrowserRootView: NSView {
         let x = onLeft ? sidebarLayoutWidth : bounds.width - sidebarLayoutWidth
         popoverAnchor.frame = CGRect(x: x, y: BrowserChromeLayout.spaceThemeEditorAnchorY, width: 1, height: 1)
         popover.show(relativeTo: popoverAnchor.bounds, of: popoverAnchor, preferredEdge: onLeft ? .maxX : .minX)
+    }
+
+    /// The Boost editor stays open while the page is used, so zapping can
+    /// click it; Done, Escape or another site's editor closes it.
+    private func presentBoostEditor(host: String) {
+        if let boostPopover, boostPopover.isShown,
+           (boostPopover.contentViewController as? BrowserBoostEditorViewController)?.host == host
+        {
+            return
+        }
+        boostPopover?.performClose(nil)
+        let editor = BrowserBoostEditorViewController(model: model, host: host)
+        let popover = BrowserNativePopover()
+        popover.behavior = .applicationDefined
+        popover.animates = true
+        popover.contentViewController = editor
+        popover.contentSize = editor.view.frame.size
+        popover.delegate = editor
+        popover.setValue(true, forKey: "shouldHideAnchor")
+        popover.escapeHandler = { [weak model] in
+            guard let model, model.boostZapSession != nil else { return false }
+            model.stopZapping()
+            return true
+        }
+        editor.onClose = { [weak popover] in popover?.performClose(nil) }
+        editor.onStartZapping = { [weak self] in
+            self?.window?.makeKey()
+            self?.model.focusSelectedPage()
+        }
+        boostPopover = popover
+        let onLeft = preferences.sidebarPosition == .left
+        let x = onLeft ? sidebarLayoutWidth : bounds.width - sidebarLayoutWidth
+        boostPopoverAnchor.frame = CGRect(
+            x: x,
+            y: BrowserChromeLayout.spaceThemeEditorAnchorY,
+            width: 1,
+            height: 1,
+        )
+        popover.show(
+            relativeTo: boostPopoverAnchor.bounds,
+            of: boostPopoverAnchor,
+            preferredEdge: onLeft ? .maxX : .minX,
+        )
     }
 
     private func openExtensions() {

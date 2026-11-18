@@ -8939,6 +8939,7 @@ bool BrowserTabClient::OnContextMenuCommand(CefRefPtr<CefBrowser> browser,
 }
 
 static NSString *g_page_start_script = nil;
+static NSArray<NSString *> *_Nonnull (^g_boost_scripts_provider)(NSString *) = nil;
 
 
 /// The Web Store names Chrome on its buttons and asks every other browser to switch to it.
@@ -8993,6 +8994,16 @@ static void RunPageStartScripts(CefRefPtr<CefFrame> frame) {
   }
 }
 
+/// Runs the site's Boost in a new document of any frame.
+static void RunBoostScripts(CefRefPtr<CefFrame> frame) {
+  if (!frame || !g_boost_scripts_provider) {
+    return;
+  }
+  for (NSString *script in g_boost_scripts_provider(ToNSString(frame->GetURL().ToString()))) {
+    frame->ExecuteJavaScript(script.UTF8String, frame->GetURL(), 0);
+  }
+}
+
 void BrowserTabClient::OnLoadStart(CefRefPtr<CefBrowser>,
                                    CefRefPtr<CefFrame> frame,
                                    TransitionType) {
@@ -9007,6 +9018,7 @@ void BrowserTabClient::OnLoadStart(CefRefPtr<CefBrowser>,
     [controller_ resetMediaForTabID:ToNSString(tab_id_)];
     RunPageStartScripts(frame);
   }
+  RunBoostScripts(frame);
 }
 
 void BrowserTabClient::OnRenderProcessTerminated(CefRefPtr<CefBrowser>,
@@ -9630,6 +9642,7 @@ void BrowserPeekClient::OnLoadStart(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame> f
     RunPageStartScripts(frame);
     [[controller_ peekPanelForSessionID:session_id_] revealPage];
   }
+  RunBoostScripts(frame);
 }
 
 bool BrowserPeekClient::OnShowPermissionPrompt(
@@ -9826,6 +9839,14 @@ bool BrowserPeekClient::OnBeforePopup(CefRefPtr<CefBrowser>,
 
 + (void)setPageStartScript:(NSString *)pageStartScript {
   g_page_start_script = [pageStartScript copy];
+}
+
++ (NSArray<NSString *> *_Nonnull (^)(NSString *))boostScriptsProvider {
+  return g_boost_scripts_provider;
+}
+
++ (void)setBoostScriptsProvider:(NSArray<NSString *> *_Nonnull (^)(NSString *))boostScriptsProvider {
+  g_boost_scripts_provider = [boostScriptsProvider copy];
 }
 
 @end

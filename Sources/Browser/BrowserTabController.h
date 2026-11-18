@@ -431,6 +431,9 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
 @interface BrowserPageScripts : NSObject
 /// A script to run at the start of each page, such as a Space's theme variables.
 @property(class, nonatomic, copy, nullable) NSString *pageStartScript;
+/// The scripts a new document at an address runs for its site's Boost, in
+/// order. Asked on the main thread for every frame.
+@property(class, nonatomic, copy, nullable) NSArray<NSString *> *_Nonnull (^boostScriptsProvider)(NSString *urlString);
 @end
 
 NS_ASSUME_NONNULL_END

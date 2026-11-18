@@ -466,6 +466,10 @@ enum BrowserWindowMode: Equatable {
     var additionalTabURLStrings = [String]()
     /// UI-only: opens the window's theme editor for a Space.
     var onEditSpaceTheme: ((String) -> Void)?
+    /// UI-only: opens the window's Boost editor for a site's host.
+    var onEditBoost: ((String) -> Void)?
+    /// Zapping in a page for a Boost, while it lasts.
+    @Published var boostZapSession: BrowserBoostZapSession?
     /// UI-only: opens the theme editor for the Space being created, beside this view.
     var onEditSpaceCreationTheme: ((NSView) -> Void)?
     /// The Library's section while it replaces the sidebar, nil when closed.
@@ -585,6 +589,7 @@ enum BrowserWindowMode: Equatable {
 
     /// Answers this window's waiting requests that another window's answer covers.
     private var sitePermissionDecisionsObservation: AnyCancellable?
+    private var boostsObservation: AnyCancellable?
     private var extensionTabsObservation: AnyCancellable?
     private let extensionWindowKey = UUID().uuidString
 
@@ -1213,6 +1218,9 @@ enum BrowserWindowMode: Equatable {
                     resolveSitePermissionRequests(coveredBy: decisions)
                 }
             }
+        self.boostsObservation = BrowserBoostCatalog.shared.changes.sink { [weak self] change in
+            MainActor.assumeIsolated { self?.applyBoostChange(from: change.old, to: change.new) }
+        }
         let center = NotificationCenter.default
         self.extensionTabsObservation = $tabs.map { _ in () }
             .merge(
@@ -4422,6 +4430,8 @@ enum BrowserWindowMode: Equatable {
             canShowDeveloperToolsForCommand
         case .toggleDeveloperMode:
             canToggleDeveloperMode
+        case .editBoost:
+            canEditBoost
         case .editSpaceTheme:
             supportsSpaces
         case .togglePictureInPicture:
@@ -8931,6 +8941,8 @@ extension BrowserCommandID {
             ["network", "network inspector", "requests"]
         case .toggleDeveloperMode:
             ["developer mode", "dev mode", "developer"]
+        case .editBoost:
+            ["boost", "edit boost", "custom css", "custom javascript", "zap", "hide elements"]
         case .editSpaceTheme:
             ["theme", "edit theme", "color"]
         case .togglePictureInPicture:
@@ -9133,6 +9145,8 @@ extension BrowserCommandID {
             "network"
         case .toggleDeveloperMode:
             "hammer"
+        case .editBoost:
+            "paintbrush.pointed"
         case .editSpaceTheme:
             "paintpalette"
         case .togglePictureInPicture:
