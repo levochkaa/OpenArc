@@ -1636,16 +1636,20 @@ enum BrowserWindowMode: Equatable {
     }
 
     /// Copies what the person chose from another browser, and reports it in one line.
+    /// Items the browser cannot hand over are skipped.
     func importProfile(
         _ profile: BrowserProfileImporter,
-        items: Set<BrowserOnboardingImportItem>,
+        items requested: Set<BrowserOnboardingImportItem>,
     ) async -> String {
+        let items = requested.intersection(profile.supportedItems)
         var parts = [String]()
-        if items.contains(.spaces), profile.source == .arc {
+        if items.contains(.spaces) {
             parts.append(importArcSidebarFromDisk())
         }
-        if items.contains(.bookmarks) {
-            let result = importBookmarks(from: profile.source)
+        if items.contains(.bookmarks),
+           let bookmarks = await Task.detached(priority: .userInitiated, operation: { profile.bookmarkItems() }).value
+        {
+            let result = bookmarksModel.importBookmarkItems(bookmarks, from: profile.source)
             if result.importedCount > 0 {
                 parts.append(BrowserStrings.onboardingImportCount(
                     result.importedCount,
@@ -1653,7 +1657,9 @@ enum BrowserWindowMode: Equatable {
                 ))
             }
         }
-        if items.contains(.siteSearches), let imported = BrowserSiteSearchImport.load(from: profile.source) {
+        if items.contains(.siteSearches),
+           let imported = BrowserSiteSearchImport.load(profileDirectories: [profile.profileDirectory])
+        {
             userPreferencesStore.siteSearches = BrowserSiteSearchImport.merge(
                 imported,
                 into: userPreferencesStore.siteSearches,
@@ -1667,28 +1673,28 @@ enum BrowserWindowMode: Equatable {
         }
         if items.contains(.history) {
             let documents = await Task.detached(priority: .userInitiated) { profile.history() }.value
-            historyStore.importDocuments(documents)
             if !documents.isEmpty {
+                historyStore.importDocuments(documents)
                 parts.append(BrowserStrings.onboardingImportCount(
                     documents.count,
                     BrowserStrings.onboardingItemHistory,
                 ))
             }
         }
-        if items.contains(.passwords) || items.contains(.signIns), let key = try? profile.encryptionKey() {
-            if items.contains(.passwords), let passwordStore {
-                let logins = await Task.detached(priority: .userInitiated) { profile.logins(key: key) }.value
-                let saved = logins.filter { passwordStore.save($0.password, for: $0.login) }.count
-                if saved > 0 {
-                    parts.append(BrowserStrings.onboardingImportCount(saved, BrowserStrings.onboardingItemPasswords))
-                }
+        let wantsSecrets = items.contains(.passwords) || items.contains(.signIns)
+        let key = wantsSecrets && profile.needsKeychainKey ? try? profile.encryptionKey() : nil
+        if items.contains(.passwords), let passwordStore {
+            let logins = await Task.detached(priority: .userInitiated) { profile.savedLogins(key: key) }.value
+            let saved = logins.filter { passwordStore.save($0.password, for: $0.login) }.count
+            if saved > 0 {
+                parts.append(BrowserStrings.onboardingImportCount(saved, BrowserStrings.onboardingItemPasswords))
             }
-            if items.contains(.signIns) {
-                let cookies = await Task.detached(priority: .userInitiated) { profile.cookies(key: key) }.value
-                let set = tabDriver.importCookies(cookies)
-                if set > 0 {
-                    parts.append(BrowserStrings.onboardingImportCount(set, BrowserStrings.onboardingItemSignIns))
-                }
+        }
+        if items.contains(.signIns) {
+            let cookies = await Task.detached(priority: .userInitiated) { profile.signInCookies(key: key) }.value
+            let set = cookies.isEmpty ? 0 : tabDriver.importCookies(cookies)
+            if set > 0 {
+                parts.append(BrowserStrings.onboardingImportCount(set, BrowserStrings.onboardingItemSignIns))
             }
         }
         if items.contains(.extensions) {
@@ -1701,6 +1707,11 @@ enum BrowserWindowMode: Equatable {
             }
         }
         return BrowserStrings.onboardingImportResult(parts)
+    }
+
+    /// Imports from the ZIP Safari writes with File > Export Browsing Data.
+    func importSafariArchive(at url: URL, items: Set<BrowserOnboardingImportItem>) async -> String {
+        await importProfile(BrowserProfileImporter.safariArchive(url), items: items)
     }
 
     /// A toolbar button runs its command as the command bar would.

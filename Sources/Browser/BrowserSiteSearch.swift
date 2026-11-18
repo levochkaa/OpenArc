@@ -212,11 +212,18 @@ enum BrowserSiteSearchImport {
         from source: BrowserBookmarkImportSource,
         fileManager: FileManager = .default,
     ) -> [BrowserSiteSearch]? {
-        func rank(_ file: URL) -> Int {
-            file.deletingLastPathComponent().lastPathComponent == "Default" ? 0 : 1
+        func rank(_ directory: URL) -> Int {
+            directory.lastPathComponent == "Default" ? 0 : 1
         }
-        let files = source.chromiumProfileFiles(named: "Web Data", fileManager: fileManager)
-            .sorted { rank($0) < rank($1) }
+        let directories = source.chromiumProfileDirectories(fileManager: fileManager).sorted { rank($0) < rank($1) }
+        return load(profileDirectories: directories, fileManager: fileManager)
+    }
+
+    /// The searches of these Chromium profiles, the first one's winning a shared
+    /// keyword; nil when none has a `Web Data` file.
+    static func load(profileDirectories: [URL], fileManager: FileManager = .default) -> [BrowserSiteSearch]? {
+        let files = profileDirectories.map { $0.appendingPathComponent("Web Data") }
+            .filter { fileManager.fileExists(atPath: $0.path) }
         guard !files.isEmpty else { return nil }
         var result = [BrowserSiteSearch]()
         for file in files {
@@ -367,17 +374,5 @@ extension BrowserSiteSearch {
     /// never shares an ID with the edited one it came from.
     var withNewID: BrowserSiteSearch {
         BrowserSiteSearch(name: name, keyword: keyword, urlTemplate: urlTemplate, colorHex: colorHex)
-    }
-}
-
-extension BrowserBookmarkImportSource {
-    /// The product name, as listed in Import From.
-    var browserName: String {
-        switch self {
-        case .arc: "Arc"
-        case .dia: "Dia"
-        case .chrome: "Google Chrome"
-        case .safari: "Safari"
-        }
     }
 }

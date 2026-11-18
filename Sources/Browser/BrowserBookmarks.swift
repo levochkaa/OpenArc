@@ -3,47 +3,6 @@
 import Combine
 import Foundation
 
-// MARK: - BrowserBookmarkImportSource
-
-enum BrowserBookmarkImportSource: String, CaseIterable, Identifiable {
-    case arc
-    case dia
-    case chrome
-    case safari
-
-    // MARK: Internal
-
-    var id: String {
-        rawValue
-    }
-
-    var title: String {
-        switch self {
-        case .arc:
-            BrowserStrings.bookmarksImportArc
-        case .dia:
-            BrowserStrings.bookmarksImportDia
-        case .chrome:
-            BrowserStrings.bookmarksImportChrome
-        case .safari:
-            BrowserStrings.bookmarksImportSafari
-        }
-    }
-
-    var importedFolderTitle: String {
-        switch self {
-        case .arc:
-            BrowserStrings.bookmarksImportedFromArc
-        case .dia:
-            BrowserStrings.bookmarksImportedFromDia
-        case .chrome:
-            BrowserStrings.bookmarksImportedFromChrome
-        case .safari:
-            BrowserStrings.bookmarksImportedFromSafari
-        }
-    }
-}
-
 // MARK: - BrowserBookmarkItem
 
 struct BrowserBookmarkItem: Identifiable, Equatable {
@@ -169,6 +128,11 @@ protocol BrowserBookmarkStoring {
     func insertFolder(title: String, toFolderID: String?, atIndex index: Int?) -> String?
     func importBookmarks(from source: BrowserBookmarkImportSource) -> BrowserBookmarkImportResult
     func importSafariBookmarks(from sourceURL: URL) -> BrowserBookmarkImportResult
+    /// Adds bookmarks another browser's reader already found, in a folder named for it.
+    func importBookmarkItems(
+        _ items: [BrowserBookmarkImportItem],
+        from source: BrowserBookmarkImportSource,
+    ) -> BrowserBookmarkImportResult
 }
 
 extension BrowserBookmarkStoring {
@@ -178,6 +142,13 @@ extension BrowserBookmarkStoring {
 
     func importSafariBookmarks(from _: URL) -> BrowserBookmarkImportResult {
         BrowserBookmarkImportResult(source: .safari, importedCount: 0, sourceWasAvailable: false)
+    }
+
+    func importBookmarkItems(
+        _: [BrowserBookmarkImportItem],
+        from source: BrowserBookmarkImportSource,
+    ) -> BrowserBookmarkImportResult {
+        BrowserBookmarkImportResult(source: source, importedCount: 0, sourceWasAvailable: false)
     }
 }
 
@@ -387,6 +358,15 @@ struct BrowserEmptyBookmarkStore: BrowserBookmarkStoring {
 
     @discardableResult func importSafariBookmarks(from sourceURL: URL) -> BrowserBookmarkImportResult {
         let result = store.importSafariBookmarks(from: sourceURL)
+        reload()
+        return result
+    }
+
+    @discardableResult func importBookmarkItems(
+        _ items: [BrowserBookmarkImportItem],
+        from source: BrowserBookmarkImportSource,
+    ) -> BrowserBookmarkImportResult {
+        let result = store.importBookmarkItems(items, from: source)
         reload()
         return result
     }

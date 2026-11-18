@@ -1,5 +1,6 @@
 // BrowserProfileImport.swift
 
+import AppKit
 import CommonCrypto
 import Foundation
 import GRDB
@@ -27,8 +28,9 @@ struct BrowserImportedCookie: Equatable {
 
 // MARK: - BrowserProfileImporter
 
-/// Reads another Chromium browser's profile. Its files are copied first, as that
-/// browser may be running and holding its databases.
+/// Reads another browser's profile: a Chromium or Firefox profile folder, or
+/// the ZIP Safari exports. Files are copied first, as that browser may be
+/// running and holding its databases.
 struct BrowserProfileImporter {
     // MARK: Internal
 
@@ -37,28 +39,88 @@ struct BrowserProfileImporter {
     }
 
     let source: BrowserBookmarkImportSource
+    /// The chosen profile's folder. For Safari, the exported ZIP once one is chosen.
     let profileDirectory: URL
+    var profileName = ""
+    /// Every profile found for the browser, newest first, for a profile picker.
+    var profiles = [BrowserImportProfile]()
+    /// The installed app, for its icon.
+    var applicationURL: URL?
+    /// Safari's exported ZIP, which stands in for a profile.
+    var archiveURL: URL?
+    /// The chosen profile's latest activity.
+    var lastUsed: Date?
 
-    var keychainService: String {
-        switch source {
-        case .arc: "Arc Safe Storage"
-        case .dia: "Dia Safe Storage"
-        case .chrome: "Chrome Safe Storage"
-        case .safari: ""
+    var keychainService: String? {
+        source.keychainService
+    }
+
+    /// What this browser can hand over.
+    var supportedItems: Set<BrowserOnboardingImportItem> {
+        source.supportedImportItems
+    }
+
+    /// Whether anything can be read yet: a profile folder, or Safari's ZIP.
+    var hasImportableData: Bool {
+        source.importsFromExportArchive
+            ? archiveURL != nil
+            : !profiles.isEmpty
+                || FileManager.default.fileExists(atPath: profileDirectory.path)
+    }
+
+    /// Chromium passwords and cookies need the keychain entry they are sealed with.
+    var needsKeychainKey: Bool {
+        source.engine == .chromium && keychainService != nil
+    }
+
+    /// Every supported browser that is installed or has a profile on this Mac,
+    /// most recently used first. Each starts on its newest profile.
+    static func detected(
+        locations: BrowserImportLocations = .current,
+        fileManager: FileManager = .default,
+        applicationURL: (String) -> URL? = { NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0) },
+    ) -> [BrowserProfileImporter] {
+        let found = BrowserBookmarkImportSource.allCases.compactMap { source -> BrowserProfileImporter? in
+            let app = source.bundleIdentifiers.lazy.compactMap(applicationURL).first
+            let profiles = source.importProfiles(in: locations, fileManager: fileManager)
+            guard app != nil || !profiles.isEmpty else { return nil }
+            var importer: BrowserProfileImporter
+            if let newest = profiles.first {
+                importer = BrowserProfileImporter(source: source, profile: newest)
+            } else {
+                importer = BrowserProfileImporter(
+                    source: source,
+                    profileDirectory: source.dataDirectory(in: locations) ?? locations.home,
+                )
+                if source == .safari {
+                    importer.lastUsed = BrowserBookmarkImportSource.modificationDate(
+                        of: locations.home.appendingPathComponent("Library/Safari/History.db"),
+                        fileManager: fileManager,
+                    )
+                }
+            }
+            importer.profiles = profiles
+            importer.applicationURL = app
+            return importer
+        }
+        let order = Dictionary(uniqueKeysWithValues: BrowserBookmarkImportSource.allCases.enumerated().map { ($1, $0) })
+        return found.sorted { lhs, rhs in
+            switch (lhs.lastUsed, rhs.lastUsed) {
+            case (let left?, let right?) where left != right: left > right
+            case (.some, nil): true
+            case (nil, .some): false
+            default: order[lhs.source, default: 0] < order[rhs.source, default: 0]
+            }
         }
     }
 
-    /// Profiles found on this Mac, newest first per browser.
-    static func detected(fileManager: FileManager = .default) -> [BrowserProfileImporter] {
-        BrowserBookmarkImportSource.allCases.compactMap { source -> BrowserProfileImporter? in
-            guard source != .safari else { return nil }
-            let candidates = source.chromiumProfileDirectories(fileManager: fileManager)
-                .filter { fileManager.fileExists(atPath: $0.appendingPathComponent("Preferences").path) }
-            let newest = candidates.max {
-                modificationDate(of: $0, fileManager) < modificationDate(of: $1, fileManager)
-            }
-            return newest.map { BrowserProfileImporter(source: source, profileDirectory: $0) }
-        }
+    /// Safari's data from the ZIP it exported.
+    static func safariArchive(_ url: URL, applicationURL: URL? = nil) -> BrowserProfileImporter {
+        var importer = BrowserProfileImporter(source: .safari, profileDirectory: url)
+        importer.profileName = url.deletingPathExtension().lastPathComponent
+        importer.archiveURL = url
+        importer.applicationURL = applicationURL
+        return importer
     }
 
     // MARK: Encryption
@@ -116,15 +178,47 @@ struct BrowserProfileImporter {
         return output.prefix(length)
     }
 
-    // MARK: Private
-
-    private static func modificationDate(of url: URL, _ fileManager: FileManager) -> Date {
-        let preferences = url.appendingPathComponent("Preferences").path
-        return ((try? fileManager.attributesOfItem(atPath: preferences))?[.modificationDate] as? Date) ?? .distantPast
+    /// Opens a copy of a database with its write-ahead log, in a folder only
+    /// this user can read, and removes it afterwards.
+    static func readCopy<T>(of original: URL, _ read: (Database) throws -> T) throws -> T {
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory.appendingPathComponent("OpenArcImport-\(UUID().uuidString)")
+        try fileManager.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700],
+        )
+        defer { try? fileManager.removeItem(at: directory) }
+        let copy = directory.appendingPathComponent("database")
+        try fileManager.copyItem(at: original, to: copy)
+        for suffix in ["-wal", "-shm"] {
+            try? fileManager.copyItem(atPath: original.path + suffix, toPath: copy.path + suffix)
+        }
+        let queue = try DatabaseQueue(path: copy.path)
+        defer { try? queue.close() }
+        return try queue.read(read)
     }
+
+    /// The same browser on another of its profiles.
+    func selecting(_ profile: BrowserImportProfile) -> BrowserProfileImporter {
+        var importer = BrowserProfileImporter(source: source, profile: profile)
+        importer.profiles = profiles
+        importer.applicationURL = applicationURL
+        return importer
+    }
+
+    /// The same browser read from Safari's exported ZIP.
+    func withArchive(_ url: URL) -> BrowserProfileImporter {
+        var importer = Self.safariArchive(url, applicationURL: applicationURL)
+        importer.profiles = profiles
+        return importer
+    }
+
+    // MARK: Private
 
     /// Asks the keychain, which shows macOS's own prompt to the person.
     func encryptionKey() throws -> Data {
+        guard let keychainService else { throw ImportError.noKeychainAccess }
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: keychainService,
@@ -141,6 +235,46 @@ struct BrowserProfileImporter {
     }
 
     // MARK: Reading
+
+    /// Bookmarks of the chosen profile, or of Safari's ZIP; nil when there are none to read.
+    func bookmarkItems() -> [BrowserBookmarkImportItem]? {
+        switch source.engine {
+        case .chromium:
+            let file = profileDirectory.appendingPathComponent("Bookmarks")
+            guard FileManager.default.fileExists(atPath: file.path) else { return nil }
+            return BrowserChromiumBookmarkStore.importItems(fromChromiumBookmarksURL: file)
+        case .firefox:
+            return BrowserFirefoxProfile.bookmarkItems(profileDirectory: profileDirectory)
+        case .safari:
+            return archiveURL.flatMap { BrowserSafariArchive(url: $0).bookmarkItems() }
+        }
+    }
+
+    func history(limit: Int = 50000) -> [BrowserSearchDocument] {
+        switch source.engine {
+        case .chromium: chromiumHistory(limit: limit)
+        case .firefox: BrowserFirefoxProfile.history(profileDirectory: profileDirectory, limit: limit)
+        case .safari: archiveURL.map { BrowserSafariArchive(url: $0).history(limit: limit) } ?? []
+        }
+    }
+
+    /// Saved passwords. Chromium's open with `key`; Firefox's stay behind.
+    func savedLogins(key: Data?) -> [(login: BrowserSavedLogin, password: String)] {
+        switch source.engine {
+        case .chromium: key.map(logins(key:)) ?? []
+        case .firefox: []
+        case .safari: archiveURL.map { BrowserSafariArchive(url: $0).logins() } ?? []
+        }
+    }
+
+    /// Cookies that keep sites signed in. Chromium's open with `key`.
+    func signInCookies(key: Data?, now: Date = Date()) -> [BrowserImportedCookie] {
+        switch source.engine {
+        case .chromium: key.map { cookies(key: $0, now: now) } ?? []
+        case .firefox: BrowserFirefoxProfile.cookies(profileDirectory: profileDirectory, now: now)
+        case .safari: []
+        }
+    }
 
     func logins(key: Data) -> [(login: BrowserSavedLogin, password: String)] {
         (try? withCopy(of: "Login Data") { db in
@@ -161,31 +295,6 @@ struct BrowserProfileImporter {
                       let password = String(data: opened, encoding: .utf8), !password.isEmpty
                 else { return nil }
                 return (BrowserSavedLogin(origin: origin, username: username), password)
-            }
-        }) ?? []
-    }
-
-    func history(limit: Int = 50000) -> [BrowserSearchDocument] {
-        (try? withCopy(of: "History") { db in
-            try Row.fetchAll(
-                db,
-                sql: """
-                SELECT url, title, visit_count, typed_count, last_visit_time
-                FROM urls
-                WHERE hidden = 0
-                ORDER BY last_visit_time DESC
-                LIMIT \(limit)
-                """,
-            )
-            .map { row in
-                let lastVisit: Int64 = row["last_visit_time"]
-                return BrowserSearchDocument(
-                    title: row["title"],
-                    urlString: row["url"],
-                    visitCount: row["visit_count"],
-                    typedCount: row["typed_count"],
-                    lastVisit: lastVisit > 0 ? TimeInterval(lastVisit) / 1_000_000 - 11_644_473_600 : 0,
-                )
             }
         }) ?? []
     }
@@ -245,43 +354,43 @@ struct BrowserProfileImporter {
             .compactMap { URL(string: "https://chromewebstore.google.com/detail/\($0)") }
     }
 
+    private func chromiumHistory(limit: Int) -> [BrowserSearchDocument] {
+        (try? withCopy(of: "History") { db in
+            try Row.fetchAll(
+                db,
+                sql: """
+                SELECT url, title, visit_count, typed_count, last_visit_time
+                FROM urls
+                WHERE hidden = 0
+                ORDER BY last_visit_time DESC
+                LIMIT \(limit)
+                """,
+            )
+            .map { row in
+                let lastVisit: Int64 = row["last_visit_time"]
+                return BrowserSearchDocument(
+                    title: row["title"],
+                    urlString: row["url"],
+                    visitCount: row["visit_count"],
+                    typedCount: row["typed_count"],
+                    lastVisit: lastVisit > 0 ? TimeInterval(lastVisit) / 1_000_000 - 11_644_473_600 : 0,
+                )
+            }
+        }) ?? []
+    }
+
     private func withCopy<T>(of name: String, _ read: (Database) throws -> T) throws -> T {
-        let fileManager = FileManager.default
-        let directory = fileManager.temporaryDirectory.appendingPathComponent("OpenArcImport-\(UUID().uuidString)")
-        try fileManager.createDirectory(
-            at: directory,
-            withIntermediateDirectories: true,
-            attributes: [.posixPermissions: 0o700],
-        )
-        defer { try? fileManager.removeItem(at: directory) }
-        let original = profileDirectory.appendingPathComponent(name)
-        let copy = directory.appendingPathComponent("database")
-        try fileManager.copyItem(at: original, to: copy)
-        for suffix in ["-wal", "-shm"] {
-            try? fileManager.copyItem(atPath: original.path + suffix, toPath: copy.path + suffix)
-        }
-        let queue = try DatabaseQueue(path: copy.path)
-        defer { try? queue.close() }
-        return try queue.read(read)
+        try Self.readCopy(of: profileDirectory.appendingPathComponent(name), read)
     }
 }
 
-// MARK: - BrowserBookmarkImportSource + Directories
+// MARK: - BrowserProfileImporter + Profiles
 
-extension BrowserBookmarkImportSource {
-    func chromiumProfileDirectories(fileManager: FileManager = .default) -> [URL] {
-        guard let support = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
-            return []
-        }
-        let root: URL
-        switch self {
-        case .arc: root = support.appendingPathComponent("Arc/User Data")
-        case .dia: root = support.appendingPathComponent("Dia/User Data")
-        case .chrome: root = support.appendingPathComponent("Google/Chrome")
-        case .safari: return []
-        }
-        let names = (try? fileManager.contentsOfDirectory(atPath: root.path)) ?? []
-        return names.filter { $0 == "Default" || $0.hasPrefix("Profile ") }
-            .map { root.appendingPathComponent($0) }
+private extension BrowserProfileImporter {
+    /// Kept out of the type so its memberwise initializer stays.
+    init(source: BrowserBookmarkImportSource, profile: BrowserImportProfile) {
+        self.init(source: source, profileDirectory: profile.directory)
+        self.profileName = profile.name
+        self.lastUsed = profile.lastUsed
     }
 }

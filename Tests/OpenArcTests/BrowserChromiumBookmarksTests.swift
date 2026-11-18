@@ -106,7 +106,7 @@ import ZIPFoundation
     #expect(result == BrowserBookmarkImportResult(source: .safari, importedCount: 3, sourceWasAvailable: true))
 
     let importedFolder = try #require(store.loadBookmarkBarItems().first)
-    #expect(importedFolder.displayTitle == BrowserStrings.bookmarksImportedFromSafari)
+    #expect(importedFolder.displayTitle == BrowserBookmarkImportSource.safari.importedFolderTitle)
     #expect(importedFolder.children.map(\.displayTitle) == ["Favorites", "Reading List"])
 
     let readingList = try #require(importedFolder.children.last)

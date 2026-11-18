@@ -320,7 +320,7 @@ final class BrowserSettingsClickableRow: NSView {
         panel.canChooseDirectories = false
         panel.canChooseFiles = true
         panel.prompt = BrowserStrings.bookmarksImport
-        panel.title = BrowserStrings.bookmarksImportSafari
+        panel.title = BrowserBookmarkImportSource.safari.title
         return panel.runModal() == .OK ? panel.url : nil
     }
 }
@@ -771,7 +771,9 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
         restore.setAccessibilityIdentifier("browser.settings.site-search.restore")
         let importButton = NSPopUpButton(frame: .zero, pullsDown: true)
         importButton.addItem(withTitle: BrowserStrings.settingsSiteSearchImport)
-        for source in BrowserBookmarkImportSource.allCases where source != .safari {
+        for source in BrowserBookmarkImportSource.allCases
+            where source.engine == .chromium && !source.chromiumProfileDirectories().isEmpty
+        {
             importButton.addItem(withTitle: source.browserName)
             importButton.lastItem?.representedObject = source.rawValue
             importButton.lastItem?.target = self
@@ -1520,18 +1522,22 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
             section(BrowserStrings.settingsSitePermissionsTitle, body: sitePermissionsBody),
             section(
                 BrowserStrings.bookmarksImport,
-                rows: [arcSidebarImportRow()] + BrowserBookmarkImportSource.allCases.map { source in
-                    let button = BrowserActionButton(source.title) { [weak self] in
-                        guard let self else { return }
-                        if source == .safari {
-                            guard let url = BrowserSafariBookmarkImportPanel.chooseSourceURL() else { return }
-                            _ = model.bookmarksModel.importSafariBookmarks(from: url)
-                        } else {
-                            _ = model.importBookmarks(from: source)
-                        }
+                rows: [arcSidebarImportRow()] + BrowserBookmarkImportSource.allCases
+                    .filter { source in
+                        source.importsFromExportArchive || !source.importProfiles().isEmpty
                     }
-                    return listButton(button, symbol: "square.and.arrow.down")
-                },
+                    .map { source in
+                        let button = BrowserActionButton(source.title) { [weak self] in
+                            guard let self else { return }
+                            if source == .safari {
+                                guard let url = BrowserSafariBookmarkImportPanel.chooseSourceURL() else { return }
+                                _ = model.bookmarksModel.importSafariBookmarks(from: url)
+                            } else {
+                                _ = model.importBookmarks(from: source)
+                            }
+                        }
+                        return listButton(button, symbol: "square.and.arrow.down")
+                    },
             ),
             section(BrowserStrings.settingsAdvancedTab, rows: [
                 link(BrowserStrings.settingsMoreSettings, url: BrowserSettingsRoute.rootURL),

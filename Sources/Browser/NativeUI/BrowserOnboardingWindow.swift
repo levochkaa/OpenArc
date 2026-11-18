@@ -26,7 +26,7 @@ enum BrowserOnboardingImportItem: String, CaseIterable {
     }
 
     func isAvailable(from source: BrowserBookmarkImportSource) -> Bool {
-        self != .spaces || source == .arc
+        source.supportedImportItems.contains(self)
     }
 }
 

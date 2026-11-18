@@ -916,46 +916,6 @@ enum BrowserStrings {
         comment: "Menu title for importing bookmarks.",
     )
 
-    static let bookmarksImportArc = NSLocalizedString(
-        "browser.bookmarks.import.arc",
-        comment: "Menu item title for importing bookmarks from Arc.",
-    )
-
-    static let bookmarksImportDia = NSLocalizedString(
-        "browser.bookmarks.import.dia",
-        comment: "Menu item title for importing bookmarks from Dia.",
-    )
-
-    static let bookmarksImportChrome = NSLocalizedString(
-        "browser.bookmarks.import.chrome",
-        comment: "Menu item title for importing bookmarks from Chrome.",
-    )
-
-    static let bookmarksImportSafari = NSLocalizedString(
-        "browser.bookmarks.import.safari",
-        comment: "Menu item title for importing bookmarks from Safari.",
-    )
-
-    static let bookmarksImportedFromArc = NSLocalizedString(
-        "browser.bookmarks.imported_from.arc",
-        comment: "Folder title for bookmarks imported from Arc.",
-    )
-
-    static let bookmarksImportedFromDia = NSLocalizedString(
-        "browser.bookmarks.imported_from.dia",
-        comment: "Folder title for bookmarks imported from Dia.",
-    )
-
-    static let bookmarksImportedFromChrome = NSLocalizedString(
-        "browser.bookmarks.imported_from.chrome",
-        comment: "Folder title for bookmarks imported from Chrome.",
-    )
-
-    static let bookmarksImportedFromSafari = NSLocalizedString(
-        "browser.bookmarks.imported_from.safari",
-        comment: "Folder title for bookmarks imported from Safari.",
-    )
-
     static let bookmarksUntitledFolder = NSLocalizedString(
         "browser.bookmarks.untitled_folder",
         comment: "Fallback title for an untitled bookmarks folder.",
@@ -3775,6 +3735,26 @@ enum BrowserStrings {
 
     static func colorDark(_ name: String) -> String {
         String(format: NSLocalizedString("browser.color.dark", comment: "A dark shade of a spoken color name."), name)
+    }
+
+    static func bookmarksImport(from browser: String) -> String {
+        String(
+            format: NSLocalizedString(
+                "browser.bookmarks.import.from",
+                comment: "Menu item title for importing bookmarks from another browser. Value: the browser's name.",
+            ),
+            browser,
+        )
+    }
+
+    static func bookmarksImported(from browser: String) -> String {
+        String(
+            format: NSLocalizedString(
+                "browser.bookmarks.imported_from",
+                comment: "Folder title for bookmarks imported from another browser. Value: the browser's name.",
+            ),
+            browser,
+        )
     }
 
     static func onboardingImportResult(_ parts: [String]) -> String {

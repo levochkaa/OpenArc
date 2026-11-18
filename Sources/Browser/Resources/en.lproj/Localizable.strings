@@ -170,14 +170,8 @@
 "browser.bookmarks.new_folder_prompt.title" = "New Folder";
 "browser.bookmarks.open_all_action" = "Open All (%d)";
 "browser.bookmarks.import" = "Import Bookmarks";
-"browser.bookmarks.import.arc" = "Import from Arc";
-"browser.bookmarks.import.dia" = "Import from Dia";
-"browser.bookmarks.import.chrome" = "Import from Chrome";
-"browser.bookmarks.import.safari" = "Import from Safari";
-"browser.bookmarks.imported_from.arc" = "Imported from Arc";
-"browser.bookmarks.imported_from.dia" = "Imported from Dia";
-"browser.bookmarks.imported_from.chrome" = "Imported from Chrome";
-"browser.bookmarks.imported_from.safari" = "Imported from Safari";
+"browser.bookmarks.import.from" = "Import from %@";
+"browser.bookmarks.imported_from" = "Imported from %@";
 "browser.bookmarks.untitled_folder" = "Untitled Folder";
 "browser.bookmarks.hide_bar_action" = "Hide Bookmarks Bar";
 "browser.downloads.title" = "Downloads";
