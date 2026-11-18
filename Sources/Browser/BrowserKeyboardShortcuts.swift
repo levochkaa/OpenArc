@@ -191,6 +191,12 @@ enum BrowserCommands {
         shortcut: .unassigned,
     )
 
+    static let viewBoosts = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuViewBoosts,
+        helpTitle: BrowserStrings.menuViewBoosts,
+        shortcut: .unassigned,
+    )
+
     static let networkInspector = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuNetworkInspector,
         helpTitle: BrowserStrings.menuNetworkInspector,
@@ -776,6 +782,7 @@ enum BrowserLayoutIndependentShortcutCommand: Equatable {
     case networkInspector
     case toggleDeveloperMode
     case editBoost
+    case viewBoosts
     case editSpaceTheme
     case togglePictureInPicture
     case muteAllTabs

@@ -12,6 +12,10 @@ final class BrowserSiteControlCenterViewController: NSViewController {
 
     enum Action: Equatable {
         case copyURL
+        /// The current site's Boost editor.
+        case newBoost
+        /// The Library's Boosts.
+        case manageBoosts
         case capture
         case captureFullPage
         case clearCache
@@ -50,6 +54,12 @@ final class BrowserSiteControlCenterViewController: NSViewController {
         size: 13,
         weight: .semibold,
     )
+    private let boostsHeading = BrowserNativeControls.label(
+        BrowserStrings.siteControlBoosts,
+        size: 13,
+        weight: .semibold,
+    )
+    private let boostRow = BrowserSiteBoostRowView()
     private let manage = BrowserActionButton(BrowserStrings.extensionsManageAction, action: {})
     private let divider = BrowserNativeSurface()
     private let security = BrowserNativeSurface()
@@ -73,11 +83,13 @@ final class BrowserSiteControlCenterViewController: NSViewController {
             action: nil,
         ) { _ in true },
         PageAction(
-            symbol: "link",
-            title: BrowserStrings.tabCopyURLAction,
-            identifier: "copy-url",
-            action: .copyURL,
-        ) { _ in true },
+            symbol: "paintbrush.pointed",
+            title: BrowserStrings.siteControlNewBoost,
+            identifier: "boost",
+            action: .newBoost,
+        ) {
+            $0.canEditBoost
+        },
         PageAction(
             symbol: "camera.viewfinder",
             title: BrowserStrings.siteControlCapture,
@@ -129,6 +141,14 @@ final class BrowserSiteControlCenterViewController: NSViewController {
         manage.contentTintColor = .linkColor
         manage.setAccessibilityIdentifier("browser.extensions.manage")
         manage.onAction = { [weak self] in self?.onManage() }
+        root.addSubview(boostsHeading)
+        root.addSubview(boostRow)
+        boostRow.setAccessibilityIdentifier("browser.site-control.boost-row")
+        boostRow.onClick = { [weak model] _ in
+            guard let model, let boost = model.currentSiteBoost else { return }
+            model.setBoostEnabled(host: boost.host, !boost.isEnabled)
+        }
+        boostRow.onEdit = { [weak self] in self?.onAction(.newBoost) }
         root.addSubview(settingsHeading)
         root.addSubview(divider)
         divider.fillColor = .separatorColor
@@ -149,7 +169,10 @@ final class BrowserSiteControlCenterViewController: NSViewController {
         more.onClick = { [weak self] _ in self?.showMoreMenu() }
         root.addSubview(more)
         let changes = BrowserCoalescedRefresh { [weak self] in self?.refresh() }
-        changes.observe([model.objectWillChange.eraseToAnyPublisher()])
+        changes.observe([
+            model.objectWillChange.eraseToAnyPublisher(),
+            model.userPreferencesStore.objectWillChange.eraseToAnyPublisher(),
+        ])
         coalescedRefresh = changes
         reloadSiteSettings()
     }
@@ -224,6 +247,20 @@ final class BrowserSiteControlCenterViewController: NSViewController {
         }
         let rows = (items.count + columns - 1) / columns
         y += CGFloat(rows) * itemHeight + CGFloat(max(rows - 1, 0)) * tileGap
+
+        // The site's Boost: a click turns it on or off, the arrow edits it.
+        let boost = model.isIncognito ? nil : model.currentSiteBoost
+        boostsHeading.isHidden = boost == nil
+        boostRow.isHidden = boost == nil
+        if let boost {
+            y += spacing + 6
+            boostsHeading.frame = NSRect(x: padding, y: y, width: content, height: 18)
+            y += 18 + 6
+            boostRow.update(boost)
+            let rowHeight = BrowserChromeLayout.siteControlSettingRowHeight
+            boostRow.frame = NSRect(x: padding - 4, y: y, width: content + 8, height: rowHeight)
+            y += rowHeight
+        }
 
         // The site's settings that differ from the defaults.
         // The rows and their menus belong to one site; a page that moves to
@@ -344,11 +381,13 @@ final class BrowserSiteControlCenterViewController: NSViewController {
                 to: menu,
             ) { [weak model] in model?.toggleDeveloperMode() }
         }
-        if model.canEditBoost {
-            BrowserNativeMenus.add(
-                model.currentSiteHasBoost ? BrowserStrings.menuEditBoost : BrowserStrings.menuBoostThisSite,
-                to: menu,
-            ) { [weak model] in model?.editCurrentSiteBoost() }
+        if !model.isIncognito {
+            BrowserNativeMenus.add(BrowserStrings.siteControlManageBoosts, to: menu) { [weak self] in
+                self?.onAction(.manageBoosts)
+            }
+            BrowserNativeMenus.add(BrowserStrings.siteControlNewBoostMenu, to: menu, enabled: model.canEditBoost) {
+                [weak self] in self?.onAction(.newBoost)
+            }
         }
         BrowserNativeMenus.add(BrowserStrings.extensionsManageAction, to: menu) { [weak self] in self?.onManage() }
         BrowserNativeMenus.add(BrowserStrings.extensionsAddAction, to: menu) { [weak self] in self?.onAdd() }
@@ -476,5 +515,71 @@ final class BrowserSiteSettingRowView: BrowserNativePressableView {
         value.stringValue = row.value.title
         setAccessibilityLabel("\(row.kind.title), \(row.value.title)")
         setAccessibilityIdentifier("browser.site-control.setting.\(row.kind.rawValue)")
+    }
+}
+
+// MARK: - BrowserSiteBoostRowView
+
+/// The site's Boost in the site control center: a brush badge that is white
+/// while the Boost is on, its name and state, and an arrow that edits it.
+final class BrowserSiteBoostRowView: BrowserNativePressableView {
+    // MARK: Internal
+
+    var onEdit: () -> Void = {}
+
+    // MARK: Private
+
+    private let badge = BrowserNativeSurface()
+    private let icon = NSImageView()
+    private let title = BrowserNativeControls.label("", size: 13, weight: .medium)
+    private let value = BrowserNativeControls.label("", size: 11, color: .secondaryLabelColor)
+    private let edit = BrowserSiteControlButton(symbol: "chevron.right", lightness: 0.21)
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        cornerRadius = 8
+        badge.cornerRadius = 16
+        badge.addSubview(icon)
+        icon.image = NSImage(systemSymbolName: "paintbrush.pointed.fill", accessibilityDescription: nil)
+        icon.symbolConfiguration = .init(pointSize: 13, weight: .semibold)
+        icon.contentTintColor = NSColor(white: 0.13, alpha: 1)
+        for view in [badge, title, value] as [NSView] {
+            view.setAccessibilityElement(false)
+            addSubview(view)
+        }
+        edit.cornerRadius = 12
+        edit.tooltipTitle = BrowserStrings.boostEdit
+        edit.setAccessibilityLabel(BrowserStrings.boostEdit)
+        edit.setAccessibilityIdentifier("browser.site-control.boost-row.edit")
+        edit.onClick = { [weak self] _ in self?.onEdit() }
+        addSubview(edit)
+    }
+
+    @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    // MARK: Internal
+
+    override func interactionChanged() {
+        super.interactionChanged()
+        fillColor = isHovered ? .quaternaryLabelColor.withAlphaComponent(0.5) : .clear
+    }
+
+    override func layout() {
+        super.layout()
+        badge.frame = NSRect(x: 4, y: (bounds.height - 32) / 2, width: 32, height: 32)
+        icon.frame = NSRect(x: 7, y: 7, width: 18, height: 18)
+        edit.frame = NSRect(x: bounds.width - 4 - 24, y: (bounds.height - 24) / 2, width: 24, height: 24)
+        let textWidth = max(bounds.width - 48 - 32, 0)
+        title.frame = NSRect(x: 44, y: bounds.height / 2 - 17, width: textWidth, height: 17)
+        value.frame = NSRect(x: 44, y: bounds.height / 2, width: textWidth, height: 15)
+    }
+
+    func update(_ boost: BrowserBoost) {
+        badge.fillColor = BrowserSiteSettingRowView.badgeFill(active: boost.isEnabled)
+        title.stringValue = boost.displayTitle(defaultTitle: BrowserStrings.boostDefaultTitle)
+        value.stringValue = boost.isEnabled ? BrowserStrings.boostStateOn : BrowserStrings.boostStateOff
+        setAccessibilityRole(.checkBox)
+        setAccessibilityLabel(title.stringValue)
+        setAccessibilityValue(NSNumber(value: boost.isEnabled ? 1 : 0))
     }
 }

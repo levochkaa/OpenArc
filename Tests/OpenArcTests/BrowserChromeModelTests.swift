@@ -275,6 +275,7 @@ import Testing
     model.handleContextReady()
     #expect(model.hasLibrary)
     #expect(model.librarySections == [.media, .downloads])
+    #expect(!model.viewBoosts(), "Incognito windows have no Boosts")
     model.toggleLibrary()
     #expect(model.librarySection == .downloads, "It opens on Downloads, having no Archive")
     model.openLibrary(section: .archive)

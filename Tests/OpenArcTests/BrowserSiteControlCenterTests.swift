@@ -130,7 +130,7 @@ import Testing
     let view = controller.view
     view.layoutSubtreeIfNeeded()
 
-    let identifiers = ["share", "copy-url", "capture", "capture-full-page"]
+    let identifiers = ["share", "boost", "capture", "capture-full-page"]
     let buttons = try identifiers.map { try #require(siteControlView("browser.site-control.\($0)", in: view)) }
     #expect(Set(buttons.map(\.frame.minY)).count == 1, "The page actions share one row")
     // Six extensions and Add wrap four to a row.
@@ -149,9 +149,24 @@ import Testing
     #expect(security.accessibilityLabel() == BrowserStrings.siteControlSecure)
     #expect(security.frame.maxY <= controller.preferredContentSize.height)
 
-    let copy = try #require(buttons[1] as? BrowserNativePressableView)
-    copy.onClick(nil)
-    #expect(actions == [.copyURL])
+    let boost = try #require(buttons[1] as? BrowserNativePressableView)
+    boost.onClick(nil)
+    #expect(actions == [.newBoost])
+    #expect(
+        siteControlView("browser.site-control.boost-row", in: view)?.isHidden == true,
+        "No Boost, no Boosts section",
+    )
+    fixture.model.updateBoost(host: "meet.example") { $0.css = "a {}" }
+    controller.refresh()
+    let boostRow = try #require(siteControlView(
+        "browser.site-control.boost-row",
+        in: view,
+    ) as? BrowserNativePressableView)
+    #expect(!boostRow.isHidden)
+    boostRow.onClick(nil)
+    #expect(fixture.model.boost(forHost: "meet.example").isEnabled == false, "A click on the Boost turns it off")
+    (siteControlView("browser.site-control.boost-row.edit", in: view) as? BrowserNativePressableView)?.onClick(nil)
+    #expect(actions == [.newBoost, .newBoost])
 
     // A page that moves to another origin while the popover is open shows that
     // site's settings: a plain HTTP page without any, and not secure.

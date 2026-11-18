@@ -48,6 +48,8 @@ import SecurityInterface
             let urlString = model.currentTab?.urlString ?? ""
             switch action {
             case .copyURL: _ = model.copySelectedTabLink()
+            case .newBoost: model.editCurrentSiteBoost()
+            case .manageBoosts: model.viewBoosts()
             case .capture: _ = model.beginAreaCapture()
             case .captureFullPage: _ = model.captureFullPageSelectedTabToPasteboard()
             case .clearCache: model.clearCacheAndRefreshCurrentTab()

@@ -628,6 +628,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
         activeChromeModel?.editCurrentSiteBoost()
     }
 
+    public func viewBoosts(_: Any?) {
+        activeChromeModel?.viewBoosts()
+    }
+
     public func toggleJavaScriptFromAppleEvents(_: Any?) {
         userPreferencesStore.allowsJavaScriptFromAppleEvents.toggle()
     }
@@ -1122,6 +1126,8 @@ NSMenuDelegate, NSUserInterfaceValidations {
                     : BrowserStrings.menuBoostThisSite
             }
             return activeChromeModel?.canEditBoost ?? false
+        case #selector(viewBoosts(_:)):
+            return activeChromeModel?.librarySections.contains(.boosts) ?? false
         case #selector(toggleDeveloperMode(_:)):
             if let menuItem = item as? NSMenuItem {
                 menuItem.title = activeChromeModel?.isDeveloperModeOn == true
@@ -2051,6 +2057,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
         viewMenu.addItem(makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .editBoost),
             action: #selector(editBoost(_:)),
+        ))
+        viewMenu.addItem(makeMenuItem(
+            descriptor: shortcutStore.descriptor(for: .viewBoosts),
+            action: #selector(viewBoosts(_:)),
         ))
         // Groups: Cast | Developer | Enter Full Screen.
         viewMenu.addItem(.separator())
@@ -3114,6 +3124,8 @@ NSMenuDelegate, NSUserInterfaceValidations {
             } ?? false
         case .editBoost:
             return activeChromeModel?.editCurrentSiteBoost() ?? false
+        case .viewBoosts:
+            return activeChromeModel?.viewBoosts() ?? false
         case .editSpaceTheme:
             return activeChromeModel
                 .flatMap { model in model.selectedSpaceID.map { model.onEditSpaceTheme?($0) } } != nil
@@ -4145,8 +4157,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
         BrowserPageScripts.boostScriptsProvider = { urlString in
             MainActor.assumeIsolated { BrowserBoostCatalog.shared.documentScripts(forURLString: urlString) }
         }
-        boostsCancellable = userPreferencesStore.$boosts.sink { boosts in
-            BrowserBoostCatalog.shared.update(boosts)
+        boostsCancellable = userPreferencesStore.$boosts
+            .combineLatest(userPreferencesStore.$boostsEnabled)
+            .sink { boosts, enabled in
+            BrowserBoostCatalog.shared.update(enabled ? boosts : [])
         }
     }
 

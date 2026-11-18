@@ -4432,6 +4432,8 @@ enum BrowserWindowMode: Equatable {
             canToggleDeveloperMode
         case .editBoost:
             canEditBoost
+        case .viewBoosts:
+            librarySections.contains(.boosts)
         case .editSpaceTheme:
             supportsSpaces
         case .togglePictureInPicture:
@@ -8942,7 +8944,9 @@ extension BrowserCommandID {
         case .toggleDeveloperMode:
             ["developer mode", "dev mode", "developer"]
         case .editBoost:
-            ["boost", "edit boost", "custom css", "custom javascript", "zap", "hide elements"]
+            ["boost", "new boost", "edit boost", "customize page", "custom css", "custom javascript", "zap", "colors", "font"]
+        case .viewBoosts:
+            ["boosts", "view boosts", "manage boosts", "library"]
         case .editSpaceTheme:
             ["theme", "edit theme", "color"]
         case .togglePictureInPicture:
@@ -9146,6 +9150,8 @@ extension BrowserCommandID {
         case .toggleDeveloperMode:
             "hammer"
         case .editBoost:
+            "paintbrush.pointed"
+        case .viewBoosts:
             "paintbrush.pointed"
         case .editSpaceTheme:
             "paintpalette"

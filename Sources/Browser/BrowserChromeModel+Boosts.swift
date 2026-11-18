@@ -55,11 +55,52 @@ extension BrowserChromeModel {
         userPreferencesStore.boosts.removeBoost(host: host)
     }
 
-    /// Boost This Site: opens the editor for the current page's site.
+    /// The current page's Boost, if its site or a domain above it has one.
+    var currentSiteBoost: BrowserBoost? {
+        currentTab.flatMap { userPreferencesStore.boosts.matchingBoost(forURLString: $0.urlString) }
+    }
+
+    /// New Boost or Edit Boost: opens the editor for the current page's site.
     @discardableResult func editCurrentSiteBoost() -> Bool {
-        guard let host = currentBoostHost, let onEditBoost else { return false }
+        guard canEditBoost, let host = currentBoostHost, let onEditBoost else { return false }
         onEditBoost(host)
         return true
+    }
+
+    /// Whether the editor of `host` still belongs to the current page: a page
+    /// of another site closes it, a page that is not a website yet keeps it.
+    func currentPageKeepsBoostEditor(host: String) -> Bool {
+        guard !isIncognito else { return false }
+        guard let urlString = currentTab?.urlString,
+              let pageHost = BrowserBoost.host(ofURLString: urlString)
+        else { return true }
+        return BrowserBoost.candidateHosts(forHost: pageHost).contains(host)
+            || userPreferencesStore.boosts.editableHost(forURLString: urlString) == host
+    }
+
+    /// Opens the site of a Boost in a new tab with its editor.
+    func openBoostedSite(host: String) {
+        guard !isIncognito, let url = URL(string: "https://\(host)/") else { return }
+        closeLibrary()
+        openURLInNewTab(url)
+        onEditBoost?(host)
+    }
+
+    /// The Library's Boosts.
+    @discardableResult func viewBoosts() -> Bool {
+        guard librarySections.contains(.boosts) else { return false }
+        openLibrary(section: .boosts)
+        return true
+    }
+
+    func setBoostEnabled(host: String, _ isEnabled: Bool) {
+        updateBoost(host: host) { $0.isEnabled = isEnabled }
+    }
+
+    /// A blank name goes back to the default one.
+    func renameBoost(host: String, title: String) {
+        let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        updateBoost(host: host) { $0.title = title.isEmpty ? nil : title }
     }
 
     /// Open pages take the new boosts: a changed stylesheet is replaced in

@@ -197,6 +197,7 @@ final class BrowserUserPreferencesStore: ObservableObject {
         static let allowsJavaScriptFromAppleEvents = "browser.settings.allowsJavaScriptFromAppleEvents"
         static let developerModeHosts = "browser.settings.developerModeHosts"
         static let boosts = "browser.settings.boosts"
+        static let boostsEnabled = "browser.settings.boostsEnabled"
         static let passwordNeverOrigins = "browser.settings.passwordNeverOrigins"
         static let soundEffectsEnabled = "browser.settings.soundEffectsEnabled"
         static let gitHubLiveFolderIDs = "browser.settings.gitHubLiveFolderIDs"
@@ -420,6 +421,11 @@ final class BrowserUserPreferencesStore: ObservableObject {
         didSet { userDefaults.set(try? JSONEncoder().encode(boosts), forKey: Key.boosts) }
     }
 
+    /// Pages run Boosts; off, every Boost is kept but none applies.
+    @Published var boostsEnabled: Bool {
+        didSet { userDefaults.set(boostsEnabled, forKey: Key.boostsEnabled) }
+    }
+
     /// Remembered camera and microphone answers of every profile.
     @Published var sitePermissionDecisions: [BrowserSitePermissionDecision] {
         didSet {
@@ -538,6 +544,7 @@ final class BrowserUserPreferencesStore: ObservableObject {
             .flatMap { try? JSONDecoder().decode([BrowserSitePermissionDecision].self, from: $0) } ?? []
         self.boosts = userDefaults.data(forKey: Key.boosts)
             .flatMap { try? JSONDecoder().decode([BrowserBoost].self, from: $0) } ?? []
+        self.boostsEnabled = Self.loadBool(userDefaults, key: Key.boostsEnabled, defaultValue: true)
     }
 
     private static func loadBool(_ userDefaults: UserDefaults, key: String, defaultValue: Bool) -> Bool {
@@ -584,6 +591,7 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
     case networkInspector
     case toggleDeveloperMode
     case editBoost
+    case viewBoosts
     case editSpaceTheme
     case togglePictureInPicture
     case muteAllTabs
@@ -719,6 +727,8 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             BrowserCommands.toggleDeveloperMode
         case .editBoost:
             BrowserCommands.editBoost
+        case .viewBoosts:
+            BrowserCommands.viewBoosts
         case .editSpaceTheme:
             BrowserCommands.editSpaceTheme
         case .togglePictureInPicture:
@@ -921,6 +931,8 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             .toggleDeveloperMode
         case .editBoost:
             .editBoost
+        case .viewBoosts:
+            .viewBoosts
         case .editSpaceTheme:
             .editSpaceTheme
         case .togglePictureInPicture:

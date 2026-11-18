@@ -10,6 +10,7 @@ enum BrowserLibrarySection: String, CaseIterable {
     case media
     case downloads
     case spaces
+    case boosts
     case archive
 
     // MARK: Internal
@@ -19,6 +20,7 @@ enum BrowserLibrarySection: String, CaseIterable {
         case .media: BrowserStrings.libraryMedia
         case .downloads: BrowserStrings.libraryDownloads
         case .spaces: BrowserStrings.librarySpaces
+        case .boosts: BrowserStrings.libraryBoosts
         case .archive: BrowserStrings.libraryArchive
         }
     }
@@ -28,6 +30,7 @@ enum BrowserLibrarySection: String, CaseIterable {
         case .media: "photo.on.rectangle"
         case .downloads: "arrow.down.circle"
         case .spaces: "square.on.square"
+        case .boosts: "paintbrush.pointed"
         case .archive: "archivebox"
         }
     }
@@ -81,6 +84,7 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
                     content.faviconImage.map(ObjectIdentifier.init),
                     content.fileIcon != nil,
                     content.progress,
+                    content.isOn,
                 ]
             case .tile(let url): ["tile", url]
             }
@@ -221,6 +225,7 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
         coalescedRefresh.observe([
             model.objectWillChange.eraseToAnyPublisher(),
             model.downloadsModel.objectWillChange.eraseToAnyPublisher(),
+            model.userPreferencesStore.objectWillChange.eraseToAnyPublisher(),
         ])
     }
 
@@ -453,6 +458,7 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
         case .downloads: show(downloadRows())
         case .media: show(mediaRows())
         case .spaces: show([])
+        case .boosts: show(boostRows())
         }
         updateEmptyState()
         needsLayout = true
@@ -631,6 +637,51 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
         return result
     }
 
+    /// Each Boost with its site and a switch; a click opens the site with its editor.
+    private func boostRows() -> [Row] {
+        let model = model
+        let defaultTitle = BrowserStrings.boostDefaultTitle
+        return model.userPreferencesStore.boosts.compactMap { boost -> Row? in
+            let host = boost.host
+            let title = boost.displayTitle(defaultTitle: defaultTitle)
+            if !query.isEmpty, !title.lowercased().contains(query), !host.contains(query) {
+                return nil
+            }
+            let isEnabled = boost.isEnabled
+            return .item(BrowserLibraryRowContent(
+                title: title,
+                detail: isEnabled ? host : "\(host) · \(BrowserStrings.boostStateOff)",
+                faviconPageURL: "https://\(host)/",
+                fileIcon: nil,
+                progress: nil,
+                onOpen: { [weak model] in model?.openBoostedSite(host: host) },
+                menu: { [weak self, weak model] in
+                    let menu = BrowserNativeMenus.menu()
+                    BrowserNativeMenus.add(BrowserStrings.boostRenameMenu, to: menu) {
+                        guard let self, let model else { return }
+                        BrowserBoostDialogs.rename(
+                            title: model.boost(forHost: host).title ?? "",
+                            in: self.window,
+                        ) { model.renameBoost(host: host, title: $0) }
+                    }
+                    BrowserNativeMenus.add(
+                        isEnabled ? BrowserStrings.boostTurnOff : BrowserStrings.boostTurnOn,
+                        to: menu,
+                    ) { model?.setBoostEnabled(host: host, !isEnabled) }
+                    menu.addItem(.separator())
+                    BrowserNativeMenus.add(BrowserStrings.boostDeleteMenu, to: menu) {
+                        guard let self else { return }
+                        BrowserBoostDialogs.confirmDelete(in: self.window) { model?.removeBoost(host: host) }
+                    }
+                    return menu
+                },
+                identity: "boost.\(host)",
+                isOn: isEnabled,
+                onToggle: { [weak model] on in model?.setBoostEnabled(host: host, on) },
+            ))
+        }
+    }
+
     /// Pictures and videos in the download folder, newest first.
     private func mediaRows() -> [Row] {
         let preferences = model.userPreferencesStore
@@ -644,10 +695,13 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
         let section = shownSection
         emptyState.isHidden = section == .spaces || !rows.isEmpty
         guard let section else { return }
-        emptyState.configure(
-            symbol: section.symbol,
-            detail: section == .media ? BrowserStrings.libraryEmptyMedia : BrowserStrings.libraryEmptyDetail,
-        )
+        let detail =
+            switch section {
+            case .media: BrowserStrings.libraryEmptyMedia
+            case .boosts: BrowserStrings.libraryEmptyBoosts
+            default: BrowserStrings.libraryEmptyDetail
+            }
+        emptyState.configure(symbol: section.symbol, detail: detail)
     }
 
     /// One row or tile per entry; rows are rebuilt with the section's contents.
@@ -859,6 +913,9 @@ struct BrowserLibraryRowContent {
     let menu: () -> NSMenu
     /// The archived tab or download the row stands for.
     var identity = ""
+    /// A switch at the row's end, shown when set.
+    var isOn: Bool?
+    var onToggle: ((Bool) -> Void)?
 }
 
 // MARK: - BrowserLibraryRow
@@ -871,6 +928,7 @@ private final class BrowserLibraryRow: BrowserNativePressableView {
     private let pageIcon = NSImageView()
     private let title = NSTextField(labelWithString: "")
     private let detail = NSTextField(labelWithString: "")
+    private let toggle = BrowserActionToggle()
 
     // MARK: Internal
 
@@ -906,6 +964,14 @@ private final class BrowserLibraryRow: BrowserNativePressableView {
         detail.lineBreakMode = .byTruncatingTail
         addSubview(title)
         addSubview(detail)
+        if let isOn = content.isOn {
+            toggle.controlSize = .mini
+            toggle.state = isOn ? .on : .off
+            toggle.setAccessibilityLabel(content.title)
+            toggle.setAccessibilityIdentifier("browser.library.row-switch.\(content.identity)")
+            toggle.onChange = { [content] on in content.onToggle?(on) }
+            addSubview(toggle)
+        }
     }
 
     @available(*, unavailable) required init?(coder _: NSCoder) { fatalError() }
@@ -914,8 +980,12 @@ private final class BrowserLibraryRow: BrowserNativePressableView {
         super.layout()
         favicon.frame = NSRect(x: 12, y: 13, width: 16, height: 16)
         pageIcon.frame = favicon.frame
-        title.frame = NSRect(x: 38, y: 6, width: max(bounds.width - 46, 0), height: 16)
-        detail.frame = NSRect(x: 38, y: 22, width: max(bounds.width - 46, 0), height: 14)
+        let trailing: CGFloat = content.isOn == nil ? 8 : 8 + 26 + 8
+        if content.isOn != nil {
+            toggle.frame = NSRect(x: bounds.width - 8 - 26, y: (bounds.height - 16) / 2, width: 26, height: 16)
+        }
+        title.frame = NSRect(x: 38, y: 6, width: max(bounds.width - 38 - trailing, 0), height: 16)
+        detail.frame = NSRect(x: 38, y: 22, width: max(bounds.width - 38 - trailing, 0), height: 14)
     }
 
     override func draw(_ dirtyRect: NSRect) {
