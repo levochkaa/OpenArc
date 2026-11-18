@@ -33,6 +33,14 @@ struct BrowserNavigationResolver {
         self.searchEngineProvider = searchEngineProvider
     }
 
+    /// Hosts that only make sense on this machine or network: localhost, any
+    /// `.localhost` or `.local` name, and IP addresses.
+    static func isLocalHost(_ host: String) -> Bool {
+        let lowered = host.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+        return lowered == "localhost" || lowered.hasSuffix(".localhost") || lowered.hasSuffix(".local")
+            || IPv4Address(lowered) != nil || IPv6Address(lowered) != nil
+    }
+
     func resolve(_ rawInput: String) -> Resolution? {
         let trimmedInput = rawInput.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedInput.isEmpty else {
@@ -74,10 +82,15 @@ struct BrowserNavigationResolver {
 
         let prefixedInput = "https://\(input)"
         guard
-            let components = URLComponents(string: prefixedInput),
+            var components = URLComponents(string: prefixedInput),
             isValidResolvedURL(components: components, scheme: "https", allowSingleLabelHost: false)
         else {
             return nil
+        }
+        // Local servers rarely have a certificate, so typed local addresses use
+        // plain http, as other browsers do.
+        if let host = components.host, Self.isLocalHost(host) {
+            components.scheme = "http"
         }
 
         return components.url?.absoluteString
@@ -149,11 +162,9 @@ struct BrowserNavigationResolver {
             return false
         }
 
-        if host.caseInsensitiveCompare("localhost") == .orderedSame {
-            return true
-        }
-
-        if IPv4Address(host) != nil || IPv6Address(host) != nil {
+        // localhost, `.localhost` and `.local` names and IP addresses are real
+        // hosts though no public suffix lists them.
+        if Self.isLocalHost(host) {
             return true
         }
 

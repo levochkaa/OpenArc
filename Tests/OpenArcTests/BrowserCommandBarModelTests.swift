@@ -40,7 +40,7 @@ private let defaultAISuggestionTitle = BrowserStrings.commandBarAskAI(BrowserAIS
     let resolution = resolver.resolve("localhost:3000")
 
     #expect(resolution?.kind == .url)
-    #expect(resolution?.resolvedURLString == "https://localhost:3000")
+    #expect(resolution?.resolvedURLString == "http://localhost:3000")
 }
 
 @Test func resolveTreatsLocalhostAsURLWithoutDomainParser() {
@@ -48,7 +48,7 @@ private let defaultAISuggestionTitle = BrowserStrings.commandBarAskAI(BrowserAIS
     let resolution = resolver.resolve("localhost:3000")
 
     #expect(resolution?.kind == .url)
-    #expect(resolution?.resolvedURLString == "https://localhost:3000")
+    #expect(resolution?.resolvedURLString == "http://localhost:3000")
 }
 
 @Test func resolveTreatsBareDomainWithPortAsURL() {
@@ -156,7 +156,7 @@ private let defaultAISuggestionTitle = BrowserStrings.commandBarAskAI(BrowserAIS
     let resolution = resolver.resolve("127.0.0.1:9222")
 
     #expect(resolution?.kind == .url)
-    #expect(resolution?.resolvedURLString == "https://127.0.0.1:9222")
+    #expect(resolution?.resolvedURLString == "http://127.0.0.1:9222")
 }
 
 @Test func resolveTurnsPlainTextIntoGoogleSearch() throws {
@@ -970,4 +970,17 @@ private func command(_ title: String) -> BrowserCommandSuggestion {
     )
     #expect(pages.map(\.resolvedURLString) == ["https://www.goodreads.com/"])
     #expect(store.suggestions(for: "goo", maximumCount: 3).count == 3)
+}
+
+@Test func typedLocalAddressesUsePlainHTTPAndOthersHTTPS() {
+    let resolver = BrowserNavigationResolver()
+    #expect(resolver.resolve("app.localhost:5173")?.resolvedURLString == "http://app.localhost:5173")
+    #expect(resolver.resolve("printer.local")?.resolvedURLString == "http://printer.local")
+    #expect(resolver.resolve("192.168.1.10/admin")?.resolvedURLString == "http://192.168.1.10/admin")
+    #expect(resolver.resolve("[::1]:8080")?.resolvedURLString == "http://[::1]:8080")
+    #expect(resolver.resolve("example.com")?.resolvedURLString == "https://example.com")
+    #expect(
+        resolver.resolve("https://localhost:3000")?.resolvedURLString == "https://localhost:3000",
+        "A typed scheme stays",
+    )
 }
