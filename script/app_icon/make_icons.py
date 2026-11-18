@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Draws OpenArc's app icons from the mark in mark.py.
 
-Writes the bundle icon set (the Original colors), one 1024 px PNG for each
-icon Settings offers, and the website's favicon. Needs `rsvg-convert`
+Writes the bundle icon set (the Original colors), the iOS app icon, one
+1024 px PNG for each icon Settings offers, and the website's favicon. Needs `rsvg-convert`
 (Homebrew librsvg).
 
     script/app_icon/make_icons.py
@@ -18,6 +18,7 @@ import mark  # noqa: E402
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 ICON_SET = ROOT / "Sources/Browser/Assets.xcassets/AppIcon.appiconset"
+IOS_ICON_SET = ROOT / "Sources/BrowseriOS/Assets.xcassets/AppIcon.appiconset"
 RESOURCES = ROOT / "Sources/Browser/Resources"
 FAVICON = ROOT / "Website/public/favicon.svg"
 
@@ -26,6 +27,8 @@ CANVAS, BODY, MARGIN, RADIUS = 1024, 824, 100, 185
 MARK_WIDTH = 680
 # A sticker's outline takes room, so its mark is drawn wider.
 STICKER_WIDTH = 700
+# iOS masks a full-bleed square; the mark keeps the Mac icon's share of it.
+IOS_MARK_WIDTH = 840
 
 
 def mark_transform(width=MARK_WIDTH):
@@ -195,6 +198,20 @@ def monochrome():
     return svg("", content)
 
 
+def ios():
+    """The Original icon for iOS: the system rounds the corners, so the
+    background fills the canvas and has no shadow."""
+    outline = 58 * IOS_MARK_WIDTH / STICKER_WIDTH
+    rim, group = sticker_mark("url(#leg)", "url(#arch)", outline, "#6E7487", 0.3, IOS_MARK_WIDTH)
+    defs = (
+        gradient("bg", [(0, "#FFFFFF"), (1, "#F2F3F8")])
+        + gradient("leg", [(0, "#5B6CFF"), (1, "#1B26A8")], 0.2, 0, 0.6, 1)
+        + gradient("arch", [(0, "#FF8A98"), (0.55, "#F2475F"), (1, "#C92A47")], 0.1, 0, 0.9, 1)
+        + rim
+    )
+    return svg(defs, f'<rect width="{CANVAS}" height="{CANVAS}" fill="url(#bg)"/>' + group)
+
+
 def favicon():
     """The Original icon for browser tabs: the body fills the box, without the
     shadow and the sticker's filter, which blur at 16 px."""
@@ -240,6 +257,9 @@ def render(source, size, destination):
 def main():
     FAVICON.write_text(favicon())
     with tempfile.TemporaryDirectory() as temporary:
+        source = pathlib.Path(temporary) / "ios.svg"
+        source.write_text(ios())
+        render(source, CANVAS, IOS_ICON_SET / "icon_1024.png")
         for name, draw in VARIANTS.items():
             source = pathlib.Path(temporary) / f"{name}.svg"
             source.write_text(draw())

@@ -340,6 +340,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.levochkaa.OpenArc
         INFOPLIST_FILE: Support/OpenArciOS-Info.plist
         CODE_SIGN_ENTITLEMENTS: Support/OpenArciOS.entitlements
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         SUPPORTS_MACCATALYST: NO
         TARGETED_DEVICE_FAMILY: "1,2"
         SWIFT_STRICT_CONCURRENCY: complete
