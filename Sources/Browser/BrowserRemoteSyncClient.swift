@@ -20,6 +20,13 @@ final class BrowserRemoteSyncClient: @unchecked Sendable {
     private static let decoder = JSONDecoder()
     private static let gzipRequestThreshold = 1024
 
+    /// The server's answer to a versioned pull above cursor zero before that version's bootstrap.
+    private static let bootstrapErrors: [String: BrowserRemoteSyncError] = [
+        "Protocol 4 bootstrap requires cursor 0": .folderBootstrapRequired,
+        "Protocol 5 bootstrap requires cursor 0": .expiryBootstrapRequired,
+        "Protocol 6 bootstrap requires cursor 0": .boostBootstrapRequired,
+    ]
+
     private let configuration: BrowserSyncConfiguration
     private let session: URLSession
     private let openAPITransport: URLSessionTransport
@@ -189,7 +196,7 @@ final class BrowserRemoteSyncClient: @unchecked Sendable {
         authSession: BrowserAuthSession,
     ) async throws -> BrowserSyncPullResponse {
         guard authSession.belongs(to: baseURL) else { throw BrowserSyncAccountError.serverChanged }
-        guard [2, 4, 5].contains(protocolVersion) else { throw BrowserRemoteSyncError.unsupportedSyncProtocol }
+        guard [2, 4, 5, 6].contains(protocolVersion) else { throw BrowserRemoteSyncError.unsupportedSyncProtocol }
         return try await send(
             path: "/v1/sync/pull",
             method: "POST",
@@ -253,6 +260,22 @@ final class BrowserRemoteSyncClient: @unchecked Sendable {
         return response
     }
 
+    func push(
+        mutation: BrowserSyncBoostMutation,
+        authSession: BrowserAuthSession,
+    ) async throws -> BrowserSyncBoostPushResponse {
+        guard authSession.belongs(to: baseURL) else { throw BrowserSyncAccountError.serverChanged }
+        try mutation.validate()
+        let response: BrowserSyncBoostPushResponse = try await send(
+            path: "/v1/sync/push", method: "POST",
+            body: BrowserSyncBoostPushRequest(
+                mutationID: mutation.id, deviceID: authSession.deviceID, operations: mutation.operations,
+            ), accessToken: authSession.accessToken,
+        )
+        try response.validate(for: mutation)
+        return response
+    }
+
     private func openAPIClient(accessToken: String?) -> Client {
         Client(
             serverURL: configuration.baseURL,
@@ -294,12 +317,9 @@ final class BrowserRemoteSyncClient: @unchecked Sendable {
         guard let httpResponse = response as? HTTPURLResponse, (200..<300).contains(httpResponse.statusCode) else {
             if path == "/v1/sync/pull", (response as? HTTPURLResponse)?.statusCode == 409,
                let error = try? Self.decoder.decode(SyncServerError.self, from: data),
-               ["Protocol 4 bootstrap requires cursor 0", "Protocol 5 bootstrap requires cursor 0"]
-                .contains(error.message)
+               let bootstrap = Self.bootstrapErrors[error.message]
             {
-                throw error.message.hasPrefix("Protocol 5")
-                    ? BrowserRemoteSyncError.expiryBootstrapRequired
-                    : BrowserRemoteSyncError.folderBootstrapRequired
+                throw bootstrap
             }
             throw BrowserRemoteSyncError.unexpectedResponse(data)
         }
@@ -319,8 +339,16 @@ enum BrowserRemoteSyncError: Error {
     case invalidMutationReceipt
     case folderBootstrapRequired
     case expiryBootstrapRequired
+    case boostBootstrapRequired
 
     // MARK: Internal
+
+    var isBoostBootstrapRequired: Bool {
+        if case .boostBootstrapRequired = self {
+            return true
+        }
+        return false
+    }
 
     var isFolderBootstrapRequired: Bool {
         if case .folderBootstrapRequired = self {
@@ -485,9 +513,21 @@ enum BrowserAuthSessionStoreError: Error {
         mutation: BrowserSyncExpiryMutation,
         authSession: BrowserAuthSession,
     ) async throws -> BrowserSyncExpiryPushResponse
+
+    func push(
+        mutation: BrowserSyncBoostMutation,
+        authSession: BrowserAuthSession,
+    ) async throws -> BrowserSyncBoostPushResponse
 }
 
 extension BrowserSyncRemoteServing {
+    func push(
+        mutation _: BrowserSyncBoostMutation,
+        authSession _: BrowserAuthSession,
+    ) throws -> BrowserSyncBoostPushResponse {
+        throw BrowserRemoteSyncError.unsupportedSyncProtocol
+    }
+
     func push(
         mutation _: BrowserSyncExpiryMutation,
         authSession _: BrowserAuthSession,
@@ -641,6 +681,7 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
     /// thread for up to 25 ms, which would hold a click, a scroll or a typed letter.
     private let waitForInputPause: @MainActor () async -> Void
     private weak var snapshotApplier: (any BrowserSyncSnapshotApplying)?
+    private weak var boostApplier: (any BrowserSyncBoostApplying)?
 
     init(
         localStore: BrowserSQLiteSessionStore,
@@ -822,7 +863,7 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
     @discardableResult func enqueueExpiry(operations: [BrowserSyncExpiryOperation]) throws -> String? {
         guard !operations.isEmpty else { return nil }
         guard let context = currentContext(), supportedPushVersions.isSuperset(of: [4, 5]),
-              try localStore.syncPullProtocolVersion(for: context.owner) == 5
+              try localStore.syncPullProtocolVersion(for: context.owner) >= 5
         else { throw BrowserRemoteSyncError.unsupportedSyncProtocol }
         let mutation = BrowserSyncExpiryMutation(id: UUID().uuidString, operations: operations)
         try localStore.enqueueSyncExpiry(mutation, for: context.owner)
@@ -848,6 +889,16 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
 
     func setSnapshotApplier(_ snapshotApplier: (any BrowserSyncSnapshotApplying)?) {
         self.snapshotApplier = snapshotApplier
+    }
+
+    /// The app-wide boosts follow the profile whose service has this applier.
+    func setBoostApplier(_ boostApplier: (any BrowserSyncBoostApplying)?) {
+        self.boostApplier = boostApplier
+    }
+
+    /// Wakes the sender for writes queued outside a snapshot save, such as boosts.
+    func scheduleQueuedPush() {
+        schedulePush(snapshot: BrowserTabSessionSnapshot(tabs: []))
     }
 
     /// Future polling/backoff timers are deliberately excluded from this drain.
@@ -1030,7 +1081,7 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
                             continue
                         }
                     }
-                    guard try localStore.syncPullProtocolVersion(for: context.owner) == 5 else {
+                    guard try localStore.syncPullProtocolVersion(for: context.owner) >= 5 else {
                         throw BrowserRemoteSyncError.unsupportedSyncProtocol
                     }
                     let response = try await remoteClient.push(mutation: payload, authSession: context.session)
@@ -1038,12 +1089,18 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
                     try response.validate(for: payload)
                     events = response.events
                     expiryResponse = response
+                case .boosts(let payload):
+                    let response = try await remoteClient.push(mutation: payload, authSession: context.session)
+                    guard isCurrent(context), !Task.isCancelled else { return }
+                    try response.validate(for: payload)
+                    events = response.events
                 }
                 guard isCurrent(context), !Task.isCancelled else { return }
                 await waitForInputPause()
                 guard isCurrent(context), !Task.isCancelled else { return }
                 let previous = try localStore.loadSnapshotForSync(for: context.owner)
                 let archiveRevision = try localStore.syncArchiveRevision(for: context.owner)
+                let boostRevision = try localStore.syncBoostRevision(for: context.owner)
                 let projected = try localStore.acknowledgeSyncMutation(
                     id: mutation.id,
                     protocolVersion: mutation.protocolVersion,
@@ -1060,6 +1117,10 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
                 guard isCurrent(context), !Task.isCancelled else { return }
                 if try archiveRevision != localStore.syncArchiveRevision(for: context.owner) {
                     snapshotApplier?.syncArchiveDidChange()
+                }
+                guard isCurrent(context), !Task.isCancelled else { return }
+                if try boostRevision != localStore.syncBoostRevision(for: context.owner) {
+                    boostApplier?.syncBoostsDidChange()
                 }
                 // Model projection can itself fail to persist and synchronously
                 // block sync. Do not restore work from the invalidated generation.
@@ -1090,7 +1151,7 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
 
     private func scheduleAutomaticExpiry(context: RequestContext) async throws {
         guard isCurrent(context), !Task.isCancelled, supportedPushVersions.isSuperset(of: [4, 5]),
-              try localStore.syncPullProtocolVersion(for: context.owner) == 5,
+              try localStore.syncPullProtocolVersion(for: context.owner) >= 5,
               let scheduler = expiryScheduler, scheduler.expirySchedulingState() != nil else { return }
         let now = dateProvider()
         guard now.timeIntervalSince1970.isFinite else { return }
@@ -1198,6 +1259,7 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
             var protocolVersion = initialVersion
             var bootstrap = false
             var cursor = try localStore.syncCursor(for: context.owner)
+            let startCursor = cursor
             var latestEvents = [EntityKey: BrowserSyncEvent]()
             var advertisedVersions: Set<Int>?
             while true {
@@ -1208,7 +1270,8 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
                     )
                 } catch let error as BrowserRemoteSyncError where !bootstrap &&
                     ((protocolVersion == 4 && error.isFolderBootstrapRequired) ||
-                        (protocolVersion == 5 && error.isExpiryBootstrapRequired))
+                        (protocolVersion == 5 && error.isExpiryBootstrapRequired) ||
+                        (protocolVersion == 6 && error.isBoostBootstrapRequired))
                 {
                     // A freshly registered device has no v4 read fence yet, even
                     // when this profile already has an adopted v4 baseline.
@@ -1223,9 +1286,23 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
                 guard response.protocolVersion == protocolVersion else {
                     throw BrowserRemoteSyncError.unsupportedSyncProtocol
                 }
-                let pageVersions = Set(response.supportedPushVersions ?? [2]).intersection([2, 3, 4, 5])
+                let pageVersions = Set(response.supportedPushVersions ?? [2]).intersection([2, 3, 4, 5, 6])
+                if protocolVersion == 6, !pageVersions.contains(6), pageVersions.isSuperset(of: [4, 5]) {
+                    // The server stopped carrying boosts. Spaces and tabs keep
+                    // syncing at v5 from the same cursor; boost sync starts again
+                    // from cursor zero once the server offers v6 again. Queued
+                    // boost rows stay in order, as any row of a withdrawn version does.
+                    try localStore.suspendBoostSync(for: context.owner)
+                    guard isCurrent(context), !Task.isCancelled else { return }
+                    protocolVersion = 5
+                    cursor = bootstrap ? 0 : startCursor
+                    latestEvents.removeAll()
+                    advertisedVersions = nil
+                    continue
+                }
                 guard protocolVersion == 2 || pageVersions.contains(4),
-                      protocolVersion != 5 || pageVersions.contains(5)
+                      protocolVersion < 5 || pageVersions.contains(5),
+                      protocolVersion != 6 || pageVersions.contains(6)
                 else {
                     throw BrowserRemoteSyncError.unsupportedSyncProtocol
                 }
@@ -1257,8 +1334,12 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
                         advertisedVersions = nil
                         continue
                     }
-                    if protocolVersion == 4, advertisedVersions?.contains(5) == true {
-                        protocolVersion = 5
+                    // Each upgrade replays the history from cursor zero; only
+                    // the newest read commits.
+                    if (4...5).contains(protocolVersion),
+                       advertisedVersions?.contains(protocolVersion + 1) == true
+                    {
+                        protocolVersion += 1
                         bootstrap = true
                         cursor = 0
                         latestEvents.removeAll()
@@ -1274,8 +1355,14 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
             let versions = advertisedVersions ?? []
             let events = latestEvents.values.sorted { $0.serverSeq < $1.serverSeq }
             let archiveRevision = try localStore.syncArchiveRevision(for: context.owner)
+            let boostRevision = try localStore.syncBoostRevision(for: context.owner)
             let projected: BrowserTabSessionSnapshot =
-                if bootstrap {
+                if bootstrap, protocolVersion == 6 {
+                    try localStore.completeBoostSyncBootstrap(
+                        events: events, cursor: cursor, for: context.owner,
+                        localBoosts: boostApplier?.localSyncBoosts() ?? [],
+                    )
+                } else if bootstrap {
                     try protocolVersion == 5
                         ? localStore.completeExpirySyncBootstrap(events: events, cursor: cursor, for: context.owner)
                         : localStore.completeFolderSyncBootstrap(events: events, cursor: cursor, for: context.owner)
@@ -1290,6 +1377,10 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
             guard isCurrent(context), !Task.isCancelled else { return }
             if try archiveRevision != localStore.syncArchiveRevision(for: context.owner) {
                 snapshotApplier?.syncArchiveDidChange()
+            }
+            guard isCurrent(context), !Task.isCancelled else { return }
+            if try boostRevision != localStore.syncBoostRevision(for: context.owner) {
+                boostApplier?.syncBoostsDidChange()
             }
             guard isCurrent(context), !Task.isCancelled else { return }
             supportedPushVersions = versions

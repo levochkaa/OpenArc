@@ -40,7 +40,7 @@ extension BrowserSyncHTTPIntegrationTests {
         let largeSource = try #require(seeded.events.last { $0.entityID == "large" && $0.op == "upsert" })
         let smallSource = try #require(seeded.events.last { $0.entityID == "small" && $0.op == "upsert" })
         await first.activate()
-        #expect(try first.store.syncPullProtocolVersion(for: first.owner) == 5)
+        #expect(try first.store.syncPullProtocolVersion(for: first.owner) == 6)
         #expect(first.store.loadSnapshot()?.tabs.compactMap(\.id) == ["large", "small"])
         let before = try await fixture.inspect(account)
         let mutationID = try #require(try first.service.enqueueExpiry(operations: [
@@ -129,7 +129,7 @@ extension BrowserSyncHTTPIntegrationTests {
         await first.saveAndSend(expiryQueueHTTPSnapshot())
         await second.activate()
         for profile in [first, second] {
-            #expect(try profile.store.syncPullProtocolVersion(for: profile.owner) == 5)
+            #expect(try profile.store.syncPullProtocolVersion(for: profile.owner) == 6)
             #expect(try profile.store.pendingSyncQueue(for: profile.owner).isEmpty)
         }
         let initial = try await remote.pull(cursor: 0, protocolVersion: 5, authSession: auth(account.devices[0]))
@@ -256,10 +256,12 @@ extension BrowserSyncHTTPIntegrationTests {
         await second.pull()
         let afterRotation = try await fixture.inspect(account)
         #expect(afterRotation.observedPulls.contains {
-            $0.deviceID == rotatedDevice.deviceID && $0.protocolVersion == 5 && $0.cursor > 0 && $0.status == 409
+            $0.deviceID == rotatedDevice.deviceID && (5...6).contains($0.protocolVersion) && $0.cursor > 0 && $0
+                .status == 409
         })
         #expect(afterRotation.observedPulls.contains {
-            $0.deviceID == rotatedDevice.deviceID && $0.protocolVersion == 5 && $0.cursor == 0 && $0.status == 201
+            $0.deviceID == rotatedDevice.deviceID && (5...6).contains($0.protocolVersion) && $0.cursor == 0 && $0
+                .status == 201
         })
         let attempts = afterRotation.attempts.filter { $0.mutationID == acceptedID }
         #expect(attempts.count >= 2 && Set(attempts.map(\.digest)) == [originalAttempt.digest])

@@ -542,8 +542,16 @@ final class BrowserUserPreferencesStore: ObservableObject {
             .map(\.withCurrentDefaultColor) ?? BrowserSiteSearch.arcDefaults
         self.sitePermissionDecisions = userDefaults.data(forKey: Key.sitePermissionDecisions)
             .flatMap { try? JSONDecoder().decode([BrowserSitePermissionDecision].self, from: $0) } ?? []
-        self.boosts = userDefaults.data(forKey: Key.boosts)
-            .flatMap { try? JSONDecoder().decode([BrowserBoost].self, from: $0) } ?? []
+        let boostData = userDefaults.data(forKey: Key.boosts)
+        let boosts = boostData.flatMap { try? JSONDecoder().decode([BrowserBoost].self, from: $0) } ?? []
+        // Boosts saved before sync got their identities while decoding; keep them.
+        if let boostData, !boosts.isEmpty,
+           (try? JSONSerialization.jsonObject(with: boostData) as? [[String: Any]])?
+            .contains(where: { $0["syncID"] == nil }) == true
+        {
+            userDefaults.set(try? JSONEncoder().encode(boosts), forKey: Key.boosts)
+        }
+        self.boosts = boosts
         self.boostsEnabled = Self.loadBool(userDefaults, key: Key.boostsEnabled, defaultValue: true)
     }
 

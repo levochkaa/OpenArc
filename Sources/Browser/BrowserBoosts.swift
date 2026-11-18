@@ -12,6 +12,7 @@ struct BrowserBoost: Codable, Equatable, Identifiable {
     // MARK: Private
 
     private enum CodingKeys: String, CodingKey {
+        case syncID
         case host
         case isEnabled
         case css
@@ -29,6 +30,9 @@ struct BrowserBoost: Codable, Equatable, Identifiable {
     /// The selector that keeps icon fonts out of the font and case rules.
     static let textSelector = "*:not(i, .material-symbols-outlined, .material-icons)"
 
+    /// The boost's identity across devices. A boost made again after a delete
+    /// gets a new one, since a deleted identity never comes back.
+    var syncID: String
     var host: String
     var isEnabled: Bool
     var css: String
@@ -111,6 +115,13 @@ struct BrowserBoost: Codable, Equatable, Identifiable {
         return BrowserBoostTintFilter(tint: tint, originalSaturation: colors.originalSaturation)
     }
 
+    /// What sync carries besides the identity.
+    var syncRecord: BrowserSyncBoostRecord {
+        BrowserSyncBoostRecord(
+            host: host, isEnabled: isEnabled, css: css, javaScript: javaScript, zappedSelectors: zappedSelectors,
+        )
+    }
+
     init(
         host: String,
         isEnabled: Bool = true,
@@ -122,7 +133,9 @@ struct BrowserBoost: Codable, Equatable, Identifiable {
         fontFamily: String? = nil,
         textCase: BrowserBoostTextCase? = nil,
         textZoom: Double? = nil,
+        syncID: String = UUID().uuidString,
     ) {
+        self.syncID = syncID
         self.host = host
         self.isEnabled = isEnabled
         self.css = css
@@ -137,6 +150,8 @@ struct BrowserBoost: Codable, Equatable, Identifiable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        // Boosts saved before sync get an identity once; the store saves it.
+        self.syncID = try container.decodeIfPresent(String.self, forKey: .syncID) ?? UUID().uuidString
         self.host = try container.decode(String.self, forKey: .host)
         self.isEnabled = try container.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? true
         self.css = try container.decodeIfPresent(String.self, forKey: .css) ?? ""
@@ -151,18 +166,15 @@ struct BrowserBoost: Codable, Equatable, Identifiable {
         self.textZoom = try? container.decodeIfPresent(Double.self, forKey: .textZoom)
     }
 
-    /// The name lists and the editor show.
-    func displayTitle(defaultTitle: String) -> String {
-        guard let title, !title.isBlank else { return defaultTitle }
-        return title
-    }
-
-    /// Keeps the content and name, and drops every edit of the editor's controls.
-    mutating func resetStyle() {
-        colors = nil
-        fontFamily = nil
-        textCase = nil
-        textZoom = nil
+    init(_ entry: BrowserSyncBoostEntry) {
+        self.init(
+            host: entry.record.host,
+            isEnabled: entry.record.isEnabled,
+            css: entry.record.css,
+            javaScript: entry.record.javaScript,
+            zappedSelectors: entry.record.zappedSelectors,
+            syncID: entry.id,
+        )
     }
 
     /// The site of a web address: its lowercased host without a trailing dot
@@ -197,6 +209,29 @@ struct BrowserBoost: Codable, Equatable, Identifiable {
             rest = rest[rest.index(after: dot)...]
         }
         return candidates
+    }
+
+    /// The name lists and the editor show.
+    func displayTitle(defaultTitle: String) -> String {
+        guard let title, !title.isBlank else { return defaultTitle }
+        return title
+    }
+
+    /// Takes another copy's name and editor styling: colors, font, case and size.
+    mutating func keepStyle(of other: BrowserBoost) {
+        title = other.title
+        colors = other.colors
+        fontFamily = other.fontFamily
+        textCase = other.textCase
+        textZoom = other.textZoom
+    }
+
+    /// Keeps the content and name, and drops every edit of the editor's controls.
+    mutating func resetStyle() {
+        colors = nil
+        fontFamily = nil
+        textCase = nil
+        textZoom = nil
     }
 }
 

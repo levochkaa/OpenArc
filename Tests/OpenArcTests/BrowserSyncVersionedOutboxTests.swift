@@ -288,7 +288,8 @@ import Testing
                 deviceID: device,
                 operations: mutation.operations,
             ))
-        case .expiry,
+        case .boosts,
+             .expiry,
              .folders:
             Issue.record("Legacy migration fixture must contain only v2/v3 rows")
             return

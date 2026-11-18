@@ -117,8 +117,9 @@ enum BrowserSyncExpiryRecovery {
                     default: break
                     }
                 }
-            case .expiry:
-                // Expiry carries a condition, never newer local page content.
+            case .boosts,
+                 .expiry:
+                // Expiry carries a condition, boosts no page content.
                 break
             }
         }

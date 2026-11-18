@@ -376,7 +376,7 @@ const control = createServer((incoming, outgoing) => {
       const scenarioAttempts = attempts.filter((attempt) => deviceIDs.has(attempt.deviceID));
       assert.ok(scenarioAttempts.length > 0, "Completed scenario must send production sync mutations");
       if (account.scenario === mobileAutomaticScenario) {
-        assert.ok(scenarioAttempts.every((attempt) => [2, 3, 4, 5].includes(attempt.protocolVersion)));
+        assert.ok(scenarioAttempts.every((attempt) => [2, 3, 4, 5, 6].includes(attempt.protocolVersion)));
         assert.ok(scenarioAttempts.some((attempt) => attempt.protocolVersion === 5 && attempt.status === 201
           && attempt.outcomeStatuses?.includes("applied") && attempt.hasAutoArchive),
         "The mobile scheduler must commit actual v5 expiry with recovery");
@@ -385,7 +385,7 @@ const control = createServer((incoming, outgoing) => {
             && attempt.protocolVersion === 4 && attempt.status === 201),
           "Both mobile scheduler devices must commit ordinary v4 changes");
           assert.ok(observedPulls.some((pull) => pull.deviceID === device.deviceID
-            && pull.protocolVersion === 5 && pull.cursor === 0 && pull.status === 201),
+            && [5, 6].includes(pull.protocolVersion) && pull.cursor === 0 && pull.status === 201),
           "Both mobile scheduler devices must bootstrap recovery through production v5 pulls");
         }
       } else if (mobileScenarios.has(account.scenario)) {
@@ -405,7 +405,7 @@ const control = createServer((incoming, outgoing) => {
         "Adoption must replay the exact surviving-tab seed after its lost ACK");
         for (const device of account.devices) {
           assert.ok(observedPulls.some((pull) => pull.deviceID === device.deviceID
-            && pull.protocolVersion === 5 && pull.cursor === 0 && pull.status === 201),
+            && [5, 6].includes(pull.protocolVersion) && pull.cursor === 0 && pull.status === 201),
           "Both clients must finish current recovery-capable bootstrap after local recovery");
         }
         const state = await inspect(account.userID);
@@ -425,7 +425,7 @@ const control = createServer((incoming, outgoing) => {
         "Stale creations for both retired identities must receive terminal tombstones");
         for (const device of account.devices) {
           assert.ok(observedPulls.filter((pull) => pull.deviceID === device.deviceID
-            && pull.protocolVersion === 5 && pull.cursor === 0 && pull.status === 201).length >= 2,
+            && [5, 6].includes(pull.protocolVersion) && pull.cursor === 0 && pull.status === 201).length >= 2,
           "Both clients must repeat recovery-capable bootstrap from fresh SQLite profiles");
         }
         const state = await inspect(account.userID);
@@ -443,7 +443,7 @@ const control = createServer((incoming, outgoing) => {
         "Confirmed home reset must replay its exact immutable mutation after a lost ACK");
         for (const device of account.devices) {
           assert.ok(observedPulls.some((pull) => pull.deviceID === device.deviceID
-            && pull.protocolVersion === 5 && pull.cursor === 0 && pull.status === 201),
+            && [5, 6].includes(pull.protocolVersion) && pull.cursor === 0 && pull.status === 201),
           "Both persistent-close clients must finish recovery-capable bootstrap");
         }
         const state = await inspect(account.userID);
@@ -461,14 +461,14 @@ const control = createServer((incoming, outgoing) => {
         "Confirmed close must replay its exact immutable mutation after a lost ACK");
         for (const device of account.devices) {
           assert.ok(observedPulls.some((pull) => pull.deviceID === device.deviceID
-            && pull.protocolVersion === 5 && pull.cursor === 0 && pull.status === 201),
+            && [5, 6].includes(pull.protocolVersion) && pull.cursor === 0 && pull.status === 201),
           "Both confirmed-close clients must use the current recovery-capable production transport");
         }
       } else if (account.scenario === desktopArchiveScenario || account.scenario === desktopAutomaticScenario) {
         assert.ok(scenarioAttempts.every((attempt) => [4, 5].includes(attempt.protocolVersion)));
         for (const device of account.devices) {
           assert.ok(observedPulls.some((pull) => pull.deviceID === device.deviceID
-            && pull.protocolVersion === 5 && pull.cursor === 0 && pull.status === 201),
+            && [5, 6].includes(pull.protocolVersion) && pull.cursor === 0 && pull.status === 201),
           "Both desktop Archive clients must bootstrap recovery through production v5 pulls");
         }
         const expiry = scenarioAttempts.filter((attempt) => attempt.protocolVersion === 5 && attempt.status === 201
@@ -496,11 +496,11 @@ const control = createServer((incoming, outgoing) => {
           && attempt.hasAutoArchive), "One real queued batch must retain the oversized tab while expiring its small peer");
         for (const device of account.devices) {
           assert.ok(observedPulls.some((pull) => pull.deviceID === device.deviceID
-            && pull.protocolVersion === 5 && pull.cursor === 0 && pull.status === 201),
+            && [5, 6].includes(pull.protocolVersion) && pull.cursor === 0 && pull.status === 201),
           "Both response-limit clients must read production v5 state");
         }
       } else if (account.scenario === expiryQueueScenario) {
-        assert.ok(scenarioAttempts.every((attempt) => [2, 3, 4, 5].includes(attempt.protocolVersion)));
+        assert.ok(scenarioAttempts.every((attempt) => [2, 3, 4, 5, 6].includes(attempt.protocolVersion)));
         const expiry = scenarioAttempts.filter((attempt) => attempt.protocolVersion === 5 && attempt.status === 201);
         assert.ok(expiry.some((attempt) => attempt.outcomeReasons?.includes("state_changed")),
           "Queued expiry must reject a stale canonical version");
@@ -511,19 +511,19 @@ const control = createServer((incoming, outgoing) => {
         assert.equal(account.devices.length, 3, "Queued expiry must re-register one device");
         for (const device of account.devices) {
           assert.ok(observedPulls.some((pull) => pull.deviceID === device.deviceID
-            && pull.protocolVersion === 5 && pull.cursor === 0 && pull.status === 201),
+            && [5, 6].includes(pull.protocolVersion) && pull.cursor === 0 && pull.status === 201),
           "Queued expiry clients must complete real v5 bootstrap reads");
         }
         const rotated = account.devices[2];
         assert.ok(observedPulls.some((pull) => pull.deviceID === rotated.deviceID
-          && pull.protocolVersion === 5 && pull.cursor > 0 && pull.status === 409),
+          && [5, 6].includes(pull.protocolVersion) && pull.cursor > 0 && pull.status === 409),
         "The rotated device must encounter the production v5 bootstrap fence");
       } else if (account.scenario === expiryScenario) {
         assert.ok(scenarioAttempts.every((attempt) => [2, 3, 4].includes(attempt.protocolVersion)),
           "Recovery clients retain ordinary v2/v3/v4 mutations");
         for (const device of account.devices) {
           assert.ok(observedPulls.some((pull) => pull.deviceID === device.deviceID
-            && pull.protocolVersion === 5 && pull.cursor === 0 && pull.status === 201),
+            && [5, 6].includes(pull.protocolVersion) && pull.cursor === 0 && pull.status === 201),
           "Both recovery clients must complete a real v5 bootstrap");
         }
         const expiry = expiryAttempts.filter((attempt) => deviceIDs.has(attempt.deviceID));

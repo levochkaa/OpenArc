@@ -70,6 +70,8 @@ NSMenuDelegate, NSUserInterfaceValidations {
     private var reservedShortcutMonitor: Any?
     private var appearancePreferenceCancellable: AnyCancellable?
     private var boostsCancellable: AnyCancellable?
+    /// Boosts are app-wide; they sync through the default profile's account.
+    private var boostSyncBridge: BrowserBoostSyncBridge?
     private var littleWindowHotKeyCancellable: AnyCancellable?
     private weak var lastKeyProfileWindow: NSWindow?
     /// Option-Command-N from any app, when turned on in Settings.
@@ -279,6 +281,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
     }
 
     public func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        boostSyncBridge?.flush()
         requestApplicationTermination(sender)
         return .terminateCancel
     }
@@ -3969,6 +3972,13 @@ NSMenuDelegate, NSUserInterfaceValidations {
             enablesSyncOnSignIn: true,
         )
         syncSuccess.accountStore = accountStore
+        if profile.isDefault, let sqliteSessionStore {
+            let bridge = BrowserBoostSyncBridge(store: sqliteSessionStore, preferences: userPreferencesStore) {
+                [weak syncCoordinator] in syncCoordinator?.scheduleQueuedPush()
+            }
+            boostSyncBridge = bridge
+            syncCoordinator?.setBoostApplier(bridge)
+        }
         let sessionStore: BrowserTabSessionSnapshotStoring =
             if let shared = source?.chromeModel.sharedSessionStore {
                 shared

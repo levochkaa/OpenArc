@@ -458,6 +458,11 @@ private struct BrowserSyncSemanticEncodedEvent: Encodable {
                 codingPath: encoder.codingPath,
                 debugDescription: "Protocol version 3 cannot encode folder events",
             ))
+        case .boost:
+            throw EncodingError.invalidValue(event, .init(
+                codingPath: encoder.codingPath,
+                debugDescription: "Protocol version 3 cannot encode boost events",
+            ))
         }
     }
 }

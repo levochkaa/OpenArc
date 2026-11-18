@@ -226,7 +226,7 @@ extension BrowserSyncHTTPIntegrationTests {
             #expect(snapshot.pinnedTabFolders?.map(\.id) == ["folder"])
             #expect(try fresh.store.pendingSyncQueue(for: fresh.owner).isEmpty)
             #expect(try fresh.store.loadArchivePage().entries.isEmpty)
-            #expect(try fresh.store.syncPullProtocolVersion(for: fresh.owner) == 5)
+            #expect(try fresh.store.syncPullProtocolVersion(for: fresh.owner) == 6)
             await fresh.disconnect()
         }
         let finalDisk = try BrowserSQLiteSessionStore(databaseURL: databaseURL)

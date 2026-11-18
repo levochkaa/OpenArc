@@ -42,7 +42,8 @@ func expiryOutboxMigrationPreservesEveryLegacyByteAndConsumedFIFOHighWater(empty
                 case .legacy(let value): payload = try fixture.prettyEncoder.encode(value)
                 case .semantic(let value): payload = try fixture.prettyEncoder.encode(value)
                 case .folders(let value): payload = try fixture.prettyEncoder.encode(value)
-                case .expiry: throw ExpiryOutboxFixtureError.unexpectedMutation
+                case .boosts,
+                     .expiry: throw ExpiryOutboxFixtureError.unexpectedMutation
                 }
                 try db.execute(
                     sql: "INSERT INTO browser_sync_outbox(position, mutation_id, payload, protocol_version) VALUES (?, ?, ?, ?)",

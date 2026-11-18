@@ -114,15 +114,18 @@ import Testing
         #expect(boosts.editableHost(forURLString: "openarc://history") == nil)
     }
 
-    @Test func updatingABoostCreatesItKeepsZapsUniqueAndRemovesItWhenEmpty() {
+    @Test func updatingABoostCreatesItKeepsZapsUniqueAndRemovesItWhenEmpty() throws {
         var boosts = [BrowserBoost]()
         boosts.updateBoost(host: "Example.com") { $0.isEnabled = false }
         #expect(boosts.isEmpty, "A Boost that adds nothing is not saved")
 
         boosts.updateBoost(host: "www.example.com") { $0.zappedSelectors = ["#ad", "#ad", " ", ".banner"] }
-        #expect(boosts == [BrowserBoost(host: "example.com", zappedSelectors: ["#ad", ".banner"])])
+        #expect(boosts
+            .map(\.syncRecord) == [BrowserBoost(host: "example.com", zappedSelectors: ["#ad", ".banner"]).syncRecord])
+        let identity = try #require(boosts.first?.syncID)
 
         boosts.updateBoost(host: "example.com") { $0.css = "a {}" }
+        #expect(boosts.first?.syncID == identity, "Edits keep the boost's identity")
         boosts.updateBoost(host: "other.org") { $0.javaScript = "1" }
         #expect(boosts.map(\.host) == ["example.com", "other.org"])
         #expect(boosts.boost(forHost: "example.com")?.css == "a {}")
@@ -148,7 +151,16 @@ import Testing
 
         let older = Data(#"[{"host":"example.com","css":"a {}"}]"#.utf8)
         let decoded = try JSONDecoder().decode([BrowserBoost].self, from: older)
-        #expect(decoded == [BrowserBoost(host: "example.com", css: "a {}")], "Missing fields take their defaults")
+        #expect(
+            decoded.map(\.syncRecord) == [BrowserBoost(host: "example.com", css: "a {}").syncRecord],
+            "Missing fields take their defaults",
+        )
+
+        // Boosts saved before sync get an identity once, and keep it.
+        defaults.set(older, forKey: "browser.settings.boosts")
+        let identified = BrowserUserPreferencesStore(userDefaults: defaults).boosts
+        #expect(identified.count == 1)
+        #expect(BrowserUserPreferencesStore(userDefaults: defaults).boosts == identified)
     }
 
     @Test func openPagesRestyleForCSSAndReloadForJavaScript() {

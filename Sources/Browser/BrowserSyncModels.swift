@@ -256,6 +256,7 @@ struct BrowserSyncEvent: Codable, Equatable {
                 case "space": try .space(values.decode(BrowserSyncEventSpaceData.self, forKey: .data))
                 case "tab": try .tab(values.decode(BrowserSyncEventTabData.self, forKey: .data))
                 case "folder": try .folder(values.decode(BrowserSyncEventFolderData.self, forKey: .data))
+                case "boost": try .boost(values.decode(BrowserSyncEventBoostData.self, forKey: .data))
                 default: .unknown
                 }
             }
@@ -274,6 +275,7 @@ enum BrowserSyncEventData: Codable, Equatable {
     case space(BrowserSyncEventSpaceData)
     case tab(BrowserSyncEventTabData)
     case folder(BrowserSyncEventFolderData)
+    case boost(BrowserSyncEventBoostData)
     case deleted(id: String, autoArchive: BrowserSyncAutoArchiveData? = nil)
     case unknown
 
@@ -287,6 +289,10 @@ enum BrowserSyncEventData: Codable, Equatable {
            folder.title != nil
         {
             self = .folder(folder)
+            return
+        }
+        if let boost = try? container.decode(BrowserSyncEventBoostData.self), boost.host != nil, boost.css != nil {
+            self = .boost(boost)
             return
         }
         if let space = try? container.decode(BrowserSyncEventSpaceData.self), space.title != nil {
@@ -310,6 +316,7 @@ enum BrowserSyncEventData: Codable, Equatable {
         case .space(let data): try values.encode(data)
         case .tab(let data): try values.encode(data)
         case .folder(let data): try values.encode(data)
+        case .boost(let data): try values.encode(data)
         case .deleted(let id, let autoArchive): try values.encode(BrowserSyncDeletedData(
                 id: id,
                 autoArchive: autoArchive,

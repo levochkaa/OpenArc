@@ -261,6 +261,37 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
             // The browser profile chosen for a Space, local only.
             try db.execute(sql: "ALTER TABLE browser_spaces ADD COLUMN profile_directory TEXT")
         }
+        migrator.registerMigration("addBoostSyncOutbox") { db in
+            let sequence = try Int64.fetchOne(
+                db, sql: "SELECT seq FROM sqlite_sequence WHERE name = 'browser_sync_outbox'",
+            )
+            // Version 6 rows carry boost writes. Copy rows byte for byte, as the
+            // version 5 migration did, keeping consumed-row high-water marks.
+            try db.execute(sql: """
+            CREATE TABLE browser_sync_outbox_v6 (
+                position INTEGER PRIMARY KEY AUTOINCREMENT,
+                mutation_id TEXT NOT NULL UNIQUE,
+                payload BLOB NOT NULL,
+                protocol_version INTEGER NOT NULL DEFAULT 2 CHECK (protocol_version IN (2, 3, 4, 5, 6))
+            );
+            INSERT INTO browser_sync_outbox_v6 (position, mutation_id, payload, protocol_version)
+                SELECT position, mutation_id, payload, protocol_version FROM browser_sync_outbox ORDER BY position;
+            DROP TABLE browser_sync_outbox;
+            ALTER TABLE browser_sync_outbox_v6 RENAME TO browser_sync_outbox;
+            ALTER TABLE browser_sync_state ADD COLUMN boost_sync_enabled INTEGER NOT NULL DEFAULT 0 CHECK (boost_sync_enabled IN (0, 1));
+            ALTER TABLE browser_sync_state ADD COLUMN boost_revision INTEGER NOT NULL DEFAULT 0;
+            CREATE TABLE browser_sync_boost_baseline (
+                id INTEGER PRIMARY KEY CHECK (id = 1), payload BLOB NOT NULL
+            );
+            """)
+            if let sequence {
+                try db.execute(sql: "DELETE FROM sqlite_sequence WHERE name = 'browser_sync_outbox'")
+                try db.execute(
+                    sql: "INSERT INTO sqlite_sequence (name, seq) VALUES ('browser_sync_outbox', ?)",
+                    arguments: [sequence],
+                )
+            }
+        }
         return migrator
     }
 
@@ -768,6 +799,9 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
     func syncPullProtocolVersion(for owner: BrowserSyncOwner) throws -> Int {
         try dbQueue.read { db in
             try requireSyncOwner(owner, in: db)
+            if try boostSyncEnabled(in: db) {
+                return 6
+            }
             if try Bool
                 .fetchOne(db, sql: "SELECT expiry_recovery_enabled FROM browser_sync_state WHERE id = 1") == true
             {
@@ -788,6 +822,59 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
         events: [BrowserSyncEvent], cursor: Int, for owner: BrowserSyncOwner,
     ) throws -> BrowserTabSessionSnapshot {
         try completeSyncBootstrap(events: events, cursor: cursor, for: owner, expiryRecovery: true)
+    }
+
+    /// Call only after every page of a v6 pull from cursor zero. Local boosts
+    /// the server has not seen are queued in the same transaction.
+    func completeBoostSyncBootstrap(
+        events: [BrowserSyncEvent], cursor: Int, for owner: BrowserSyncOwner, localBoosts: [BrowserSyncBoostEntry],
+    ) throws -> BrowserTabSessionSnapshot {
+        try completeSyncBootstrap(
+            events: events, cursor: cursor, for: owner, expiryRecovery: true, localBoosts: localBoosts,
+        )
+    }
+
+    /// The server no longer offers v6: read at v5 until it does, then bootstrap
+    /// boosts again. The boost baseline and queued rows stay.
+    func suspendBoostSync(for owner: BrowserSyncOwner) throws {
+        try dbQueue.write { db in
+            try requireSyncOwner(owner, in: db)
+            try db.execute(sql: """
+            UPDATE browser_sync_state SET boost_sync_enabled = 0, boost_revision = boost_revision + 1 WHERE id = 1
+            """)
+        }
+    }
+
+    /// Changes whenever the synced boosts change, so the coordinator knows when to show them.
+    func syncBoostRevision(for owner: BrowserSyncOwner) throws -> Int64 {
+        try dbQueue.read { db in
+            try requireSyncOwner(owner, in: db)
+            return try Int64.fetchOne(db, sql: "SELECT boost_revision FROM browser_sync_state WHERE id = 1") ?? 0
+        }
+    }
+
+    /// The synced boosts with queued writes on top. Nil until the profile has an
+    /// account whose server carries boosts.
+    func loadSyncBoostState() throws -> BrowserSyncBoostState? {
+        try dbQueue.read { db in
+            guard try storedSyncOwner(db) != nil, try boostSyncEnabled(in: db) else { return nil }
+            return try BrowserSyncBoostState(baseline: readBoostBaseline(db), pending: readSyncQueue(db))
+        }
+    }
+
+    /// Queues boost writes. False, writing nothing, until boost sync started:
+    /// its first upload then takes every local boost.
+    @discardableResult func enqueueSyncBoosts(_ operations: [BrowserSyncBoostOperation]) throws -> Bool {
+        guard !operations.isEmpty else { return true }
+        for operation in operations {
+            try operation.validate()
+        }
+        return try dbQueue.write { db in
+            guard try storedSyncOwner(db) != nil, try boostSyncEnabled(in: db) else { return false }
+            try appendBoostSyncMutations(operations, to: db)
+            try db.execute(sql: "UPDATE browser_sync_state SET boost_revision = boost_revision + 1 WHERE id = 1")
+            return true
+        }
     }
 
     /// Call only after every page of an explicit v4 pull starting at cursor zero.
@@ -818,7 +905,12 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
             guard storedVersion == protocolVersion else { throw BrowserSyncQueueError.protocolVersionMismatch }
             try importExpiryRecovery(events, owner: owner, in: db)
             var baseline = try readSyncBaseline(db)
-            try baseline.apply(events)
+            try baseline.apply(events.filter { $0.entityType != "boost" })
+            try applyBoostEvents(events, in: db)
+            if storedVersion == 6 {
+                // The queued write left the overlay even when the server kept a newer state.
+                try db.execute(sql: "UPDATE browser_sync_state SET boost_revision = boost_revision + 1 WHERE id = 1")
+            }
             try db.execute(sql: "DELETE FROM browser_sync_outbox WHERE mutation_id = ?", arguments: [id])
             try db.execute(sql: "DELETE FROM browser_sync_automatic_expiry WHERE mutation_id = ?", arguments: [id])
             return try writeSyncProjection(baseline, in: db)
@@ -833,7 +925,8 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
             try requireSyncOwner(owner, in: db)
             try importExpiryRecovery(events, owner: owner, in: db)
             var baseline = try readSyncBaseline(db)
-            try baseline.apply(events)
+            try baseline.apply(events.filter { $0.entityType != "boost" })
+            try applyBoostEvents(events, in: db)
             let snapshot = try writeSyncProjection(baseline, in: db)
             try db.execute(
                 sql: "UPDATE browser_sync_state SET cursor = MAX(cursor, ?) WHERE id = 1", arguments: [cursor],
@@ -1098,12 +1191,13 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
 
     private func completeSyncBootstrap(
         events: [BrowserSyncEvent], cursor: Int, for owner: BrowserSyncOwner, expiryRecovery: Bool,
+        localBoosts: [BrowserSyncBoostEntry]? = nil,
     ) throws -> BrowserTabSessionSnapshot {
         guard cursor >= 0 else { throw BrowserSyncStoreError.invalidCursor }
         return try dbQueue.write { db in
             try requireSyncOwner(owner, in: db)
             let pending = try readSyncQueue(db)
-            guard pending.allSatisfy({ $0.protocolVersion == 4 || $0.protocolVersion == 5 }) else {
+            guard pending.allSatisfy({ (4...6).contains($0.protocolVersion) }) else {
                 throw BrowserSyncQueueError.bootstrapRequiresLegacyDrain
             }
             let local = try readSnapshot(db) ?? BrowserTabSessionSnapshot(tabs: [])
@@ -1111,7 +1205,18 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
             try importExpiryRecovery(events, owner: owner, in: db)
             var baseline = BrowserSyncOutboxBaseline()
             baseline.deletedKeys = previous.deletedKeys
-            try baseline.apply(events)
+            try baseline.apply(events.filter { $0.entityType != "boost" })
+            if let localBoosts {
+                // Rebuild from zero, keeping deletions this device already knows.
+                var boosts = try readBoostBaseline(db).tombstones
+                try boosts.apply(events)
+                try writeBoostBaseline(boosts, to: db)
+                let state = BrowserSyncBoostState(baseline: boosts, pending: pending)
+                try appendBoostSyncMutations(state.adoptionOperations(for: localBoosts), to: db)
+                try db.execute(sql: """
+                UPDATE browser_sync_state SET boost_sync_enabled = 1, boost_revision = boost_revision + 1 WHERE id = 1
+                """)
+            }
             if try !folderSyncEnabled(in: db) {
                 let values = BrowserSyncOutboxProjection.effectiveChanges(baseline: baseline, pending: pending)
                 let adoption = BrowserSyncFolderProjection.adoptionOperations(
@@ -1536,6 +1641,46 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
         }
     }
 
+    private func appendBoostSyncMutations(_ operations: [BrowserSyncBoostOperation], to db: Database) throws {
+        for chunk in try syncChunks(operations) {
+            let mutation = BrowserSyncBoostMutation(id: UUID().uuidString, operations: chunk)
+            try db.execute(
+                sql: "INSERT INTO browser_sync_outbox (mutation_id, payload, protocol_version) VALUES (?, ?, 6)",
+                arguments: [mutation.id, JSONEncoder().encode(mutation)],
+            )
+        }
+    }
+
+    private func boostSyncEnabled(in db: Database) throws -> Bool {
+        try Bool.fetchOne(db, sql: "SELECT boost_sync_enabled FROM browser_sync_state WHERE id = 1") == true
+    }
+
+    private func readBoostBaseline(_ db: Database) throws -> BrowserSyncBoostBaseline {
+        guard let payload = try Data.fetchOne(
+            db, sql: "SELECT payload FROM browser_sync_boost_baseline WHERE id = 1",
+        ) else { return BrowserSyncBoostBaseline() }
+        return try JSONDecoder().decode(BrowserSyncBoostBaseline.self, from: payload)
+    }
+
+    private func writeBoostBaseline(_ baseline: BrowserSyncBoostBaseline, to db: Database) throws {
+        try db.execute(
+            sql: "INSERT INTO browser_sync_boost_baseline (id, payload) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET payload = excluded.payload",
+            arguments: [JSONEncoder().encode(baseline)],
+        )
+    }
+
+    /// Boost events go to their own baseline; a change bumps the boost revision.
+    private func applyBoostEvents(_ events: [BrowserSyncEvent], in db: Database) throws {
+        let boostEvents = events.filter { $0.entityType == "boost" }
+        guard !boostEvents.isEmpty else { return }
+        let previous = try readBoostBaseline(db)
+        var baseline = previous
+        try baseline.apply(boostEvents)
+        guard baseline != previous else { return }
+        try writeBoostBaseline(baseline, to: db)
+        try db.execute(sql: "UPDATE browser_sync_state SET boost_revision = boost_revision + 1 WHERE id = 1")
+    }
+
     private func syncChunks<Item: Encodable>(_ items: [Item]) throws -> [[Item]] {
         // The server caps inflated JSON at 8 MiB. Reserve more than the fixed
         // UUID/device/version envelope requires, counting escaped UTF-8 item bytes.
@@ -1590,6 +1735,10 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
                 let expiry = try JSONDecoder().decode(BrowserSyncExpiryMutation.self, from: row["payload"] as Data)
                 try expiry.validate()
                 mutation = .expiry(expiry)
+            case 6:
+                let boosts = try JSONDecoder().decode(BrowserSyncBoostMutation.self, from: row["payload"] as Data)
+                try boosts.validate()
+                mutation = .boosts(boosts)
             default: throw BrowserSyncQueueError.unsupportedProtocolVersion(version)
             }
             guard mutation.id == row["mutation_id"] as String

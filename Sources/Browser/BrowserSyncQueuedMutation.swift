@@ -10,6 +10,7 @@ enum BrowserSyncQueuedMutation: Equatable {
     case semantic(BrowserSyncSemanticMutation)
     case folders(BrowserSyncFolderMutation)
     case expiry(BrowserSyncExpiryMutation)
+    case boosts(BrowserSyncBoostMutation)
 
     // MARK: Internal
 
@@ -19,6 +20,7 @@ enum BrowserSyncQueuedMutation: Equatable {
         case .semantic(let mutation): mutation.id
         case .folders(let mutation): mutation.id
         case .expiry(let mutation): mutation.id
+        case .boosts(let mutation): mutation.id
         }
     }
 
@@ -28,6 +30,7 @@ enum BrowserSyncQueuedMutation: Equatable {
         case .semantic: 3
         case .folders: 4
         case .expiry: 5
+        case .boosts: 6
         }
     }
 }

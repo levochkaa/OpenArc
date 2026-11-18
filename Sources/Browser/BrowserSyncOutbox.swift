@@ -498,7 +498,8 @@ enum BrowserSyncOutboxProjection {
                     default: nil
                     }
                 }
-            case .expiry: []
+            case .boosts,
+                 .expiry: []
             }
         })
         var deleted = baseline.deletedKeys.subtracting(pendingDeletes)
@@ -548,6 +549,9 @@ enum BrowserSyncOutboxProjection {
         case .expiry:
             // Conditional requests leave live state untouched until the
             // server returns its accepted delete or canonical rejection.
+            break
+        case .boosts:
+            // Boosts project separately, into the app's boosts.
             break
         }
     }

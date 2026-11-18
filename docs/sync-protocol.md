@@ -1,6 +1,6 @@
 # Sync protocol
 
-V2 and v3 share bearer authentication, account/device checks, permanent deletion tombstones, the event stream and durable mutation receipts. The server serializes account writes in one PostgreSQL transaction. Client timestamps do not determine structural or metadata conflict order; live-tab activity has the value-merge exception below. [V4](sync-folders.md) extends these foundations with folders and typed mixed ordering.
+V2 and v3 share bearer authentication, account/device checks, permanent deletion tombstones, the event stream and durable mutation receipts. The server serializes account writes in one PostgreSQL transaction. Client timestamps do not determine structural or metadata conflict order; live-tab activity has the value-merge exception below. [V4](sync-folders.md) extends these foundations with folders and typed mixed ordering. [V6](sync-boosts.md) adds app-wide site boosts.
 
 ## V3 operations
 

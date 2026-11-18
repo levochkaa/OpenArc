@@ -118,7 +118,7 @@ extension BrowserSyncHTTPIntegrationTests {
         #expect(final.tabs.map(\.id).sorted() == ["active", "pinned"])
         #expect(final.tabs.allSatisfy { !$0.deleted && !$0.tombstoned })
         for profile in [reopened, second] {
-            #expect(try profile.store.syncPullProtocolVersion(for: profile.owner) == 5)
+            #expect(try profile.store.syncPullProtocolVersion(for: profile.owner) == 6)
             #expect(try profile.store.pendingSyncQueue(for: profile.owner).isEmpty)
             #expect(profile.store.loadSnapshot()?.tabs.compactMap(\.id) == ["pinned", "active"])
             #expect(profile.store.loadSnapshot()?.tabs.first { $0.id == "active" }?.userTitleOverride ==
