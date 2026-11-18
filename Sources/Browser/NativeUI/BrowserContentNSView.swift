@@ -49,6 +49,10 @@ final class BrowserContentNSView: NSView {
     private(set) var crashPages = [String: BrowserSadTabView]()
     /// The canvas of each Easel on screen, by tab: the selected one and its split panes.
     private(set) var easelViews = [String: BrowserEaselView]()
+    /// A note's editor over each note tab on screen, by tab ID.
+    private(set) var notePages = [String: BrowserNoteEditorView]()
+    /// The tab whose note took the keyboard last, so selecting it again focuses it once.
+    private var focusedNoteTabID: String?
     let movedPage = BrowserMovedPageView()
 
     /// The area with no tab, in place of the usual page color.
@@ -61,6 +65,7 @@ final class BrowserContentNSView: NSView {
     private let pageShadow = CALayer()
     private var pageShadowRadius: CGFloat = 0
     private var easelClipping: BrowserContentClipping?
+    private var noteClipping = BrowserContentClipping(isSidebarVisible: true, usesWindowContentInsets: false)
 
     private var areaCaptureTabID: String?
     private weak var captureModel: BrowserChromeModel?
@@ -187,6 +192,9 @@ final class BrowserContentNSView: NSView {
         for (id, easel) in easelViews {
             easel.frame = pageFrame(forTabID: id)
         }
+        for (id, page) in notePages {
+            page.frame = pageFrame(forTabID: id)
+        }
         if let request = permissionPrompt.request, !permissionPrompt.isHidden {
             // Over the top of the asking page, or of its pane in a split.
             let page = pageFrame(forTabID: request.tabID)
@@ -219,10 +227,18 @@ final class BrowserContentNSView: NSView {
                 self?.refreshPermissionPrompt()
                 self?.refreshCrashPages()
                 self?.refreshEasels()
+                self?.refreshNotePages()
             }
         refreshPermissionPrompt()
         refreshCrashPages()
         refreshEasels()
+        refreshNotePages()
+        model.onFocusNote = { [weak self] noteID, title in
+            guard let page = self?.notePages.values.first(where: { $0.noteID == noteID && !$0.isHidden }) else {
+                return false
+            }
+            return page.focus(title: title)
+        }
         model.onBeginAreaCapture = { [weak self, weak model] in
             guard let self, let model else { return false }
             let tabID = model.selectedTabID
@@ -300,6 +316,7 @@ final class BrowserContentNSView: NSView {
             overlay.layer?.maskedCorners = clipping.corners
         }
         easelClipping = clipping
+        noteClipping = clipping
         movedPage.isHidden = !isContextReady || movedPagePicture == nil
         empty.isHidden = !isContextReady || hasSelectedTab || !movedPage.isHidden
         movedPage.picture = movedPagePicture ?? nil
@@ -317,6 +334,7 @@ final class BrowserContentNSView: NSView {
         refreshPermissionPrompt()
         refreshCrashPages()
         refreshEasels()
+        refreshNotePages()
         needsLayout = true
     }
 
@@ -359,6 +377,58 @@ final class BrowserContentNSView: NSView {
             for delay in [0.05, 0.35, 0.8] {
                 DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak view] in view?.focusCanvas() }
             }
+        }
+        needsLayout = true
+    }
+
+    /// A note's editor over each note tab on screen. Editors of tabs that left
+    /// the screen save and go; a newly shown note takes the keyboard.
+    func refreshNotePages() {
+        guard let model = captureModel else { return }
+        let visible = model.selectedTabID.map { model.splitPaneTabIDs(forTabID: $0) } ?? []
+        var wanted = [String: String]()
+        if !viewport.isHidden {
+            for id in visible {
+                if let noteID = model.noteID(forTabID: id) {
+                    wanted[id] = noteID
+                }
+            }
+        }
+        for (id, page) in notePages where wanted[id] != page.noteID {
+            page.close()
+            page.removeFromSuperview()
+            notePages.removeValue(forKey: id)
+        }
+        for (id, noteID) in wanted where notePages[id] == nil {
+            let page = BrowserNoteEditorView(noteID: noteID, store: model.notesStore)
+            page.onOpenLink = { [weak model] url in model?.openURLInNewTab(url, atTop: true) }
+            page.onDelete = { [weak model] noteID in model?.deleteNote(id: noteID) }
+            page.frame = pageFrame(forTabID: id)
+            addSubview(page, positioned: .below, relativeTo: permissionPrompt)
+            notePages[id] = page
+        }
+        for page in notePages.values {
+            page.layer?.cornerRadius = notePages.count > 1 ? BrowserChromeLayout.leadingContentCornerRadius : noteClipping
+                .radius
+            page.layer?.maskedCorners = notePages.count > 1 ? [
+                .layerMinXMinYCorner, .layerMaxXMinYCorner, .layerMinXMaxYCorner, .layerMaxXMaxYCorner,
+            ] : noteClipping.corners
+        }
+        // The selected note takes the keyboard once each time it is selected.
+        let selected = model.selectedTabID.flatMap { notePages[$0] != nil ? $0 : nil }
+        if let selected, selected != focusedNoteTabID {
+            focusedNoteTabID = selected
+            // The engine gives its new page the keyboard a moment later; take it back.
+            for delay in [0.0, 0.35, 0.8] {
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                    guard let page = self?.notePages[selected], page.window?.isKeyWindow == true,
+                          self?.captureModel?.selectedTabID == selected
+                    else { return }
+                    page.focusIfOutside()
+                }
+            }
+        } else if selected == nil {
+            focusedNoteTabID = nil
         }
         needsLayout = true
     }

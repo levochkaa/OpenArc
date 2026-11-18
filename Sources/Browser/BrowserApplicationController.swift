@@ -4,6 +4,7 @@ import AppKit
 import Combine
 import CoreServices
 import Settings
+import UniformTypeIdentifiers
 
 // MARK: - BrowserApplicationController
 
@@ -674,6 +675,22 @@ NSMenuDelegate, NSUserInterfaceValidations {
         activeChromeModel?.viewEasels()
     }
 
+    public func createNote(_: Any?) {
+        activeChromeModel?.createNote()
+    }
+
+    public func createNoteInSplitView(_: Any?) {
+        activeChromeModel?.createNote(inSplitView: true)
+    }
+
+    public func exportNotes(_: Any?) {
+        presentNotesExport()
+    }
+
+    public func importNotes(_: Any?) {
+        presentNotesImport()
+    }
+
     public func toggleJavaScriptFromAppleEvents(_: Any?) {
         userPreferencesStore.allowsJavaScriptFromAppleEvents.toggle()
     }
@@ -1174,6 +1191,14 @@ NSMenuDelegate, NSUserInterfaceValidations {
             return activeChromeModel?.canCreateEasel ?? false
         case #selector(viewEasels(_:)):
             return activeChromeModel?.librarySections.contains(.easels) ?? false
+        case #selector(createNote(_:)):
+            return activeChromeModel?.canCreateNote ?? false
+        case #selector(createNoteInSplitView(_:)):
+            return activeChromeModel.map { $0.canCreateNote && $0.canAddSplitView } ?? false
+        case #selector(exportNotes(_:)):
+            return activeChromeModel?.canExportNotes ?? false
+        case #selector(importNotes(_:)):
+            return activeChromeModel?.supportsNotes ?? false
         case #selector(toggleDeveloperMode(_:)):
             if let menuItem = item as? NSMenuItem {
                 menuItem.title = activeChromeModel?.isDeveloperModeOn == true
@@ -1844,6 +1869,22 @@ NSMenuDelegate, NSUserInterfaceValidations {
         fileMenu.addItem(BrowserNativeMenuItem(BrowserStrings.menuNewProfile) { [weak self] in
             self?.presentSettingsWindow(pane: .profiles)
         })
+        fileMenu.addItem(makeMenuItem(
+            descriptor: shortcutStore.descriptor(for: .newNote),
+            action: #selector(createNote(_:)),
+        ))
+        fileMenu.addItem(makeMenuItem(
+            descriptor: shortcutStore.descriptor(for: .newNoteInSplitView),
+            action: #selector(createNoteInSplitView(_:)),
+        ))
+        fileMenu.addItem(makeMenuItem(
+            descriptor: shortcutStore.descriptor(for: .importNotes),
+            action: #selector(importNotes(_:)),
+        ))
+        fileMenu.addItem(makeMenuItem(
+            descriptor: shortcutStore.descriptor(for: .exportNotes),
+            action: #selector(exportNotes(_:)),
+        ))
         fileMenu.addItem(.separator())
         // Command-W archives the tab, so the window closes with Shift-Command-W.
         fileMenu.addItem(makeStandardMenuItem(
@@ -3218,6 +3259,14 @@ NSMenuDelegate, NSUserInterfaceValidations {
             return activeChromeModel?.createEasel() != nil
         case .viewEasels:
             return activeChromeModel?.viewEasels() ?? false
+        case .newNote:
+            return activeChromeModel?.createNote() ?? false
+        case .newNoteInSplitView:
+            return activeChromeModel?.createNote(inSplitView: true) ?? false
+        case .exportNotes:
+            return presentNotesExport()
+        case .importNotes:
+            return presentNotesImport()
         case .editSpaceTheme:
             return activeChromeModel
                 .flatMap { model in model.selectedSpaceID.map { model.onEditSpaceTheme?($0) } } != nil
@@ -4143,6 +4192,9 @@ NSMenuDelegate, NSUserInterfaceValidations {
         )
         syncCoordinator?.setSnapshotApplier(chromeModel)
         chromeModel.restorePoints = restorePoints
+        // One notes store per profile, shared by its windows and kept in its session database.
+        chromeModel.notesStore = source?.chromeModel.notesStore
+            ?? BrowserNotesStore(persistence: sqliteSessionStore)
         chromeModel.passwordStore = BrowserKeychainPasswordStore(profileID: profile.id)
         chromeModel.addressStore = BrowserKeychainAddressStore(profileID: profile.id)
         chromeModel.cardStore = BrowserKeychainCardStore(profileID: profile.id)
@@ -4317,6 +4369,70 @@ NSMenuDelegate, NSUserInterfaceValidations {
                 self?.updateProfilePresentationForOpenWindows()
             }
         }
+    }
+
+    /// Export Notes: every note of the active window's profile, as Markdown
+    /// files in a folder the user picks.
+    @discardableResult private func presentNotesExport() -> Bool {
+        guard let model = activeChromeModel, model.canExportNotes else { return false }
+        let window = NSApp.keyWindow
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = BrowserStrings.notesExportPanelPrompt
+        panel.message = BrowserStrings.notesExportPanelMessage
+        let finish: (NSApplication.ModalResponse) -> Void = { [weak model] response in
+            guard response == .OK, let folder = panel.url, let model else { return }
+            let store = model.notesStore
+            let alert = NSAlert()
+            do {
+                let files = try BrowserNotesExport.export(store.notes, imageData: store.imageData(id:), to: folder)
+                alert.messageText = BrowserStrings.notesExported(files.count)
+                NSWorkspace.shared.activateFileViewerSelecting(files.isEmpty ? [folder] : [files[0]])
+            } catch {
+                alert.messageText = BrowserStrings.notesTransferFailed
+                alert.informativeText = error.localizedDescription
+            }
+            if let window { alert.beginSheetModal(for: window) } else { alert.runModal() }
+        }
+        if let window { panel.beginSheetModal(for: window, completionHandler: finish) } else { finish(panel.runModal()) }
+        return true
+    }
+
+    /// Import Notes: Markdown, text and HTML files, folders and zip archives
+    /// become notes of the active window's profile; one note opens.
+    @discardableResult private func presentNotesImport() -> Bool {
+        guard let model = activeChromeModel, model.supportsNotes else { return false }
+        let window = NSApp.keyWindow
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = true
+        panel.allowsMultipleSelection = true
+        panel.allowedContentTypes = (BrowserNotesImport.fileExtensions.union(["zip"]))
+            .compactMap { UTType(filenameExtension: $0) } + [.folder]
+        panel.prompt = BrowserStrings.notesImportPanelPrompt
+        panel.message = BrowserStrings.notesImportPanelMessage
+        let finish: (NSApplication.ModalResponse) -> Void = { [weak model] response in
+            guard response == .OK, let model else { return }
+            let alert = NSAlert()
+            do {
+                let imported = try BrowserNotesImport.notes(from: panel.urls)
+                let before = Set(model.notesStore.notes.map(\.id))
+                let count = model.notesStore.add(imported)
+                alert.messageText = count == 0 ? BrowserStrings.notesNothingToImport : BrowserStrings.notesImported(count)
+                if let first = model.notesStore.notes.first(where: { !before.contains($0.id) }) {
+                    model.openNote(id: first.id)
+                }
+            } catch {
+                alert.messageText = BrowserStrings.notesTransferFailed
+                alert.informativeText = error.localizedDescription
+            }
+            if let window { alert.beginSheetModal(for: window) } else { alert.runModal() }
+        }
+        if let window { panel.beginSheetModal(for: window, completionHandler: finish) } else { finish(panel.runModal()) }
+        return true
     }
 
     /// Both page engines read the boosts from the catalog, which follows the preferences.

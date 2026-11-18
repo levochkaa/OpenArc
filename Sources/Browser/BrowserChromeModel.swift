@@ -507,6 +507,14 @@ enum BrowserWindowMode: Equatable {
     private(set) var tabIconsBySyncID = [String: String]()
     /// Set by the window's content view, which outlines the area to capture.
     var onBeginAreaCapture: (() -> Bool)?
+    /// The profile's notes, shared by its windows; see `BrowserChromeModel+Notes`.
+    var notesStore = BrowserNotesStore() {
+        didSet { observeNotes() }
+    }
+
+    var notesCancellables = Set<AnyCancellable>()
+    /// Set by the content view: puts the keyboard in a note's editor, its title when true.
+    var onFocusNote: ((String, Bool) -> Bool)?
     /// Pages' pending permission requests in arrival order. Only the methods
     /// in `BrowserChromeModel+SitePermissions.swift` write it.
     @Published var sitePermissionRequests = [BrowserSitePermissionRequest]() {
@@ -3377,7 +3385,15 @@ enum BrowserWindowMode: Equatable {
     }
 
     /// After Capture Area closes, the keys go back to the page.
+    /// A tab showing a note takes the note's title, as if its page reported it.
+    func applyNoteTitle(_ title: String, toTabID tabID: String) {
+        handleUpdatedTab(id: tabID, title: title, urlString: nil, faviconURLString: nil)
+    }
+
     func focusSelectedPage() {
+        if focusSelectedNote() {
+            return
+        }
         tabDriver.focusActivePage()
     }
 
@@ -4557,6 +4573,14 @@ enum BrowserWindowMode: Equatable {
             canCreateEasel
         case .viewEasels:
             librarySections.contains(.easels)
+        case .newNote:
+            canCreateNote
+        case .newNoteInSplitView:
+            canCreateNote && canAddSplitView
+        case .exportNotes:
+            canExportNotes
+        case .importNotes:
+            supportsNotes
         case .editSpaceTheme:
             supportsSpaces
         case .togglePictureInPicture:
@@ -5472,8 +5496,9 @@ enum BrowserWindowMode: Equatable {
         let closingTab = tabs[closingIndex]
         tabsLeavingSidebar.remove(id)
         let undoSnapshot = tabUndoSnapshot(forClosingTabAt: closingIndex)
+        // An empty note leaves nothing to restore, so it skips the Archive.
         let precloseSnapshot: BrowserTabSessionSnapshot? = createsArchive && canBrowseArchive && closingTab
-            .placement == .temporary
+            .placement == .temporary && !isEmptyNote(urlString: closingTab.urlString)
             ? (isApplyingRemoteSync ? snapshotPreservingPendingRemoteCreations() : currentSessionSnapshot())
             : nil
         let archivedTab = precloseSnapshot?.tabs.first { $0.id == closingTab.syncID }
@@ -6305,6 +6330,12 @@ enum BrowserWindowMode: Equatable {
     }
 
     private func openResolvedSelectionInNewTab(_ resolvedURLString: String) {
+        // A note already open here is selected rather than opened twice.
+        if pendingSplitAnchorTabID == nil, let noteID = BrowserNoteURL.noteID(fromURLString: resolvedURLString),
+           selectTab(showingNoteID: noteID)
+        {
+            return
+        }
         let pending = takePendingSplitAnchor()
         createTab(withURLString: resolvedURLString, placesAtTop: pending == nil)
         if let pending, let tabID = selectedTabID, tabID != pending.anchorID {
@@ -6389,6 +6420,10 @@ enum BrowserWindowMode: Equatable {
 
         // Tabs leave room for history.
         var pages = openTabSuggestions(for: trimmedQuery, maximumCount: min(maximumCount, 7))
+        // Notes match by their text too, after the open tabs.
+        if pages.count < maximumCount {
+            pages += noteSuggestions(for: trimmedQuery, maximumCount: min(maximumCount - pages.count, 4))
+        }
         if pages.count < maximumCount {
             pages += bookmarksModel.suggestions(for: trimmedQuery, maximumCount: maximumCount - pages.count)
         }
@@ -6601,7 +6636,10 @@ enum BrowserWindowMode: Equatable {
     /// Tabs in every Space, those in the current one first, typos allowed.
     private func openTabSuggestions(for query: String, maximumCount: Int) -> [BrowserCommandSuggestion] {
         let activeIDs = Set(activeSpaceTabs.map(\.id))
-        let candidates = tabs.filter { $0.id != selectedTabID && !$0.urlString.isEmpty }
+        // Notes come as notes, matched by their text too.
+        let candidates = tabs.filter {
+            $0.id != selectedTabID && !$0.urlString.isEmpty && !BrowserNoteURL.isNoteURLString($0.urlString)
+        }
             .sorted { activeIDs.contains($0.id) && !activeIDs.contains($1.id) }
         let index = BrowserSearchIndex(documents: candidates.map {
             .init(title: $0.displayTitle, urlString: $0.urlString)
@@ -7914,6 +7952,8 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
         var didChangePersistentURL = false
         var didChangeTitle = false
 
+        // A note's tab takes the note's title, not the empty page's.
+        let title = noteTitle(forURLString: urlString ?? tabs[index].urlString) ?? title
         if let title, tabs[index].title != title {
             tabs[index].title = title
             didChangeTitle = true
@@ -7946,7 +7986,9 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
         }
 
         // The engine's history file lags; this session's pages stay searchable.
-        if windowMode != .incognito, didChangeTitle || didChangePersistentURL {
+        if windowMode != .incognito, didChangeTitle || didChangePersistentURL,
+           !BrowserNoteURL.isNoteURLString(tabs[index].urlString)
+        {
             historyStore.noteVisit(title: tabs[index].displayTitle, urlString: tabs[index].urlString)
         }
 
@@ -9171,6 +9213,14 @@ extension BrowserCommandID {
             ["easel", "new easel", "whiteboard", "draw", "canvas", "sketch"]
         case .viewEasels:
             ["easels", "view easels", "library"]
+        case .newNote:
+            ["note", "new note", "notes", "write", "jot", "markdown"]
+        case .newNoteInSplitView:
+            ["note in split", "new note in split view", "split note", "note beside"]
+        case .exportNotes:
+            ["export notes", "notes export", "save notes", "markdown"]
+        case .importNotes:
+            ["import notes", "notes import", "markdown"]
         case .editSpaceTheme:
             ["theme", "edit theme", "color"]
         case .togglePictureInPicture:
@@ -9380,6 +9430,14 @@ extension BrowserCommandID {
         case .newEasel,
              .viewEasels:
             "scribble.variable"
+        case .newNote:
+            BrowserNoteURL.symbolName
+        case .newNoteInSplitView:
+            "rectangle.split.2x1"
+        case .exportNotes:
+            "square.and.arrow.up"
+        case .importNotes:
+            "square.and.arrow.down"
         case .editSpaceTheme:
             "paintpalette"
         case .togglePictureInPicture:

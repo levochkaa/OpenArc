@@ -17,6 +17,7 @@ struct BrowserCommandSuggestion: Identifiable, Equatable {
         case googleSuggestion
         case aiSearch
         case command
+        case note
     }
 
     let kind: Kind
@@ -65,6 +66,8 @@ struct BrowserCommandSuggestion: Identifiable, Equatable {
             "sparkles"
         case .command:
             commandID?.commandBarSystemImageName ?? "command"
+        case .note:
+            BrowserNoteURL.symbolName
         }
     }
 
@@ -86,6 +89,8 @@ struct BrowserCommandSuggestion: Identifiable, Equatable {
              .search,
              .url:
             return isAction ? nil : displayText
+        case .note:
+            return displayText
         }
     }
 

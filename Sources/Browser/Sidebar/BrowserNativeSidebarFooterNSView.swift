@@ -315,7 +315,7 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate, Browser
         refreshDownloadsButton()
     }
 
-    /// New Space, New Folder, New Easel, New Boost, New Split and New Tab, above the plus button.
+    /// New Space, New Folder, New Easel, New Boost, New Note, New Split and New Tab, above the plus button.
     private func closeCreateMenuIfHeld() {
         if CACurrentMediaTime() - createMenuOpenedAt > Self.createMenuHoldDuration {
             createMenu.close()
@@ -368,6 +368,13 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate, Browser
                 isEnabled: model.isCommandBarActionAvailable(.editBoost),
                 identifier: "browser.sidebar.create-menu.boost",
             ) { [weak state] in _ = state?.model.editCurrentSiteBoost() },
+            .action(
+                symbol: BrowserNoteURL.symbolName,
+                title: BrowserStrings.menuNewNote,
+                shortcut: keys(.newNote),
+                isEnabled: model.isCommandBarActionAvailable(.newNote),
+                identifier: "browser.sidebar.create-menu.note",
+            ) { [weak state] in _ = state?.model.createNote() },
             .separator,
             .action(
                 symbol: "rectangle.split.2x1",

@@ -209,6 +209,30 @@ enum BrowserCommands {
         shortcut: .unassigned,
     )
 
+    static let newNote = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuNewNote,
+        helpTitle: BrowserStrings.menuNewNote,
+        shortcut: BrowserKeyboardShortcut("n", modifiers: [.control, .shift]),
+    )
+
+    static let newNoteInSplitView = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuNewNoteInSplitView,
+        helpTitle: BrowserStrings.menuNewNoteInSplitView,
+        shortcut: BrowserKeyboardShortcut("n", modifiers: [.control, .option]),
+    )
+
+    static let exportNotes = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuExportNotes,
+        helpTitle: BrowserStrings.menuExportNotes,
+        shortcut: .unassigned,
+    )
+
+    static let importNotes = BrowserCommandDescriptor(
+        menuTitle: BrowserStrings.menuImportNotes,
+        helpTitle: BrowserStrings.menuImportNotes,
+        shortcut: .unassigned,
+    )
+
     static let networkInspector = BrowserCommandDescriptor(
         menuTitle: BrowserStrings.menuNetworkInspector,
         helpTitle: BrowserStrings.menuNetworkInspector,
@@ -797,6 +821,10 @@ enum BrowserLayoutIndependentShortcutCommand: Equatable {
     case viewBoosts
     case newEasel
     case viewEasels
+    case newNote
+    case newNoteInSplitView
+    case exportNotes
+    case importNotes
     case editSpaceTheme
     case togglePictureInPicture
     case muteAllTabs

@@ -618,6 +618,10 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
     case viewBoosts
     case newEasel
     case viewEasels
+    case newNote
+    case newNoteInSplitView
+    case exportNotes
+    case importNotes
     case editSpaceTheme
     case togglePictureInPicture
     case muteAllTabs
@@ -759,6 +763,14 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             BrowserCommands.newEasel
         case .viewEasels:
             BrowserCommands.viewEasels
+        case .newNote:
+            BrowserCommands.newNote
+        case .newNoteInSplitView:
+            BrowserCommands.newNoteInSplitView
+        case .exportNotes:
+            BrowserCommands.exportNotes
+        case .importNotes:
+            BrowserCommands.importNotes
         case .editSpaceTheme:
             BrowserCommands.editSpaceTheme
         case .togglePictureInPicture:
@@ -967,6 +979,14 @@ enum BrowserCommandID: String, CaseIterable, Codable, Identifiable {
             .newEasel
         case .viewEasels:
             .viewEasels
+        case .newNote:
+            .newNote
+        case .newNoteInSplitView:
+            .newNoteInSplitView
+        case .exportNotes:
+            .exportNotes
+        case .importNotes:
+            .importNotes
         case .editSpaceTheme:
             .editSpaceTheme
         case .togglePictureInPicture:
