@@ -304,7 +304,15 @@ import Testing
         #expect(splits == 1)
         let small = BrowserPeekPanel.presentStandalone()
         defer { small.dismiss() }
-        #expect(small.splitButton.isHidden, "A small window has no page beside it")
+        #expect(!small.splitButton.isHidden, "A small window's page joins the browser window's page")
+        small.layoutIfNeeded()
+        #expect(small.splitButton.superview === small.copyLinkButton.superview, "In the address pill")
+        #expect(small.splitButton.frame.maxX < small.copyLinkButton.frame.minX)
+        #expect(small.extensionsButton.frame.maxX < small.splitButton.frame.minX)
+        var smallSplits = 0
+        small.onOpenInSplitView = { smallSplits += 1 }
+        small.splitButton.performClick(nil)
+        #expect(smallSplits == 1)
 
         let f = SidebarDragFixture(temporary: ["x"])
         f.model.selectTab(id: f.id("x"))

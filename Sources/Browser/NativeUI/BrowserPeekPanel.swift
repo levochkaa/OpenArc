@@ -268,6 +268,8 @@ import Combine
             addressPill.addSubview(addressSymbol)
             addressPill.addSubview(copyLinkButton)
             addressPill.addSubview(extensionsButton)
+            // The page joins the browser window's page in a Split View.
+            addressPill.addSubview(splitButton)
             extensionsButton.onAction = { [weak self] in
                 guard let self else { return }
                 NSApp.sendAction(Selector(("showSmallWindowExtensions:")), to: nil, from: self)
@@ -327,7 +329,6 @@ import Combine
         closeButton.onAction = { [weak self] in self?.onClose?() }
         openButton.onAction = { [weak self] in self?.onOpenInTab?() }
         splitButton.onAction = { [weak self] in self?.onOpenInSplitView?() }
-        splitButton.isHidden = standalone
         splitButton.setAccessibilityIdentifier("browser.peek.open-in-split")
         closeButton.setAccessibilityIdentifier("browser.peek.close")
         openButton.setAccessibilityIdentifier("browser.peek.open-in-tab")
@@ -1128,19 +1129,22 @@ import Combine
             height: linkSize,
         )
         copyLinkButton.autoresizingMask = [.minXMargin]
-        extensionsButton.frame = copyLinkButton.frame.offsetBy(dx: -linkSize - 2, dy: 0)
+        splitButton.frame = copyLinkButton.frame.offsetBy(dx: -linkSize - 2, dy: 0)
+        splitButton.autoresizingMask = [.minXMargin]
+        extensionsButton.frame = splitButton.frame.offsetBy(dx: -linkSize - 2, dy: 0)
         extensionsButton.autoresizingMask = [.minXMargin]
         // Clear of the buttons at both ends, so the host stays centered and they take their clicks.
+        let hostInset: CGFloat = 4 + (linkSize + 2) * 3
         hostLabel.frame = NSRect(
-            x: pillX + 66,
+            x: pillX + hostInset,
             y: top + 9 + 7.5,
-            width: max(addressPill.frame.width - 132, 0),
+            width: max(addressPill.frame.width - hostInset * 2, 0),
             height: 16,
         )
         hostLabel.autoresizingMask = [.width, .minYMargin]
         hostView.frame = NSRect(x: 0, y: 0, width: bounds.width, height: max(top, 0))
         hostView.autoresizingMask = [.width, .height]
-        for view in [closeButton, splitButton, openButton] {
+        for view in [closeButton, openButton] {
             view.frame = .zero
         }
     }
