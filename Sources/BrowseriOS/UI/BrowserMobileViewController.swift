@@ -184,6 +184,8 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         let isEligible: Bool
     }
 
+    static let phoneSheetColor = UIColor(white: 0.2, alpha: 1)
+
     // MARK: Internal
 
     override var canBecomeFirstResponder: Bool { true }
@@ -200,6 +202,9 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
 
     let workspace: BrowserMobileWorkspace
     var didSelectTab: (() -> Void)?
+    /// The phone's Spaces sheet: the Space's name over plain rows with site
+    /// icons, a line before Today, and the Spaces as icons along the bottom.
+    let isPhoneSheet: Bool
 
     private let hoverScheduler: any BrowserMobileSidebarHoverScheduling
     private let suppliedTableView: UITableView?
@@ -255,6 +260,8 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
     private var accountButton = UIBarButtonItem()
     private weak var presentedArchive: BrowserMobileArchiveViewController?
 
+    private let phoneTitleButton = UIButton(type: .system)
+
     var sidebarDragHasHoverProjection: Bool { isApplyingHoverProjection }
 
     var sidebarDragHasNativeHold: Bool {
@@ -284,15 +291,22 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         !dragAdmissionSuspended && viewIfLoaded?.window?.windowScene?.activationState == .foregroundActive
     }
 
+    /// The line between pinned tabs and Today, when both have rows.
+    private var showsPhoneDivider: Bool {
+        rows.count > 2 && !rows[2].isEmpty && rows.prefix(2).contains { !$0.isEmpty }
+    }
+
     init(
         workspace: BrowserMobileWorkspace,
         hoverScheduler: any BrowserMobileSidebarHoverScheduling = BrowserMobileSidebarHoverScheduler(),
         tableView: UITableView? = nil,
+        isPhoneSheet: Bool = false,
     ) {
         self.workspace = workspace
         self.hoverScheduler = hoverScheduler
         self.suppliedTableView = tableView
-        super.init(style: .insetGrouped)
+        self.isPhoneSheet = isPhoneSheet
+        super.init(style: isPhoneSheet ? .grouped : .insetGrouped)
         title = String(localized: "Tabs", table: "Mobile")
     }
 
@@ -309,6 +323,9 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         navigationController?.setNavigationBarHidden(false, animated: animated)
+        if isPhoneSheet {
+            navigationController?.setToolbarHidden(false, animated: animated)
+        }
     }
 
     override func viewDidLoad() {
@@ -371,6 +388,9 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         spaceButton.titleLabel?.lineBreakMode = .byTruncatingTail
         spaceButton.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         spaceButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
+        if isPhoneSheet {
+            configurePhoneSheet()
+        }
         render()
     }
 
@@ -395,8 +415,31 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         render()
     }
 
-    override func tableView(_: UITableView, heightForHeaderInSection _: Int) -> CGFloat {
-        workspace.profileDocument == nil ? UITableView.automaticDimension : 44
+    override func tableView(_: UITableView, heightForHeaderInSection section: Int) -> CGFloat {
+        if isPhoneSheet {
+            return section == 2 && showsPhoneDivider ? 21 : .leastNonzeroMagnitude
+        }
+        return workspace.profileDocument == nil ? UITableView.automaticDimension : 44
+    }
+
+    override func tableView(_: UITableView, heightForFooterInSection _: Int) -> CGFloat {
+        isPhoneSheet ? .leastNonzeroMagnitude : UITableView.automaticDimension
+    }
+
+    override func tableView(_: UITableView, viewForHeaderInSection section: Int) -> UIView? {
+        guard isPhoneSheet, section == 2, showsPhoneDivider else { return nil }
+        let header = UIView()
+        let line = UIView()
+        line.backgroundColor = UIColor(white: 1, alpha: 0.14)
+        line.translatesAutoresizingMaskIntoConstraints = false
+        header.addSubview(line)
+        NSLayoutConstraint.activate([
+            line.leadingAnchor.constraint(equalTo: header.leadingAnchor, constant: 29),
+            line.trailingAnchor.constraint(equalTo: header.trailingAnchor, constant: -29),
+            line.centerYAnchor.constraint(equalTo: header.centerYAnchor),
+            line.heightAnchor.constraint(equalToConstant: 1),
+        ])
+        return header
     }
 
     override func tableView(_: UITableView, numberOfRowsInSection section: Int) -> Int {
@@ -404,7 +447,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
     }
 
     override func tableView(_: UITableView, titleForHeaderInSection section: Int) -> String? {
-        guard workspace.profileDocument != nil else { return nil }
+        guard workspace.profileDocument != nil, !isPhoneSheet else { return nil }
         switch section {
         case 0: return String(localized: "Favorites", table: "Mobile")
         case 1: return String(localized: "Pinned", table: "Mobile")
@@ -529,7 +572,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
             spaceButton.configuration = configuration
             spaceButton.isEnabled = workspace.isReady
             spaceButton.menu = spaceMenu(document)
-            navigationItem.titleView = spaceButton
+            navigationItem.titleView = isPhoneSheet ? nil : spaceButton
             applyRows(sharedRows(
                 document.snapshot, spaceID: workspace.selectedSpaceID,
                 available: Set(workspace.visibleTabs.map(\.id)), expanded: [],
@@ -537,6 +580,9 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         } else {
             navigationItem.titleView = nil
             applyRows([workspace.tabs.map { .tab($0.id, depth: 0) }], snapshot: nil)
+        }
+        if isPhoneSheet {
+            renderPhoneSheet(workspace.profileDocument)
         }
     }
 
@@ -1024,6 +1070,76 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         present(navigation, animated: true)
     }
 
+    private func configurePhoneSheet() {
+        title = nil
+        tableView.backgroundColor = Self.phoneSheetColor
+        tableView.separatorStyle = .none
+        tableView.rowHeight = 56
+        tableView.estimatedRowHeight = 56
+        tableView.sectionHeaderTopPadding = 0
+        tableView.showsVerticalScrollIndicator = false
+        let bar = UINavigationBarAppearance()
+        bar.configureWithTransparentBackground()
+        navigationItem.standardAppearance = bar
+        navigationItem.scrollEdgeAppearance = bar
+        let toolbar = UIToolbarAppearance()
+        toolbar.configureWithOpaqueBackground()
+        toolbar.backgroundColor = UIColor(white: 0.26, alpha: 1)
+        toolbar.shadowColor = .clear
+        navigationController?.toolbar.standardAppearance = toolbar
+        navigationController?.toolbar.scrollEdgeAppearance = toolbar
+        navigationController?.view.backgroundColor = Self.phoneSheetColor
+        phoneTitleButton.showsMenuAsPrimaryAction = true
+        phoneTitleButton.accessibilityIdentifier = "browser.spaces"
+        phoneTitleButton.contentHorizontalAlignment = .leading
+        phoneTitleButton.titleLabel?.lineBreakMode = .byTruncatingTail
+        let title = UIBarButtonItem(customView: phoneTitleButton)
+        title.hidesSharedBackground = true
+        // New Tab, Archive and Account live in the switcher and Settings.
+        navigationItem.leftBarButtonItems = [title]
+    }
+
+    private func renderPhoneSheet(_ document: BrowserMobileProfileDocument?) {
+        let space = workspace.spaces.first { $0.id == workspace.selectedSpaceID }
+        var configuration = UIButton.Configuration.plain()
+        configuration.attributedTitle = AttributedString(
+            space?.title ?? String(localized: "Spaces", table: "Mobile"),
+            attributes: AttributeContainer([
+                .font: UIFont.systemFont(ofSize: 22, weight: .bold), .foregroundColor: UIColor.white,
+            ]),
+        )
+        configuration.contentInsets = .init(top: 0, leading: 12, bottom: 0, trailing: 0)
+        configuration.titleLineBreakMode = .byTruncatingTail
+        phoneTitleButton.configuration = configuration
+        phoneTitleButton.menu = document.map(spaceMenu)
+        phoneTitleButton.isEnabled = workspace.isReady && document != nil
+        phoneTitleButton.frame.size = CGSize(width: max(view.bounds.width - 140, 120), height: 44)
+        var items = [UIBarButtonItem.flexibleSpace()]
+        for (index, space) in workspace.spaces.enumerated() {
+            if index > 0 { items.append(.fixedSpace(28)) }
+            let selected = space.id == workspace.selectedSpaceID
+            let item = UIBarButtonItem(
+                title: space.title, image: UIImage(systemName: space.systemImageName),
+                primaryAction: UIAction { [weak self] _ in self?.selectPhoneSpace(space.id) },
+            )
+            item.tintColor = selected ? .white : UIColor(white: 1, alpha: 0.3)
+            item.hidesSharedBackground = true
+            item.accessibilityTraits = selected ? [.button, .selected] : [.button]
+            items.append(item)
+        }
+        items.append(.flexibleSpace())
+        setToolbarItems(workspace.spaces.count > 1 ? items : [], animated: false)
+    }
+
+    private func selectPhoneSpace(_ id: String) {
+        guard id != workspace.selectedSpaceID else { return }
+        workspace.dismissFindInPage()
+        UIView.transition(with: tableView, duration: 0.2, options: [.transitionCrossDissolve, .allowUserInteraction]) {
+            self.workspace.selectSpace(id: id)
+            self.render()
+        }
+    }
+
     @objc private func toggleSidebarSelection() {
         guard !isHoldingRows, !tableView.hasUncommittedUpdates,
               isSelectingRows || (workspace.isReady && workspace.profileDocument?.canEdit == true) else { return }
@@ -1135,7 +1251,51 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
                 : String(localized: "Collapsed", table: "Mobile")
         case nil: break
         }
+        if isPhoneSheet {
+            stylePhoneSheet(cell, content: &content, at: indexPath)
+        }
         cell.contentConfiguration = content
+    }
+
+    private func stylePhoneSheet(
+        _ cell: UITableViewCell, content: inout UIListContentConfiguration, at indexPath: IndexPath,
+    ) {
+        content.secondaryText = nil
+        content.textProperties.font = .systemFont(ofSize: 17)
+        content.textProperties.color = .white
+        content.textProperties.numberOfLines = 1
+        content.imageProperties.maximumSize = CGSize(width: 22, height: 22)
+        content.imageProperties.reservedLayoutSize = CGSize(width: 24, height: 24)
+        content.imageProperties.cornerRadius = 4
+        content.imageProperties.tintColor = .white
+        content.imageToTextPadding = 14
+        content.directionalLayoutMargins.leading = 29
+        var background = UIBackgroundConfiguration.clear()
+        switch row(at: indexPath) {
+        case .tab(let id, _):
+            if let tab = renderedTabs[id], tab.state.error == nil,
+               let icon = BrowserMobileFavicons.shared.iconOnDark(forPage: tab.urlString)
+            {
+                content.image = icon
+            }
+            if !isSelectingRows {
+                cell.accessoryType = .none
+                if workspace.selectedTabID == id {
+                    background.backgroundColor = UIColor(white: 1, alpha: 0.08)
+                    background.cornerRadius = 12
+                    background.backgroundInsets = .init(top: 2, leading: 12, bottom: 2, trailing: 12)
+                }
+            }
+        case .folder(let id, _):
+            let folder = renderedSnapshot?.pinnedTabFolders?.first { $0.id == id }
+            let isExpanded = folder?.isExpanded == true || transientExpandedFolderIDs.contains(id)
+            if folder?.systemImageName == nil {
+                content.image = UIImage(systemName: isExpanded ? "folder" : "folder.fill")
+            }
+            cell.accessoryType = .none
+        case nil: break
+        }
+        cell.backgroundConfiguration = background
     }
 
     private func ownsSidebarDrag(_ payload: BrowserMobileSidebarDragSession) -> Bool {

@@ -1,6 +1,7 @@
 // BrowserMobileWorkspace.swift
 
 import Foundation
+import UIKit
 
 // MARK: - BrowserMobileTab
 
@@ -27,7 +28,17 @@ struct BrowserMobileTab: Identifiable, Equatable {
 
     var onChange: (() -> Void)?
     private(set) var tabs = [BrowserMobileTab]()
-    private(set) var selectedTabID: String?
+    private(set) var selectedTabID: String? {
+        didSet {
+            guard let selectedTabID, recentTabIDs.first != selectedTabID else { return }
+            recentTabIDs.removeAll { $0 == selectedTabID }
+            recentTabIDs.insert(selectedTabID, at: 0)
+            scenePreferences?.set(recentTabIDs, forKey: selectionKey + ".recent")
+        }
+    }
+
+    /// Tabs this window showed, the latest first.
+    private(set) var recentTabIDs = [String]()
     private(set) var isRestoring = false
     private(set) var isReady = false
     private(set) var sessionError: String?
@@ -73,6 +84,33 @@ struct BrowserMobileTab: Identifiable, Equatable {
 
     var selectedTab: BrowserMobileTab? { tabs.first { $0.id == selectedTabID } }
 
+    /// The tabs a phone's switcher lists, the oldest first: every Today tab
+    /// plus the pinned ones this window opened and still holds.
+    var switcherTabs: [BrowserMobileTab] {
+        let recentRank = Dictionary(recentTabIDs.enumerated().map { ($1, $0) }) { first, _ in first }
+        let activity = Dictionary(
+            (profileDocument?.snapshot.tabs ?? []).compactMap { tab in
+                tab.id.map { ($0, tab.lastActivityTimestamp ?? 0) }
+            },
+        ) { first, _ in first }
+        let order = Dictionary(tabs.enumerated().map { ($1.id, $0) }) { first, _ in first }
+        return tabs.filter { tab in
+            tab.placement == .temporary
+                || (recentRank[tab.id] != nil && !unloadedPersistentIDs.contains(tab.id))
+        }
+        .sorted { lhs, rhs in
+            switch (recentRank[lhs.id], recentRank[rhs.id]) {
+            case (let left?, let right?): return left > right
+            case (nil, _?): return true
+            case (_?, nil): return false
+            case (nil, nil):
+                let left = activity[lhs.id] ?? 0
+                let right = activity[rhs.id] ?? 0
+                return left == right ? order[lhs.id, default: 0] < order[rhs.id, default: 0] : left < right
+            }
+        }
+    }
+
     var supportsArchive: Bool { profileDocument?.supportsArchive == true }
     var canRestoreArchivedTab: Bool { canEdit && profileDocument?.canRestoreArchivedTab == true }
     var canManageArchive: Bool { canEdit && profileDocument?.canManageArchive == true }
@@ -94,6 +132,16 @@ struct BrowserMobileTab: Identifiable, Equatable {
     }
 
     var isFindInPageVisible: Bool { engine.isFindInPageVisible }
+
+    var pageZoom: CGFloat {
+        get { selectedTab.map { engine.pageZoom(id: $0.runtimeID) } ?? 1 }
+        set { selectedTab.map { engine.setPageZoom(id: $0.runtimeID, newValue) } }
+    }
+
+    var prefersDesktopSite: Bool {
+        get { selectedTab.map { engine.prefersDesktopSite(id: $0.runtimeID) } ?? false }
+        set { selectedTab.map { engine.setPrefersDesktopSite(id: $0.runtimeID, newValue) } }
+    }
 
     private var canEdit: Bool {
         isReady && !isClosed && !isRestoring && (profileDocument?.canEdit ?? true)
@@ -243,6 +291,52 @@ struct BrowserMobileTab: Identifiable, Equatable {
         navigationError = nil
         insertNewTab(url: Self.blankURL)
         notify()
+    }
+
+    /// Opens what the user typed in a new tab, so the current page stays.
+    func submitInNewTab(_ input: String) {
+        guard canEdit else { return }
+        guard let resolution = navigationResolver.resolve(input),
+              let url = BrowserMobileSession.allowedURL(resolution.resolvedURLString)
+        else {
+            navigationError = "This address cannot be opened in this browser. Use an HTTP or HTTPS address."
+            notify()
+            return
+        }
+        navigationError = nil
+        if let tab = selectedTab, tab.urlString == "about:blank", tab.state.error == nil {
+            submit(input)
+            return
+        }
+        insertNewTab(url: url)
+        notify()
+    }
+
+    func snapshot(
+        tabID: String, rect: CGRect? = nil, width: CGFloat, completion: @escaping @MainActor (UIImage?) -> Void,
+    ) {
+        guard let tab = tabs.first(where: { $0.id == tabID }), registeredRuntimeIDs.contains(tab.runtimeID)
+            || profileDocument == nil
+        else {
+            completion(nil)
+            return
+        }
+        engine.snapshot(id: tab.runtimeID, rect: rect, width: width, completion: completion)
+    }
+
+    func setObscuredInsets(_ insets: UIEdgeInsets) { engine.setObscuredInsets(insets) }
+
+    func scrollView(tabID: String) -> UIScrollView? {
+        guard let tab = tabs.first(where: { $0.id == tabID }) else { return nil }
+        return engine.scrollView(id: tab.runtimeID)
+    }
+
+    func iconURLs(tabID: String, completion: @escaping @MainActor ([URL]) -> Void) {
+        guard let tab = tabs.first(where: { $0.id == tabID }) else {
+            completion([])
+            return
+        }
+        engine.iconURLs(id: tab.runtimeID, completion: completion)
     }
 
     func submit(_ input: String) {
@@ -515,6 +609,7 @@ struct BrowserMobileTab: Identifiable, Equatable {
             engine.setDownloads(document.downloads)
             downloadsObserver = document.downloads?.observe { [weak self] in self?.notify() }
             selectedSpaceID = scenePreferences?.string(forKey: selectionKey + ".space")
+            recentTabIDs = scenePreferences?.stringArray(forKey: selectionKey + ".recent") ?? []
             selectedTabID = scenePreferences?.string(forKey: selectionKey + ".tab")
             if selectedSpaceID == nil {
                 let filename = Data(sceneID.utf8).base64EncodedString().replacing("/", with: "_") + ".json"

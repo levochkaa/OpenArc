@@ -55,6 +55,22 @@ enum BrowserMobileEngineEvent {
     func resolveJavaScriptDialog(id: UUID, response: BrowserMobileJavaScriptDialogResponse)
     func resolveHTTPAuthentication(id: UUID, response: BrowserMobileHTTPAuthenticationResponse)
     func shutdown()
+    /// A picture of the page as it last drew, `width` points wide; nil for a
+    /// tab without a view. `rect` limits it to part of the view.
+    func snapshot(id: String, rect: CGRect?, width: CGFloat, completion: @escaping @MainActor (UIImage?) -> Void)
+    /// The scroll view of the tab's page, while it has a view.
+    func scrollView(id: String) -> UIScrollView?
+    /// The icons the loaded page declares, best first.
+    func iconURLs(id: String, completion: @escaping @MainActor ([URL]) -> Void)
+    /// Room the browser's own bars cover at the page's edges.
+    func setObscuredInsets(_ insets: UIEdgeInsets)
+    /// Text and layout scale of the tab's page; 1 is the site's own size.
+    func pageZoom(id: String) -> CGFloat
+    func setPageZoom(id: String, _ zoom: CGFloat)
+    /// Whether the tab asks sites for their desktop layout.
+    func prefersDesktopSite(id: String) -> Bool
+    /// Switches the layout the tab asks for and reloads the page.
+    func setPrefersDesktopSite(id: String, _ prefersDesktop: Bool)
 }
 
 extension BrowserMobileEngine {
@@ -64,4 +80,17 @@ extension BrowserMobileEngine {
     @discardableResult func presentFindInPage(id _: String) -> Bool { false }
     func dismissFindInPage() {}
     var isFindInPageVisible: Bool { false }
+    func snapshot(
+        id _: String, rect _: CGRect?, width _: CGFloat, completion: @escaping @MainActor (UIImage?) -> Void,
+    ) {
+        completion(nil)
+    }
+
+    func scrollView(id _: String) -> UIScrollView? { nil }
+    func iconURLs(id _: String, completion: @escaping @MainActor ([URL]) -> Void) { completion([]) }
+    func setObscuredInsets(_: UIEdgeInsets) {}
+    func pageZoom(id _: String) -> CGFloat { 1 }
+    func setPageZoom(id _: String, _: CGFloat) {}
+    func prefersDesktopSite(id _: String) -> Bool { false }
+    func setPrefersDesktopSite(id _: String, _: Bool) {}
 }

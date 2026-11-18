@@ -371,6 +371,27 @@ func mobileCorruptOrUnknownVersionRemainsIntactUntilSuccessfulRestoreRetry(unkno
     #expect(try Data(contentsOf: f.url) == bytes)
 }
 
+@MainActor @Test func mobileSwitcherListsTabsOldestFirstByLastSelection() async throws {
+    let f = MobileWorkspaceFixture()
+    defer { f.cleanup() }
+    let workspace = BrowserMobileWorkspace(
+        engine: MobileWorkspaceEngine(), store: BrowserMobileFileSessionStore(fileURL: f.url),
+    )
+    await workspace.restore()
+    workspace.submit("https://one.example/")
+    let first = try #require(workspace.selectedTabID)
+    workspace.submitInNewTab("https://two.example/")
+    let second = try #require(workspace.selectedTabID)
+    workspace.submitInNewTab("https://three.example/")
+    let third = try #require(workspace.selectedTabID)
+    #expect(Set([first, second, third]).count == 3, "A loaded tab opens new pages in new tabs")
+    #expect(workspace.switcherTabs.map(\.id) == [first, second, third])
+
+    workspace.selectTab(id: first)
+    #expect(workspace.switcherTabs.map(\.id) == [second, third, first], "The selected tab moves to the newest end")
+    #expect(workspace.recentTabIDs.prefix(3) == [first, third, second])
+}
+
 // MARK: - MobileWorkspaceFixture
 
 private struct MobileWorkspaceFixture {

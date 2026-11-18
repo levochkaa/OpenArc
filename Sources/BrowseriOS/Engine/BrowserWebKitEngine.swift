@@ -62,6 +62,9 @@ import WebKit
         // navigation, without an ever-growing set of canceled navigation IDs.
         let navigationGenerations = NSMapTable<WKNavigation, NSNumber>.weakToStrongObjects()
         var allowsPageMetadata = false
+        var prefersDesktop = false
+        var textZoom: CGFloat = 1
+        var hasAppliedTextZoom = false
         var hasStartedCurrentNavigation = false
         var hasCommittedDialogDocument = false
         var isReplacingDialogDocument = false
@@ -103,6 +106,7 @@ import WebKit
     private var pendingAuthentication: PendingAuthentication?
     private var isFinishingAuthentication = false
     private var downloads: BrowserMobileDownloads?
+    private var obscuredInsets = UIEdgeInsets.zero
     private let actionDownloads = NSMapTable<WKNavigationAction, DownloadHandoff>.weakToStrongObjects()
     private let responseDownloads = NSMapTable<WKNavigationResponse, DownloadHandoff>.weakToStrongObjects()
 
@@ -307,6 +311,93 @@ import WebKit
         }
     }
 
+    func snapshot(
+        id: String, rect: CGRect?, width: CGFloat, completion: @escaping @MainActor (UIImage?) -> Void,
+    ) {
+        guard !isShutDown, let webView = records[id]?.webView, webView.bounds.width > 0, width > 0 else {
+            completion(nil)
+            return
+        }
+        let configuration = WKSnapshotConfiguration()
+        configuration.afterScreenUpdates = false
+        if let rect { configuration.rect = rect }
+        configuration.snapshotWidth = NSNumber(value: Double(min(width, rect?.width ?? webView.bounds.width)))
+        webView.takeSnapshot(with: configuration) { image, _ in
+            MainActor.assumeIsolated { completion(image) }
+        }
+    }
+
+    func setObscuredInsets(_ insets: UIEdgeInsets) {
+        obscuredInsets = insets
+        for record in records.values {
+            record.webView?.obscuredContentInsets = insets
+        }
+    }
+
+    func pageZoom(id: String) -> CGFloat {
+        records[id]?.textZoom ?? 1
+    }
+
+    /// Scales the page's text, which reflows it; page zoom would keep the
+    /// mobile layout's width and push the text past the screen's edge.
+    func setPageZoom(id: String, _ zoom: CGFloat) {
+        guard !isShutDown, let record = records[id] else { return }
+        record.textZoom = zoom
+        applyTextZoom(record)
+    }
+
+    func prefersDesktopSite(id: String) -> Bool {
+        records[id]?.prefersDesktop ?? false
+    }
+
+    func setPrefersDesktopSite(id: String, _ prefersDesktop: Bool) {
+        guard !isShutDown, let record = records[id], record.prefersDesktop != prefersDesktop else { return }
+        record.prefersDesktop = prefersDesktop
+        record.webView?.reloadFromOrigin()
+    }
+
+    func scrollView(id: String) -> UIScrollView? {
+        isShutDown ? nil : records[id]?.webView?.scrollView
+    }
+
+    func iconURLs(id: String, completion: @escaping @MainActor ([URL]) -> Void) {
+        guard !isShutDown, let record = records[id], let webView = record.webView,
+              record.hasCommittedDialogDocument, !record.state.isLoading
+        else {
+            completion([])
+            return
+        }
+        // SVG icons are drawn into a canvas in the page, since UIKit cannot
+        // decode SVG; a cross-origin icon that taints the canvas stays a link.
+        let script = """
+        const links = Array.from(document.querySelectorAll(
+          'link[rel~="icon"], link[rel~="apple-touch-icon"], link[rel~="apple-touch-icon-precomposed"]'));
+        const rows = links.map(l => [l.href, l.rel, (l.sizes && l.sizes.value) || '', l.type || '']);
+        for (const row of rows) {
+          if (!(row[3].includes('svg') || /\\.svg([?#]|$)/i.test(row[0]))) continue;
+          try {
+            const image = new Image();
+            image.src = row[0];
+            await image.decode();
+            const canvas = document.createElement('canvas');
+            canvas.width = 96;
+            canvas.height = 96;
+            canvas.getContext('2d').drawImage(image, 0, 0, 96, 96);
+            row[0] = canvas.toDataURL('image/png');
+            row[2] = '96x96';
+            row[3] = 'image/png';
+          } catch (error) {}
+        }
+        return rows;
+        """
+        webView.callAsyncJavaScript(script, arguments: [:], in: nil, in: .defaultClient) { result in
+            MainActor.assumeIsolated {
+                let rows = (try? result.get()) as? [[String]] ?? []
+                completion(BrowserMobileFavicons.rankedIconURLs(rows, pageURL: webView.url))
+            }
+        }
+    }
+
     func setJavaScriptDialogPresentationActive(_ active: Bool) {
         isDialogPresentationActive = active && !isShutDown
         if !isDialogPresentationActive {
@@ -443,6 +534,17 @@ import WebKit
         return webView
     }
 
+    private func applyTextZoom(_ record: Record) {
+        guard let webView = record.webView, record.hasCommittedDialogDocument else { return }
+        // A page that never had its size changed keeps the site's own rule.
+        guard record.textZoom != 1 || record.hasAppliedTextZoom else { return }
+        record.hasAppliedTextZoom = record.textZoom != 1
+        let value = record.textZoom == 1 ? "" : "\(Int((record.textZoom * 100).rounded()))%"
+        webView.evaluateJavaScript(
+            "document.documentElement.style.webkitTextSizeAdjust = '\(value)'", in: nil, in: .defaultClient,
+        )
+    }
+
     private func canPresentHTTPAuthentication(_ record: Record) -> Bool {
         guard !isShutDown, isDialogPresentationActive, onEvent != nil,
               records[record.id] === record, selectedRuntimeID == record.id, record.state.error == nil,
@@ -525,6 +627,7 @@ import WebKit
         }
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.isFindInteractionEnabled = false
+        webView.obscuredContentInsets = obscuredInsets
         record.webView = webView
         let id = record.id
         idsByWebView[ObjectIdentifier(webView)] = id
@@ -713,6 +816,21 @@ extension BrowserWebKitEngine: WKNavigationDelegate {
     func webView(
         _ webView: WKWebView,
         decidePolicyFor navigationAction: WKNavigationAction,
+        preferences: WKWebpagePreferences,
+        decisionHandler: @escaping @MainActor (WKNavigationActionPolicy, WKWebpagePreferences) -> Void,
+    ) {
+        let prefersDesktop = record(for: webView)?.prefersDesktop == true
+        self.webView(webView, decidePolicyFor: navigationAction) { policy in
+            if navigationAction.targetFrame?.isMainFrame != false {
+                preferences.preferredContentMode = prefersDesktop ? .desktop : .mobile
+            }
+            decisionHandler(policy, preferences)
+        }
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        decidePolicyFor navigationAction: WKNavigationAction,
         decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void,
     ) {
         guard let record = record(for: webView), !isShutDown else {
@@ -852,6 +970,8 @@ extension BrowserWebKitEngine: WKNavigationDelegate {
         if case .url = record.retryLoad, let url = webView.url {
             record.retryLoad = .url(url)
         }
+        record.hasAppliedTextZoom = false
+        applyTextZoom(record)
         refresh(record)
     }
 

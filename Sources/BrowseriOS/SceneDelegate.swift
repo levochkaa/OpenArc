@@ -32,10 +32,14 @@ final class BrowserSceneDelegate: UIResponder, UIWindowSceneDelegate {
             }
             self.connection = connection
             let window = UIWindow(windowScene: windowScene)
-            window.rootViewController = BrowserMobileViewController(
-                workspace: connection.workspace,
-                contentView: connection.contentView,
-            )
+            // A phone gets the bottom-bar browser; iPad keeps the sidebar.
+            window.rootViewController = windowScene.traitCollection.userInterfaceIdiom == .phone
+                ? BrowserMobilePhoneViewController(
+                    workspace: connection.workspace, contentView: connection.contentView,
+                )
+                : BrowserMobileViewController(
+                    workspace: connection.workspace, contentView: connection.contentView,
+                )
             self.window = window
             window.makeKeyAndVisible()
             BrowserMobileSceneSessions.shared.setActive(

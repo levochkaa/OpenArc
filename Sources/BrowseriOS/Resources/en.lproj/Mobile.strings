@@ -159,3 +159,17 @@
 "Clear Completed" = "Clear Completed";
 "Finish any Save to Files actions or retry pending deletions, then try Clear Completed again." = "Finish any Save to Files actions or retry pending deletions, then try Clear Completed again.";
 "This Clear Completed request is no longer available." = "This Clear Completed request is no longer available.";
+"%@ in %@" = "%1$@ in %2$@";
+"Actual Size" = "Actual Size";
+"Changes could not be saved" = "Changes could not be saved";
+"Copy Link" = "Copy Link";
+"Display Options" = "Display Options";
+"Find on Page" = "Find on Page";
+"Larger Text" = "Larger Text";
+"Open Source Licenses" = "Open Source Licenses";
+"Page Menu" = "Page Menu";
+"Request Desktop Website" = "Request Desktop Website";
+"Request Mobile Website" = "Request Mobile Website";
+"Search…" = "Search…";
+"Settings" = "Settings";
+"Smaller Text" = "Smaller Text";
