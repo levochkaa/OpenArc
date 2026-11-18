@@ -1,5 +1,5 @@
--- Site boosts: per-site CSS, JavaScript and hidden elements, last writer wins
--- per identity. Deletions use the shared permanent tombstones, so a re-created
+-- Site boosts: per-site CSS, JavaScript, hidden elements, name and styling,
+-- last writer wins per identity. Deletions use the shared permanent tombstones, so a re-created
 -- boost for the same host takes a fresh identity.
 CREATE TABLE boosts (
   id text NOT NULL,
@@ -9,6 +9,11 @@ CREATE TABLE boosts (
   css text NOT NULL,
   java_script text NOT NULL,
   zapped_selectors jsonb NOT NULL,
+  -- The name the user gave the boost; NULL shows the default name.
+  title text,
+  -- Colors, font, text case and size as the request schema validates them;
+  -- NULL keeps the site's own. The bound backs the schema's.
+  style jsonb CHECK (style IS NULL OR (jsonb_typeof(style) = 'object' AND octet_length(style::text) <= 8192)),
   deleted_at timestamptz,
   updated_at timestamptz NOT NULL DEFAULT now(),
   revision bigint NOT NULL DEFAULT 1,

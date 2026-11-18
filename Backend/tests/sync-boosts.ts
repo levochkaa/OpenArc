@@ -14,7 +14,17 @@ type Context = {
   account: () => Promise<{ id: string; devices: [Device, Device] }>;
   post: <T>(path: string, token: string, body: unknown, status?: number, url?: string) => Promise<T>;
 };
-type BoostData = { host: string; isEnabled: boolean; css: string; javaScript: string; zappedSelectors: string[] };
+type BoostStyle = {
+  colors?: {
+    tint?: { hue: number; saturation: number; secondaryHueOffset: number };
+    invertsLightness: boolean; contrast: number; brightness: number; originalSaturation: number;
+  };
+  fontFamily?: string; textCase?: string; textZoom?: number;
+};
+type BoostData = {
+  host: string; isEnabled: boolean; css: string; javaScript: string; zappedSelectors: string[];
+  title?: string; style?: BoostStyle;
+};
 
 const boost = (host: string, css = ""): BoostData => ({ host, isEnabled: true, css, javaScript: "", zappedSelectors: [] });
 const upsert = (entityID: string, data: BoostData) => ({ kind: "upsert", entityType: "boost", entityID, data });
@@ -98,6 +108,56 @@ export function registerBoostSyncTests({ pool, account, post }: Context) {
     assert.ok(bootstrap.events.some((event) => event.entityType === "boost" && event.entityID === id));
     const incremental = await pull(b, bootstrap.cursor, 6);
     assert.deepEqual(incremental.events, []);
+  });
+
+  it("v6 upserts carry the boost's name and styling, and a write without them clears them", async () => {
+    const { id: userID, devices: [a, b] } = await account();
+    const id = randomUUID();
+    const style: BoostStyle = {
+      colors: { tint: { hue: 210.5, saturation: 0.4, secondaryHueOffset: 30 },
+        invertsLightness: true, contrast: 1.2, brightness: 0.9, originalSaturation: 0.25 },
+      fontFamily: "Georgia", textCase: "uppercase", textZoom: 1.25
+    };
+    const styled = { ...boost("example.com", "a {}"), title: "Reader", style };
+    const pushed = await push(a, [upsert(id, styled)]);
+    assert.deepEqual(pushed.outcomes, [{ operationIndex: 0, status: "applied" }]);
+    assert.deepEqual(pushed.events[0].data, { id, ...styled });
+    const pulled = await pull(b);
+    assert.deepEqual(pulled.events.find((event) => event.entityID === id)?.data, { id, ...styled });
+    const stored = await pool().query("SELECT title, style FROM boosts WHERE user_id=$1 AND id=$2", [userID, id]);
+    assert.deepEqual(stored.rows, [{ title: "Reader", style }]);
+
+    // A whole-record write without them goes back to the site's own look and the default name.
+    await push(b, [upsert(id, boost("example.com", "a {}"))]);
+    const cleared = await pull(a);
+    const latest = cleared.events.filter((event) => event.entityID === id).at(-1);
+    assert.deepEqual(latest?.data, { id, ...boost("example.com", "a {}") });
+    const after = await pool().query("SELECT title, style FROM boosts WHERE user_id=$1 AND id=$2", [userID, id]);
+    assert.deepEqual(after.rows, [{ title: null, style: null }]);
+  });
+
+  it("v6 rejects styling outside its bounds without writing", async () => {
+    const { id: userID, devices: [a] } = await account();
+    const before = (await pool().query("SELECT count(*) AS events FROM sync_events WHERE user_id=$1", [userID])).rows[0];
+    const colors = { invertsLightness: false, contrast: 1, brightness: 1, originalSaturation: 0 };
+    for (const extra of [
+      { title: "" },
+      { title: "a".repeat(1025) },
+      { style: { textCase: "smallcaps" } },
+      { style: { textZoom: 10 } },
+      { style: { fontFamily: "" } },
+      { style: { colors: { ...colors, contrast: 5 } } },
+      { style: { colors: { ...colors, tint: { hue: 361, saturation: 0.5, secondaryHueOffset: 30 } } } },
+      { style: { colors: { invertsLightness: true } } },
+      { style: { shadow: true } }
+    ]) {
+      await post("/v1/sync/push", a.token, {
+        protocolVersion: 6, mutationID: randomUUID(), deviceID: a.id,
+        operations: [upsert(randomUUID(), { ...boost("example.com"), ...extra } as BoostData)]
+      }, 400);
+    }
+    const after = (await pool().query("SELECT count(*) AS events FROM sync_events WHERE user_id=$1", [userID])).rows[0];
+    assert.deepEqual(after, before);
   });
 
   it("v6 rejects malformed boosts without writing", async () => {

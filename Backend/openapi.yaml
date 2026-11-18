@@ -1833,9 +1833,79 @@ components:
             type: string
             minLength: 1
             maxLength: 4096
+        title:
+          type: string
+          minLength: 1
+          maxLength: 1024
+          description: The name the user gave the boost. Absent shows the default name.
+        style:
+          $ref: '#/components/schemas/SyncBoostStyle'
       description: >-
         A whole site boost. Lengths count UTF-16 code units. The record identity is the operation's entityID,
-        not the host: after a delete, a new boost for the same host takes a fresh identity.
+        not the host: after a delete, a new boost for the same host takes a fresh identity. Optional fields are
+        omitted rather than null; an upsert without them clears what an earlier write stored.
+    SyncBoostStyle:
+      type: object
+      additionalProperties: false
+      properties:
+        colors:
+          $ref: '#/components/schemas/SyncBoostColors'
+        fontFamily:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: The family every text of the page takes.
+        textCase:
+          type: string
+          enum: [capitalize, uppercase, lowercase]
+        textZoom:
+          type: number
+          minimum: 0.25
+          maximum: 4
+          description: The page's size, 1 for the site's own.
+      description: >-
+        What the boost editor's controls change. An absent field keeps the site's own. Stored as one JSON
+        object of at most 8 KiB.
+    SyncBoostColors:
+      type: object
+      additionalProperties: false
+      required: [invertsLightness, contrast, brightness, originalSaturation]
+      properties:
+        tint:
+          type: object
+          additionalProperties: false
+          required: [hue, saturation, secondaryHueOffset]
+          properties:
+            hue:
+              type: number
+              minimum: 0
+              maximum: 360
+              description: Degrees around the color wheel.
+            saturation:
+              type: number
+              minimum: 0
+              maximum: 1
+            secondaryHueOffset:
+              type: number
+              minimum: -360
+              maximum: 360
+              description: Degrees from the hue to the color the page's dark parts take.
+        invertsLightness:
+          type: boolean
+        contrast:
+          type: number
+          minimum: 0
+          maximum: 4
+        brightness:
+          type: number
+          minimum: 0
+          maximum: 4
+        originalSaturation:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: How much of the page's own color stays under the tint.
+      description: A tint on the color wheel, turned-around lightness and the color sliders.
     SyncBoostOperation:
       type: object
       additionalProperties: false

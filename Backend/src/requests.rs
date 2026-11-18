@@ -478,6 +478,42 @@ pub const BOOST_HOST_LIMIT: usize = 253;
 pub const BOOST_CODE_LIMIT: usize = 262_144;
 pub const BOOST_SELECTOR_LIMIT: usize = 4096;
 pub const BOOST_SELECTOR_COUNT_LIMIT: usize = 1000;
+pub const BOOST_TITLE_LIMIT: usize = 1024;
+pub const BOOST_FONT_FAMILY_LIMIT: usize = 256;
+const BOOST_TEXT_CASES: &[&str] = &["capitalize", "uppercase", "lowercase"];
+
+fn number_within(min: f64, max: f64) -> Schema {
+    Schema::Number { int: false, min: Some((min, true)), max: Some((max, true)) }
+}
+
+/// A tint on the color wheel and the color sliders. Ranges are wider than the
+/// editor's, so a later editor can widen its own without a new protocol.
+fn boost_colors() -> Schema {
+    strict(vec![
+        (
+            "tint",
+            optional(strict(vec![
+                ("hue", number_within(0.0, 360.0)),
+                ("saturation", number_within(0.0, 1.0)),
+                ("secondaryHueOffset", number_within(-360.0, 360.0)),
+            ])),
+        ),
+        ("invertsLightness", Schema::Boolean),
+        ("contrast", number_within(0.0, 4.0)),
+        ("brightness", number_within(0.0, 4.0)),
+        ("originalSaturation", number_within(0.0, 1.0)),
+    ])
+}
+
+/// What the editor's controls change; an absent field keeps the site's own.
+fn boost_style() -> Schema {
+    strict(vec![
+        ("colors", optional(boost_colors())),
+        ("fontFamily", optional(string_between(Some(1), Some(BOOST_FONT_FAMILY_LIMIT)))),
+        ("textCase", optional(options(BOOST_TEXT_CASES))),
+        ("textZoom", optional(number_within(0.25, 4.0))),
+    ])
+}
 
 fn boost_data() -> Schema {
     strict(vec![
@@ -489,6 +525,8 @@ fn boost_data() -> Schema {
             "zappedSelectors",
             array(string_between(Some(1), Some(BOOST_SELECTOR_LIMIT)), None, Some(BOOST_SELECTOR_COUNT_LIMIT)),
         ),
+        ("title", optional(string_between(Some(1), Some(BOOST_TITLE_LIMIT)))),
+        ("style", optional(boost_style())),
     ])
 }
 
@@ -638,8 +676,40 @@ mod tests {
         assert!(boost_push(&boost).is_ok());
         assert!(boost_push(&json!({"kind": "delete", "entityType": "boost", "entityID": "b"})).is_ok());
         let mut extra = boost.clone();
-        extra["data"]["title"] = json!("x");
+        extra["data"]["subtitle"] = json!("x");
         assert!(boost_push(&extra).is_err());
+        // The name and the editor's styling travel with the boost, within bounds.
+        let mut styled = boost.clone();
+        styled["data"]["title"] = json!("Reader");
+        styled["data"]["style"] = json!({
+            "colors": {"tint": {"hue": 210.5, "saturation": 0.4, "secondaryHueOffset": 30},
+                       "invertsLightness": true, "contrast": 1.2, "brightness": 0.9, "originalSaturation": 0},
+            "fontFamily": "Georgia", "textCase": "uppercase", "textZoom": 1.25});
+        assert!(boost_push(&styled).is_ok());
+        let mut plain_style = boost.clone();
+        plain_style["data"]["style"] = json!({});
+        assert!(boost_push(&plain_style).is_ok());
+        for (path, value) in [
+            ("/data/title", json!("")),
+            ("/data/title", json!("a".repeat(BOOST_TITLE_LIMIT + 1))),
+            ("/data/title", json!(null)),
+            ("/data/style", json!("dark")),
+            ("/data/style/fontFamily", json!("")),
+            ("/data/style/textCase", json!("smallcaps")),
+            ("/data/style/textZoom", json!(9)),
+            ("/data/style/colors/contrast", json!(-1)),
+            ("/data/style/colors/tint/hue", json!(400)),
+            ("/data/style/colors/shadow", json!(1)),
+            ("/data/style/glow", json!(true)),
+        ] {
+            let mut invalid = styled.clone();
+            let (parent, key) = path.rsplit_once('/').unwrap();
+            invalid.pointer_mut(parent).unwrap().as_object_mut().unwrap().insert(key.to_string(), value.clone());
+            assert!(boost_push(&invalid).is_err(), "{path} = {value}");
+        }
+        let mut missing = styled.clone();
+        missing["data"]["style"]["colors"].as_object_mut().unwrap().remove("contrast");
+        assert!(boost_push(&missing).is_err());
         let mut empty_host = boost.clone();
         empty_host["data"]["host"] = json!("");
         assert!(boost_push(&empty_host).is_err());

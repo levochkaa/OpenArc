@@ -1,12 +1,12 @@
 # Boost sync
 
-Boosts (per-site CSS, JavaScript and zapped elements) are app-wide. They sync through the default profile's account, so every Mac signed in to that account shows the same boosts. Other profiles and incognito windows carry no boost sync of their own; which pages a boost applies to is decided elsewhere.
+Boosts (per-site CSS, JavaScript, zapped elements, a name and the editor's styling) are app-wide. They sync through the default profile's account, so every Mac signed in to that account shows the same boosts. Other profiles and incognito windows carry no boost sync of their own; which pages a boost applies to is decided elsewhere.
 
 ## Identity and conflicts
 
 A boost's identity is `BrowserBoost.syncID`, a UUID made with the boost, not its host. Boosts saved before sync get one the first time the preferences load. Server deletions are permanent tombstones, so a boost made again for the same host after a delete takes a fresh identity.
 
-- An upsert carries the whole boost and replaces it. The last write the server commits wins; there is no field merge.
+- An upsert carries the whole boost, name and styling included, and replaces it. The last write the server commits wins; there is no field merge, so an upsert without a name or styling clears them.
 - A delete is permanent. An upsert of a deleted boost is rejected with reason `deleted` and the tombstone; the device then drops its copy. An edit made offline does not bring a deleted boost back.
 - Two devices can each make a boost for one host before they hear of the other. Both records live on the server; each device shows the most recently written one (`BrowserSyncBoostState.winners`: highest server sequence, queued local writes above all of them). The next local edit of that host deletes the hidden one, and removing the host deletes every boost of it, so a hidden duplicate never reappears.
 
@@ -22,15 +22,21 @@ Push carries boost operations only; Spaces, tabs and folders stay on v4.
   "operations": [
     { "kind": "upsert", "entityType": "boost", "entityID": "5C1D…", "data": {
       "host": "example.com", "isEnabled": true, "css": "body { margin: 0 }",
-      "javaScript": "", "zappedSelectors": ["#cookie-banner"] } },
+      "javaScript": "", "zappedSelectors": ["#cookie-banner"], "title": "Reader",
+      "style": {
+        "colors": { "tint": { "hue": 210.5, "saturation": 0.4, "secondaryHueOffset": 30 },
+          "invertsLightness": true, "contrast": 1.2, "brightness": 0.9, "originalSaturation": 0 },
+        "fontFamily": "Georgia", "textCase": "uppercase", "textZoom": 1.25 } } },
     { "kind": "delete", "entityType": "boost", "entityID": "9A0F…" }
   ]
 }
 ```
 
-Limits count UTF-16 code units: host 1–253, CSS and JavaScript up to 262,144 each, at most 1,000 zapped selectors of 1–4,096. A boost over a limit stays on its Mac and is not queued. Outcomes follow the shared receipt rules: `applied`, `deleted` for a repeated delete, `rejected` with `deleted` for an upsert of a tombstone.
+Limits count UTF-16 code units: host 1–253, CSS and JavaScript up to 262,144 each, at most 1,000 zapped selectors of 1–4,096, title 1–1,024, font family 1–256. A boost over a limit stays on its Mac and is not queued.
 
-A v6 pull returns everything a v5 pull does plus `boost` events (`{id, host, isEnabled, css, javaScript, zappedSelectors}`, or `{id}` for a delete). Older pulls never see boost events, which older clients could not read. Like v4 and v5, any older pull resets the device's v6 marker, and the first v6 pull must start at cursor 0 (`409 Protocol 6 bootstrap requires cursor 0` otherwise). Every pull advertises `supportedPushVersions: [2, 3, 4, 5, 6]`.
+`title` and `style` are optional and omitted, never null, when the boost has the default name or the site's own look; every field of `style` is optional too. `style.colors` needs `invertsLightness`, `contrast` and `brightness` (0–4) and `originalSaturation` (0–1); its optional `tint` has `hue` (0–360), `saturation` (0–1) and `secondaryHueOffset` (−360–360). `textCase` is `capitalize`, `uppercase` or `lowercase`; `textZoom` is 0.25–4. These bounds are wider than the editor's, so a later editor can widen its own ranges; the client moves any number outside them inside before queuing. The server rejects unknown fields, and the client reads `style` field by field, so a field it cannot read drops alone. Outcomes follow the shared receipt rules: `applied`, `deleted` for a repeated delete, `rejected` with `deleted` for an upsert of a tombstone.
+
+A v6 pull returns everything a v5 pull does plus `boost` events (`{id, host, isEnabled, css, javaScript, zappedSelectors}` with `title` and `style` when set, or `{id}` for a delete). Older pulls never see boost events, which older clients could not read. Like v4 and v5, any older pull resets the device's v6 marker, and the first v6 pull must start at cursor 0 (`409 Protocol 6 bootstrap requires cursor 0` otherwise). Every pull advertises `supportedPushVersions: [2, 3, 4, 5, 6]`.
 
 ## Client
 
@@ -40,8 +46,8 @@ The coordinator climbs one version at a time, as from v4 to v5, replaying from c
 
 `BrowserBoostSyncBridge` connects the store to `BrowserUserPreferencesStore.boosts`:
 
-- Removals queue at once. Edits queue after two seconds without another edit, since the boost editor saves CSS while the user types; quitting queues pending edits first.
-- Before showing remote changes it queues pending edits, then replaces each host's boost with the synced one, keeping this Mac's order and appending new hosts. A local boost sync has not seen stays.
+- Removals queue at once. Edits queue after two seconds without another edit, since the boost editor saves CSS while the user types and colors while they drag; quitting queues pending edits first.
+- Before showing remote changes it queues pending edits, then replaces each host's boost with the synced one, name and styling included, keeping this Mac's order and appending new hosts. A local boost sync has not seen stays.
 - At launch it queues boosts the store has never seen and shows the synced state. An edit lost in the two seconds before a crash is replaced by the synced boost.
 
 Boost rows wait in the FIFO like other rows, so automatic expiry, which needs an empty queue, runs once they drain.
@@ -50,7 +56,7 @@ If a pull stops advertising v6 (a server rolled back behind a newer proxy, say),
 
 ## Server
 
-Migration `008_sync_boosts.sql` adds the `boosts` table, the per-device `boost_sync_enabled` marker and `boost` to the event and tombstone entity types. `Backend/src/sync/boosts.rs` applies v6 operations under the account lock with the shared event log, tombstones and receipts.
+Migration `008_sync_boosts.sql` adds the `boosts` table (the name in `title`, the styling as one `style` jsonb object of at most 8 KiB), the per-device `boost_sync_enabled` marker and `boost` to the event and tombstone entity types. `Backend/src/sync/boosts.rs` applies v6 operations under the account lock with the shared event log, tombstones and receipts.
 
 ## Security
 
