@@ -1,6 +1,6 @@
 # OpenArc Website
 
-Production serves only the static pages `public/privacy` and `public/terms` from `https://openarc.su`, with `public/favicon.svg`. Copy them to the server with `COPYFILE_DISABLE=1`.
+Production serves only the static pages `public/privacy`, `public/support` and `public/terms` from `https://openarc.su`, with `public/favicon.svg`. Copy them to the server with `COPYFILE_DISABLE=1`.
 
 The React landing page in `src` is not deployed. To work on it:
 
