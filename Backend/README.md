@@ -1,4 +1,4 @@
-OpenArc sync backend is a Rust server (axum, tokio-postgres) on PostgreSQL 17. The checked-in [OpenAPI contract](openapi.yaml) is compiled into the binary and served at `/openapi.yaml` and, as JSON, at `/openapi.json`; `/docs` shows it in Swagger UI. Apply migrations before starting the server. Migration `005_sync_folders.sql` adds folders, tab membership and per-device v4 bootstrap state; `006_sync_expiry.sql` adds the recovery-aware v5 pull marker.
+OpenArc sync backend is a Rust server (axum, tokio-postgres) on PostgreSQL 17. The checked-in [OpenAPI contract](openapi.yaml) is compiled into the binary and served at `/openapi.yaml` and, as JSON, at `/openapi.json`; `/docs` shows it in Swagger UI. Apply migrations before starting the server. Migration `005_sync_folders.sql` adds folders, tab membership and per-device v4 bootstrap state; `006_sync_expiry.sql` adds the recovery-aware v5 pull marker. `008_sync_boosts.sql` adds site boosts and the v6 pull marker.
 
 For local development, install Rust with rustup, copy `.env.example` to `.env` in `Backend` (read like Node's `dotenv`: no `$` expansion, set variables win), and configure an isolated database plus a local JWT secret. Run `cargo run -- migrate`, then `cargo run`. The default API port is 8080; `PORT=0` binds an ephemeral port and the startup line prints it. `cargo test` runs the unit and HTTP tests that need no database, including a check that mutation receipt digests match the ones the earlier TypeScript server stored (`tests/fixtures/push-digests.json`). With Docker, `docker compose up` builds the image; apply migrations with `docker compose run --rm api openarc-sync-server migrate`.
 
@@ -19,8 +19,9 @@ Apple identity verification accepts the configured `APPLE_CLIENT_ID`, or an expl
 | v3 | `protocolVersion: 3`, `mutationID`, `deviceID`, `operations` | Same legacy pull |
 | v4 | `protocolVersion: 4`, `mutationID`, `deviceID`, `operations` | Explicit `protocolVersion: 4`; includes folders and tab membership |
 | v5 | Same envelope with `protocolVersion: 5`; expiry operations only | Explicit `protocolVersion: 5`; cursor-zero recovery bootstrap after registration or older pull |
+| v6 | Same envelope with `protocolVersion: 6`; boost operations only | Explicit `protocolVersion: 6`; adds boost events; cursor-zero bootstrap after registration or older pull |
 
-Every pull advertises `supportedPushVersions: [2, 3, 4, 5]`. Legacy pull responses retain `protocolVersion: 2`; negotiated v4/v5 responses echo their read version. V1–v4 requests allow at most 1,000 changes/operations; v5 permits at most 100 expiry operations. Moves allow at most 1,000 unique items. Inflated JSON requests are limited to 8 MiB, including gzip; v5 ACKs are additionally bounded to 4 MiB.
+Every pull advertises `supportedPushVersions: [2, 3, 4, 5, 6]`. See [boost sync](../docs/sync-boosts.md) for v6. Legacy pull responses retain `protocolVersion: 2`; negotiated v4/v5 responses echo their read version. V1–v4 requests allow at most 1,000 changes/operations; v5 permits at most 100 expiry operations. Moves allow at most 1,000 unique items. Inflated JSON requests are limited to 8 MiB, including gzip; v5 ACKs are additionally bounded to 4 MiB.
 
 V4 operations use these forms:
 

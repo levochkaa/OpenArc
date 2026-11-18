@@ -471,8 +471,64 @@ fn push_request_v5() -> Schema {
     ])
 }
 
+// MARK: Version 6 boosts
+
+/// Limits in UTF-16 code units, as the other string fields count them.
+pub const BOOST_HOST_LIMIT: usize = 253;
+pub const BOOST_CODE_LIMIT: usize = 262_144;
+pub const BOOST_SELECTOR_LIMIT: usize = 4096;
+pub const BOOST_SELECTOR_COUNT_LIMIT: usize = 1000;
+
+fn boost_data() -> Schema {
+    strict(vec![
+        ("host", string_between(Some(1), Some(BOOST_HOST_LIMIT))),
+        ("isEnabled", Schema::Boolean),
+        ("css", string_between(None, Some(BOOST_CODE_LIMIT))),
+        ("javaScript", string_between(None, Some(BOOST_CODE_LIMIT))),
+        (
+            "zappedSelectors",
+            array(string_between(Some(1), Some(BOOST_SELECTOR_LIMIT)), None, Some(BOOST_SELECTOR_COUNT_LIMIT)),
+        ),
+    ])
+}
+
+/// A whole boost replaces the stored one; a delete is permanent.
+fn boost_operation() -> Schema {
+    Schema::Discriminated {
+        key: "kind",
+        options: vec![
+            strict(vec![
+                ("kind", literal(json!("upsert"))),
+                ("entityType", literal(json!("boost"))),
+                ("entityID", string_between(Some(1), Some(200))),
+                ("data", boost_data()),
+            ]),
+            strict(vec![
+                ("kind", literal(json!("delete"))),
+                ("entityType", literal(json!("boost"))),
+                ("entityID", string_between(Some(1), Some(200))),
+            ]),
+        ],
+    }
+}
+
+fn push_request_v6() -> Schema {
+    strict(vec![
+        ("deviceID", uuid()),
+        ("protocolVersion", literal(json!(6))),
+        ("mutationID", uuid()),
+        ("operations", array(boost_operation(), None, Some(1000))),
+    ])
+}
+
 pub static SYNC_PUSH_REQUEST: LazyLock<Schema> = LazyLock::new(|| {
-    Schema::Union(vec![push_request_v5(), push_request_v4(), semantic_push_request(), legacy_push_request()])
+    Schema::Union(vec![
+        push_request_v6(),
+        push_request_v5(),
+        push_request_v4(),
+        semantic_push_request(),
+        legacy_push_request(),
+    ])
 });
 
 // MARK: Pull
@@ -489,6 +545,7 @@ fn pull_fields() -> Vec<(&'static str, Schema)> {
 /// parser, which strips unknown fields for existing clients.
 pub static SYNC_PULL_REQUEST: LazyLock<Schema> = LazyLock::new(|| {
     Schema::Union(vec![
+        strict(with(pull_fields(), vec![("protocolVersion", literal(json!(6)))])),
         strict(with(pull_fields(), vec![("protocolVersion", literal(json!(5)))])),
         strict(with(pull_fields(), vec![("protocolVersion", literal(json!(4)))])),
         object(with(pull_fields(), vec![("protocolVersion", optional(Schema::Undefined))])),
@@ -570,6 +627,28 @@ mod tests {
         assert!(SYNC_PUSH_REQUEST
             .parse(&json!({"deviceID": device, "protocolVersion": 4, "mutationID": mutation, "operations": [folder_move]}))
             .is_err());
+        // Boosts carry a whole record and nothing else.
+        let boost = json!({"kind": "upsert", "entityType": "boost", "entityID": "b", "data": {
+            "host": "example.com", "isEnabled": true, "css": "", "javaScript": "", "zappedSelectors": ["#ad"]}});
+        let boost_push = |operation: &Value| {
+            SYNC_PUSH_REQUEST.parse(
+                &json!({"deviceID": device, "protocolVersion": 6, "mutationID": mutation, "operations": [operation]}),
+            )
+        };
+        assert!(boost_push(&boost).is_ok());
+        assert!(boost_push(&json!({"kind": "delete", "entityType": "boost", "entityID": "b"})).is_ok());
+        let mut extra = boost.clone();
+        extra["data"]["title"] = json!("x");
+        assert!(boost_push(&extra).is_err());
+        let mut empty_host = boost.clone();
+        empty_host["data"]["host"] = json!("");
+        assert!(boost_push(&empty_host).is_err());
+        let mut huge = boost.clone();
+        huge["data"]["css"] = json!("a".repeat(BOOST_CODE_LIMIT + 1));
+        assert!(boost_push(&huge).is_err());
+        assert!(boost_push(&json!({"kind": "patch", "entityType": "boost", "entityID": "b", "fields": {}})).is_err());
+        assert!(boost_push(&json!({"kind": "delete", "entityType": "tab", "entityID": "b"})).is_err());
+        assert!(SYNC_PULL_REQUEST.parse(&json!({"deviceID": device, "protocolVersion": 6})).is_ok());
         // Expiry takes only the five intervals.
         let expiry = json!({"kind": "expire", "entityType": "tab", "entityID": "t", "expectedServerSeq": 1, "inactiveForSeconds": 60});
         assert!(

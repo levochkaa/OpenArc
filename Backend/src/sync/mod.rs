@@ -2,6 +2,7 @@
 //! canonical event log. Every push runs under the account row lock, so event
 //! sequence numbers follow commit order and tombstone checks are serialized.
 
+mod boosts;
 mod events;
 mod folders;
 mod operations;
@@ -36,7 +37,7 @@ pub fn receipt_payload(request: &Value) -> Value {
     if let Some(version) = request.get("protocolVersion") {
         payload.insert("protocolVersion".to_string(), version.clone());
     }
-    if matches!(version, Some(3.0 | 4.0 | 5.0)) {
+    if matches!(version, Some(3.0 | 4.0 | 5.0 | 6.0)) {
         payload.insert("operations".to_string(), request.get("operations").cloned().unwrap_or(Value::Null));
     } else {
         payload.insert("changes".to_string(), request.get("changes").cloned().unwrap_or(Value::Null));
@@ -119,7 +120,7 @@ impl SyncService {
         // Legacy writers cannot create folders. Snapshot only Space IDs once
         // under the account lock, then invalidate after a Space cascade.
         let mut legacy_folder_spaces = HashSet::new();
-        if !matches!(protocol, Some(4 | 5)) {
+        if !matches!(protocol, Some(4..=6)) {
             for row in tx
                 .query("SELECT DISTINCT space_id FROM folders WHERE user_id = $1 AND deleted_at IS NULL", &[&user_id])
                 .await?
@@ -131,6 +132,14 @@ impl SyncService {
         let mut outcomes: Vec<Outcome> = Vec::new();
         let operations = body.get("operations").and_then(Value::as_array).cloned().unwrap_or_default();
         match protocol {
+            Some(6) => {
+                let executor = boosts::BoostExecutor::new(&store);
+                for (index, operation) in operations.iter().enumerate() {
+                    let (operation_events, outcome) = executor.apply(operation, index).await?;
+                    events.extend(operation_events);
+                    outcomes.push(outcome);
+                }
+            }
             Some(5) => {
                 let mut budget = ExpiryBudget::default();
                 for (index, operation) in operations.iter().enumerate() {
@@ -195,8 +204,8 @@ impl SyncService {
         // An acknowledgement is not a pull: events may include old
         // authoritative deletes. Clients advance their pull cursor only after
         // reading pull.
-        let is_semantic = matches!(protocol, Some(3..=5));
-        let mut visible = if matches!(protocol, Some(4 | 5)) {
+        let is_semantic = matches!(protocol, Some(3..=6));
+        let mut visible = if matches!(protocol, Some(4..=6)) {
             events.iter().map(v4_event).collect::<Vec<_>>()
         } else {
             legacy_events(&events)
@@ -246,14 +255,23 @@ impl SyncService {
         let tx = client.transaction().await?;
         let device = tx
             .query_opt(
-                "SELECT folder_sync_enabled, expiry_sync_enabled FROM devices WHERE id = $1 AND user_id = $2 FOR UPDATE",
+                "SELECT folder_sync_enabled, expiry_sync_enabled, boost_sync_enabled
+                 FROM devices WHERE id = $1 AND user_id = $2 FOR UPDATE",
                 &[&device_id, &user_id],
             )
             .await?
             .ok_or_else(|| ApiError::Forbidden("Device does not belong to user".to_string()))?;
         let is_v4 = protocol == Some(4);
-        let is_v5 = protocol == Some(5);
+        let is_v6 = protocol == Some(6);
+        // Version 6 reads everything version 5 reads, plus boosts.
+        let is_v5 = protocol == Some(5) || is_v6;
         let includes_folders = is_v4 || is_v5;
+        if is_v6
+            && !(device.get::<_, bool>("boost_sync_enabled") && device.get::<_, bool>("expiry_sync_enabled"))
+            && cursor != 0
+        {
+            return Err(ApiError::Conflict("Protocol 6 bootstrap requires cursor 0".to_string()));
+        }
         if is_v5 && !device.get::<_, bool>("expiry_sync_enabled") && cursor != 0 {
             return Err(ApiError::Conflict("Protocol 5 bootstrap requires cursor 0".to_string()));
         }
@@ -265,23 +283,25 @@ impl SyncService {
                 "SELECT server_seq, device_id, entity_type, entity_id, op, payload, created_at
                  FROM sync_events
                  WHERE user_id = $1 AND server_seq > $2 AND ($4 OR entity_type <> 'folder')
+                   AND ($5 OR entity_type <> 'boost')
                  ORDER BY server_seq ASC
                  LIMIT $3",
-                &[&user_id, &cursor, &limit, &includes_folders],
+                &[&user_id, &cursor, &limit, &includes_folders, &is_v6],
             )
             .await?;
         let raw = rows.iter().map(SyncEvent::from_row).collect::<Vec<_>>();
         let events = if includes_folders { raw.iter().map(v4_event).collect::<Vec<_>>() } else { legacy_events(&raw) };
         let next_cursor = events.last().map_or(cursor, |event| event.server_seq);
         tx.execute(
-            "UPDATE devices SET last_seen_at = now(), folder_sync_enabled = $2, expiry_sync_enabled = $3 WHERE id = $1",
-            &[&device_id, &includes_folders, &is_v5],
+            "UPDATE devices SET last_seen_at = now(), folder_sync_enabled = $2, expiry_sync_enabled = $3,
+               boost_sync_enabled = $4 WHERE id = $1",
+            &[&device_id, &includes_folders, &is_v5, &is_v6],
         )
         .await?;
         tx.commit().await?;
         Ok(json!({
-            "protocolVersion": if is_v5 { 5 } else if is_v4 { 4 } else { 2 },
-            "supportedPushVersions": [2, 3, 4, 5],
+            "protocolVersion": if is_v6 { 6 } else if is_v5 { 5 } else if is_v4 { 4 } else { 2 },
+            "supportedPushVersions": [2, 3, 4, 5, 6],
             "cursor": next_cursor,
             "events": events.iter().map(SyncEvent::to_value).collect::<Vec<_>>(),
         }))

@@ -88,7 +88,7 @@ impl<'a> SyncStore<'a> {
         Ok(row.as_ref().map(SyncEvent::from_row))
     }
 
-    async fn insert_sync_event(
+    pub(super) async fn insert_sync_event(
         &self,
         entity_type: &str,
         entity_id: &str,
@@ -414,6 +414,7 @@ impl<'a> SyncStore<'a> {
         let table = match entity_type {
             "space" => "spaces",
             "folder" => "folders",
+            "boost" => "boosts",
             _ => "tabs",
         };
         self.execute(
