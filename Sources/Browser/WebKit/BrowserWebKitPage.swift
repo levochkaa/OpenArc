@@ -315,6 +315,25 @@ import WebKit
         }
     }
 
+    /// Adds Chromium's cookies, as `BrowserTabController` reads them, to this
+    /// page's store, keeping the ones the store has. Calls back on the main thread.
+    @objc func addChromiumCookies(_ cookies: [[String: Any]], completion: @escaping @MainActor () -> Void) {
+        let incoming = cookies.compactMap { BrowserChromiumCookie(dictionary: $0)?.httpCookie() }
+        guard !incoming.isEmpty else {
+            completion()
+            return
+        }
+        let store = webView.configuration.websiteDataStore.httpCookieStore
+        Task { @MainActor in
+            let added = await BrowserEngineCookieTransfer.cookiesToAdd(incoming, existing: store.allCookies())
+            for cookie in added {
+                await store.setCookie(cookie)
+            }
+            protectedVideoLog.info("Copied \(added.count) of \(incoming.count) cookies to WebKit")
+            completion()
+        }
+    }
+
     @objc func goBack() { webView.goBack() }
     @objc func goForward() { webView.goForward() }
 

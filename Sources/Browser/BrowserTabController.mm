@@ -3996,6 +3996,9 @@ struct TabRecord {
   __strong NSString *profileCachePath = nil;
   // The address the tab showed in its other engine, which Back returns to.
   std::string engineBackURL;
+  // The WebKit page waits with its first load while the site's cookies come
+  // over from Chromium.
+  bool webKitCookiesPending = false;
   // A page's script opened this WebKit page; it may close it again.
   bool openedByPage = false;
   // Plays the Chromium page's FairPlay audio, once the page asks for it.
@@ -4412,6 +4415,64 @@ class BrowserNavigationEntryCollector : public CefNavigationEntryVisitor {
   IMPLEMENT_REFCOUNTING(BrowserNavigationEntryCollector);
 };
 
+/// The addresses of a tab's pages, read at once on the UI thread.
+class BrowserNavigationURLCollector : public CefNavigationEntryVisitor {
+ public:
+  BrowserNavigationURLCollector() : urls_([NSMutableArray array]) {}
+
+  bool Visit(CefRefPtr<CefNavigationEntry> entry, bool, int, int) override {
+    [urls_ addObject:ToNSString(entry->GetURL().ToString())];
+    return true;
+  }
+
+  NSArray<NSString *> *urls() const { return urls_; }
+
+ private:
+  NSMutableArray<NSString *> *urls_;
+  IMPLEMENT_REFCOUNTING(BrowserNavigationURLCollector);
+};
+
+/// A profile's cookies on some domains and their subdomains, as dictionaries
+/// for `BrowserWebKitPage`; calls back on the main thread once all were seen.
+class BrowserCookieCollector : public CefCookieVisitor {
+ public:
+  BrowserCookieCollector(NSArray<NSString *> *domains, void (^completion)(NSArray<NSDictionary<NSString *, id> *> *))
+      : domains_([domains copy]), completion_([completion copy]), cookies_([NSMutableArray array]) {}
+
+  ~BrowserCookieCollector() override {
+    void (^completion)(NSArray<NSDictionary<NSString *, id> *> *) = completion_;
+    NSArray<NSDictionary<NSString *, id> *> *cookies = [cookies_ copy];
+    dispatch_async(dispatch_get_main_queue(), ^{
+      completion(cookies);
+    });
+  }
+
+  bool Visit(const CefCookie &cookie, int, int, bool &) override {
+    NSString *domain = ToNSString(CefString(&cookie.domain).ToString());
+    if (![BrowserEngineCookieTransfer cookieDomain:domain matchesDomains:domains_]) {
+      return true;
+    }
+    [cookies_ addObject:@{
+      @"name" : ToNSString(CefString(&cookie.name).ToString()),
+      @"value" : ToNSString(CefString(&cookie.value).ToString()),
+      @"domain" : domain,
+      @"path" : ToNSString(CefString(&cookie.path).ToString()),
+      @"secure" : @(cookie.secure != 0),
+      @"httpOnly" : @(cookie.httponly != 0),
+      @"hasExpires" : @(cookie.has_expires != 0),
+      @"expires" : @(cookie.expires.val),
+      @"sameSite" : @(static_cast<int>(cookie.same_site)),
+    }];
+    return true;
+  }
+
+ private:
+  NSArray<NSString *> *domains_;
+  void (^completion_)(NSArray<NSDictionary<NSString *, id> *> *);
+  NSMutableArray<NSDictionary<NSString *, id> *> *cookies_;
+  IMPLEMENT_REFCOUNTING(BrowserCookieCollector);
+};
+
 }  // namespace
 
 namespace {
@@ -4720,6 +4781,18 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
                                              : @"";
   record.engineBackURL = ([leaving hasPrefix:@"https://"] || [leaving hasPrefix:@"http://"]) ? ToStdString(leaving)
                                                                                            : std::string();
+  // Chromium and WebKit keep separate cookies: the site's sign-in comes along
+  // from the profile the Chromium page used. A private window's context and
+  // WebKit store are both ephemeral, so nothing reaches disk.
+  CefRefPtr<CefRequestContext> cookieContext;
+  NSArray<NSString *> *cookieDomains = nil;
+  if (engine == BrowserPageEngineWebKit && record.webKitPage == nil && record.browser) {
+    cookieContext = record.browser->GetHost()->GetRequestContext();
+    CefRefPtr<BrowserNavigationURLCollector> history = new BrowserNavigationURLCollector();
+    record.browser->GetHost()->GetNavigationEntries(history, false);
+    cookieDomains = [BrowserEngineCookieTransfer domainsForPageURLString:ToNSString(record.latestURL)
+                                                       historyURLStrings:history->urls()];
+  }
   [self retirePageForTabID:tabID record:record];
   it = _tabRecords.find(ToStdString(tabID));
   if (it == _tabRecords.end()) {
@@ -4733,11 +4806,52 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
   next.openedByPage = false;
   if (engine == BrowserPageEngineWebKit) {
     [self startWebKitPageForTabID:tabID page:nil];
+    if (cookieDomains.count > 0) {
+      [self copyCookiesFromContext:cookieContext domains:cookieDomains toWebKitPageOfTabID:tabID];
+    }
     return;
   }
   next.creationState = BrowserTabEngineCreationStateCreating;
   next.client = new BrowserTabClient(self, ToStdString(tabID));
   [self startBrowserCreationForTabID:tabID URLString:ToNSString(next.latestURL)];
+}
+
+/// Copies the profile's cookies on the domains into the tab's new WebKit page,
+/// which loads once they are there, or after 3 seconds at most.
+- (void)copyCookiesFromContext:(CefRefPtr<CefRequestContext>)context
+                       domains:(NSArray<NSString *> *)domains
+           toWebKitPageOfTabID:(NSString *)tabID {
+  auto it = _tabRecords.find(ToStdString(tabID));
+  CefRefPtr<CefCookieManager> manager = context ? context->GetCookieManager(nullptr) : nullptr;
+  if (it == _tabRecords.end() || it->second.webKitPage == nil || !manager) {
+    return;
+  }
+  BrowserWebKitPage *page = it->second.webKitPage;
+  it->second.webKitCookiesPending = true;
+  __weak BrowserTabController *weakSelf = self;
+  __block BOOL finished = NO;
+  void (^finish)(void) = ^{
+    if (finished) return;
+    finished = YES;
+    [weakSelf finishCopyingCookiesToWebKitPage:page tabID:tabID];
+  };
+  CefRefPtr<BrowserCookieCollector> collector =
+      new BrowserCookieCollector(domains, ^(NSArray<NSDictionary<NSString *, id> *> *cookies) {
+        if (!finished) {
+          [page addChromiumCookies:cookies completion:finish];
+        }
+      });
+  manager->VisitAllCookies(collector);
+  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 3 * NSEC_PER_SEC), dispatch_get_main_queue(), finish);
+}
+
+- (void)finishCopyingCookiesToWebKitPage:(BrowserWebKitPage *)page tabID:(NSString *)tabID {
+  auto it = _tabRecords.find(ToStdString(tabID));
+  if (it == _tabRecords.end() || it->second.webKitPage != page || !it->second.webKitCookiesPending) {
+    return;
+  }
+  it->second.webKitCookiesPending = false;
+  [self scheduleNavigationForTabID:tabID];
 }
 
 /// A Chromium page is about to leave for a site that opens in WebKit.
@@ -6031,6 +6145,9 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
   const BrowserPageEngine engine = [self engineForURLString:ToNSString(target)];
   if (engine != [self engineOfRecord:it->second]) {
     [self switchTabWithID:tabID toEngine:engine];
+    return;
+  }
+  if (it->second.webKitCookiesPending) {
     return;
   }
   it->second.navigationPending = false;
@@ -8032,6 +8149,8 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
   NSString *tabID = NSUUID.UUID.UUIDString;
   TabRecord record = transfer->_record;
   transfer->_adopted = YES;
+  // Cookies still coming over would wake the old window's record.
+  record.webKitCookiesPending = false;
   BrowserWebKitPage *page = record.webKitPage;
   page.delegate = self;
   const MediaFrameState media = record.reportedMedia;

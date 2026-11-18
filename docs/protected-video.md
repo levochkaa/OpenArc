@@ -26,6 +26,9 @@ A report needs a video on the page, now or within 3 seconds, and a usable key en
 
 `BrowserPageEnginePolicy.protectedMediaAction` decides, and logs, what the report does. Nothing, when the FairPlay bridge serves the site (it refuses Widevine on purpose), the site has a rule, or the user answered its prompt this run. Otherwise, with Move protected video to WebKit on, the page moves to WebKit and its site joins `protectedVideoSites`, so its other open pages move too. With the setting off, a prompt over the page offers Open in WebKit (saves a rule), Stay on Page (not asked again until quit) or Don't Ask Again (saves a Chromium rule). Private windows save no rules or sites. Settings › Forget Website Choices clears both. A site that has only Widevine plays in neither engine; View › Open Page in Chromium takes it back and saves a rule.
 
+### Sign-in
+
+Chromium and WebKit keep separate cookies. When a tab moves from a Chromium page to WebKit, `BrowserTabController` reads the cookies of the profile the Chromium page used (`CefCookieManager::VisitAllCookies`) on the target's registrable domain, the domains its site signs in on (`BrowserEngineCookieTransfer.signInDomains`, such as amazon.com for Prime Video) and those of sign-in pages in the tab's history (an `accounts.` or `login.` host, a `/signin` or `/oauth` path), and adds the ones WebKit's store lacks, by name, domain and path, before the WebKit page loads (3 seconds at most). A cookie WebKit has stays, so a sign-in made in WebKit is not replaced. Host-only and domain cookies, expiry, Secure, HttpOnly and SameSite carry over (`BrowserChromiumCookie`); an unspecified SameSite stays unset, as WebKit treats it like Safari. A private window copies from its ephemeral context into WebKit's ephemeral store. Local storage does not move, so sites that keep their session there still ask to sign in.
 
 ## FairPlay bridges in Chromium
 
