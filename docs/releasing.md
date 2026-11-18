@@ -12,7 +12,7 @@ Sparkle compares build numbers, so every release needs a higher `CURRENT_PROJECT
 - Notarization credentials from an App Store Connect Team key with the Developer role. Store them with `xcrun notarytool store-credentials openarc-notary --key AuthKey_KEYID.p8 --key-id KEYID --issuer ISSUER`.
 - The Sparkle EdDSA private key in the keychain under the account `OpenArc`. Its public key is `OPENARC_SPARKLE_PUBLIC_KEY` in `project.yml`.
 - `gh`, signed in with access to the repository.
-- A Release CEF export. Build it with Xcode 26.6, because Chromium 148 supports only the macOS 26 SDKs: `DEVELOPER_DIR=/Applications/Xcode-26.6.0.app/Contents/Developer ./script/chromium_source.sh build Release`.
+- A Release CEF export in `ThirdParty/cef/export`, built as [cef-build.md](cef-build.md) describes.
 
 ## Publishing
 

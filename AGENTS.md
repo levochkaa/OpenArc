@@ -12,10 +12,11 @@
 
 - Keep a separate Codex action named `Build` that runs `./build.sh build`.
 - Keep a separate Codex action named `Test` that runs `./build.sh test`.
-- Use Xcode 27.2 for build and test verification. The repo scripts export `DEVELOPER_DIR=/Applications/Xcode-27.2.0.app/Contents/Developer` by default. CEF and Chromium build with Xcode 26.6, since Chromium 148 supports only the macOS 26 SDK.
+- Use Xcode 27.2 for build and test verification. The repo scripts export `DEVELOPER_DIR=/Applications/Xcode-27.2.0.app/Contents/Developer` by default. CEF and Chromium build against the macOS 26.5 SDK of Xcode 26.6, which Chromium 156 expects.
 - Before running the `Build` action, run SwiftFormat on every `.swift` file changed in the current task, using the repository `.swiftformat` configuration.
-- When changing CEF, Chromium, or `Chromium/chromium_src` override files, rebuild and export the `Release` CEF artifacts before running the `Build` action; the app build stages `Release` CEF even for a `Debug` app build. Rebuild `Debug` CEF only when asked.
-- CEF/Chromium rebuilds must match the currently exported baseline from `ThirdParty/cef/export/include/cef_version.h` unless the user explicitly asks to move the CEF/Chromium base. Do not float `CEF_BRANCH` to a newer head for routine override rebuilds. Apply upstream CEF patches/project generation before applying `Chromium/chromium_src` overrides.
+- Build CEF on the Linux build host with `./script/cef_remote_build.sh`, not on the Mac; `docs/cef-build.md` has the steps. The app needs only the binary distribution in `ThirdParty/cef/export`, which `pull` and `install` bring to the Mac.
+- When changing CEF, Chromium, or `Chromium/chromium_src` override files, rebuild and export the `Release` CEF artifacts before running the `Build` action; the app build stages `Release` CEF even for a `Debug` app build, and `Debug` in the export links to `Release`.
+- CEF/Chromium rebuilds must match the currently exported baseline from `ThirdParty/cef/export/include/cef_version.h` (CEF 156.0.31+ge603d97, Chromium 156.0.8078.100) unless the user explicitly asks to move the CEF/Chromium base. Do not float `CEF_BRANCH` to a newer head for routine override rebuilds. Apply upstream CEF patches/project generation before applying `Chromium/chromium_src` overrides.
 - Do not clobber Chromium `out/` build directories during CEF checkout/resume/package flows unless the user explicitly asks for a clean rebuild. Preserve existing CEF build cache by default; use `OPENARC_CEF_CLOBBER_OUT=1` only for intentional full rebuilds.
 - Before finishing any task, run the `Build` action to verify the project compiles successfully in the console only. Do not launch `OpenArc` or `OpenArc Helper`, and do not check whether their processes started.
 - If the `Build` action emits warnings, fix those warnings before treating the task as complete.

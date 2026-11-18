@@ -20,7 +20,7 @@ OpenArc was created by [Lev Poznyakov](https://github.com/levochkaa). It is in d
 
 You need an Apple Silicon Mac with macOS 26, Xcode 27.2 at `/Applications/Xcode-27.2.0.app` for the apps, Xcode 26.6 at `/Applications/Xcode-26.6.0.app` for CEF, and [XcodeGen](https://github.com/yonaskolb/XcodeGen) and [SwiftFormat](https://github.com/nicklockwood/SwiftFormat) (`brew install xcodegen swiftformat`).
 
-The Mac app needs OpenArc's own CEF build, because full Chrome extension support depends on its Chromium overrides. Build it once. It checks out about 70 GB of Chromium and takes several hours. The script uses Xcode 26.6, because Chromium 148 does not build with the macOS 27 SDK:
+The Mac app needs OpenArc's own CEF build, because full Chrome extension support depends on its Chromium overrides. Build it once. It checks out about 70 GB of Chromium and takes several hours, either on a Linux build host or on the Mac. Both use the macOS 26.5 SDK of Xcode 26.6, which Chromium 156 expects. [docs/cef-build.md](docs/cef-build.md) covers the Linux host; on the Mac:
 
 ```bash
 ./script/chromium_source.sh package Debug Release
