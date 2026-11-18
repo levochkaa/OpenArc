@@ -12,6 +12,8 @@ Apple identity verification accepts the configured `APPLE_CLIENT_ID`, or an expl
 
 `script/test_swift_sync.sh` runs the production desktop Swift transport fixture. `script/test_mobile_sync.sh --ios-destination 'platform=iOS Simulator,id=SIMULATOR-UUID'` runs its mobile counterpart in the dedicated test host. Each runner creates an isolated localhost database and fixture identities; neither proves a real Apple sign-in exchange.
 
+The desktop runner needs Node.js 26, Docker and Rust on the Mac. Without them, `OPENARC_SYNC_TEST_SSH_HOST=HOST ./script/test_swift_sync.sh` runs PostgreSQL, the server and the fixture on `HOST`, a Linux or macOS machine with Node.js 26, Docker and rsync (Rust is optional on Linux; the server then builds in the `rust:1-bullseye` image). It copies `Backend/` to `~/.cache/openarc-sync-test/<checkout>` on the host, forwards the fixture's two loopback ports over ssh and removes the container when the run ends. `OPENARC_SYNC_TEST_ONLY="testName() otherTest()"` runs only those tests and skips the check that every scenario completed.
+
 | Protocol | Push body | Pull behavior |
 | --- | --- | --- |
 | Legacy v1 | `deviceID`, `changes` | Omit `protocolVersion`; Space/tab events only |
