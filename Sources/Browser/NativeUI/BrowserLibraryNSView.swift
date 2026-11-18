@@ -408,7 +408,7 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
             onEditTheme: { [weak model] in model?.onEditSpaceTheme?(space.id) },
             profiles: model.profileDirectories?.profiles() ?? [],
             selectedProfile: model.profileDirectory(forSpaceID: space.id),
-            onSetProfile: { [weak model] in model?.setProfile($0, forSpaceID: space.id) },
+            onSetProfile: { [weak model] in model?.requestProfile($0, forSpaceID: space.id) },
             onShare: model.onShareSpace.map { share in { share(space.id) } },
             exportTargets: model.spaces.filter { $0.id != space.id },
             onExport: { [weak model] targetID in

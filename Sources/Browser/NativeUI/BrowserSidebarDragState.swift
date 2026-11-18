@@ -269,7 +269,7 @@ import AppKit
             if let copyDestination {
                 copyItems(payload, to: copyDestination)
             } else if !cancel, let dockSpaceID {
-                model.moveSidebarItems(payload, toTopOfSpace: dockSpaceID)
+                moveToDockSpace(payload, spaceID: dockSpaceID)
             } else if !cancel, let target = splitTarget, case .tab(let id) = payload.primary {
                 model.openInSplitView(
                     tabID: id,
@@ -289,10 +289,21 @@ import AppKit
                 )
             } else {
                 !cancel && proposal.map { proposal in
-                    onWillCommitDrop()
-                    return model.withArrangementUndo(BrowserStrings.undoMoveAction) {
-                        model.commitSidebarDrop(payload: payload, destination: proposal.destination)
+                    let destination = proposal.destination
+                    let commit = { [model, onWillCommitDrop] in
+                        onWillCommitDrop()
+                        return model.withArrangementUndo(BrowserStrings.undoMoveAction) {
+                            model.commitSidebarDrop(payload: payload, destination: destination)
+                        }
                     }
+                    // Another profile's Space asks first; the rows go back until the answer.
+                    if let spaceID = destination.container.spaceID,
+                       model.profileMoveConfirmation(tabIDs: payload.tabIDs, toSpaceID: spaceID) != nil
+                    {
+                        model.confirmingProfileMove(tabIDs: payload.tabIDs, toSpaceID: spaceID) { _ = commit() }
+                        return false
+                    }
+                    return commit()
                 } == true
             }
         resetSplitDrop()
@@ -322,6 +333,17 @@ import AppKit
         plans.removeAll()
         validity.removeAll()
         onPresentationChange()
+    }
+
+    /// A drop on a Space's icon; another profile's Space asks first.
+    private func moveToDockSpace(_ payload: BrowserSidebarDragPayload, spaceID: String) -> Bool {
+        guard model.profileMoveConfirmation(tabIDs: payload.tabIDs, toSpaceID: spaceID) != nil else {
+            return model.moveSidebarItems(payload, toTopOfSpace: spaceID)
+        }
+        model.confirmingProfileMove(tabIDs: payload.tabIDs, toSpaceID: spaceID) { [model] in
+            _ = model.moveSidebarItems(payload, toTopOfSpace: spaceID)
+        }
+        return false
     }
 
     private func copyItems(

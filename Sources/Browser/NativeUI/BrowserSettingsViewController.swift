@@ -1570,6 +1570,12 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                     set: { preferences.restoreWindowsOnLaunch = $0 },
                 ),
                 toggle(
+                    "confirm-profile-moves",
+                    BrowserStrings.settingsConfirmProfileMoves,
+                    get: { preferences.confirmsProfileMoves },
+                    set: { preferences.confirmsProfileMoves = $0 },
+                ),
+                toggle(
                     "picture-in-picture",
                     BrowserStrings.settingsPictureInPicture,
                     get: { preferences.pictureInPictureEnabled },

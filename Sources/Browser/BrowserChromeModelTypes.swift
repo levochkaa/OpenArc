@@ -169,3 +169,13 @@ enum BrowserTextStyle: String {
     case italic
     case underline
 }
+
+// MARK: - BrowserProfileMoveConfirmation
+
+/// A move that changes the profile tabs load their pages with.
+enum BrowserProfileMoveConfirmation: Equatable {
+    /// Tabs going to a Space of another profile.
+    case tabs(spaceTitle: String, count: Int)
+    /// A Space taking another profile.
+    case space(spaceTitle: String, profileName: String)
+}

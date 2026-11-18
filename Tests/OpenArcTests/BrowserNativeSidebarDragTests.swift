@@ -645,6 +645,47 @@ import Testing
         #expect(tree.tabIDs(in: .pinned("s", folderID: copyID)).count == 1)
         #expect(f.model.copySidebarItems(f.folderPayload("f"), to: .init(container: .temporary("s"))) == nil)
     }
+
+    @Test func movingTabsOrASpaceToAnotherProfileAsksFirst() throws {
+        let f = SidebarDragFixture()
+        f.model.setProfile("Profile 2", forSpaceID: "t")
+        var asked = [BrowserProfileMoveConfirmation]()
+        var proceed: (@MainActor () -> Void)?
+        f.model
+            .onConfirmProfileMove = { confirmation, go in
+                asked.append(confirmation)
+                proceed = go
+            }
+        defer { f.model.userPreferencesStore.confirmsProfileMoves = true }
+
+        #expect(!f.model.moveTabToSpace(id: f.id("x"), spaceID: "t"), "Move to waits for the answer")
+        #expect(asked == [.tabs(spaceTitle: "Other", count: 1)])
+        #expect(f.model.tabs.first { $0.id == f.id("x") }?.spaceID == "s")
+        let go = try #require(proceed)
+        go()
+        #expect(f.model.tabs.first { $0.id == f.id("x") }?.spaceID == "t")
+
+        // A drop on the other Space's icon asks too.
+        let h = SidebarDragHarness(f)
+        defer { h.close() }
+        #expect(f.model.profileMoveConfirmation(tabIDs: [f.id("y")], toSpaceID: "t") != nil)
+        #expect(f.model.profileMoveConfirmation(tabIDs: [f.id("y")], toSpaceID: "s") == nil, "Same Space")
+
+        // Don't ask again.
+        f.model.userPreferencesStore.confirmsProfileMoves = false
+        #expect(f.model.moveTabToSpace(id: f.id("y"), spaceID: "t"))
+        #expect(asked.count == 1)
+        #expect(f.model.tabs.first { $0.id == f.id("y") }?.spaceID == "t")
+
+        // Set Profile on a Space.
+        f.model.userPreferencesStore.confirmsProfileMoves = true
+        f.model.requestProfile("Profile 3", forSpaceID: "s")
+        #expect(asked.last == .space(spaceTitle: "Space", profileName: "Profile 3"))
+        #expect(f.model.profileDirectory(forSpaceID: "s") == nil)
+        let goSpace = try #require(proceed)
+        goSpace()
+        #expect(f.model.profileDirectory(forSpaceID: "s") == "Profile 3")
+    }
 }
 
 // MARK: - SidebarDragHarness

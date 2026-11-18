@@ -2667,7 +2667,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         let selected = model.profileDirectory(forSpaceID: spaceID)
         for profile in profiles {
             let choice = BrowserNativeMenuItem(profile.displayName) { [weak model] in
-                model?.setProfile(profile.id, forSpaceID: spaceID)
+                model?.requestProfile(profile.id, forSpaceID: spaceID)
             }
             choice.state = profile.id == selected ? .on : .off
             submenu.addItem(choice)
@@ -3605,6 +3605,12 @@ NSMenuDelegate, NSUserInterfaceValidations {
             window.makeKeyAndOrderFront(nil)
             return true
         }
+        model.onConfirmProfileMove = { [weak self, weak model] confirmation, proceed in
+            guard let self, let model else { return }
+            let window = profileWindowSessions.first { $0.chromeModel === model }?.window
+                ?? incognitoWindowSessions.first { $0.chromeModel === model }?.window
+            confirmProfileMove(confirmation, in: window, preferences: model.userPreferencesStore, proceed: proceed)
+        }
         model.onMoveTabsToNewWindow = { [weak self] urls, pages, screenPoint in
             guard let self, let first = urls.first else { return }
             let source = activeBrowserWindow
@@ -3617,6 +3623,43 @@ NSMenuDelegate, NSUserInterfaceValidations {
                 droppedAt: screenPoint,
                 sizedLike: source,
             )
+        }
+    }
+
+    /// Tabs or a Space about to change profile: a sheet on the window asks first, with
+    /// a box that stops the question for good.
+    private func confirmProfileMove(
+        _ confirmation: BrowserProfileMoveConfirmation,
+        in window: NSWindow?,
+        preferences: BrowserUserPreferencesStore,
+        proceed: @escaping @MainActor () -> Void,
+    ) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        switch confirmation {
+        case .tabs(let space, let count):
+            alert.messageText = BrowserStrings.profileMoveTabsTitle(space: space, count: count)
+            alert.informativeText = BrowserStrings.profileMoveTabsMessage(space: space, count: count)
+            alert.addButton(withTitle: BrowserStrings.profileMoveTabsConfirm)
+        case .space(let space, let profile):
+            alert.messageText = BrowserStrings.profileMoveSpaceTitle(space: space)
+            alert.informativeText = BrowserStrings.profileMoveSpaceMessage(space: space, profile: profile)
+            alert.addButton(withTitle: BrowserStrings.profileMoveSpaceConfirm)
+        }
+        alert.addButton(withTitle: BrowserStrings.profileMoveCancel)
+        alert.showsSuppressionButton = true
+        alert.suppressionButton?.title = BrowserStrings.profileMoveDontAsk
+        let finish: (NSApplication.ModalResponse) -> Void = { response in
+            guard response == .alertFirstButtonReturn else { return }
+            if alert.suppressionButton?.state == .on {
+                preferences.confirmsProfileMoves = false
+            }
+            proceed()
+        }
+        if let window, window.attachedSheet == nil {
+            alert.beginSheetModal(for: window, completionHandler: finish)
+        } else {
+            finish(alert.runModal())
         }
     }
 

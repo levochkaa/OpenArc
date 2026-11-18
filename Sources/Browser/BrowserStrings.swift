@@ -3941,6 +3941,27 @@ enum BrowserStrings {
         comment: "Settings: what Boosts are.",
     )
 
+    static let profileMoveTabsConfirm = NSLocalizedString(
+        "browser.profile_move.tabs_confirm",
+        comment: "Button that moves tabs to a Space of another profile.",
+    )
+    static let profileMoveSpaceConfirm = NSLocalizedString(
+        "browser.profile_move.space_confirm",
+        comment: "Button that gives a Space another profile.",
+    )
+    static let settingsConfirmProfileMoves = NSLocalizedString(
+        "browser.settings.confirm_profile_moves",
+        comment: "Settings toggle: ask before tabs or a Space change profile.",
+    )
+    static let profileMoveCancel = NSLocalizedString(
+        "browser.profile_move.cancel",
+        comment: "Button that keeps tabs or a Space in their profile.",
+    )
+    static let profileMoveDontAsk = NSLocalizedString(
+        "browser.profile_move.dont_ask",
+        comment: "Checkbox that stops the profile change question.",
+    )
+
     static func syncAccountLastSynced(_ date: String) -> String {
         String(
             format: NSLocalizedString(
@@ -3960,6 +3981,47 @@ enum BrowserStrings {
                 comment: "Tray row detail for a canceled download. %@ is the site.",
             ),
             host,
+        )
+    }
+
+    static func profileMoveTabsTitle(space: String, count: Int) -> String {
+        String(
+            format: NSLocalizedString(
+                count == 1 ? "browser.profile_move.tab_title" : "browser.profile_move.tabs_title",
+                comment: "Asks before tabs move to a Space of another profile. %@ is the Space.",
+            ),
+            space,
+        )
+    }
+
+    static func profileMoveTabsMessage(space: String, count: Int) -> String {
+        String(
+            format: NSLocalizedString(
+                count == 1 ? "browser.profile_move.tab_message" : "browser.profile_move.tabs_message",
+                comment: "Why moving tabs to a Space of another profile can lose their state. %@ is the Space.",
+            ),
+            space,
+        )
+    }
+
+    static func profileMoveSpaceTitle(space: String) -> String {
+        String(
+            format: NSLocalizedString(
+                "browser.profile_move.space_title",
+                comment: "Asks before a Space takes another profile. %@ is the Space.",
+            ),
+            space,
+        )
+    }
+
+    static func profileMoveSpaceMessage(space: String, profile: String) -> String {
+        String(
+            format: NSLocalizedString(
+                "browser.profile_move.space_message",
+                comment: "What changes when a Space takes another profile. %1$@ is the Space, %2$@ the profile.",
+            ),
+            space,
+            profile,
         )
     }
 

@@ -68,6 +68,53 @@ extension BrowserChromeModel {
         return true
     }
 
+    /// Tabs about to move into a Space of another profile: their pages load anew
+    /// with that profile's data, so the window asks first unless the user said not to.
+    func profileMoveConfirmation(tabIDs: Set<String>, toSpaceID spaceID: String) -> BrowserProfileMoveConfirmation? {
+        guard userPreferencesStore.confirmsProfileMoves, onConfirmProfileMove != nil,
+              let space = spaces.first(where: { $0.id == spaceID })
+        else { return nil }
+        let target = profileDirectory(forSpaceID: spaceID)
+        let moving = tabs.filter {
+            tabIDs.contains($0.id) && $0.placement != .app && $0.spaceID != spaceID
+                && profileDirectory(forSpaceID: $0.spaceID) != target
+        }
+        guard !moving.isEmpty else { return nil }
+        return .tabs(spaceTitle: space.title, count: moving.count)
+    }
+
+    /// Runs `move` at once, or once the user agrees to the profile change. False while it waits.
+    @discardableResult func confirmingProfileMove(
+        tabIDs: Set<String>,
+        toSpaceID spaceID: String,
+        _ move: @escaping @MainActor () -> Void,
+    ) -> Bool {
+        guard let confirmation = profileMoveConfirmation(tabIDs: tabIDs, toSpaceID: spaceID),
+              let onConfirmProfileMove
+        else {
+            move()
+            return true
+        }
+        onConfirmProfileMove(confirmation, move)
+        return false
+    }
+
+    /// Set Profile from a Space's menus: the Space's pages load anew with the other
+    /// profile's data, so the window asks first unless the user said not to.
+    func requestProfile(_ directory: String, forSpaceID spaceID: String) {
+        guard let space = spaces.first(where: { $0.id == spaceID }),
+              profileDirectory(forSpaceID: spaceID) != directory
+        else { return }
+        let profileName = profileDirectories?.profiles().first { $0.id == directory }?.displayName ?? directory
+        guard userPreferencesStore.confirmsProfileMoves, let onConfirmProfileMove else {
+            setProfile(directory, forSpaceID: spaceID)
+            return
+        }
+        onConfirmProfileMove(.space(spaceTitle: space.title, profileName: profileName)) { [weak self] in
+            self?.setProfile(directory, forSpaceID: spaceID)
+        }
+    }
+
     /// Tabs from another window's sidebar dropped on this one land at the drop in this
     /// window's Space, and the first is shown here. A window of the same profile lists
     /// the same tabs, so they move and the page comes along; any other window's pages
@@ -87,12 +134,17 @@ extension BrowserChromeModel {
             let local = moving.compactMap { tab in tabs.first { $0.syncID == tab.syncID }?.id }
             guard let first = local.first else { return false }
             let payload = BrowserSidebarDragPayload(primary: .tab(first), tabIDs: Set(local))
-            let moved = withArrangementUndo(BrowserStrings.undoMoveAction) {
-                commitSidebarDrop(payload: payload, destination: destination)
+            let move = { [weak self] in
+                guard let self, withArrangementUndo(BrowserStrings.undoMoveAction, {
+                    self.commitSidebarDrop(payload: payload, destination: destination)
+                }) else { return false }
+                selectTab(id: first)
+                return true
             }
-            guard moved else { return false }
-            selectTab(id: first)
-            return true
+            guard let spaceID = destination.container.spaceID,
+                  profileMoveConfirmation(tabIDs: payload.tabIDs, toSpaceID: spaceID) != nil
+            else { return move() }
+            return confirmingProfileMove(tabIDs: payload.tabIDs, toSpaceID: spaceID) { _ = move() }
         }
         guard destination.container.spaceID == selectedSpaceID,
               openURLs(moving.compactMap { URL(string: $0.urlString) }, at: destination)
@@ -234,7 +286,9 @@ extension BrowserChromeModel {
 
     /// Move to: the tab goes to the top of the same section in another Space.
     @discardableResult func moveTabToSpace(id: String, spaceID: String) -> Bool {
-        moveToTopOfSpace(tabIDs: [id], primaryID: id, spaceID: spaceID)
+        confirmingProfileMove(tabIDs: [id], toSpaceID: spaceID) { [weak self] in
+            _ = self?.moveToTopOfSpace(tabIDs: [id], primaryID: id, spaceID: spaceID)
+        }
     }
 
     /// Move to on a Split View row: every pane moves together, so the
@@ -242,7 +296,9 @@ extension BrowserChromeModel {
     @discardableResult func moveSplitToSpace(containingTabID tabID: String, spaceID: String) -> Bool {
         let panes = splitPaneTabIDs(forTabID: tabID)
         guard panes.count > 1 else { return false }
-        return moveToTopOfSpace(tabIDs: Set(panes), primaryID: tabID, spaceID: spaceID)
+        return confirmingProfileMove(tabIDs: Set(panes), toSpaceID: spaceID) { [weak self] in
+            _ = self?.moveToTopOfSpace(tabIDs: Set(panes), primaryID: tabID, spaceID: spaceID)
+        }
     }
 
     /// Archive Item on a Split View row: temporary panes archive, pinned

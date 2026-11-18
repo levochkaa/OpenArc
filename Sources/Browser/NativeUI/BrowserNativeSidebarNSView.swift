@@ -1804,7 +1804,7 @@ final class BrowserNativeSidebarNSView: NSView {
             onEditTheme: { model.onEditSpaceTheme?(space.id) },
             profiles: model.profileDirectories?.profiles() ?? [],
             selectedProfile: model.profileDirectory(forSpaceID: space.id),
-            onSetProfile: { model.setProfile($0, forSpaceID: space.id) },
+            onSetProfile: { model.requestProfile($0, forSpaceID: space.id) },
             onNewProfile: {
                 if let created = model.profileDirectories?.createProfile() {
                     model.setProfile(created, forSpaceID: space.id)

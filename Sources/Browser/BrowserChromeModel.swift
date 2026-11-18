@@ -462,6 +462,8 @@ enum BrowserWindowMode: Equatable {
     var onZoomChanged: ((Int) -> Void)?
     /// Hands tabs dropped on another window of this app to that window; false when it takes none.
     var onMoveTabsToWindow: ((Set<String>, NSWindow) -> Bool)?
+    /// Asks whether tabs or a Space may change profile; runs the closure on yes.
+    var onConfirmProfileMove: ((BrowserProfileMoveConfirmation, @escaping @MainActor () -> Void) -> Void)?
     /// Pages a new window opens after its first one, in the background.
     var additionalTabURLStrings = [String]()
     /// UI-only: opens the window's theme editor for a Space.

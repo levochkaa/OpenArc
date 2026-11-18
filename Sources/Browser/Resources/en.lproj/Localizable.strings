@@ -1138,3 +1138,15 @@
 "browser.settings.shared_links.stop" = "Stop Sharing";
 "browser.settings.shared_links.stop.title" = "Stop sharing “%@”?";
 "browser.settings.shared_links.stop.detail" = "The link stops working for everyone who has it.";
+
+"browser.profile_move.tab_title" = "Move tab to %@?";
+"browser.profile_move.tabs_title" = "Move tabs to %@?";
+"browser.profile_move.tab_message" = "%@ uses a different profile, so you might get logged out or lose your progress in this tab.";
+"browser.profile_move.tabs_message" = "%@ uses a different profile, so you might get logged out or lose your progress in these tabs.";
+"browser.profile_move.space_title" = "Change %@’s Profile?";
+"browser.profile_move.space_message" = "Each profile has different browser data, so you might get logged out of some websites, see different Favorites up top, or need to reinstall extensions. %1$@ will use %2$@.";
+"browser.profile_move.tabs_confirm" = "Move It";
+"browser.profile_move.space_confirm" = "Change Profile";
+"browser.profile_move.dont_ask" = "Don’t ask again";
+"browser.profile_move.cancel" = "Cancel";
+"browser.settings.confirm_profile_moves" = "Ask before moving tabs or Spaces to another profile";

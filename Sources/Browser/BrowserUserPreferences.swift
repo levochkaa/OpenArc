@@ -175,6 +175,7 @@ final class BrowserUserPreferencesStore: ObservableObject {
         static let aiSearchProvider = "browser.settings.aiSearchProvider"
         static let searchEngineSuggestionsEnabled = "browser.settings.searchEngineSuggestionsEnabled"
         static let hapticFeedbackEnabled = "browser.settings.hapticFeedbackEnabled"
+        static let confirmsProfileMoves = "browser.settings.confirmsProfileMoves"
         static let restoreWindowsOnLaunch = "browser.settings.restoreWindowsOnLaunch"
         static let pictureInPictureEnabled = "browser.settings.pictureInPictureEnabled"
         static let windowDraggingFromPageTopEnabled = "browser.settings.windowDraggingFromPageTopEnabled"
@@ -256,6 +257,11 @@ final class BrowserUserPreferencesStore: ObservableObject {
 
     @Published var hapticFeedbackEnabled: Bool {
         didSet { userDefaults.set(hapticFeedbackEnabled, forKey: Key.hapticFeedbackEnabled) }
+    }
+
+    /// Asks before tabs or a Space move to another profile, whose pages load anew there.
+    @Published var confirmsProfileMoves: Bool {
+        didSet { userDefaults.set(confirmsProfileMoves, forKey: Key.confirmsProfileMoves) }
     }
 
     @Published var restoreWindowsOnLaunch: Bool {
@@ -469,6 +475,7 @@ final class BrowserUserPreferencesStore: ObservableObject {
         )
         self.hapticFeedbackEnabled = Self.loadBool(userDefaults, key: Key.hapticFeedbackEnabled, defaultValue: true)
         self.restoreWindowsOnLaunch = Self.loadBool(userDefaults, key: Key.restoreWindowsOnLaunch, defaultValue: true)
+        self.confirmsProfileMoves = Self.loadBool(userDefaults, key: Key.confirmsProfileMoves, defaultValue: true)
         self.pictureInPictureEnabled = Self.loadBool(userDefaults, key: Key.pictureInPictureEnabled, defaultValue: true)
         self.windowDraggingFromPageTopEnabled = Self.loadBool(
             userDefaults,
