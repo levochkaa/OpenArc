@@ -2,12 +2,19 @@
 
 #include <dlfcn.h>
 
-#include "base/time/time.h"
+#include <cstdint>
+
 #include "include/cef_task.h"
 
 namespace {
 
-using StartThrottlingAllFrameSinks = void (*)(base::TimeDelta);
+// The engine's base::TimeDelta: one int64_t of microseconds, trivially copyable,
+// so it is passed exactly like this struct.
+struct EngineTimeDelta {
+  int64_t microseconds;
+};
+
+using StartThrottlingAllFrameSinks = void (*)(EngineTimeDelta);
 using StopThrottlingAllFrameSinks = void (*)();
 
 constexpr char kStartThrottlingAllFrameSinksSymbol[] =
@@ -59,7 +66,7 @@ void ApplyBatterySaverModeOnUI(bool enabled) {
         ResolveContentSymbol<StartThrottlingAllFrameSinks>(
             kStartThrottlingAllFrameSinksSymbol);
     if (start_throttling) {
-      start_throttling(base::Hertz(30));
+      start_throttling(EngineTimeDelta{1'000'000 / 30});
     }
   } else {
     auto stop_throttling = ResolveContentSymbol<StopThrottlingAllFrameSinks>(

@@ -94,10 +94,6 @@ targetTemplates:
           - $(inherited)
           - $(SRCROOT)/Sources
           - $(SRCROOT)/ThirdParty/cef/current
-          - $(SRCROOT)/ThirdParty/cef/source/chromium/src
-          - $(SRCROOT)/ThirdParty/cef/source/chromium/src/base/allocator/partition_allocator/src
-          - $(SRCROOT)/ThirdParty/cef/source/chromium/src/out/$(CONFIGURATION)_GN_arm64/gen
-          - $(SRCROOT)/ThirdParty/cef/source/chromium/src/out/$(CONFIGURATION)_GN_arm64/gen/base/allocator/partition_allocator/src
         OTHER_LDFLAGS:
           - $(inherited)
           - $(SRCROOT)/.build/cef-wrapper/libcef_dll_wrapper/$(CONFIGURATION)/libcef_dll_wrapper.a

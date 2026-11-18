@@ -7,7 +7,7 @@ if [[ $# -gt 0 ]]; then
 fi
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-# Chromium 148 supports only the macOS 26 SDKs. Xcode 27 fails on its SDK.
+# Chromium 156 builds against the macOS 26.5 SDK of Xcode 26.6. Xcode 27 fails on its SDK.
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode-26.6.0.app/Contents/Developer}"
 source "$ROOT_DIR/script/xcode_env.sh"
 THIRD_PARTY_DIR="$ROOT_DIR/ThirdParty/cef"
@@ -24,9 +24,9 @@ GN_BIN="$CHROMIUM_SRC/buildtools/mac/gn"
 BINARY_DISTRIB_DIR="$CEF_SRC/binary_distrib"
 CHROMIUM_SRC_OVERRIDES="$ROOT_DIR/Chromium/chromium_src"
 CHROMIUM_FORK_MARKER=".openarc-chromium-fork"
-FALLBACK_CEF_CHECKOUT="0d9d52a65c74c729e568ebf8506141a1e754eaeb"
-FALLBACK_CHROMIUM_CHECKOUT="refs/tags/148.0.7778.180"
-DEFAULT_CEF_BRANCH="7778"
+FALLBACK_CEF_CHECKOUT="e603d97dd5cb8b0e37d8f1daa2bc5c7eab1aa7a5"
+FALLBACK_CHROMIUM_CHECKOUT="refs/tags/156.0.8078.100"
+DEFAULT_CEF_BRANCH="8078"
 # Match a shipped browser runtime instead of Chromium's DCHECK-heavy local
 # Release default. Official mode enables PGO and ThinLTO for Release, while the
 # explicit diagnostics settings prevent future default changes from restoring
@@ -933,9 +933,9 @@ Usage:
 
 Defaults:
   CEF checkout comes from ThirdParty/cef/export/include/cef_version.h when
-  available, then falls back to 0d9d52a65c74c729e568ebf8506141a1e754eaeb.
+  available, then falls back to e603d97dd5cb8b0e37d8f1daa2bc5c7eab1aa7a5.
   Chromium checkout comes from the same exported cef_version.h when available,
-  then falls back to refs/tags/148.0.7778.180.
+  then falls back to refs/tags/156.0.8078.100.
   Existing Chromium out/ build directories are preserved by default. Set
   OPENARC_CEF_CLOBBER_OUT=1 only when an explicit full CEF rebuild is wanted.
   Chromium GN defaults: official optimized build with PGO and ThinLTO,

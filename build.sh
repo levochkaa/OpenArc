@@ -221,9 +221,6 @@ chromium_artifacts_ready() {
     "ThirdParty/cef/export/include/cef_app.h"
     "ThirdParty/cef/export/Debug/Chromium Embedded Framework.framework"
     "ThirdParty/cef/export/Release/Chromium Embedded Framework.framework"
-    "ThirdParty/cef/source/chromium/src/base/time/time.h"
-    "ThirdParty/cef/source/chromium/src/out/Debug_GN_arm64/gen"
-    "ThirdParty/cef/source/chromium/src/out/Release_GN_arm64/gen"
   )
 
   for required_path in "${required_paths[@]}"; do
@@ -319,7 +316,7 @@ prepare_worktree() {
   else
     if [[ "$source_root" == "$ROOT_DIR" ]]; then
       echo "error: Chromium/CEF artifacts are incomplete in the primary checkout: $ROOT_DIR" >&2
-      echo "Build and export both configurations with ./script/chromium_source.sh package Debug Release." >&2
+      echo "Build CEF and bring it here with ./script/cef_remote_build.sh (docs/cef-build.md)." >&2
       exit 1
     fi
 
@@ -328,7 +325,11 @@ prepare_worktree() {
       exit 1
     fi
 
-    link_chromium_directory "$source_root" "ThirdParty/cef/source"
+    # The app builds from the export alone. A Chromium checkout, when the primary
+    # checkout has one, is linked for ./script/chromium_source.sh.
+    if chromium_artifact_directory_ready "$source_root" "ThirdParty/cef/source"; then
+      link_chromium_directory "$source_root" "ThirdParty/cef/source"
+    fi
     link_chromium_directory "$source_root" "ThirdParty/cef/export"
 
     if ! chromium_artifacts_ready "$ROOT_DIR"; then
