@@ -4,14 +4,15 @@
 namespace shared {
 
 // A frame's media state, from the renderer: audible, playing, paused (media
-// that can resume), video, has previous track, has next track (bools) and
-// the media session title (string), in that order. CEF has no audible
-// signal of its own.
+// that can resume), video, has previous track, has next track, in Picture in
+// Picture, can toggle the microphone, can toggle the camera, microphone on,
+// camera on (bools) and the media session title (string), in that order. CEF
+// has no audible signal of its own.
 inline constexpr char kMediaStateMessage[] = "OpenArc.MediaState";
-inline constexpr int kMediaStateArgumentCount = 8;
+inline constexpr int kMediaStateArgumentCount = 12;
 
 // A command for a frame's media, to the renderer: "play", "pause",
-// "previoustrack" or "nexttrack".
+// "previoustrack", "nexttrack", "togglemicrophone" or "togglecamera".
 inline constexpr char kMediaControlMessage[] = "OpenArc.MediaControl";
 
 // To the browser: the frame has a password field.

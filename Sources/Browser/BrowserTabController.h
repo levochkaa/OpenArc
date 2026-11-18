@@ -173,6 +173,10 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
                    hasPreviousTrack:(BOOL)hasPreviousTrack
                        hasNextTrack:(BOOL)hasNextTrack
                    pictureInPicture:(BOOL)pictureInPicture
+                canToggleMicrophone:(BOOL)canToggleMicrophone
+                    canToggleCamera:(BOOL)canToggleCamera
+                   microphoneActive:(BOOL)microphoneActive
+                       cameraActive:(BOOL)cameraActive
                               title:(NSString *)title;
 // Tabs with a Peek card, open or put away while another tab is shown, and the
 // address in each card.

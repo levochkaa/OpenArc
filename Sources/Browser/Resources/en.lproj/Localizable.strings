@@ -451,6 +451,10 @@
 "browser.mini_player.play" = "Play";
 "browser.mini_player.pause" = "Pause";
 "browser.mini_player.close" = "Close";
+"browser.mini_player.mute_microphone" = "Mute Microphone";
+"browser.mini_player.unmute_microphone" = "Unmute Microphone";
+"browser.mini_player.turn_off_camera" = "Turn Off Camera";
+"browser.mini_player.turn_on_camera" = "Turn On Camera";
 "browser.mini_player.back_to_picture_in_picture" = "Back to Picture in Picture";
 "browser.tab.move_to_space_action" = "Move to";
 "browser.tab.archive_other_tabs_action" = "Archive Other Tabs";

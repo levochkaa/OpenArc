@@ -2898,6 +2898,26 @@ enum BrowserStrings {
         comment: "Mini player button that pauses the media.",
     )
 
+    static let miniPlayerMuteMicrophone = NSLocalizedString(
+        "browser.mini_player.mute_microphone",
+        comment: "Call player button that mutes the call's microphone.",
+    )
+
+    static let miniPlayerUnmuteMicrophone = NSLocalizedString(
+        "browser.mini_player.unmute_microphone",
+        comment: "Call player button that unmutes the call's microphone.",
+    )
+
+    static let miniPlayerTurnOffCamera = NSLocalizedString(
+        "browser.mini_player.turn_off_camera",
+        comment: "Call player button that turns the call's camera off.",
+    )
+
+    static let miniPlayerTurnOnCamera = NSLocalizedString(
+        "browser.mini_player.turn_on_camera",
+        comment: "Call player button that turns the call's camera on.",
+    )
+
     static let miniPlayerBackToPictureInPicture = NSLocalizedString(
         "browser.mini_player.back_to_picture_in_picture",
         comment: "Mini player button that plays the video in the Picture in Picture window again.",

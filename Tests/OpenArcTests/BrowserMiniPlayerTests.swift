@@ -88,6 +88,62 @@ import Testing
         #expect(!f.model.returnToPictureInPicture(tabID: f.id("y")), "No video, no window")
     }
 
+    @Test func aCallOffScreenGetsAPlayerWithItsMicrophoneAndCamera() throws {
+        let f = SidebarDragFixture(pinned: [], temporary: ["x", "y"])
+        let x = f.id("x")
+        f.model.selectTab(id: x)
+        f.driver.onCaptureChanged?(x, true)
+        #expect(f.model.miniPlayerTabIDs.isEmpty, "The call on screen has no player")
+        f.model.selectTab(id: f.id("y"))
+        var item = try #require(f.model.miniPlayerItems.first)
+        #expect(item.tabID == x && item.call == BrowserCallControls(
+            canToggleMicrophone: false, canToggleCamera: false, isMicrophoneOn: true, isCameraOn: true,
+        ))
+        f.model.controlMedia(.toggleMicrophone, tabID: x)
+        #expect(f.driver.mediaControls.isEmpty, "Without the page's handler the toggle stays off")
+
+        let call = BrowserCallControls(
+            canToggleMicrophone: true, canToggleCamera: true, isMicrophoneOn: false, isCameraOn: true,
+        )
+        f.model.handleMediaStateChange(tabID: x, state: BrowserTabMediaState(
+            isPlaying: true, audible: true, video: true, hasPreviousTrack: false, hasNextTrack: false,
+            call: call, title: "Standup",
+        ))
+        item = try #require(f.model.miniPlayerItems.first)
+        #expect(item.call == call && item.title == "Standup" && !item.isVideo)
+        f.model.controlMedia(.toggleCamera, tabID: x)
+        #expect(f.driver.mediaControls.map(\.action) == [.toggleCamera])
+
+        f.model.dismissMiniPlayer(tabID: x)
+        #expect(f.model.miniPlayerTabIDs.isEmpty)
+        f.driver.onCaptureChanged?(x, false)
+        f.driver.onCaptureChanged?(x, true)
+        #expect(f.model.miniPlayerTabIDs == [x], "A new recording brings the player back")
+    }
+
+    @Test func aCallPlayerShowsMicrophoneAndCameraInPlaceOfTheTracks() throws {
+        let player = BrowserMiniPlayerNSView(frame: NSRect(x: 0, y: 0, width: 212, height: 32))
+        player.update(BrowserMiniPlayerItem(
+            tabID: "x", title: "Standup", faviconURL: nil, pageURLString: "https://meet.example", isPlaying: true,
+            hasPreviousTrack: false, hasNextTrack: false, isMuted: false,
+            call: BrowserCallControls(
+                canToggleMicrophone: true, canToggleCamera: false, isMicrophoneOn: false, isCameraOn: true,
+            ),
+        ))
+        player.layoutSubtreeIfNeeded()
+        let microphone = try #require(view("browser.mini-player.microphone", in: player) as? NSButton)
+        let camera = try #require(view("browser.mini-player.camera", in: player) as? NSButton)
+        #expect(!microphone.isHidden && microphone.isEnabled)
+        #expect(microphone.accessibilityLabel() == BrowserStrings.miniPlayerUnmuteMicrophone)
+        #expect(!camera.isHidden && !camera.isEnabled)
+        #expect(try #require(view("browser.mini-player.play-pause", in: player)).isHidden)
+        #expect(try #require(view("browser.mini-player.next", in: player)).isHidden)
+        var actions = [BrowserMiniPlayerNSView.Action]()
+        player.onAction = { actions.append($0) }
+        microphone.performClick(nil)
+        #expect(actions == [.toggleMicrophone])
+    }
+
     @Test func aLongTitleScrollsOnlyPastItsRow() {
         #expect(BrowserMiniPlayerNSView.marqueeDistance(titleWidth: 300, rowWidth: 160) == 140)
         #expect(BrowserMiniPlayerNSView.marqueeDistance(titleWidth: 100, rowWidth: 160) == 0)

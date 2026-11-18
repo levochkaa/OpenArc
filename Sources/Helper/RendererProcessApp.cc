@@ -45,10 +45,25 @@ constexpr char kMediaObserverScript[] = R"JS(
   const actions = new Map();
   let pausedByBrowser = new Set();
   let lastPaused = null;
-  let last = stringify([false, false, false, false, false, false, '']);
+  let last = stringify([false, false, false, false, false, false, false, false, false, true, true, '']);
   let timer = 0;
   let queued = false;
   const sessionProto = typeof MediaSession === 'function' ? MediaSession.prototype : null;
+  // A call's page says whether its microphone and camera are on.
+  let microphoneActive = true;
+  let cameraActive = true;
+  for (const [name, set] of [['setMicrophoneActive', (on) => { microphoneActive = on; }],
+    ['setCameraActive', (on) => { cameraActive = on; }]]) {
+    if (sessionProto && typeof sessionProto[name] === 'function') {
+      sessionProto[name] = new NativeProxy(sessionProto[name], {
+        apply(target, session, args) {
+          set(!!args[0]);
+          schedule();
+          return apply(target, session, args);
+        },
+      });
+    }
+  }
   if (sessionProto && typeof sessionProto.setActionHandler === 'function') {
     sessionProto.setActionHandler = new NativeProxy(sessionProto.setActionHandler, {
       apply(target, session, args) {
@@ -97,7 +112,8 @@ constexpr char kMediaObserverScript[] = R"JS(
     }
     const metadata = navigator.mediaSession && navigator.mediaSession.metadata;
     const state = [audible, playing, paused && !playing, video, actions.has('previoustrack'),
-      actions.has('nexttrack'), !!document.pictureInPictureElement,
+      actions.has('nexttrack'), !!document.pictureInPictureElement, actions.has('togglemicrophone'),
+      actions.has('togglecamera'), microphoneActive, cameraActive,
       metadata && metadata.title ? String(metadata.title) : ''];
     const key = stringify(state);
     if (key !== last) {

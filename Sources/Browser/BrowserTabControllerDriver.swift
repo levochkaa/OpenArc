@@ -643,6 +643,10 @@ extension BrowserTabControllerDriver: BrowserTabControllerDelegate {
         hasPreviousTrack: Bool,
         hasNextTrack: Bool,
         pictureInPicture: Bool,
+        canToggleMicrophone: Bool,
+        canToggleCamera: Bool,
+        microphoneActive: Bool,
+        cameraActive: Bool,
         title: String,
     ) {
         let state = playing || paused
@@ -653,6 +657,14 @@ extension BrowserTabControllerDriver: BrowserTabControllerDelegate {
                 hasPreviousTrack: hasPreviousTrack,
                 hasNextTrack: hasNextTrack,
                 inPictureInPicture: pictureInPicture,
+                call: canToggleMicrophone || canToggleCamera
+                    ? BrowserCallControls(
+                        canToggleMicrophone: canToggleMicrophone,
+                        canToggleCamera: canToggleCamera,
+                        isMicrophoneOn: microphoneActive,
+                        isCameraOn: cameraActive,
+                    )
+                    : nil,
                 title: title,
             )
             : nil

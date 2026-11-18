@@ -11,8 +11,9 @@ import AppKit
 final class BrowserMiniPlayerNSView: NSView {
     // MARK: Internal
 
-    enum Action: Equatable { case backToTab, previousTrack, playPause, nextTrack, toggleMute, close,
-                                  backToPictureInPicture
+    enum Action: Equatable {
+        case backToTab, previousTrack, playPause, nextTrack, toggleMute, close, backToPictureInPicture
+        case toggleMicrophone, toggleCamera
     }
 
     private static let volumeRowHeight: CGFloat = 32
@@ -75,6 +76,20 @@ final class BrowserMiniPlayerNSView: NSView {
         style: .sidebarClose,
         action: {},
     )
+    private let microphoneButton = BrowserNativeChromeButton(
+        symbol: "mic.fill",
+        title: BrowserStrings.miniPlayerMuteMicrophone,
+        style: .miniPlayer,
+        pressEffect: .compress,
+        action: {},
+    )
+    private let cameraButton = BrowserNativeChromeButton(
+        symbol: "video.fill",
+        title: BrowserStrings.miniPlayerTurnOffCamera,
+        style: .miniPlayer,
+        pressEffect: .compress,
+        action: {},
+    )
     private let pictureInPictureButton = BrowserNativeChromeButton(
         symbol: "pip.enter",
         title: BrowserStrings.miniPlayerBackToPictureInPicture,
@@ -131,6 +146,8 @@ final class BrowserMiniPlayerNSView: NSView {
             (muteButton, .toggleMute),
             (closeButton, .close),
             (pictureInPictureButton, .backToPictureInPicture),
+            (microphoneButton, .toggleMicrophone),
+            (cameraButton, .toggleCamera),
         ]
         for (button, action) in actions {
             button.onAction = { [weak self] in self?.onAction(action) }
@@ -145,6 +162,8 @@ final class BrowserMiniPlayerNSView: NSView {
             playButton,
             nextButton,
             muteButton,
+            microphoneButton,
+            cameraButton,
         ] as [NSView] {
             outline.addSubview(view)
         }
@@ -159,6 +178,10 @@ final class BrowserMiniPlayerNSView: NSView {
         muteButton.setAccessibilityIdentifier("browser.mini-player.mute")
         closeButton.setAccessibilityIdentifier("browser.mini-player.close")
         pictureInPictureButton.setAccessibilityIdentifier("browser.mini-player.picture-in-picture")
+        microphoneButton.setAccessibilityIdentifier("browser.mini-player.microphone")
+        cameraButton.setAccessibilityIdentifier("browser.mini-player.camera")
+        microphoneButton.isHidden = true
+        cameraButton.isHidden = true
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
     }
@@ -196,7 +219,10 @@ final class BrowserMiniPlayerNSView: NSView {
         let inset = BrowserChromeLayout.sidebarMiniPlayerInset
         let volumeRow: CGFloat = showsVolume ? Self.volumeRowHeight : 0
         let controlsY = bounds.height - volumeRow - (BrowserChromeLayout.sidebarMiniPlayerHeight + size) / 2
-        let controls: [NSView] = [tabButton, previousButton, playButton, nextButton, muteButton]
+        // A call's player has its microphone and camera in place of the tracks.
+        let controls: [NSView] = item?.call == nil
+            ? [tabButton, previousButton, playButton, nextButton, muteButton]
+            : [tabButton, microphoneButton, cameraButton, muteButton]
         let step = max(bounds.width - inset * 2 - size, 0) / CGFloat(controls.count - 1)
         for (index, view) in controls.enumerated() {
             view.frame = NSRect(x: inset + CGFloat(index) * step, y: controlsY, width: size, height: size)
@@ -248,6 +274,27 @@ final class BrowserMiniPlayerNSView: NSView {
         volumeSlider.value = item.volume
         previousButton.isEnabled = item.hasPreviousTrack
         nextButton.isEnabled = item.hasNextTrack
+        let call = item.call
+        for button in [previousButton, playButton, nextButton] {
+            button.isHidden = call != nil
+        }
+        microphoneButton.isHidden = call == nil
+        cameraButton.isHidden = call == nil
+        if let call {
+            microphoneButton.configureSymbol(
+                call.isMicrophoneOn ? "mic.fill" : "mic.slash.fill",
+                title: call.isMicrophoneOn
+                    ? BrowserStrings.miniPlayerMuteMicrophone
+                    : BrowserStrings.miniPlayerUnmuteMicrophone,
+            )
+            cameraButton.configureSymbol(
+                call.isCameraOn ? "video.fill" : "video.slash.fill",
+                title: call.isCameraOn ? BrowserStrings.miniPlayerTurnOffCamera : BrowserStrings.miniPlayerTurnOnCamera,
+            )
+            microphoneButton.isEnabled = call.canToggleMicrophone
+            cameraButton.isEnabled = call.canToggleCamera
+        }
+        needsLayout = true
     }
 
     func setExpanded(_ expanded: Bool) {

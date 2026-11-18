@@ -203,6 +203,8 @@ final class BrowserNativeSidebarNSView: NSView {
             case .toggleMute: model.setTabMuted(!model.isTabMuted(id: tabID), id: tabID)
             case .close: model.dismissMiniPlayer(tabID: tabID)
             case .backToPictureInPicture: model.returnToPictureInPicture(tabID: tabID)
+            case .toggleMicrophone: model.controlMedia(.toggleMicrophone, tabID: tabID)
+            case .toggleCamera: model.controlMedia(.toggleCamera, tabID: tabID)
             }
         }
         content.onEmptyClick = { [weak state] in state?.dismissRenamingIfNeeded() }

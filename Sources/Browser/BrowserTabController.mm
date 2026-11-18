@@ -3994,14 +3994,20 @@ struct MediaFrameState {
   bool hasPreviousTrack = false;
   bool hasNextTrack = false;
   bool pictureInPicture = false;
+  // A call's Media Session handles these, and says whether each is on.
+  bool canToggleMicrophone = false;
+  bool canToggleCamera = false;
+  bool microphoneActive = true;
+  bool cameraActive = true;
   std::string title;
 
   bool operator==(const MediaFrameState &other) const {
     return audible == other.audible && playing == other.playing && paused == other.paused &&
            video == other.video &&
            hasPreviousTrack == other.hasPreviousTrack && hasNextTrack == other.hasNextTrack &&
-           pictureInPicture == other.pictureInPicture &&
-           title == other.title;
+           pictureInPicture == other.pictureInPicture && canToggleMicrophone == other.canToggleMicrophone &&
+           canToggleCamera == other.canToggleCamera && microphoneActive == other.microphoneActive &&
+           cameraActive == other.cameraActive && title == other.title;
   }
 };
 
@@ -4032,6 +4038,8 @@ struct TabRecord {
   // state last sent to the delegate.
   std::map<std::string, MediaFrameState> mediaFrames;
   std::string mediaControlFrameID;
+  // The frame whose Media Session handles the call's microphone and camera.
+  std::string callControlFrameID;
   // The frame that last had sound keeps the controls while all are paused.
   std::string lastAudibleMediaFrameID;
   MediaFrameState reportedMedia;
@@ -7443,6 +7451,7 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
   MediaFrameState combined;
   int best = -1;
   record.mediaControlFrameID.clear();
+  record.callControlFrameID.clear();
   for (const auto &entry : record.mediaFrames) {
     const int score = rank(entry.first, entry.second);
     if (score > best) {
@@ -7456,6 +7465,14 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
     combined.playing = combined.playing || entry.second.playing;
     combined.video = combined.video || entry.second.video;
     combined.pictureInPicture = combined.pictureInPicture || entry.second.pictureInPicture;
+    // The frame that runs the call's controls answers for them.
+    if (entry.second.canToggleMicrophone || entry.second.canToggleCamera) {
+      combined.canToggleMicrophone = entry.second.canToggleMicrophone;
+      combined.canToggleCamera = entry.second.canToggleCamera;
+      combined.microphoneActive = entry.second.microphoneActive;
+      combined.cameraActive = entry.second.cameraActive;
+      record.callControlFrameID = entry.first;
+    }
   }
   combined.paused = !combined.playing && !record.mediaFrames.empty();
   [self reportMedia:combined forTabID:tabID record:record];
@@ -7468,6 +7485,7 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
   }
   it->second.mediaFrames.clear();
   it->second.mediaControlFrameID.clear();
+  it->second.callControlFrameID.clear();
   it->second.lastAudibleMediaFrameID.clear();
   [self reportMedia:MediaFrameState() forTabID:tabID record:it->second];
 }
@@ -7479,7 +7497,7 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
   record.reportedMedia = state;
   id<BrowserTabControllerDelegate> delegate = self.delegate;
   SEL selector = @selector(browserTabController:
-                     didChangeMediaStateForTabWithID:audible:playing:paused:video:hasPreviousTrack:hasNextTrack:pictureInPicture:title:);
+                     didChangeMediaStateForTabWithID:audible:playing:paused:video:hasPreviousTrack:hasNextTrack:pictureInPicture:canToggleMicrophone:canToggleCamera:microphoneActive:cameraActive:title:);
   if ([delegate respondsToSelector:selector]) {
     [delegate browserTabController:self
         didChangeMediaStateForTabWithID:tabID
@@ -7490,6 +7508,10 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
                        hasPreviousTrack:state.hasPreviousTrack
                            hasNextTrack:state.hasNextTrack
                        pictureInPicture:state.pictureInPicture
+                    canToggleMicrophone:state.canToggleMicrophone
+                        canToggleCamera:state.canToggleCamera
+                       microphoneActive:state.microphoneActive
+                           cameraActive:state.cameraActive
                                   title:ToNSString(state.title)];
   }
 }
@@ -7512,11 +7534,16 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
     [it->second.webKitPage controlMedia:action];
     return;
   }
-  if (it == _tabRecords.end() || !it->second.browser || it->second.mediaControlFrameID.empty() ||
-      !CefCurrentlyOn(TID_UI)) {
+  // The microphone and camera belong to the call's frame, the rest to the media's.
+  const bool callAction = [action isEqualToString:@"togglemicrophone"] || [action isEqualToString:@"togglecamera"];
+  const std::string frameID =
+      it == _tabRecords.end() ? std::string()
+      : callAction && !it->second.callControlFrameID.empty() ? it->second.callControlFrameID
+                                                              : it->second.mediaControlFrameID;
+  if (it == _tabRecords.end() || !it->second.browser || frameID.empty() || !CefCurrentlyOn(TID_UI)) {
     return;
   }
-  CefRefPtr<CefFrame> frame = it->second.browser->GetFrameByIdentifier(it->second.mediaControlFrameID);
+  CefRefPtr<CefFrame> frame = it->second.browser->GetFrameByIdentifier(frameID);
   if (!frame) {
     return;
   }
@@ -9477,7 +9504,11 @@ bool BrowserTabClient::OnProcessMessageReceived(CefRefPtr<CefBrowser>,
   state.hasPreviousTrack = values->GetBool(4);
   state.hasNextTrack = values->GetBool(5);
   state.pictureInPicture = values->GetBool(6);
-  state.title = values->GetString(7).ToString();
+  state.canToggleMicrophone = values->GetBool(7);
+  state.canToggleCamera = values->GetBool(8);
+  state.microphoneActive = values->GetBool(9);
+  state.cameraActive = values->GetBool(10);
+  state.title = values->GetString(11).ToString();
   [controller_ handleMediaState:state frameID:frame->GetIdentifier().ToString() forTabID:ToNSString(tab_id_)];
   return true;
 }
