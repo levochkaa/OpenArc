@@ -4493,3 +4493,93 @@ enum BrowserStrings {
     }
     #endif
 }
+
+// MARK: - Content blocking
+
+extension BrowserStrings {
+    static let settingsPrivacySection = NSLocalizedString(
+        "browser.settings.privacy",
+        comment: "Settings: the section with the built-in ad, tracker and cookie banner blocker.",
+    )
+    static let settingsBlockAds = NSLocalizedString(
+        "browser.settings.privacy.block_ads",
+        comment: "Settings: the built-in ad blocker.",
+    )
+    static let settingsBlockAdsDetail = NSLocalizedString(
+        "browser.settings.privacy.block_ads.detail",
+        comment: "Settings: what the ad blocker does.",
+    )
+    static let settingsBlockTrackers = NSLocalizedString(
+        "browser.settings.privacy.block_trackers",
+        comment: "Settings: the built-in tracker blocker.",
+    )
+    static let settingsBlockTrackersDetail = NSLocalizedString(
+        "browser.settings.privacy.block_trackers.detail",
+        comment: "Settings: what the tracker blocker does.",
+    )
+    static let settingsBlockCookieBanners = NSLocalizedString(
+        "browser.settings.privacy.block_cookie_banners",
+        comment: "Settings: the built-in cookie banner blocker.",
+    )
+    static let settingsBlockCookieBannersDetail = NSLocalizedString(
+        "browser.settings.privacy.block_cookie_banners.detail",
+        comment: "Settings: what the cookie banner blocker does.",
+    )
+    static let settingsFilterLists = NSLocalizedString(
+        "browser.settings.privacy.filter_lists",
+        comment: "Settings: the filter lists behind the blocker.",
+    )
+    static let settingsFilterListsBundled = NSLocalizedString(
+        "browser.settings.privacy.filter_lists.bundled",
+        comment: "Settings: the blocker still uses the filter lists that came with the app.",
+    )
+    static let settingsFilterListsUpdating = NSLocalizedString(
+        "browser.settings.privacy.filter_lists.updating",
+        comment: "Settings: the filter lists are downloading.",
+    )
+    static let settingsFilterListsUpdateNow = NSLocalizedString(
+        "browser.settings.privacy.filter_lists.update_now",
+        comment: "Settings: button that downloads the filter lists now.",
+    )
+    static let settingsAllowedSites = NSLocalizedString(
+        "browser.settings.privacy.allowed_sites",
+        comment: "Settings: sites where ads are allowed.",
+    )
+    static let settingsAllowedSitesDetail = NSLocalizedString(
+        "browser.settings.privacy.allowed_sites.detail",
+        comment: "Settings: how to allow ads on a site.",
+    )
+    static let settingsAllowedSitesEmpty = NSLocalizedString(
+        "browser.settings.privacy.allowed_sites.empty",
+        comment: "Settings: no site is allowed to show ads.",
+    )
+    static let settingsAllowedSitesRemove = NSLocalizedString(
+        "browser.settings.privacy.allowed_sites.remove",
+        comment: "Settings: button that blocks ads on an allowed site again.",
+    )
+    static let siteSettingContentBlocking = NSLocalizedString(
+        "browser.site_setting.content_blocking",
+        comment: "Site setting: the built-in blocker on this site.",
+    )
+    static let siteSettingContentBlockingBlock = NSLocalizedString(
+        "browser.site_setting.content_blocking.block",
+        comment: "Site setting's menu item: block ads and trackers on the site.",
+    )
+    static let siteSettingContentBlockingAllow = NSLocalizedString(
+        "browser.site_setting.content_blocking.allow",
+        comment: "Site setting's menu item: allow ads on the site.",
+    )
+
+    /// "Updated 2 days ago" under the filter lists.
+    static func settingsFilterListsUpdated(_ date: Date) -> String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .full
+        return String(
+            format: NSLocalizedString(
+                "browser.settings.privacy.filter_lists.updated",
+                comment: "Settings: when the filter lists were last downloaded. Value: a relative time, such as 2 days ago.",
+            ),
+            formatter.localizedString(for: date, relativeTo: Date()),
+        )
+    }
+}

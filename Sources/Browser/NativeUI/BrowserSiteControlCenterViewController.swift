@@ -348,7 +348,7 @@ final class BrowserSiteControlCenterViewController: NSViewController {
     private func settingMenu(for row: BrowserSiteSettingRow, urlString: String) -> NSMenu {
         let menu = BrowserNativeMenus.menu()
         for value in row.kind.choices {
-            let item = BrowserNativeMenus.add(value.menuTitle, to: menu) { [weak self] in
+            let item = BrowserNativeMenus.add(row.kind.menuTitle(for: value), to: menu) { [weak self] in
                 guard let self else { return }
                 model.setSiteSetting(row.kind, value: value, forURLString: urlString)
                 reloadSiteSettings()
@@ -509,7 +509,9 @@ final class BrowserSiteSettingRowView: BrowserNativePressableView {
     }
 
     func update(_ row: BrowserSiteSettingRow) {
-        badge.fillColor = Self.badgeFill(active: [.on, .allow].contains(row.value))
+        // The blocker is on when it blocks.
+        let active = row.kind == .contentBlocking ? row.value == .block : [.on, .allow].contains(row.value)
+        badge.fillColor = Self.badgeFill(active: active)
         icon.image = NSImage(systemSymbolName: row.kind.systemImageName, accessibilityDescription: nil)
         title.stringValue = row.kind.title
         value.stringValue = row.value.title

@@ -1066,3 +1066,24 @@
 "browser.settings.boosts" = "Boosts";
 "browser.settings.boosts.enabled" = "Enable Boosts on websites you visit";
 "browser.settings.boosts.detail" = "Boosts change how a site looks and behaves. Make one from the site control center; find them all in the Library.";
+
+/* Content blocking */
+"browser.settings.privacy" = "Privacy";
+"browser.settings.privacy.block_ads" = "Block Ads";
+"browser.settings.privacy.block_ads.detail" = "Hide ads and stop their requests.";
+"browser.settings.privacy.block_trackers" = "Block Trackers";
+"browser.settings.privacy.block_trackers.detail" = "Stop requests that follow you across sites.";
+"browser.settings.privacy.block_cookie_banners" = "Block Cookie Banners";
+"browser.settings.privacy.block_cookie_banners.detail" = "Hide cookie consent notices.";
+"browser.settings.privacy.filter_lists" = "Filter Lists";
+"browser.settings.privacy.filter_lists.bundled" = "EasyList, EasyPrivacy and the EasyList Cookie List, as they came with OpenArc. They update every few days.";
+"browser.settings.privacy.filter_lists.updated" = "EasyList, EasyPrivacy and the EasyList Cookie List. Updated %@.";
+"browser.settings.privacy.filter_lists.updating" = "Updating…";
+"browser.settings.privacy.filter_lists.update_now" = "Update Now";
+"browser.settings.privacy.allowed_sites" = "Sites Allowed to Show Ads";
+"browser.settings.privacy.allowed_sites.detail" = "Allow ads on a site from its site controls.";
+"browser.settings.privacy.allowed_sites.empty" = "No sites yet.";
+"browser.settings.privacy.allowed_sites.remove" = "Remove";
+"browser.site_setting.content_blocking" = "Ads and Trackers";
+"browser.site_setting.content_blocking.block" = "Block Ads and Trackers";
+"browser.site_setting.content_blocking.allow" = "Allow Ads on This Site";

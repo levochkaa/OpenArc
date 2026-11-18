@@ -8,6 +8,8 @@ import Foundation
 /// are OpenArc's remembered answers; the others are Chromium's content
 /// settings for the page.
 enum BrowserSiteSettingKind: String, CaseIterable {
+    /// OpenArc's own: the built-in blocker, or ads allowed on the site.
+    case contentBlocking
     case camera
     case microphone
     case location
@@ -31,6 +33,11 @@ enum BrowserSiteSettingKind: String, CaseIterable {
         self == .camera || self == .microphone
     }
 
+    /// Settings of OpenArc's own features, not of the site's permissions.
+    var isOpenArcFeature: Bool {
+        self == .contentBlocking || self == .developerMode
+    }
+
     var permissionKind: BrowserSitePermissionKind? {
         switch self {
         case .camera: .camera
@@ -41,6 +48,7 @@ enum BrowserSiteSettingKind: String, CaseIterable {
 
     var title: String {
         switch self {
+        case .contentBlocking: BrowserStrings.siteSettingContentBlocking
         case .camera: BrowserStrings.siteSettingCamera
         case .microphone: BrowserStrings.siteSettingMicrophone
         case .location: BrowserStrings.siteSettingLocation
@@ -60,6 +68,7 @@ enum BrowserSiteSettingKind: String, CaseIterable {
 
     var systemImageName: String {
         switch self {
+        case .contentBlocking: "shield.lefthalf.filled"
         case .camera: "video"
         case .microphone: "mic"
         case .location: "location"
@@ -81,10 +90,22 @@ enum BrowserSiteSettingKind: String, CaseIterable {
     /// and sound.
     var choices: [BrowserSiteSettingValue] {
         switch self {
+        case .contentBlocking: [.block, .allow]
         case .developerMode: [.on, .off]
         case .popups,
              .sound: [.allow, .block]
         default: [.allow, .block, .ask]
+        }
+    }
+}
+
+extension BrowserSiteSettingKind {
+    /// A value's item in the setting's menu.
+    func menuTitle(for value: BrowserSiteSettingValue) -> String {
+        switch (self, value) {
+        case (.contentBlocking, .block): BrowserStrings.siteSettingContentBlockingBlock
+        case (.contentBlocking, .allow): BrowserStrings.siteSettingContentBlockingAllow
+        default: value.menuTitle
         }
     }
 }
@@ -135,9 +156,10 @@ struct BrowserSiteSettingRow: Equatable {
 // MARK: - BrowserChromeModel + site settings
 
 extension BrowserChromeModel {
-    /// The site's own settings, in kind order: remembered camera and
-    /// microphone answers, then Chromium's values that differ from the
-    /// profile default. Empty for pages without a web origin.
+    /// The site's own settings, in kind order: whether the blocker works
+    /// there, remembered camera and microphone answers, then Chromium's
+    /// values that differ from the profile default. Empty for pages without
+    /// a web origin.
     func siteSettingRows(forURLString urlString: String) -> [BrowserSiteSettingRow] {
         guard let origin = BrowserSitePermissionRequest.origin(ofURLString: urlString),
               origin.hasPrefix("http") else { return [] }
@@ -164,6 +186,10 @@ extension BrowserChromeModel {
         case .developerMode:
             guard let host else { return [] }
             return [preferences.developerModeHosts.isEnabled(host: host) ? .on : .off]
+        case .contentBlocking:
+            let settings = preferences.contentBlocking
+            guard settings.isEnabled, host != nil else { return [] }
+            return [settings.isAllowed(urlString: urlString) ? .allow : .block]
         default:
             return nil
         }
@@ -176,6 +202,15 @@ extension BrowserChromeModel {
         value: BrowserSiteSettingValue,
         forURLString urlString: String,
     ) {
+        if kind == .contentBlocking {
+            // The app hands the change to the blocker; the page loads again, with or without its ads.
+            userPreferencesStore.contentBlocking.setAllowed(value == .allow, urlString: urlString)
+            objectWillChange.send()
+            if currentTab?.urlString == urlString {
+                reloadCurrentTab()
+            }
+            return
+        }
         if kind == .developerMode {
             if let host = Self.developerModeHost(ofURLString: urlString) {
                 userPreferencesStore.developerModeHosts.set(value == .on, host: host)

@@ -60,12 +60,12 @@ import Testing
     defer { fixture.cleanup() }
     let url = "https://meet.example/room?x=1"
     try fixture.show(url)
-    #expect(fixture.model.siteSettingRows(forURLString: url).filter { $0.kind != .developerMode }.isEmpty)
+    #expect(fixture.model.siteSettingRows(forURLString: url).filter { !$0.kind.isOpenArcFeature }.isEmpty)
 
     fixture.driver.siteSettingsByURL[url] = [.notifications: .block, .location: .allow]
     fixture.model.setSiteSetting(.microphone, value: .allow, forURLString: url)
     fixture.model.setSiteSetting(.camera, value: .block, forURLString: "https://meet.example/other")
-    #expect(fixture.model.siteSettingRows(forURLString: url).filter { $0.kind != .developerMode } == [
+    #expect(fixture.model.siteSettingRows(forURLString: url).filter { !$0.kind.isOpenArcFeature } == [
         .init(kind: .camera, value: .block),
         .init(kind: .microphone, value: .allow),
         .init(kind: .location, value: .allow),
@@ -76,7 +76,7 @@ import Testing
     fixture.model.setSiteSetting(.camera, value: .ask, forURLString: url)
     fixture.model.setSiteSetting(.notifications, value: .default, forURLString: url)
     fixture.model.setSiteSetting(.popups, value: .allow, forURLString: url)
-    #expect(fixture.model.siteSettingRows(forURLString: url).filter { $0.kind != .developerMode }.map(\.kind) == [
+    #expect(fixture.model.siteSettingRows(forURLString: url).filter { !$0.kind.isOpenArcFeature }.map(\.kind) == [
         .microphone,
         .location,
         .popups,
@@ -93,7 +93,7 @@ import Testing
     let url = "https://meet.example/"
     fixture.model.setSiteSetting(.camera, value: .allow, forURLString: url)
     #expect(fixture.model.userPreferencesStore.sitePermissionDecisions.isEmpty)
-    #expect(fixture.model.siteSettingRows(forURLString: url).filter { $0.kind != .developerMode } == [.init(
+    #expect(fixture.model.siteSettingRows(forURLString: url).filter { !$0.kind.isOpenArcFeature } == [.init(
         kind: .camera,
         value: .allow,
     )])

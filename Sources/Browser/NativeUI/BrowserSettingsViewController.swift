@@ -61,6 +61,10 @@ struct BrowserSettingsIcon {
         "warn-before-quitting": .init("exclamationmark.triangle.fill", .systemOrange),
         "blurred-background": .init("camera.filters", .systemPurple),
         "battery-saver": .init("battery.75percent", .systemGreen),
+        "block-ads": .init("hand.raised.fill", .systemRed),
+        "block-trackers": .init("eye.slash.fill", .systemBlue),
+        "block-cookie-banners": .init("checkmark.shield.fill", .systemOrange),
+        "filter-lists": .init("list.bullet.rectangle.fill", .systemGray),
         // Links
         "little-arc": .init("macwindow", .systemGreen),
         "little-window-option-command-click": .init("command", .systemGreen),
@@ -433,6 +437,8 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
     private let siteSearchesBody = NSStackView()
     private let sitePermissionsBody = NSStackView()
     private var shownSitePermissions = [BrowserSitePermissionDecision]()
+    private let allowedSitesBody = NSStackView()
+    private var shownAllowedSites: [String]?
     private var siteSearchFields = [(
         field: NSTextField,
         id: UUID,
@@ -577,6 +583,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
     private func syncControls() {
         updateBindings.forEach { $0() }
         refreshSitePermissions()
+        refreshAllowedSites()
         for (profile, button) in profileDeleteButtons {
             let isClosed = canDeleteProfile(profile)
             button.isEnabled = profile.id != currentProfileID && !profile.isDefault && isClosed
@@ -696,7 +703,100 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                     set: { preferences.batterySaverEnabled = $0 },
                 ),
             ]),
+            section(BrowserStrings.settingsPrivacySection, rows: [
+                blockerToggle(.ads, "block-ads", BrowserStrings.settingsBlockAds, BrowserStrings.settingsBlockAdsDetail),
+                blockerToggle(
+                    .trackers,
+                    "block-trackers",
+                    BrowserStrings.settingsBlockTrackers,
+                    BrowserStrings.settingsBlockTrackersDetail,
+                ),
+                blockerToggle(
+                    .cookieBanners,
+                    "block-cookie-banners",
+                    BrowserStrings.settingsBlockCookieBanners,
+                    BrowserStrings.settingsBlockCookieBannersDetail,
+                ),
+                filterListsRow(),
+            ]),
+            section(BrowserStrings.settingsAllowedSites, body: allowedSitesBody),
         ])
+    }
+
+    // MARK: Content blocking
+
+    private func blockerToggle(
+        _ kind: BrowserFilterListKind,
+        _ id: String,
+        _ title: String,
+        _ detail: String,
+    ) -> NSView {
+        let preferences = preferences
+        return toggle(
+            id,
+            title,
+            detail: detail,
+            get: { preferences.contentBlocking.blocks(kind) },
+            set: { preferences.contentBlocking.setBlocks(kind, $0) },
+        )
+    }
+
+    /// The lists' age and Update Now, which downloads them at once.
+    private func filterListsRow() -> NSView {
+        let updater = BrowserFilterListUpdater.shared
+        let status = BrowserNativeControls.label("", size: 12, color: .secondaryLabelColor, wraps: true)
+        let button = BrowserActionButton(BrowserStrings.settingsFilterListsUpdateNow) {
+            Task { @MainActor in await updater.checkForUpdates(force: true) }
+        }
+        button.setAccessibilityIdentifier("browser.settings.filter-lists.update")
+        let sync = { [weak status, weak button] in
+            if updater.isUpdating {
+                status?.stringValue = BrowserStrings.settingsFilterListsUpdating
+            } else if let date = updater.lastDownloaded {
+                status?.stringValue = BrowserStrings.settingsFilterListsUpdated(date)
+            } else {
+                status?.stringValue = BrowserStrings.settingsFilterListsBundled
+            }
+            button?.isEnabled = !updater.isUpdating && BrowserContentBlocker.shared.settings.isEnabled
+        }
+        updater.changes.receive(on: RunLoop.main).sink { sync() }.store(in: &observations)
+        updateBindings.append(sync)
+        let label = BrowserNativeControls.stack(
+            [BrowserNativeControls.label(BrowserStrings.settingsFilterLists, wraps: true), status],
+            spacing: 2,
+        )
+        return row(label: withIcon("filter-lists", label), control: button)
+    }
+
+    /// Sites allowed to show ads, each with Remove. Rebuilt only when they change.
+    private func refreshAllowedSites() {
+        guard pane == .general else { return }
+        let sites = preferences.contentBlocking.allowedSites
+        guard sites != shownAllowedSites else { return }
+        shownAllowedSites = sites
+        let detail = BrowserNativeControls.label(
+            BrowserStrings.settingsAllowedSitesDetail,
+            size: 12,
+            color: .secondaryLabelColor,
+            wraps: true,
+        )
+        let rows = sites.map { site -> NSView in
+            let remove = BrowserActionButton(BrowserStrings.settingsAllowedSitesRemove) { [weak self] in
+                self?.preferences.contentBlocking.removeAllowedSite(site)
+            }
+            remove.setAccessibilityIdentifier("browser.settings.allowed-sites.remove")
+            return row(label: titleDetail(site), control: remove)
+        }
+        let empty = BrowserNativeControls.label(
+            BrowserStrings.settingsAllowedSitesEmpty,
+            size: 12,
+            color: .secondaryLabelColor,
+        )
+        replaceRows(
+            [BrowserNativeControls.padded(detail, vertical: 8)]
+                + (rows.isEmpty ? [BrowserNativeControls.padded(empty, vertical: 8)] : rows),
+            in: allowedSitesBody,
+        )
     }
 
     // MARK: Site permissions

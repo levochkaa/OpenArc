@@ -372,6 +372,59 @@ struct BrowserContentBlockingTests {
         #expect(compiled != nil)
     }
 
+    // MARK: - Site controls
+
+    @MainActor @Test func siteControlsAllowAdsOnTheSite() throws {
+        let suite = BrowserTestDefaults.suiteName("BrowserContentBlockingTests")
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let driver = FakeBrowserTabDriver()
+        let model = BrowserChromeModel(
+            tabDriver: driver,
+            sessionSnapshotStore: InMemorySessionSnapshotStore(),
+            sessionPreferencesStore: InMemorySessionPreferencesStore(),
+            commandBarSuggestionProvider: FakeSuggestionProvider(),
+            userPreferencesStore: BrowserUserPreferencesStore(userDefaults: defaults),
+            shortcutStore: BrowserShortcutStore(userDefaults: defaults),
+            extensionManager: FakeBrowserExtensionManager(extensions: []),
+            windowMode: .normal,
+            windowTitleHandler: { _ in },
+            allTabsClosedHandler: {},
+        )
+        defer {
+            model.discardUnsavedSessionForClosure()
+            model.prepareForTermination()
+        }
+        let url = "https://www.news.example/story"
+        func row() -> BrowserSiteSettingRow? {
+            model.siteSettingRows(forURLString: url).first { $0.kind == .contentBlocking }
+        }
+        #expect(row()?.value == .block)
+        #expect(BrowserSiteSettingKind.contentBlocking.choices == [.block, .allow])
+        #expect(BrowserSiteSettingKind.contentBlocking.menuTitle(for: .allow) == BrowserStrings
+            .siteSettingContentBlockingAllow)
+
+        model.setSiteSetting(.contentBlocking, value: .allow, forURLString: url)
+        #expect(row()?.value == .allow)
+        #expect(model.userPreferencesStore.contentBlocking.allowedSites == ["news.example"])
+        // The allowance is kept with the other settings.
+        let reloaded = BrowserUserPreferencesStore(userDefaults: defaults)
+        #expect(reloaded.contentBlocking.allowedSites == ["news.example"])
+
+        model.setSiteSetting(.contentBlocking, value: .block, forURLString: url)
+        #expect(row()?.value == .block)
+        #expect(model.siteSettingRows(forURLString: "openarc://settings").isEmpty)
+
+        model.userPreferencesStore.contentBlocking = {
+            var settings = BrowserContentBlockingSettings()
+            for kind in BrowserFilterListKind.allCases {
+                settings.setBlocks(kind, false)
+            }
+            return settings
+        }()
+        #expect(row() == nil)
+    }
+
     @Test func shippedListsBlockWellKnownAdsAndTrackers() throws {
         for kind in BrowserFilterListKind.allCases {
             #expect(try BrowserFilterListUpdater.looksLikeFilterList(shippedList(kind)), "\(kind)")
