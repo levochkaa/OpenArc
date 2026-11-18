@@ -67,6 +67,12 @@ enum BrowserChromeColors {
     static let commandBarFieldBorder = adaptive(light: rgba(0, 0, 0, 0.08), dark: rgba(255, 255, 255, 0.08))
     static let commandBarPlaceholder = adaptive(light: rgba(0, 0, 0, 0.36), dark: rgba(255, 255, 255, 0.36))
     static let commandBarCompletion = adaptive(light: rgba(0, 0, 0, 0.48), dark: rgba(255, 255, 255, 0.5))
+    /// Command bar rows: the selected row's title is full strength, the
+    /// others' a step back, the address and icons further.
+    static let commandBarRowSelectedText = adaptive(light: rgb(0, 0, 0), dark: rgb(255, 255, 255))
+    static let commandBarRowText = adaptive(light: rgba(0, 0, 0, 0.8), dark: rgba(255, 255, 255, 0.8))
+    static let commandBarRowDetail = adaptive(light: rgba(0, 0, 0, 0.5), dark: rgba(255, 255, 255, 0.5))
+    static let commandBarRowIcon = adaptive(light: rgba(0, 0, 0, 0.7), dark: rgba(255, 255, 255, 0.7))
     static let commandBarSuggestionSelected = adaptive(light: rgba(0, 0, 0, 0.07), dark: rgba(255, 255, 255, 0.1))
     static let incognitoBannerBackground = NSColor.black
     static let incognitoBannerBorder = NSColor.white.withAlphaComponent(0.12)

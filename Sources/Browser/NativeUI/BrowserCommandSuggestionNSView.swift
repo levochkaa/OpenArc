@@ -146,9 +146,9 @@ final class BrowserCommandSuggestionNSView: NSButton {
         let titleWidth = min(textWidth(primary), hasDetail ? available * 0.72 : available)
         primary.frame = NSRect(x: x, y: (bounds.height - 20) / 2 + 0.5, width: titleWidth, height: 20)
         detail.frame = NSRect(
-            x: primary.frame.maxX + 3,
+            x: primary.frame.maxX,
             y: (bounds.height - 16) / 2,
-            width: max(available - titleWidth - 3, 0),
+            width: max(available - titleWidth, 0),
             height: 16,
         )
         detail.isHidden = !hasDetail
@@ -165,12 +165,18 @@ final class BrowserCommandSuggestionNSView: NSButton {
         self.selectionColor = selectionColor
         let tinted = selected && selectionColor != nil
         let isCommand = suggestion.kind == .command
-        tile.isHidden = !isCommand
-        tile.fillColor = tinted ? .white : BrowserCommandSuggestionNSView.badgeFill
+        let isPage = [.openTab, .history, .bookmark].contains(suggestion.kind)
+        let pageIcon = favicon ?? suggestion.iconData.flatMap(NSImage.init(data:))
+        // Commands sit on a tile; the selected page's icon too, on a white one.
+        let tiled = isCommand || selected && isPage && pageIcon != nil
+        tile.isHidden = !tiled
+        tile.fillColor = selected ? .white : BrowserCommandSuggestionNSView.badgeFill
         badge.fillColor = tinted ? .white : BrowserCommandSuggestionNSView.badgeFill
         badgeLabel.textColor = tinted ? selectionColor : BrowserChromeColors.secondaryText
-        primary.textColor = tinted ? .white : BrowserChromeColors.primaryText
-        detail.textColor = tinted ? NSColor.white.withAlphaComponent(0.75) : BrowserChromeColors.secondaryText
+        primary.textColor = tinted
+            ? .white
+            : selected ? BrowserChromeColors.commandBarRowSelectedText : BrowserChromeColors.commandBarRowText
+        detail.textColor = tinted ? NSColor.white.withAlphaComponent(0.75) : BrowserChromeColors.commandBarRowDetail
         title = suggestion.displayText
         primary.stringValue = suggestion.displayText
         // "Title — address", the address after a dash.
@@ -184,13 +190,21 @@ final class BrowserCommandSuggestionNSView: NSButton {
         switchLabel.textColor = tinted ? .white : BrowserChromeColors.secondaryText
         switchTile.fillColor = tinted ? .white : BrowserCommandSuggestionNSView.badgeFill
         switchArrow.contentTintColor = tinted ? selectionColor : BrowserChromeColors.primaryText
-        if let image = favicon ?? suggestion.iconData.flatMap(NSImage.init(data:)) {
+        if let image = pageIcon {
             icon.image = image
             icon.contentTintColor = nil
         } else {
             icon.image = NSImage(systemSymbolName: suggestion.systemImageName, accessibilityDescription: nil)?
                 .withSymbolConfiguration(.init(pointSize: BrowserChromeLayout.commandBarSymbolSize, weight: .regular))
-            icon.contentTintColor = tinted ? (isCommand ? selectionColor : .white) : BrowserChromeColors.primaryText
+            icon.contentTintColor =
+                if tinted {
+                    isCommand ? selectionColor : .white
+                } else if selected {
+                    // Dark on the white tile, full strength beside it.
+                    isCommand ? .black : BrowserChromeColors.commandBarRowSelectedText
+                } else {
+                    BrowserChromeColors.commandBarRowIcon
+                }
         }
         setAccessibilityLabel(suggestion.displayText)
         setAccessibilityHelp(suggestion.detailText)
