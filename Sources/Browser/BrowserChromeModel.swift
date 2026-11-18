@@ -3378,7 +3378,10 @@ enum BrowserWindowMode: Equatable {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         return pasteboard.setString(
-            BrowserMarkdownLink.text(title: selectedTab.displayTitle, urlString: selectedTab.urlString),
+            BrowserMarkdownLink.text(
+                title: selectedTab.displayTitle,
+                urlString: BrowserTrackingParameters.cleaned(selectedTab.urlString),
+            ),
             forType: .string,
         )
     }
@@ -3425,7 +3428,7 @@ enum BrowserWindowMode: Equatable {
 
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
-        return pasteboard.setString(urlString, forType: .string)
+        return pasteboard.setString(BrowserTrackingParameters.cleaned(urlString), forType: .string)
     }
 
     func refreshBrowserExtensions() {
