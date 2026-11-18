@@ -311,6 +311,7 @@ targets:
           - BrowserWindowGeometry.swift
           - Sidebar/BrowserSidebarSnapshot.swift
           - OpenAPI/**
+          - Resources/filter-list-*.txt
         excludes:
           - Browser*Controller.swift
           - Browser*View.swift

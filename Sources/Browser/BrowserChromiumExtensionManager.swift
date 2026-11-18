@@ -7,8 +7,6 @@ import Foundation
 @MainActor final class BrowserChromiumExtensionManager: BrowserExtensionManaging {
     // MARK: Private
 
-    private static let uBlockOriginLiteID = "ddkjiahejlhfcafbddmgiahcphecmpfh"
-
     private let profileDirectoryURL: URL?
 
     private var profilePath: String? {
@@ -31,28 +29,6 @@ import Foundation
         }
 
         return installedExtensionsFromProfileSnapshot()
-    }
-
-    /// Chromium leaves an extension it added by itself off until someone agrees. The browser
-    /// comes with uBlock Origin Lite, so it agrees once per profile, whenever the download ends.
-    func enableDefaultExtensionsOnce() {
-        guard let profilePath else { return }
-        let key = "browser.extensions.defaultsEnabledProfiles"
-        let defaults = UserDefaults.standard
-        guard defaults.stringArray(forKey: key)?.contains(profilePath) != true else { return }
-        Task { [weak self] in
-            for _ in 0..<120 {
-                try? await Task.sleep(for: .seconds(5))
-                guard let self else { return }
-                guard let installed = installedExtensions()
-                    .first(where: { $0.id == Self.uBlockOriginLiteID }) else { continue }
-                if !installed.isEnabled {
-                    _ = setExtension(id: installed.id, isEnabled: true)
-                }
-                defaults.set((defaults.stringArray(forKey: key) ?? []) + [profilePath], forKey: key)
-                return
-            }
-        }
     }
 
     func runAction(id: String) -> BrowserExtensionActionResult {

@@ -1450,7 +1450,6 @@ enum BrowserWindowMode: Equatable {
 
         historyStore.prepareSearchIndex()
         isContextReady = true
-        extensionManager.enableDefaultExtensionsOnce()
         restoreSidebarWidthIfNeeded()
         bookmarksModel.reload()
         refreshBrowserExtensions()

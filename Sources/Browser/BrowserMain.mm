@@ -36,21 +36,13 @@
 
 namespace shared {
 
-/// Chromium adds an extension to every profile once its manifest is in this folder, and
-/// remembers when the user removes it.
-static void BrowserWriteDefaultExtensionManifests(NSString* cache_root) {
-  NSString* folder = [cache_root stringByAppendingPathComponent:@"External Extensions"];
-  [NSFileManager.defaultManager createDirectoryAtPath:folder
-                          withIntermediateDirectories:YES
-                                           attributes:nil
-                                                error:nil];
-  NSString* manifest =
-      [folder stringByAppendingPathComponent:@"ddkjiahejlhfcafbddmgiahcphecmpfh.json"];
-  [@"{\"external_update_url\":\"https://clients2.google.com/service/update2/crx\"}\n"
-      writeToFile:manifest
-       atomically:YES
-         encoding:NSUTF8StringEncoding
-            error:nil];
+/// Earlier versions blocked ads with an extension Chromium added from a manifest in this
+/// folder. The browser blocks them itself now; without the manifest, Chromium removes the
+/// extension it added. A copy the user installed from the Web Store stays.
+static void BrowserRemoveDefaultExtensionManifests(NSString* cache_root) {
+  NSString* manifest = [[cache_root stringByAppendingPathComponent:@"External Extensions"]
+      stringByAppendingPathComponent:@"ddkjiahejlhfcafbddmgiahcphecmpfh.json"];
+  [NSFileManager.defaultManager removeItemAtPath:manifest error:nil];
 }
 
 /// Chromium calls an unnamed profile "Your Chromium" in its settings and menus. Naming
@@ -134,7 +126,7 @@ int main(int argc, char* argv[]) {
     CefString(&settings.cache_path) =
         std::string(cache_path.UTF8String);
 
-    BrowserWriteDefaultExtensionManifests(cache_root);
+    BrowserRemoveDefaultExtensionManifests(cache_root);
     BrowserNameDefaultProfile(cache_root);
 
     if (!CefInitialize(main_args, settings, app, nullptr)) {

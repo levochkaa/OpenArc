@@ -70,6 +70,7 @@ import WebKit
     private var mediaVolume = 1.0
     private var isClosed = false
     private var boostsObservation: AnyCancellable?
+    private var contentRulesObservation: AnyCancellable?
 
     @objc var view: NSView { webView }
 
@@ -140,6 +141,15 @@ import WebKit
                 in: webView.configuration.userContentController,
                 mediaToken: mediaToken,
                 boosts: change.new,
+            )
+        }
+        // The blocker's lists for the site in the tab; a new page picks them as it navigates.
+        BrowserWebKitContentRules.shared.apply(to: controller, urlString: nil)
+        self.contentRulesObservation = BrowserWebKitContentRules.shared.changes.sink { [weak self] in
+            guard let self else { return }
+            BrowserWebKitContentRules.shared.apply(
+                to: webView.configuration.userContentController,
+                urlString: webView.url?.absoluteString,
             )
         }
         controller.add(BrowserWebKitMessageProxy(page: self), name: Self.mediaMessageName)
@@ -528,6 +538,12 @@ extension BrowserWebKitPage: WKNavigationDelegate {
                 NSWorkspace.shared.open(url)
             }
             return .cancel
+        }
+        if navigationAction.targetFrame?.isMainFrame == true {
+            BrowserWebKitContentRules.shared.apply(
+                to: webView.configuration.userContentController,
+                urlString: url.absoluteString,
+            )
         }
         if navigationAction.navigationType == .linkActivated, navigationAction.targetFrame?.isMainFrame != false {
             let flags = navigationAction.modifierFlags

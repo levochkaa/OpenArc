@@ -3461,6 +3461,82 @@ class SafariUserAgentRequestHandler final : public CefResourceRequestHandler {
   IMPLEMENT_REFCOUNTING(SafariUserAgentRequestHandler);
 };
 
+/// A request the built-in blocker stops: it never leaves the browser.
+class BlockedRequestHandler final : public CefResourceRequestHandler {
+ public:
+  cef_return_value_t OnBeforeResourceLoad(CefRefPtr<CefBrowser>,
+                                          CefRefPtr<CefFrame>,
+                                          CefRefPtr<CefRequest>,
+                                          CefRefPtr<CefCallback>) override {
+    return RV_CANCEL;
+  }
+
+ private:
+  IMPLEMENT_REFCOUNTING(BlockedRequestHandler);
+};
+
+/// The origin of a URL, as a request's initiator names it: `https://host:port`.
+static std::string OriginOfURL(const std::string &url) {
+  const size_t scheme_end = url.find("://");
+  if (scheme_end == std::string::npos) {
+    return std::string();
+  }
+  const size_t host_end = url.find_first_of("/?#", scheme_end + 3);
+  return host_end == std::string::npos ? url : url.substr(0, host_end);
+}
+
+/// Asks the blocker about a page's request, on the network thread. The tab's page decides
+/// whether its site is allowed; the document that made the request is the site it comes from.
+/// The engine updates a frame's URL on its main thread after the page commits, while the new
+/// page's first requests may already be here, so the request's initiator, which the page
+/// itself names, wins over a frame URL of another origin.
+static CefRefPtr<CefResourceRequestHandler> ContentBlockingHandler(CefRefPtr<CefBrowser> browser,
+                                                                   CefRefPtr<CefFrame> frame,
+                                                                   CefRefPtr<CefRequest> request,
+                                                                   bool is_navigation,
+                                                                   const CefString &request_initiator) {
+  const cef_resource_type_t type = request->GetResourceType();
+  if (type == RT_MAIN_FRAME || type == RT_NAVIGATION_PRELOAD_MAIN_FRAME) {
+    return nullptr;
+  }
+  const std::string url = request->GetURL().ToString();
+  if (url.rfind("http", 0) != 0 && url.rfind("ws", 0) != 0) {
+    return nullptr;
+  }
+  const std::string initiator = request_initiator.ToString();
+  const bool initiator_is_web = initiator.rfind("http", 0) == 0;
+  std::string source;
+  if (frame) {
+    CefRefPtr<CefFrame> parent = is_navigation && !frame->IsMain() ? frame->GetParent() : nullptr;
+    source = (parent ? parent : frame)->GetURL().ToString();
+  }
+  if (initiator_is_web && OriginOfURL(source) != initiator) {
+    source = initiator;
+  }
+  CefRefPtr<CefFrame> main = browser ? browser->GetMainFrame() : nullptr;
+  std::string document = main ? main->GetURL().ToString() : std::string();
+  // A request of the page itself: its initiator is the page's origin.
+  const bool from_main_frame = !frame || (frame->IsMain() && !is_navigation);
+  if (from_main_frame && initiator_is_web && OriginOfURL(document) != initiator) {
+    document = initiator;
+  }
+  if (document.rfind("http", 0) != 0) {
+    return nullptr;
+  }
+  bool blocked = false;
+  @autoreleasepool {
+    blocked = [BrowserContentBlockingBridge shouldBlockRequest:ToNSString(url)
+                                               sourceURLString:source.rfind("http", 0) == 0 ? ToNSString(source) : nil
+                                             documentURLString:ToNSString(document)
+                                                  resourceType:type];
+  }
+  if (!blocked) {
+    return nullptr;
+  }
+  static CefRefPtr<BlockedRequestHandler> handler = new BlockedRequestHandler();
+  return handler;
+}
+
 class BrowserTabClient final : public CefClient,
                                public CefContextMenuHandler,
                                public CefDisplayHandler,
@@ -3496,13 +3572,17 @@ class BrowserTabClient final : public CefClient,
   CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override { return this; }
   CefRefPtr<CefLoadHandler> GetLoadHandler() override { return this; }
   CefRefPtr<CefRequestHandler> GetRequestHandler() override { return this; }
-  CefRefPtr<CefResourceRequestHandler> GetResourceRequestHandler(CefRefPtr<CefBrowser>,
+  CefRefPtr<CefResourceRequestHandler> GetResourceRequestHandler(CefRefPtr<CefBrowser> browser,
                                                                  CefRefPtr<CefFrame> frame,
                                                                  CefRefPtr<CefRequest> request,
+                                                                 bool is_navigation,
                                                                  bool,
-                                                                 bool,
-                                                                 const CefString &,
+                                                                 const CefString &request_initiator,
                                                                  bool &) override {
+    if (CefRefPtr<CefResourceRequestHandler> blocked =
+            ContentBlockingHandler(browser, frame, request, is_navigation, request_initiator)) {
+      return blocked;
+    }
     // The site's own requests, and those of its pages: the top document decides.
     const std::string url = request->GetURL().ToString();
     const std::string top = frame ? frame->GetURL().ToString() : std::string();
@@ -3696,6 +3776,15 @@ class BrowserPeekClient final : public CefClient,
   CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override { return this; }
   CefRefPtr<CefLoadHandler> GetLoadHandler() override { return this; }
   CefRefPtr<CefRequestHandler> GetRequestHandler() override { return this; }
+  CefRefPtr<CefResourceRequestHandler> GetResourceRequestHandler(CefRefPtr<CefBrowser> browser,
+                                                                 CefRefPtr<CefFrame> frame,
+                                                                 CefRefPtr<CefRequest> request,
+                                                                 bool is_navigation,
+                                                                 bool,
+                                                                 const CefString &request_initiator,
+                                                                 bool &) override {
+    return ContentBlockingHandler(browser, frame, request, is_navigation, request_initiator);
+  }
   CefRefPtr<CefPermissionHandler> GetPermissionHandler() override { return this; }
   CefRefPtr<CefFindHandler> GetFindHandler() override { return this; }
 
@@ -8994,6 +9083,21 @@ static void RunPageStartScripts(CefRefPtr<CefFrame> frame) {
   }
 }
 
+/// Hides the filter lists' elements in a new document of any frame.
+static void RunContentBlockingStyles(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame) {
+  if (!browser || !frame) {
+    return;
+  }
+  CefRefPtr<CefFrame> main = browser->GetMainFrame();
+  NSString *document = ToNSString((main ? main : frame)->GetURL().ToString());
+  NSString *script = [BrowserContentBlockingBridge hidingScriptForFrameURLString:ToNSString(frame->GetURL().ToString())
+                                                               documentURLString:document
+                                                                     isMainFrame:frame->IsMain()];
+  if (script.length > 0) {
+    frame->ExecuteJavaScript(script.UTF8String, frame->GetURL(), 0);
+  }
+}
+
 /// Runs the site's Boost in a new document of any frame. Incognito pages run none.
 static void RunBoostScripts(CefRefPtr<CefFrame> frame, BrowserTabController *controller) {
   if (!frame || !g_boost_scripts_provider || controller.usesEphemeralRequestContext) {
@@ -9004,7 +9108,7 @@ static void RunBoostScripts(CefRefPtr<CefFrame> frame, BrowserTabController *con
   }
 }
 
-void BrowserTabClient::OnLoadStart(CefRefPtr<CefBrowser>,
+void BrowserTabClient::OnLoadStart(CefRefPtr<CefBrowser> browser,
                                    CefRefPtr<CefFrame> frame,
                                    TransitionType) {
   CEF_REQUIRE_UI_THREAD();
@@ -9018,6 +9122,7 @@ void BrowserTabClient::OnLoadStart(CefRefPtr<CefBrowser>,
     [controller_ resetMediaForTabID:ToNSString(tab_id_)];
     RunPageStartScripts(frame);
   }
+  RunContentBlockingStyles(browser, frame);
   RunBoostScripts(frame, controller_);
 }
 
@@ -9635,13 +9740,14 @@ bool BrowserTabClient::OnRequestMediaAccessPermission(
 
 /// Peek cards and small windows ask like tabs; their prompt shows in
 /// the card.
-void BrowserPeekClient::OnLoadStart(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame> frame, TransitionType) {
+void BrowserPeekClient::OnLoadStart(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame, TransitionType) {
   CEF_REQUIRE_UI_THREAD();
   if (frame && frame->IsMain()) {
     [controller_ cancelMediaSitePermissionsForTabID:PeekSitePermissionTabID(session_id_)];
     RunPageStartScripts(frame);
     [[controller_ peekPanelForSessionID:session_id_] revealPage];
   }
+  RunContentBlockingStyles(browser, frame);
   RunBoostScripts(frame, controller_);
 }
 

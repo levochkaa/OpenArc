@@ -209,6 +209,7 @@ final class BrowserUserPreferencesStore: ObservableObject {
         static let developerReloadBehavior = "browser.settings.developerReloadBehavior"
         static let opensLittleWindowFromAnyApp = "browser.settings.opensLittleWindowFromAnyApp"
         static let newDocumentsApp = "browser.settings.newDocumentsApp"
+        static let contentBlocking = "browser.settings.contentBlocking"
     }
 
     // MARK: Internal
@@ -416,6 +417,11 @@ final class BrowserUserPreferencesStore: ObservableObject {
         didSet { userDefaults.set(try? JSONEncoder().encode(siteSearches), forKey: Key.siteSearches) }
     }
 
+    /// The built-in ad, tracker and cookie banner blocker, and the sites allowed to show ads.
+    @Published var contentBlocking: BrowserContentBlockingSettings {
+        didSet { userDefaults.set(try? JSONEncoder().encode(contentBlocking), forKey: Key.contentBlocking) }
+    }
+
     /// Each site's Boost, in the order they were made.
     @Published var boosts: [BrowserBoost] {
         didSet { userDefaults.set(try? JSONEncoder().encode(boosts), forKey: Key.boosts) }
@@ -553,6 +559,8 @@ final class BrowserUserPreferencesStore: ObservableObject {
         }
         self.boosts = boosts
         self.boostsEnabled = Self.loadBool(userDefaults, key: Key.boostsEnabled, defaultValue: true)
+        self.contentBlocking = userDefaults.data(forKey: Key.contentBlocking)
+            .flatMap { try? JSONDecoder().decode(BrowserContentBlockingSettings.self, from: $0) } ?? .init()
     }
 
     private static func loadBool(_ userDefaults: UserDefaults, key: String, defaultValue: Bool) -> Bool {

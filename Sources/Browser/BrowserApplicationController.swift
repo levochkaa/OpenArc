@@ -72,6 +72,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
     private var boostsCancellable: AnyCancellable?
     /// Boosts are app-wide; they sync through the default profile's account.
     private var boostSyncBridge: BrowserBoostSyncBridge?
+    private var contentBlockingCancellable: AnyCancellable?
     private var littleWindowHotKeyCancellable: AnyCancellable?
     private weak var lastKeyProfileWindow: NSWindow?
     /// Option-Command-N from any app, when turned on in Settings.
@@ -265,6 +266,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         observeShortcutStore()
         observeAppearancePreference()
         observeBoosts()
+        observeContentBlocking()
         installLayoutIndependentKeyMonitor()
         installReservedShortcutMonitor()
         startBatterySaverController()
@@ -4189,6 +4191,14 @@ NSMenuDelegate, NSUserInterfaceValidations {
             .combineLatest(userPreferencesStore.$boostsEnabled)
             .sink { boosts, enabled in
             BrowserBoostCatalog.shared.update(enabled ? boosts : [])
+        }
+    }
+
+    /// Both page engines block through the shared blocker, which follows the preferences.
+    private func observeContentBlocking() {
+        BrowserFilterListUpdater.shared.start(settings: userPreferencesStore.contentBlocking)
+        contentBlockingCancellable = userPreferencesStore.$contentBlocking.dropFirst().sink { settings in
+            BrowserFilterListUpdater.shared.apply(settings)
         }
     }
 
