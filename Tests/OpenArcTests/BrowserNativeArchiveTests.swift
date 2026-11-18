@@ -308,12 +308,18 @@ import Testing
     }
 }
 
+/// Waits up to 10 s by the clock, so a busy machine that stretches each sleep
+/// does not fail the test.
 @MainActor private func nativeArchiveWait(_ predicate: @MainActor () -> Bool) async throws {
-    for _ in 0..<200 {
+    let deadline = ContinuousClock.now + .seconds(10)
+    while ContinuousClock.now < deadline {
         if predicate() {
             return
         }
         try await Task.sleep(for: .milliseconds(10))
+    }
+    if predicate() {
+        return
     }
     Issue.record("Native Archive did not reach the expected state")
     throw NativeArchiveTestError.timeout
