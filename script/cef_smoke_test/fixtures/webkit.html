@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Engine pending</title></head>
+<body>
+<h1>Engine check</h1>
+<script>
+  // The agent CLI can't run scripts in WebKit tabs, so the page reports through
+  // its title, which `openarc tabs` lists.
+  const ua = navigator.userAgent;
+  const engine = ua.includes("Chrome/") ? "chromium" : ua.includes("AppleWebKit") ? "webkit" : "other";
+  document.title = "Engine " + engine + " " + String(6 * 7);
+</script>
+</body>
+</html>

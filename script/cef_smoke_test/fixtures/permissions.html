@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Smoke Permissions</title>
+<style>button { font-size: 20px; margin: 12px; padding: 12px 20px; }</style></head>
+<body>
+<button id="share">Share screen</button>
+<button id="notify">Allow notifications</button>
+<button id="print">Print</button>
+<pre id="log"></pre>
+<script>
+const log = (key, value) => { window.smoke = window.smoke || {}; window.smoke[key] = value; };
+document.getElementById("share").addEventListener("click", () => {
+  log("share", "pending");
+  navigator.mediaDevices.getDisplayMedia({ video: true }).then(
+    (stream) => {
+      const track = stream.getVideoTracks()[0];
+      log("share", { ok: true, label: track ? track.label : "", surface: track ? track.getSettings().displaySurface : "" });
+      stream.getTracks().forEach((t) => t.stop());
+    },
+    (error) => log("share", { ok: false, name: error.name, message: error.message }),
+  );
+});
+document.getElementById("notify").addEventListener("click", () => {
+  log("notify", "pending");
+  Notification.requestPermission().then((result) => {
+    log("notify", result);
+    if (result === "granted") {
+      const n = new Notification("OpenArc smoke test", { body: "Notification after a site permission", tag: "smoke" });
+      n.onshow = () => log("shown", true);
+      n.onerror = () => log("shown", false);
+    }
+  });
+});
+document.getElementById("print").addEventListener("click", () => setTimeout(() => window.print(), 0));
+</script>
+</body>
+</html>
