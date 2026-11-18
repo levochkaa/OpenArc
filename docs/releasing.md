@@ -21,7 +21,7 @@ Sparkle compares build numbers, so every release needs a higher `CURRENT_PROJECT
 The script:
 
 1. Builds Release.
-2. Signs a copy with `script/sign_release_app.sh`: Developer ID, the hardened runtime, secure timestamps, `Support/OpenArc-Distribution.entitlements` and the helper entitlements. Apple does not offer Sign in with Apple to Developer ID apps, so these builds leave it out and need no provisioning profile.
+2. Signs a copy with `script/sign_release_app.sh`: Developer ID, the hardened runtime, secure timestamps, `Support/OpenArc-Distribution.entitlements` and the helper entitlements. Apple does not offer Sign in with Apple to Developer ID apps, so these builds leave it out. The script embeds a Developer ID provisioning profile for the app's bundle ID (`OPENARC_PROVISIONING_PROFILE`, or the first one found in `~/Library/MobileDevice/Provisioning Profiles` or Xcode's profiles) and adds the `<team>.<bundle ID>.webauthn` keychain group, which Touch ID passkeys need. Without a profile the group is left out, since macOS stops an app whose keychain group no profile allows, and passkeys fall back to a phone or a security key. Xcode makes the profile when it exports an archive with the `developer-id` method and automatic signing.
 3. Notarizes and staples that copy.
 4. Zips it and generates the appcast, with the notes embedded and download links through `https://api.openarc.su/downloads/`, and deltas from the earlier archives in `.build/releases/sparkle-updates`. Keep that directory between releases so later updates stay small.
 5. Uploads the archive, notes, appcast and deltas to the GitHub release.

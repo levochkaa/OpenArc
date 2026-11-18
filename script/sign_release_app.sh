@@ -28,8 +28,10 @@ while [[ $# -gt 0 ]]; do
 done
 
 identity="${OPENARC_SIGNING_IDENTITY:-Developer ID Application}"
-# A provisioning profile, needed only when the entitlements include
-# Sign in with Apple, which Apple does not offer to Developer ID builds.
+# A Developer ID provisioning profile. It lets the app keep Touch ID passkeys in
+# its keychain group; without it the group is left out and passkeys fall back to
+# a phone or security key. When unset, the first profile for the app's bundle
+# ID that provisions all devices (a Developer ID profile) is used.
 profile="${OPENARC_PROVISIONING_PROFILE:-}"
 notary_profile="${OPENARC_NOTARY_PROFILE:-openarc-notary}"
 app_entitlements="${OPENARC_APP_ENTITLEMENTS:-$ROOT_DIR/Support/OpenArc-Distribution.entitlements}"
@@ -43,6 +45,45 @@ if /usr/libexec/PlistBuddy -c 'Print :com.apple.developer.applesignin' "$app_ent
   && [[ -z "$profile" || ! -f "$profile" ]]; then
   echo "error: set OPENARC_PROVISIONING_PROFILE to a profile that allows Sign in with Apple" >&2
   exit 1
+fi
+
+bundle_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Contents/Info.plist")"
+profile_plist="$(mktemp -t openarc-profile)"
+entitlements_with_group="$(mktemp -t openarc-entitlements)"
+trap 'rm -f "$profile_plist" "$entitlements_with_group"' EXIT
+
+# Prints the profile's team when it is a Developer ID profile for this app.
+developer_id_team() {
+  /usr/bin/security cms -D -i "$1" >"$profile_plist" 2>/dev/null || return 1
+  [[ "$(/usr/libexec/PlistBuddy -c 'Print :ProvisionsAllDevices' "$profile_plist" 2>/dev/null)" == true ]] || return 1
+  local app_id team
+  app_id="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.application-identifier' "$profile_plist" 2>/dev/null)"
+  team="$(/usr/libexec/PlistBuddy -c 'Print :TeamIdentifier:0' "$profile_plist" 2>/dev/null)"
+  [[ -n "$team" && "$app_id" == "$team.$bundle_id" ]] || return 1
+  echo "$team"
+}
+
+if [[ -z "$profile" ]]; then
+  for candidate in "$HOME/Library/MobileDevice/Provisioning Profiles/"*.provisionprofile \
+    "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles/"*.provisionprofile; do
+    if [[ -f "$candidate" ]] && developer_id_team "$candidate" >/dev/null; then
+      profile="$candidate"
+      break
+    fi
+  done
+fi
+if [[ -n "$profile" ]] && team="$(developer_id_team "$profile")"; then
+  cp "$app_entitlements" "$entitlements_with_group"
+  /usr/libexec/PlistBuddy \
+    -c "Add :com.apple.application-identifier string $team.$bundle_id" \
+    -c "Add :com.apple.developer.team-identifier string $team" \
+    -c "Add :keychain-access-groups array" \
+    -c "Add :keychain-access-groups:0 string $team.$bundle_id.webauthn" \
+    "$entitlements_with_group"
+  app_entitlements="$entitlements_with_group"
+  echo "Using Developer ID profile $profile"
+elif ! /usr/libexec/PlistBuddy -c 'Print :com.apple.developer.applesignin' "$app_entitlements" >/dev/null 2>&1; then
+  echo "warning: no Developer ID provisioning profile for $bundle_id; Touch ID passkeys stay off" >&2
 fi
 
 sign() {
@@ -91,7 +132,7 @@ if [[ "$notarize" != true ]]; then
 fi
 
 work_dir="$(mktemp -d "${TMPDIR:-/tmp}/openarc-notarize.XXXXXX")"
-trap 'rm -rf "$work_dir"' EXIT
+trap 'rm -rf "$work_dir"; rm -f "$profile_plist" "$entitlements_with_group"' EXIT
 archive="$work_dir/$(basename "$app" .app).zip"
 ditto -c -k --sequesterRsrc --keepParent "$app" "$archive"
 result="$work_dir/result.json"
