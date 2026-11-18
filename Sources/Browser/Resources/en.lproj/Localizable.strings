@@ -1283,3 +1283,14 @@
 "browser.notes.imported" = "Imported %d notes.";
 "browser.notes.exported_one" = "Exported 1 note.";
 "browser.notes.imported_one" = "Imported 1 note.";
+
+"browser.capture.card.send_to" = "Send To…";
+"browser.capture.card.accessibility" = "Capture";
+"browser.capture.card.save_to_library" = "Save to Library";
+"browser.capture.card.saved_to_library" = "Saved to Library";
+"browser.capture.card.copy" = "Copy";
+"browser.capture.card.save" = "Save…";
+"browser.capture.card.send_message" = "Send via Messages…";
+"browser.capture.card.edit" = "Edit";
+"browser.capture.card.retake" = "Retake";
+"browser.capture.card.new_easel" = "New Easel";

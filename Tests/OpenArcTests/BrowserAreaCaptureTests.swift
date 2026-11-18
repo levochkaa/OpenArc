@@ -61,6 +61,67 @@ import Testing
         #expect(!f.model.captureArea(fraction: .zero))
     }
 
+    @Test func anOutlineFromTheMenuOpensTheCardWithThatPartAndTheGrayPage() throws {
+        let f = SidebarDragFixture(temporary: ["x"])
+        f.model.selectTab(id: f.id("x"))
+        f.driver.emitTabCreationState(id: f.id("x"), state: .ready)
+        let page = try #require(NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: 200, pixelsHigh: 100, bitsPerSample: 8, samplesPerPixel: 4,
+            hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0,
+        )?.representation(using: .png, properties: [:]))
+        f.driver.pagePicturePNG = page
+        var requests = [BrowserCaptureRequest]()
+        f.model.onPresentCapture = { requests.append($0) }
+        let part = CGRect(x: 0.5, y: 0, width: 0.5, height: 0.5)
+
+        #expect(f.model.captureAreaForCard(fraction: part, tabID: f.id("x")))
+
+        let request = try #require(requests.first)
+        #expect(request.placement == .outlined(part) && request.kind == .area && request.tabID == f.id("x"))
+        #expect(request.pagePNG == page)
+        let picture = try #require(BrowserCaptureImaging.cgImage(png: request.png))
+        #expect(picture.width == 100 && picture.height == 50)
+        #expect(f.driver.regionCaptures.isEmpty, "Nothing goes to the clipboard on its own")
+        #expect(!f.model.captureAreaForCard(fraction: part, tabID: "other"))
+    }
+
+    @Test func shiftCommandDragCopiesWhileTheMenuOpensTheCard() {
+        let f = SidebarDragFixture(temporary: ["x"])
+        f.model.selectTab(id: f.id("x"))
+        f.driver.emitTabCreationState(id: f.id("x"), state: .ready)
+        var copies = [Bool]()
+        f.model.onBeginAreaCapture = { [weak model = f.model] in
+            copies.append(model?.areaCaptureCopiesToClipboard ?? false)
+            return true
+        }
+        #expect(f.model.beginAreaCapture())
+        #expect(f.model.beginAreaCapture(copyingToClipboard: true))
+        #expect(copies == [false, true])
+        #expect(!f.model.areaCaptureCopiesToClipboard)
+    }
+
+    @Test func theCardClosesWhenAnotherTabIsShown() throws {
+        let f = SidebarDragFixture(temporary: ["x", "y"])
+        f.model.selectTab(id: f.id("x"))
+        f.driver.emitTabCreationState(id: f.id("x"), state: .ready)
+        let content = BrowserContentNSView(hostView: NSView())
+        content.frame = NSRect(x: 0, y: 0, width: 800, height: 600)
+        content.bindTabCreation(to: f.model)
+        let png = try #require(NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: 20, pixelsHigh: 10, bitsPerSample: 8, samplesPerPixel: 4,
+            hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0,
+        )?.representation(using: .png, properties: [:]))
+        content.presentCaptureCard(BrowserCaptureRequest(
+            png: png, kind: .image, placement: .centered, pagePNG: nil, pageURL: nil, title: nil, tabID: f.id("x"),
+        ))
+        #expect(content.captureCard != nil)
+        #expect(content.captureCard?.card.pictureFrame.size == CGSize(width: 20, height: 10))
+
+        f.model.selectTab(id: f.id("y"))
+        content.cancelAreaCaptureIfStale()
+        #expect(content.captureCard == nil)
+    }
+
     @Test func anOutlineForAnotherTabIsCancelledAndFocusReturnsToThePage() {
         let f = SidebarDragFixture(temporary: ["x", "y"])
         f.model.selectTab(id: f.id("x"))

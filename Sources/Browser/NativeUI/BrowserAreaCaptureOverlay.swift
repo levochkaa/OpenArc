@@ -37,6 +37,9 @@ final class BrowserAreaCaptureOverlay: NSView {
 
     @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
+    /// A drag in a window behind others still outlines, from its first press.
+    override func acceptsFirstMouse(for _: NSEvent?) -> Bool { true }
+
     override func draw(_: NSRect) {
         let dim = NSBezierPath(rect: pageFrame)
         if let selection {

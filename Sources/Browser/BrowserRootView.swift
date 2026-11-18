@@ -924,7 +924,8 @@ final class BrowserRootView: NSView {
                     event.locationInWindow.x - start.locationInWindow.x,
                     event.locationInWindow.y - start.locationInWindow.y,
                 )
-                guard distance >= 4, model.beginAreaCapture(), let overlay = content.areaCapture else { return nil }
+                guard distance >= 4, model.beginAreaCapture(copyingToClipboard: true),
+                      let overlay = content.areaCapture else { return nil }
                 isCaptureDragging = true
                 overlay.mouseDown(with: start)
             }

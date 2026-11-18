@@ -381,8 +381,11 @@ import Foundation
         canceledDownloadIDs.append(id)
     }
 
+    /// What a picture of the shown page returns.
+    var pagePicturePNG: Data?
+
     func captureActiveTabPicture(completion: @escaping @MainActor (Data?) -> Void) {
-        completion(nil)
+        completion(pagePicturePNG)
     }
 
     func captureFullPageActiveTabToPasteboard() {

@@ -44,6 +44,7 @@ final class BrowserContentNSView: NSView {
     var onRetryTabCreation: () -> Void = {}
 
     private(set) var areaCapture: BrowserAreaCaptureOverlay?
+    private(set) var captureCard: BrowserCaptureCardPresenter?
     let permissionPrompt = BrowserSitePermissionPromptView()
 
     private(set) var crashPages = [String: BrowserSadTabView]()
@@ -242,9 +243,16 @@ final class BrowserContentNSView: NSView {
         model.onBeginAreaCapture = { [weak self, weak model] in
             guard let self, let model else { return false }
             let tabID = model.selectedTabID
+            let copies = model.areaCaptureCopiesToClipboard
+            closeCaptureCard()
             beginAreaCapture(pageTabID: tabID) { fraction in
                 if let fraction {
-                    model.captureArea(fraction: fraction, tabID: tabID)
+                    // A Shift-Command drag and an Easel's capture button copy the part.
+                    if copies || model.easelCaptureTargetID != nil {
+                        model.captureArea(fraction: fraction, tabID: tabID)
+                    } else {
+                        model.captureAreaForCard(fraction: fraction, tabID: tabID)
+                    }
                 } else {
                     model.easelCaptureTargetID = nil
                 }
@@ -252,11 +260,69 @@ final class BrowserContentNSView: NSView {
             }
             return true
         }
+        model.onPresentCapture = { [weak self] in self?.presentCaptureCard($0) }
+    }
+
+    /// The card over the page that offers what to do with a capture.
+    func presentCaptureCard(_ request: BrowserCaptureRequest) {
+        guard let model = captureModel, request.tabID == nil || request.tabID == model.selectedTabID,
+              let image = BrowserCaptureImaging.cgImage(png: request.png)
+        else { return }
+        closeCaptureCard()
+        let page = pageFrame(forTabID: request.tabID)
+        let pictureFrame: CGRect
+        switch request.placement {
+        case .outlined(let fraction):
+            pictureFrame = CGRect(
+                x: page.minX + fraction.minX * page.width,
+                y: page.minY + fraction.minY * page.height,
+                width: fraction.width * page.width,
+                height: fraction.height * page.height,
+            ).integral
+        case .centered:
+            let size = BrowserCaptureCardView.pictureSize(
+                pixelSize: CGSize(width: image.width, height: image.height),
+                page: page,
+            )
+            let windowTop = window.map { convert(CGPoint(x: 0, y: $0.frame.height), from: nil).y } ?? page.minY
+            pictureFrame = BrowserCaptureCardView.centeredPictureFrame(size: size, page: page, windowTop: windowTop)
+        }
+        let backdrop = request.pagePNG
+            .flatMap(BrowserCaptureImaging.cgImage(png:))
+            .flatMap(BrowserCaptureImaging.backdrop)
+            .map { NSImage(cgImage: $0, size: page.size) }
+        let card = BrowserCaptureCardView(
+            picture: NSImage(cgImage: image, size: pictureFrame.size),
+            pictureFrame: pictureFrame,
+            pageFrame: page,
+            backdrop: backdrop,
+            menu: BrowserCaptureCardPresenter.menu(for: model),
+        )
+        card.frame = bounds
+        let presenter = BrowserCaptureCardPresenter(request: request, card: card, model: model)
+        card.onAction = { [weak presenter] in presenter?.perform($0) }
+        card.onDismiss = { [weak self] in self?.closeCaptureCard() }
+        presenter.onClose = { [weak self, weak presenter] in
+            guard let presenter, self?.captureCard === presenter else { return }
+            self?.closeCaptureCard()
+        }
+        addSubview(card)
+        captureCard = presenter
+        card.focusField()
+    }
+
+    func closeCaptureCard() {
+        guard let captureCard else { return }
+        self.captureCard = nil
+        captureCard.stopFollowingEdits()
+        captureCard.card.removeFromSuperview()
+        captureModel?.focusSelectedPage()
     }
 
     /// The outline belongs to one page at one size: a resize, a layout change or
     /// another selected tab cancels it.
     func cancelAreaCaptureIfStale() {
+        closeCaptureCardIfStale()
         guard let areaCapture else { return }
         if areaCapture.frame != bounds || captureModel?.selectedTabID != areaCaptureTabID
             || pageFrame(forTabID: areaCaptureTabID) != areaCapture.pageFrame
@@ -467,6 +533,16 @@ final class BrowserContentNSView: NSView {
         permissionPrompt.update(request: request)
         permissionPrompt.isHidden = false
         needsLayout = true
+    }
+
+    /// The card belongs to one page at one size, like the outline.
+    private func closeCaptureCardIfStale() {
+        guard let captureCard else { return }
+        if captureCard.card.frame != bounds
+            || (captureCard.request.tabID != nil && captureModel?.selectedTabID != captureCard.request.tabID)
+        {
+            closeCaptureCard()
+        }
     }
 
     /// A tab dragged from the sidebar over a page not yet split: the page

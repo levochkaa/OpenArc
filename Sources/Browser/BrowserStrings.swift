@@ -2148,6 +2148,43 @@ enum BrowserStrings {
         "browser.capture.toast_hint_trailing",
         comment: "Text after the keys.",
     )
+    static let captureCardSendTo = NSLocalizedString(
+        "browser.capture.card.send_to",
+        comment: "Placeholder of the field that filters the capture card's menu.",
+    )
+    static let captureCardAccessibilityLabel = NSLocalizedString(
+        "browser.capture.card.accessibility",
+        comment: "VoiceOver name of the card shown after a capture.",
+    )
+    static let captureCardSaveToLibrary = NSLocalizedString(
+        "browser.capture.card.save_to_library",
+        comment: "Capture card item that saves the capture to the Library.",
+    )
+    static let captureCardSavedToLibrary = NSLocalizedString(
+        "browser.capture.card.saved_to_library",
+        comment: "Capture card item once the capture is in the Library; choosing it removes it again.",
+    )
+    static let captureCardCopy = NSLocalizedString("browser.capture.card.copy", comment: "Capture card item.")
+    static let captureCardSave = NSLocalizedString(
+        "browser.capture.card.save",
+        comment: "Capture card item that saves the picture to a file.",
+    )
+    static let captureCardSendMessage = NSLocalizedString(
+        "browser.capture.card.send_message",
+        comment: "Capture card item that sends the picture in Messages.",
+    )
+    static let captureCardEdit = NSLocalizedString(
+        "browser.capture.card.edit",
+        comment: "Capture card item that opens the picture in Preview to mark it up.",
+    )
+    static let captureCardRetake = NSLocalizedString(
+        "browser.capture.card.retake",
+        comment: "Capture card item that outlines a new part of the page.",
+    )
+    static let captureCardNewEasel = NSLocalizedString(
+        "browser.capture.card.new_easel",
+        comment: "Capture card item that starts an Easel with the picture.",
+    )
     static let captureFileName = NSLocalizedString(
         "browser.capture.file_name",
         comment: "Default name of a saved capture.",

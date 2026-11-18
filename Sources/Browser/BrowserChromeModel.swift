@@ -515,6 +515,13 @@ enum BrowserWindowMode: Equatable {
     var notesCancellables = Set<AnyCancellable>()
     /// Set by the content view: puts the keyboard in a note's editor, its title when true.
     var onFocusNote: ((String, Bool) -> Bool)?
+    /// The outline being drawn goes straight to the clipboard, as with Shift-Command drag.
+    private(set) var areaCaptureCopiesToClipboard = false
+    /// Shows the card that offers what to do with a capture.
+    var onPresentCapture: ((BrowserCaptureRequest) -> Void)?
+    /// New Easel in a capture's Send To menu, with the picture and its page; the
+    /// item stays dimmed without it.
+    var onNewEaselFromCapture: ((Data, String?) -> Void)?
     /// Pages' pending permission requests in arrival order. Only the methods
     /// in `BrowserChromeModel+SitePermissions.swift` write it.
     @Published var sitePermissionRequests = [BrowserSitePermissionRequest]() {
@@ -3363,10 +3370,58 @@ enum BrowserWindowMode: Equatable {
         return true
     }
 
-    /// Capture…: the user outlines part of the page, which is copied as an image.
-    @discardableResult func beginAreaCapture() -> Bool {
+    /// Capture…: the user outlines part of the page, which opens in the capture
+    /// card, or goes straight to the clipboard when `copyingToClipboard`.
+    @discardableResult func beginAreaCapture(copyingToClipboard: Bool = false) -> Bool {
         guard canCaptureArea else { return false }
+        areaCaptureCopiesToClipboard = copyingToClipboard
+        defer { areaCaptureCopiesToClipboard = false }
         return onBeginAreaCapture?() ?? false
+    }
+
+    /// The outlined part of the page in the capture card, with the gray page behind it.
+    @discardableResult func captureAreaForCard(fraction: CGRect, tabID: String? = nil) -> Bool {
+        guard canCreateTab, let selectedTabID, tabID == nil || tabID == selectedTabID,
+              fraction.width > 0, fraction.height > 0
+        else { return false }
+        let pageURL = selectedTab?.urlString
+        let title = selectedTab?.title
+        tabDriver.captureActiveTabPicture { [weak self] png in
+            guard let self, let png, self.selectedTabID == selectedTabID,
+                  let page = BrowserCaptureImaging.cgImage(png: png),
+                  let part = BrowserCaptureImaging.crop(page, fraction: fraction),
+                  let partPNG = BrowserCaptureImaging.png(part)
+            else { return }
+            onPresentCapture?(BrowserCaptureRequest(
+                png: partPNG,
+                kind: .area,
+                placement: .outlined(fraction),
+                pagePNG: png,
+                pageURL: pageURL,
+                title: title,
+                tabID: selectedTabID,
+            ))
+        }
+        return true
+    }
+
+    /// Capture Image… from a picture's menu: the picture in the capture card.
+    func presentCapturedImage(png: Data) {
+        guard let selectedTabID else { return }
+        let pageURL = selectedTab?.urlString
+        let title = selectedTab?.title
+        tabDriver.captureActiveTabPicture { [weak self] page in
+            guard let self, self.selectedTabID == selectedTabID else { return }
+            onPresentCapture?(BrowserCaptureRequest(
+                png: png,
+                kind: .image,
+                placement: .centered,
+                pagePNG: page,
+                pageURL: pageURL,
+                title: title,
+                tabID: selectedTabID,
+            ))
+        }
     }
 
     /// `tabID` is the tab the outline was drawn over; another selected tab refuses.
