@@ -20,6 +20,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
+#include "build/build_config.h"
 #include "chrome/browser/extensions/browser_extension_window_controller.h"
 #include "chrome/browser/extensions/browser_window_util.h"
 #include "chrome/browser/extensions/chrome_extension_function_details.h"
@@ -28,16 +29,17 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/tab_group_sync/tab_group_sync_service_factory.h"
 #include "chrome/browser/tab_list/tab_list_interface.h"
-#include "chrome/browser/ui/browser_navigator.h"
-#include "chrome/browser/ui/browser_navigator_params.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface_iterator.h"
+#include "chrome/browser/ui/navigator/browser_navigator.h"
+#include "chrome/browser/ui/navigator/browser_navigator_params.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_iterator.h"
 #include "chrome/browser/ui/tabs/tab_muted_utils.h"
 #include "chrome/common/webui_url_constants.h"
 #include "components/data_sharing/public/features.h"
 #include "components/saved_tab_groups/public/tab_group_sync_service.h"
 #include "components/sessions/content/session_tab_helper.h"
+#include "components/sessions/core/session_id.h"
 #include "components/split_tabs/split_tab_id.h"
 #include "components/split_tabs/split_tab_visual_data.h"
 #include "components/tab_groups/tab_group_id.h"  // nogncheck
@@ -63,6 +65,7 @@
 #include "extensions/common/permissions/permissions_data.h"
 #include "third_party/blink/public/common/chrome_debug_urls.h"
 #include "ui/base/page_transition_types.h"
+#include "ui/base/window_open_disposition.h"
 #include "url/gurl.h"
 #include "url/url_constants.h"
 
@@ -72,9 +75,8 @@
 #else
 #include "cef/libcef/features/features.h"
 #include "chrome/browser/resource_coordinator/tab_lifecycle_unit_external.h"
-#include "chrome/browser/ui/browser.h"                             // nogncheck
-#include "chrome/browser/ui/browser_finder.h"                      // nogncheck
-#include "chrome/browser/ui/browser_navigator_params.h"            // nogncheck
+// nogncheck
+#include "chrome/browser/ui/navigator/browser_navigator_params.h"  // nogncheck
 #include "chrome/browser/ui/recently_audible_helper.h"             // nogncheck
 #include "chrome/browser/ui/tabs/tab_enums.h"                      // nogncheck
 #include "chrome/browser/ui/tabs/tab_group_model.h"                // nogncheck
@@ -84,6 +86,10 @@
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/back_forward_cache.h"
 #include "extensions/common/manifest_handlers/incognito_info.h"
+#endif
+
+#if BUILDFLAG(IS_CHROMEOS)
+#include "ash/webui/os_feedback_ui/url_constants.h"
 #endif
 
 static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
@@ -104,6 +110,8 @@ namespace {
 bool g_disable_tab_list_editing_for_testing = false;
 
 constexpr char kGroupNotFoundError[] = "No group with id: *.";
+constexpr char kSplitNotFoundError[] = "No split view with id: *.";
+constexpr char kInvalidSplitIdError[] = "Invalid split view id: *.";
 constexpr char kInvalidUrlError[] = "Invalid url: \"*\".";
 
 // This enum is used for counting schemes used via a navigation triggered by
@@ -163,19 +171,24 @@ ExtensionTabUtil::ScrubTabBehaviorType GetScrubTabBehaviorImpl(
   bool has_permission = false;
 
   if (extension) {
-    bool api_permission = false;
-    if (tab_id == api::tabs::TAB_ID_NONE) {
-      api_permission = extension->permissions_data()->HasAPIPermission(
-          APIPermissionID::kTab);
-    } else {
-      api_permission = extension->permissions_data()->HasAPIPermissionForTab(
-          tab_id, APIPermissionID::kTab);
+    const PermissionsData* permissions = extension->permissions_data();
+    if (extension->origin().IsSameOriginWith(url)) {
+      // Extensions always have permission to access their own origin URLs.
+      has_permission = true;
+    } else if (permissions->HasAPIPermission(APIPermissionID::kTab)) {
+      // Global "tabs" permission allows access to any URL.
+      has_permission = true;
+    } else if (tab_id != api::tabs::TAB_ID_NONE &&
+               permissions->HasAPIPermissionForTab(tab_id,
+                                                   APIPermissionID::kTab) &&
+               permissions->HasTabPermissionsForSecurityOrigin(tab_id, url)) {
+      // Tab-specific permission (e.g. activeTab) allowed, and the origin
+      // matches.
+      has_permission = true;
+    } else if (permissions->HasHostPermission(url)) {
+      // Explicit host permission allows access.
+      has_permission = true;
     }
-
-    bool host_permission = extension->permissions_data()
-                               ->active_permissions()
-                               .HasExplicitAccessToOrigin(url);
-    has_permission = api_permission || host_permission;
   }
 
   if (!has_permission) {
@@ -405,7 +418,7 @@ api::tabs::Tab ExtensionTabUtil::CreateTabObject(
 
 #if BUILDFLAG(IS_ANDROID)
   tab_object.discarded = contents->WasDiscarded();
-  // TODO(crbug.com/371432155): Determine auto-discardable and frozen states on
+  // TODO(crbug.com/505306735): Determine auto-discardable and frozen states on
   // desktop Android where the TabLifecycleUnit is not available.
 #else
   auto* tab_lifecycle_unit_external =
@@ -526,9 +539,6 @@ void ExtensionTabUtil::ScrubTabForExtension(
       tab->title.reset();
       tab->fav_icon_url.reset();
       break;
-    case kScrubTabUrlToOrigin:
-      tab->url = GURL(*tab->url).DeprecatedGetOriginAsURL().spec();
-      break;
     case kDontScrubTab:
       break;
   }
@@ -538,10 +548,6 @@ void ExtensionTabUtil::ScrubTabForExtension(
     switch (scrub_tab_behavior.pending_info) {
       case kScrubTabFully:
         tab->pending_url.reset();
-        break;
-      case kScrubTabUrlToOrigin:
-        tab->pending_url =
-            GURL(*tab->pending_url).DeprecatedGetOriginAsURL().spec();
         break;
       case kDontScrubTab:
         break;
@@ -659,8 +665,11 @@ bool ExtensionTabUtil::GetTabById(int tab_id,
           : nullptr;
 
   for (WindowController* window : *WindowControllerList::GetInstance()) {
-    if (window->profile() != profile &&
-        window->profile() != incognito_profile) {
+    bool is_alive = window->GetBrowserWindowInterface() &&
+                    !window->GetBrowserWindowInterface()->IsDeleteScheduled();
+    bool profile_matches =
+        window->profile() == profile || window->profile() == incognito_profile;
+    if (!is_alive || !profile_matches) {
       continue;
     }
     for (int i = 0; i < window->GetTabCount(); ++i) {
@@ -846,6 +855,73 @@ bool ExtensionTabUtil::GetGroupById(
 }
 
 // static
+bool ExtensionTabUtil::GetSplitById(int split_id,
+                                    content::BrowserContext* browser_context,
+                                    bool include_incognito,
+                                    WindowController** out_window,
+                                    split_tabs::SplitTabId* out_id,
+                                    std::string* error) {
+  // Zero output parameters for the error cases.
+  if (out_window) {
+    *out_window = nullptr;
+  }
+  if (out_id) {
+    *out_id = split_tabs::SplitTabId::CreateEmpty();
+  }
+
+  if (split_id == api::tabs::SPLIT_VIEW_ID_NONE) {
+    if (error) {
+      *error = ErrorUtils::FormatErrorMessage(kInvalidSplitIdError,
+                                              base::NumberToString(split_id));
+    }
+    return false;
+  }
+
+  // `browser_context` can be null during shutdown.
+  if (!browser_context) {
+    return false;
+  }
+
+  Profile* profile = Profile::FromBrowserContext(browser_context);
+  Profile* incognito_profile =
+      include_incognito && profile->HasPrimaryOTRProfile()
+          ? profile->GetPrimaryOTRProfile(/*create_if_needed=*/false)
+          : nullptr;
+  for (WindowController* target_window : *WindowControllerList::GetInstance()) {
+    if (target_window->profile() != profile &&
+        target_window->profile() != incognito_profile) {
+      continue;
+    }
+    BrowserWindowInterface* target_browser =
+        target_window->GetBrowserWindowInterface();
+    if (!target_browser || target_browser->IsDeleteScheduled()) {
+      continue;
+    }
+    TabListInterface* tab_list = TabListInterface::From(target_browser);
+    if (!tab_list) {
+      continue;
+    }
+    for (split_tabs::SplitTabId target_split : tab_list->ListSplits()) {
+      if (ExtensionTabUtil::GetSplitId(target_split) == split_id) {
+        if (out_window) {
+          *out_window = target_window;
+        }
+        if (out_id) {
+          *out_id = target_split;
+        }
+        return true;
+      }
+    }
+  }
+  if (error) {
+    *error = ErrorUtils::FormatErrorMessage(kSplitNotFoundError,
+                                            base::NumberToString(split_id));
+  }
+
+  return false;
+}
+
+// static
 api::tab_groups::TabGroup ExtensionTabUtil::CreateTabGroupObject(
     const tab_groups::TabGroupId& id,
     const tab_groups::TabGroupVisualData& visual_data) {
@@ -1001,24 +1077,6 @@ ExtensionTabUtil::GetAllActiveWebContentsForContext(
   return active_contents;
 }
 
-// static
-bool ExtensionTabUtil::IsWebContentsInContext(
-    content::WebContents* web_contents,
-    content::BrowserContext* browser_context,
-    bool include_incognito) {
-  // Look at the WebContents BrowserContext and see if it is the same.
-  content::BrowserContext* web_contents_browser_context =
-      web_contents->GetBrowserContext();
-  if (web_contents_browser_context == browser_context)
-    return true;
-
-  // If not it might be to include the incognito mode, so we if the profiles
-  // are the same or the parent.
-  return include_incognito && Profile::FromBrowserContext(browser_context)
-                                  ->IsSameOrParent(Profile::FromBrowserContext(
-                                      web_contents_browser_context));
-}
-
 GURL ExtensionTabUtil::ResolvePossiblyRelativeURL(const std::string& url_string,
                                                   const Extension* extension) {
   GURL url = GURL(url_string);
@@ -1107,7 +1165,7 @@ base::expected<GURL, std::string> ExtensionTabUtil::PrepareURLForNavigation(
   // Ideally, the URL would only be "fixed" for user input (e.g. for URLs
   // entered into the Omnibox), but some extensions rely on the legacy behavior
   // where all navigations were subject to the "fixing".  See also
-  // https://crbug.com/1145381.
+  // https://crbug.com/40155847.
   url = url_formatter::FixupURL(url.spec());
 
   // Reject invalid URLs.
@@ -1136,11 +1194,27 @@ base::expected<GURL, std::string> ExtensionTabUtil::PrepareURLForNavigation(
     return base::unexpected(kCannotNavigateToChromeUntrusted);
   }
 
+  // Note: `extension` can be null if the call is made from non-extension
+  // contexts (e.g. WebUI pages). In that case, we allow the navigation as such
+  // contexts are trusted and do not have a concept of file access. Arguably,
+  // we should apply the same logic to the cases above, but it's been this way
+  // long enough that we can keep this as fail-closed until there's a reason to
+  // change it.
+
+  // Don't let the extension navigate directly to chrome://feedback. Feedback is
+  // more of a native surface that shouldn't be accessible to (or triggerable
+  // by) extensions.
+  if (extension && url.SchemeIs(content::kChromeUIScheme) &&
+      (url.host() == chrome::kChromeUIFeedbackHost
+#if BUILDFLAG(IS_CHROMEOS)
+       || url.host() == ash::kChromeUIOSFeedbackHost
+#endif
+       )) {
+    return base::unexpected(kCannotNavigateToInternalPage);
+  }
+
   // Don't let the extension navigate directly to file scheme pages, unless
-  // they have file access. `extension` can be null if the call is made from
-  // non-extension contexts (e.g. WebUI pages). In that case, we allow the
-  // navigation as such contexts are trusted and do not have a concept of file
-  // access.
+  // they have file access.
   if (extension && IsFileUrl(url) &&
       // PDF viewer extension can navigate to file URLs.
       extension->id() != extension_misc::kPdfExtensionId &&

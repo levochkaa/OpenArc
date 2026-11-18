@@ -1037,8 +1037,7 @@ void AlloyBrowserHostImpl::GetCustomWebContentsView(
 
 void AlloyBrowserHostImpl::WebContentsCreated(
     content::WebContents* source_contents,
-    int opener_render_process_id,
-    int opener_render_frame_id,
+    const content::GlobalRenderFrameHostId& opener_id,
     const std::string& frame_name,
     const GURL& target_url,
     content::WebContents* new_contents) {
@@ -1048,10 +1047,8 @@ void AlloyBrowserHostImpl::WebContentsCreated(
   CefRefPtr<CefDictionaryValue> extra_info;
 
   CefBrowserInfoManager::GetInstance()->WebContentsCreated(
-      target_url,
-      frame_util::MakeGlobalId(opener_render_process_id,
-                               opener_render_frame_id),
-      settings, client, platform_delegate, extra_info, new_contents);
+      target_url, opener_id, settings, client, platform_delegate, extra_info,
+      new_contents);
 
   scoped_refptr<CefBrowserInfo> info =
       CefBrowserInfoManager::GetInstance()->CreatePopupBrowserInfo(
