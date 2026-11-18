@@ -65,6 +65,29 @@ import Testing
         #expect(f.model.miniPlayerTabIDs == [x], "Closing pauses the video and leaves the tab where it is")
     }
 
+    @Test func aVideoPlayerSendsTheVideoBackToPictureInPicture() async throws {
+        let f = SidebarDragFixture(pinned: [], temporary: ["x", "y"])
+        let x = f.id("x")
+        // The video played off screen and was paused, as after closing its window.
+        f.model.selectTab(id: f.id("y"))
+        f.model.handleMediaStateChange(tabID: x, state: BrowserTabMediaState(
+            isPlaying: true, audible: true, video: true, hasPreviousTrack: false, hasNextTrack: false, title: "",
+        ))
+        f.model.handleMediaStateChange(tabID: x, state: BrowserTabMediaState(
+            isPlaying: false, audible: true, video: true, hasPreviousTrack: false, hasNextTrack: false, title: "",
+        ))
+        let earlier = f.driver.pictureInPictureRequests.count
+        #expect(f.model.miniPlayerItems.first?.isVideo == true)
+
+        #expect(f.model.returnToPictureInPicture(tabID: x))
+        #expect(f.model.miniPlayerTabIDs.isEmpty, "The player gives way to the floating window")
+        try await Task.sleep(for: .milliseconds(450))
+        let requests = f.driver.pictureInPictureRequests.dropFirst(earlier)
+        #expect(requests.map(\.tabID) == [x] && requests.map(\.active) == [true])
+        #expect(f.driver.mediaControls.last.map { $0.tabID == x && $0.action == .play } == true)
+        #expect(!f.model.returnToPictureInPicture(tabID: f.id("y")), "No video, no window")
+    }
+
     @Test func backToTabInThePictureInPictureWindowShowsTheTab() {
         let f = SidebarDragFixture(pinned: [], temporary: ["x", "y"])
         let x = f.id("x")

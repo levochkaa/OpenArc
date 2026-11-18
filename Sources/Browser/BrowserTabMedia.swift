@@ -33,6 +33,8 @@ struct BrowserMiniPlayerItem: Equatable {
     let hasNextTrack: Bool
     let isMuted: Bool
     var volume = 1.0
+    /// A video, which the player can send back to Picture in Picture.
+    var isVideo = false
 }
 
 // MARK: - BrowserMediaAction
@@ -87,6 +89,7 @@ extension BrowserChromeModel {
                 hasNextTrack: state.hasNextTrack,
                 isMuted: isTabMuted(id: id),
                 volume: tabMediaVolumes[id] ?? 1,
+                isVideo: state.video,
             )
         }
     }

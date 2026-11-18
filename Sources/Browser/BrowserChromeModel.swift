@@ -4600,6 +4600,31 @@ enum BrowserWindowMode: Equatable {
         return true
     }
 
+    /// The mini player's Picture in Picture button: the video plays again in
+    /// the floating window.
+    @discardableResult func returnToPictureInPicture(tabID: String) -> Bool {
+        guard let state = tabMediaStates[tabID], state.video, !state.inPictureInPicture,
+              !(selectedTabID.map { splitPaneTabIDs(forTabID: $0).contains(tabID) } ?? false)
+        else { return false }
+        if !state.isPlaying {
+            controlMedia(.play, tabID: tabID)
+        }
+        pictureInPictureTabIDs.formIntersection(tabs.map(\.id))
+        pictureInPictureTabIDs.insert(tabID)
+        objectWillChange.send()
+        // The engine asks only a playing video, so it waits for play to start.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            guard let self, pictureInPictureTabIDs.contains(tabID) else { return }
+            tabDriver.setPictureInPicture(true, forTabWithID: tabID)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            guard let self, tabMediaStates[tabID]?.inPictureInPicture != true else { return }
+            pictureInPictureTabIDs.remove(tabID)
+            objectWillChange.send()
+        }
+        return true
+    }
+
     func isInPictureInPicture(tabID: String) -> Bool {
         pictureInPictureTabIDs.contains(tabID) || tabMediaStates[tabID]?.inPictureInPicture == true
     }

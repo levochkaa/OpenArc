@@ -11,7 +11,9 @@ import AppKit
 final class BrowserMiniPlayerNSView: NSView {
     // MARK: Internal
 
-    enum Action: Equatable { case backToTab, previousTrack, playPause, nextTrack, toggleMute, close }
+    enum Action: Equatable { case backToTab, previousTrack, playPause, nextTrack, toggleMute, close,
+                                  backToPictureInPicture
+    }
 
     private static let volumeRowHeight: CGFloat = 32
 
@@ -73,6 +75,14 @@ final class BrowserMiniPlayerNSView: NSView {
         style: .sidebarClose,
         action: {},
     )
+    private let pictureInPictureButton = BrowserNativeChromeButton(
+        symbol: "pip.enter",
+        title: BrowserStrings.miniPlayerBackToPictureInPicture,
+        style: .sidebarClose,
+        action: {},
+    )
+    /// Holds the title row's text.
+    private let titleClip = NSView()
     private var tracking: NSTrackingArea?
 
     /// How far it has grown, from 0 to 1.
@@ -99,8 +109,12 @@ final class BrowserMiniPlayerNSView: NSView {
         outline.strokeColor = NSColor.labelColor.withAlphaComponent(0.08)
         addSubview(outline)
         titleLabel.lineBreakMode = .byTruncatingTail
-        titleLabel.isHidden = true
+        titleClip.wantsLayer = true
+        titleClip.layer?.masksToBounds = true
+        titleClip.isHidden = true
+        titleClip.addSubview(titleLabel)
         closeButton.isHidden = true
+        pictureInPictureButton.isHidden = true
         tabButton.cornerRadius = BrowserChromeLayout.sidebarCloseCornerRadius
         tabButton.addSubview(favicon)
         tabButton.onClick = { [weak self] _ in self?.onAction(.backToTab) }
@@ -115,14 +129,16 @@ final class BrowserMiniPlayerNSView: NSView {
             (nextButton, .nextTrack),
             (muteButton, .toggleMute),
             (closeButton, .close),
+            (pictureInPictureButton, .backToPictureInPicture),
         ]
         for (button, action) in actions {
             button.onAction = { [weak self] in self?.onAction(action) }
             button.tooltipPlacement = .aboveCapsule
         }
         for view in [
-            titleLabel,
+            titleClip,
             closeButton,
+            pictureInPictureButton,
             tabButton,
             previousButton,
             playButton,
@@ -141,6 +157,7 @@ final class BrowserMiniPlayerNSView: NSView {
         nextButton.setAccessibilityIdentifier("browser.mini-player.next")
         muteButton.setAccessibilityIdentifier("browser.mini-player.mute")
         closeButton.setAccessibilityIdentifier("browser.mini-player.close")
+        pictureInPictureButton.setAccessibilityIdentifier("browser.mini-player.picture-in-picture")
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
     }
@@ -192,12 +209,15 @@ final class BrowserMiniPlayerNSView: NSView {
         favicon.frame = tabButton.bounds.insetClamped(dx: 4, dy: 4)
         let titleRowY = (BrowserChromeLayout.sidebarMiniPlayerHeight - size) / 2
         closeButton.frame = NSRect(x: bounds.width - inset - size, y: titleRowY, width: size, height: size)
-        titleLabel.frame = NSRect(
+        pictureInPictureButton.frame = closeButton.frame.offsetBy(dx: -size - 2, dy: 0)
+        let titleEnd = item?.isVideo == true ? pictureInPictureButton.frame.minX : closeButton.frame.minX
+        titleClip.frame = NSRect(
             x: inset + 4,
             y: titleRowY + (size - 16) / 2,
-            width: max(closeButton.frame.minX - inset - 8, 0),
+            width: max(titleEnd - inset - 8, 0),
             height: 16,
         )
+        titleLabel.frame = titleClip.bounds
     }
 
     func update(_ item: BrowserMiniPlayerItem) {
@@ -206,6 +226,8 @@ final class BrowserMiniPlayerNSView: NSView {
         setAccessibilityIdentifier("browser.mini-player.\(item.tabID)")
         setAccessibilityLabel(item.title)
         titleLabel.stringValue = item.title
+        titleLabel.toolTip = item.title
+        needsLayout = true
         favicon.update(url: item.faviconURL, pageURLString: item.pageURLString)
         playButton.configureSymbol(
             item.isPlaying ? "pause.fill" : "play.fill",
@@ -223,8 +245,9 @@ final class BrowserMiniPlayerNSView: NSView {
     func setExpanded(_ expanded: Bool) {
         guard expanded != isExpanded else { return }
         isExpanded = expanded
-        titleLabel.isHidden = false
+        titleClip.isHidden = false
         closeButton.isHidden = false
+        pictureInPictureButton.isHidden = item?.isVideo != true
         let from = expansion
         let to: CGFloat = expanded ? 1 : 0
         guard window != nil else {
@@ -249,11 +272,13 @@ final class BrowserMiniPlayerNSView: NSView {
 
     private func applyExpansion(_ value: CGFloat, final: Bool) {
         expansion = value
-        titleLabel.alphaValue = value
+        titleClip.alphaValue = value
         closeButton.alphaValue = value
+        pictureInPictureButton.alphaValue = value
         if final {
-            titleLabel.isHidden = !isExpanded
+            titleClip.isHidden = !isExpanded
             closeButton.isHidden = !isExpanded
+            pictureInPictureButton.isHidden = !isExpanded || item?.isVideo != true
         }
         needsLayout = true
         onExpansionChange()

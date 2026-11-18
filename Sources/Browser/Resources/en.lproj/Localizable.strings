@@ -451,6 +451,7 @@
 "browser.mini_player.play" = "Play";
 "browser.mini_player.pause" = "Pause";
 "browser.mini_player.close" = "Close";
+"browser.mini_player.back_to_picture_in_picture" = "Back to Picture in Picture";
 "browser.tab.move_to_space_action" = "Move to";
 "browser.tab.archive_other_tabs_action" = "Archive Other Tabs";
 "browser.tab.archive_tabs_above_action" = "Archive Tabs Above";

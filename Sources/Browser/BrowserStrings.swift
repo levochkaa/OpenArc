@@ -2898,6 +2898,11 @@ enum BrowserStrings {
         comment: "Mini player button that pauses the media.",
     )
 
+    static let miniPlayerBackToPictureInPicture = NSLocalizedString(
+        "browser.mini_player.back_to_picture_in_picture",
+        comment: "Mini player button that plays the video in the Picture in Picture window again.",
+    )
+
     static let miniPlayerClose = NSLocalizedString(
         "browser.mini_player.close",
         comment: "Mini player button that hides it; the media keeps playing.",
