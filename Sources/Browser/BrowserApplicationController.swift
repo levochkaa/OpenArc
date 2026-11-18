@@ -3965,10 +3965,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
             shortcutStore: shortcutStore,
             bookmarksModel: source?.chromeModel.bookmarksModel ?? bookmarksModel,
             historyStore: historyStore,
-            downloadsModel: BrowserDownloadsModel(history: downloadHistory(
-                forProfileID: profile.id,
-                in: profileDirectoryURL,
-            )),
+            downloadsModel: BrowserDownloadsModel(
+                history: downloadHistory(forProfileID: profile.id, in: profileDirectoryURL),
+                registersWithDock: true,
+            ),
             extensionManager: BrowserChromiumExtensionManager(profileDirectoryURL: profileDirectoryURL),
             extensionSidePanelDriver: BrowserExtensionSidePanelController(profileCachePath: profileDirectoryURL.path),
             extensionActionPopupDriver: BrowserExtensionActionPopupController(profileCachePath: profileDirectoryURL
@@ -4247,11 +4247,14 @@ NSMenuDelegate, NSUserInterfaceValidations {
                 ? BrowserChromiumHistoryStore(profileDirectoryCandidates: profileDirectoryCandidates)
                 : BrowserEmptyHistoryStore(),
             // A blank window lists and keeps the profile's downloads; an incognito one only its own.
-            downloadsModel: BrowserDownloadsModel(history: blank
-                ? sourceProfile.flatMap { profile in
-                    profileDirectoryCandidates.first.map { downloadHistory(forProfileID: profile.id, in: $0) }
-                }
-                : nil),
+            downloadsModel: BrowserDownloadsModel(
+                history: blank
+                    ? sourceProfile.flatMap { profile in
+                        profileDirectoryCandidates.first.map { downloadHistory(forProfileID: profile.id, in: $0) }
+                    }
+                    : nil,
+                registersWithDock: true,
+            ),
             extensionManager: BrowserEmptyExtensionManager(),
             windowMode: blank ? .blank : .incognito,
             commandHandler: { [weak self] commandID, owner in

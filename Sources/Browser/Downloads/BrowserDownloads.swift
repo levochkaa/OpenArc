@@ -160,10 +160,19 @@ struct BrowserDownloadItem: Identifiable, Codable, Equatable {
 
     // MARK: Internal
 
-    @Published private(set) var items = [BrowserDownloadItem]()
+    @Published private(set) var items = [BrowserDownloadItem]() {
+        didSet {
+            if registersWithDock {
+                BrowserDockDownloads.shared.setNeedsUpdate()
+            }
+        }
+    }
 
     /// Stops a running download in the engine; set by the window's model.
     var onCancel: ((String) -> Void)?
+
+    /// Whether this list feeds the Dock icon's badge and progress bar.
+    private let registersWithDock: Bool
 
     private let dateProvider: () -> Date
     private let workspace: NSWorkspace
@@ -182,10 +191,15 @@ struct BrowserDownloadItem: Identifiable, Codable, Equatable {
         dateProvider: @escaping () -> Date = Date.init,
         workspace: NSWorkspace = .shared,
         history: BrowserDownloadHistory? = nil,
+        registersWithDock: Bool = false,
     ) {
         self.dateProvider = dateProvider
         self.workspace = workspace
         self.history = history
+        self.registersWithDock = registersWithDock
+        if registersWithDock {
+            BrowserDockDownloads.shared.register(self)
+        }
         guard let history else { return }
         self.items = history.items
         self.historyObserver = NotificationCenter.default.addObserver(
