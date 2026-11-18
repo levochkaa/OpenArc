@@ -245,8 +245,10 @@ enum BrowserInternalURLNormalizer {
     static let creditsHost = "credits"
     /// Easels: the engine shows an empty page there and the window draws the canvas.
     static let easelHost = "easel"
+    /// Notes open at openarc://notes/<id>; the window draws the note over an empty page.
+    static let notesHost = "notes"
     /// Hosts the app serves itself rather than Chromium's internal pages.
-    static let appServedHosts: Set<String> = [creditsHost, easelHost]
+    static let appServedHosts: Set<String> = [creditsHost, easelHost, notesHost]
 
     static func canonicalURLString(for rawURLString: String) -> String? {
         let trimmedURLString = rawURLString.trimmingCharacters(in: .whitespacesAndNewlines)

@@ -216,6 +216,12 @@ class OpenArcSchemeHandlerFactory
           "<!doctype html><meta charset=\"utf-8\"><meta name=\"color-scheme\" "
           "content=\"light dark\"><title>Easel</title>");
     }
+    // A note's tab too; the window draws the note over it.
+    if (RequestHost(request) == shared::kOpenArcNotesHost) {
+      return new StringResourceHandler(
+          200, "OK", "text/html",
+          "<!doctype html><meta name=\"color-scheme\" content=\"light dark\">");
+    }
     if (RequestHost(request) != shared::kOpenArcCreditsHost) {
       return CreateNotFoundHandler();
     }

@@ -292,10 +292,28 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
                 )
             }
         }
+        migrator.registerMigration("addNotes") { db in
+            // Notes and their images, local only; tabs show them at openarc://notes/<id>.
+            try db.execute(sql: """
+            CREATE TABLE browser_notes (
+                id TEXT PRIMARY KEY NOT NULL,
+                title TEXT NOT NULL,
+                markdown TEXT NOT NULL,
+                created_at DOUBLE NOT NULL,
+                updated_at DOUBLE NOT NULL
+            );
+            CREATE TABLE browser_note_images (
+                id TEXT PRIMARY KEY NOT NULL,
+                note_id TEXT NOT NULL,
+                data BLOB NOT NULL
+            );
+            CREATE INDEX browser_note_images_note_id ON browser_note_images (note_id);
+            """)
+        }
         return migrator
     }
 
-    private let dbQueue: DatabaseQueue
+    let dbQueue: DatabaseQueue
     /// Used only inside `dbQueue` writes, which run one at a time.
     private let syncReplayMemo = BrowserSyncOutboxReplayMemo()
 

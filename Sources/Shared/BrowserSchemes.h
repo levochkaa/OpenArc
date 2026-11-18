@@ -9,6 +9,7 @@ extern const char kOpenArcScheme[];
 extern const char kOpenArcCreditsHost[];
 extern const char kOpenArcEaselHost[];
 extern const char kOpenArcCreditsURL[];
+extern const char kOpenArcNotesHost[];
 extern const char kOpenArcSettingsHost[];
 extern const char kOpenArcSettingsURL[];
 extern const char kOpenArcExtensionsHost[];

@@ -8,6 +8,7 @@ const char kOpenArcScheme[] = "openarc";
 const char kOpenArcCreditsHost[] = "credits";
 const char kOpenArcCreditsURL[] = "openarc://credits/";
 const char kOpenArcEaselHost[] = "easel";
+const char kOpenArcNotesHost[] = "notes";
 const char kOpenArcSettingsHost[] = "settings";
 const char kOpenArcSettingsURL[] = "openarc://settings/";
 const char kOpenArcExtensionsHost[] = "extensions";

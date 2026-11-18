@@ -9,6 +9,9 @@ enum BrowserFaviconFallbackStyle: Equatable {
     // MARK: Internal
 
     static func style(forPageURLString pageURLString: String?) -> Self {
+        if BrowserNoteURL.isNoteURLString(pageURLString) {
+            return .chromiumWebUI
+        }
         guard
             let pageURLString,
             BrowserInternalURLNormalizer.host(for: pageURLString) != nil
@@ -22,6 +25,9 @@ enum BrowserFaviconFallbackStyle: Equatable {
     /// The symbol an internal page shows as its icon, as Chromium draws its own
     /// pages: a clock for History, a gear for Settings. Nil keeps the generic one.
     static func webUISymbol(forPageURLString pageURLString: String?) -> String? {
+        if BrowserNoteURL.isNoteURLString(pageURLString) {
+            return BrowserNoteURL.symbolName
+        }
         guard let pageURLString, let host = BrowserInternalURLNormalizer.host(for: pageURLString) else { return nil }
         return switch host {
         case "history": "clock.arrow.circlepath"

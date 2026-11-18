@@ -2876,7 +2876,8 @@ bool URLHasSchemeAndInternalHost(const CefString &url,
 
   std::string host = LowercaseASCII(URLPartToString(parts.host));
   if (host.empty() || host == shared::kOpenArcCreditsHost ||
-      host == shared::kOpenArcEaselHost) {
+      host == shared::kOpenArcEaselHost ||
+      host == shared::kOpenArcNotesHost) {
     return false;
   }
 
