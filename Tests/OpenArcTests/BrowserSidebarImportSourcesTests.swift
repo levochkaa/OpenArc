@@ -493,6 +493,18 @@ private func writeVane(in home: SidebarHome) throws {
     }
 }
 
+@Test func vaneFolderMacOSKeepsClosedIsUnreadableNotMissing() throws {
+    let home = try SidebarHome()
+    defer { home.cleanup() }
+    try writeVane(in: home)
+    let directory = try #require(BrowserBookmarkImportSource.vane.webKitAppDirectory(in: home.locations))
+    try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: directory.path)
+    defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory.path) }
+    #expect(throws: BrowserImportedSidebar.ImportError.unreadable) {
+        try BrowserImportedSidebar.load(.vane, locations: home.locations)
+    }
+}
+
 @Test func vaneSpacesTakeFoldersFromLayoutsOrPreferencesAndFavoritesFromPreferences() throws {
     let home = try SidebarHome()
     defer { home.cleanup() }

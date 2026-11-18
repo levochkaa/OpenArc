@@ -344,6 +344,13 @@ extension BrowserWebKitAppImport {
     /// where `<sfx>` is empty for the first profile and `-<id>` for others.
     /// Favorites and the folders of pinned rows live in its preferences.
     static func vaneSidebar(directory: URL, fileManager: FileManager = .default) throws -> BrowserImportedSidebar {
+        // macOS keeps other apps' containers from a reader it has not let in:
+        // the folder is there, but listing it fails.
+        guard (try? fileManager.contentsOfDirectory(atPath: directory.path)) != nil else {
+            throw fileManager.fileExists(atPath: directory.path)
+                ? BrowserImportedSidebar.ImportError.unreadable
+                : BrowserImportedSidebar.ImportError.missing
+        }
         let spaceFiles = files(in: directory, prefix: "spaces", suffix: ".json", fileManager: fileManager)
         guard !spaceFiles.isEmpty else { throw BrowserImportedSidebar.ImportError.missing }
         let preferences = vanePreferences(directory: directory, fileManager: fileManager)
