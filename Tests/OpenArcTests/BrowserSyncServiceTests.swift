@@ -149,8 +149,8 @@ import Testing
 @Test @MainActor func ownAcknowledgedEditsAreNotAppliedAgainOverLocalSplitViews() async throws {
     let h = try await SyncServiceHarness()
     defer { h.cleanup() }
-    let tabs = ["left", "right"].map {
-        BrowserTabSessionSnapshotTab(id: $0, urlString: "https://example.com/\($0)", spaceID: "space")
+    let tabs = ["left", "right"].map { (name: String) in
+        BrowserTabSessionSnapshotTab(id: name, urlString: "https://example.com/\(name)", spaceID: "space")
     }
     let space = BrowserSpaceSessionSnapshot(id: "space", title: "Work", systemImageName: "briefcase")
     h.persist(BrowserTabSessionSnapshot(
