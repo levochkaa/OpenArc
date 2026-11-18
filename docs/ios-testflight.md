@@ -42,3 +42,11 @@ Logs, the archive and the export options land in `.build/ios-testflight/<version
 ## Testers
 
 Internal testers are App Store Connect users of the team; each one gets an email invitation and installs builds from the TestFlight app. External testers need a group of their own, the Test Information page filled in (description, feedback email, contact and sign-in details) and Beta App Review of the first build of each version.
+
+## App Store listing
+
+The listing is in App Store Connect, not in the repository: English (U.S.) only, since the app is English only. Primary category Productivity, secondary Utilities. The age rating answers "unrestricted web access", which every browser must. China mainland is left out of availability, since it needs an ICP filing.
+
+Screenshots come from the Debug simulator build on an iPhone 17 Pro Max (6.9-inch, 1320×2868) and an iPad Pro 13-inch (2064×2752), with the status bar set by `xcrun simctl status_bar <device> override --time 9:41 ...` and demo Spaces of public sites. Each sits on the blue field from `DESIGN.md` under a one-line caption. App Store Connect wants PNG or JPEG without an alpha channel.
+
+The App Privacy answers cannot be set through the API. Without an account the app collects nothing. With a sync account it collects, linked to the user and only for app functionality: email address, user ID, browsing history (the addresses and titles of synced tabs), and other user content (Space and folder names).
