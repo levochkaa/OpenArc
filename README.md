@@ -47,7 +47,7 @@ DEVELOPMENT_TEAM=YOURTEAMID ./build.sh build
 
 Accounts and sync are off: `BrowserHostedService.isEnabled` in `Sources/Browser/BrowserSyncPlatformConfiguration.swift` turns them on. To try them, set it to `true` and set `OPENARC_SYNC_BASE_URL` in the environment to a server from `Backend/README.md` running locally.
 
-[docs/releasing.md](docs/releasing.md) covers signing, notarization and updates.
+[docs/releasing.md](docs/releasing.md) covers signing, notarization and updates. [docs/ios-testflight.md](docs/ios-testflight.md) covers iOS builds for TestFlight.
 
 ## Contributing
 

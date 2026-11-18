@@ -1,5 +1,7 @@
 # Releasing
 
+This covers the Mac app. The iOS app ships through TestFlight, see [ios-testflight.md](ios-testflight.md).
+
 Releases are GitHub releases of `levochkaa/OpenArc`, served to the app by the server in `Backend` at `https://api.openarc.su`. The app reads its Sparkle feed from `https://api.openarc.su/appcast.xml`: the newest release that is not a pre-release, or with `?channel=beta`, which the Beta channel in Settings adds, the newest release of any kind. The server reads releases with `GITHUB_RELEASE_TOKEN` and proxies their downloads, so updates work while the repository is private. Publish with `--prerelease` to reach only the Beta channel.
 
 Sparkle compares build numbers, so every release needs a higher `CURRENT_PROJECT_VERSION` in `project.yml` than any earlier release.
