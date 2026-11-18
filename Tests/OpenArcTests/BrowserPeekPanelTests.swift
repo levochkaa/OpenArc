@@ -370,10 +370,12 @@ import Testing
         defer { UserDefaults.standard.set(saved, forKey: key) }
         UserDefaults.standard.removeObject(forKey: key)
         #expect(BrowserDevToolsDockMenu.currentSide == .right, "At the right by default")
-        var notified = 0
+        // The observer's block may run off the main actor, so it counts in a box.
+        final class Count: @unchecked Sendable { var value = 0 }
+        let notified = Count()
         let observer = NotificationCenter.default.addObserver(
             forName: BrowserDevToolsDockSide.didChangeNotification, object: nil, queue: nil,
-        ) { _ in notified += 1 }
+        ) { _ in notified.value += 1 }
         defer { NotificationCenter.default.removeObserver(observer) }
         let menu = BrowserDevToolsDockMenu.menu()
         #expect(menu.items.filter { !$0.isSeparatorItem }.map(\.title) == BrowserDevToolsDockSide.allCases.map(\.title))
@@ -381,6 +383,6 @@ import Testing
         let bottom = try #require(menu.items.first { $0.title == BrowserDevToolsDockSide.bottom.title })
         _ = bottom.target?.perform(bottom.action, with: bottom)
         #expect(BrowserDevToolsDockMenu.currentSide == .bottom)
-        #expect(notified == 1)
+        #expect(notified.value == 1)
     }
 }

@@ -48,7 +48,8 @@ import Testing
             #expect(!view.overflowItems.isEmpty)
             #expect(try #require(scroll.documentView).frame.width <= scroll.frame.width)
             let hidden = view.overflowItems.compactMap { view.buttons[$0.id] }
-            try #expect(hidden.allSatisfy(\.isHidden))
+            let allHidden = hidden.allSatisfy(\.isHidden)
+            #expect(allHidden)
         }
     }
 

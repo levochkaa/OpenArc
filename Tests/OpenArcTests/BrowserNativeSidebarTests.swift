@@ -33,9 +33,11 @@ import Testing
     /// Typing in the command bar redraws only the bar; the window follows the bar opening
     /// and closing.
     @Test func aKeyedRefreshRunsOnlyWhenItsKeyChanges() {
-        var isPresented = false
+        // The key closure is Sendable, so the flag it reads lives in a box.
+        final class Flag: @unchecked Sendable { var value = false }
+        let isPresented = Flag()
         var refreshes = 0
-        let refresh = BrowserCoalescedRefresh(key: { isPresented }) { refreshes += 1 }
+        let refresh = BrowserCoalescedRefresh(key: { isPresented.value }) { refreshes += 1 }
         let changes = PassthroughSubject<Void, Never>()
         refresh.observe([changes.eraseToAnyPublisher()])
         changes.send()
@@ -44,7 +46,7 @@ import Testing
         changes.send()
         RunLoop.main.run(until: Date().addingTimeInterval(0.05))
         #expect(refreshes == 1, "Same key, nothing to redraw")
-        isPresented = true
+        isPresented.value = true
         changes.send()
         RunLoop.main.run(until: Date().addingTimeInterval(0.05))
         #expect(refreshes == 2)
