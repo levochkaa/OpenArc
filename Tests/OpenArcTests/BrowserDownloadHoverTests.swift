@@ -39,7 +39,8 @@ import Testing
         }
         typealias Flight = BrowserDownloadFlightView
         #expect(Flight.outcome(of: item(.inProgress, path: "/tmp/a.zip")) == .running)
-        #expect(Flight.outcome(of: item(.completed, path: "/tmp/a.zip")) == .completed(URL(fileURLWithPath: "/tmp/a.zip")))
+        #expect(Flight
+            .outcome(of: item(.completed, path: "/tmp/a.zip")) == .completed(URL(fileURLWithPath: "/tmp/a.zip")))
         #expect(Flight.outcome(of: item(.completed, path: nil)) == .ended)
         #expect(Flight.outcome(of: item(.canceled, path: "/tmp/a.zip")) == .ended)
         #expect(Flight.outcome(of: item(.interrupted, path: "/tmp/a.zip")) == .ended)
@@ -74,6 +75,23 @@ import Testing
         #expect(row.tooltipTitle == "photo.png", "Hover shows the file's full name")
     }
 
+    @Test func thePointerCrossesFromTheButtonToTheTrayWithoutClosingIt() {
+        // Flipped, as in the sidebar: the tray ends where the footer starts, the button sits 6 pt lower.
+        let tray = NSRect(x: 0, y: 400, width: 240, height: 112)
+        let button = NSRect(x: 12, y: 518, width: 30, height: 30)
+        typealias Tray = BrowserDownloadsTrayView
+        #expect(
+            Tray.keepsOpen(at: NSPoint(x: 20, y: 515), tray: tray, button: button),
+            "Between the button and the tray",
+        )
+        #expect(Tray.keepsOpen(at: NSPoint(x: 120, y: 514), tray: tray, button: button), "A diagonal past the button")
+        #expect(Tray.keepsOpen(at: NSPoint(x: 120, y: 450), tray: tray, button: button))
+        #expect(Tray.keepsOpen(at: NSPoint(x: 25, y: 530), tray: tray, button: button))
+        #expect(!Tray.keepsOpen(at: NSPoint(x: 120, y: 530), tray: tray, button: button), "Elsewhere in the footer")
+        #expect(!Tray.keepsOpen(at: NSPoint(x: 120, y: 380), tray: tray, button: button))
+        #expect(!Tray.keepsOpen(at: NSPoint(x: 300, y: 450), tray: tray, button: button))
+    }
+
     @Test func trayRowsAreKeptWhenTheListShiftsUnderThem() throws {
         let folder = try temporaryFolder()
         defer { try? FileManager.default.removeItem(at: folder) }
@@ -100,7 +118,8 @@ import Testing
         #expect(archive.copyTitle == BrowserStrings.downloadsCopyFile)
         #expect(picture.openTitle == BrowserStrings.downloadsOpenImage)
         #expect(archive.openTitle == BrowserStrings.downloadsOpen)
-        #expect(BrowserDownloadFile.openInTitle(applicationName: "Preview") == BrowserStrings.downloadsOpenIn("Preview"))
+        #expect(BrowserDownloadFile.openInTitle(applicationName: "Preview") == BrowserStrings
+            .downloadsOpenIn("Preview"))
         #expect(BrowserDownloadFile.openInTitle(applicationName: nil) == BrowserStrings.downloadsOpen)
         typealias Menu = BrowserDownloadFileMenu
         #expect(Menu.items(
@@ -210,12 +229,12 @@ import Testing
         let download = row(isDownload: true)
         #expect(!download.isMoreButtonShown)
         #expect(download.tooltipTitle == "archive.zip")
-        download.mouseEntered(with: try enterExit(.mouseEntered))
+        try download.mouseEntered(with: enterExit(.mouseEntered))
         #expect(download.isMoreButtonShown)
-        download.mouseExited(with: try enterExit(.mouseExited))
+        try download.mouseExited(with: enterExit(.mouseExited))
         #expect(!download.isMoreButtonShown)
         let archived = row(isDownload: false)
-        archived.mouseEntered(with: try enterExit(.mouseEntered))
+        try archived.mouseEntered(with: enterExit(.mouseEntered))
         #expect(!archived.isMoreButtonShown, "Archived tabs keep their plain rows")
     }
 
@@ -239,7 +258,8 @@ import Testing
     // MARK: Private
 
     private func temporaryFolder() throws -> URL {
-        let url = FileManager.default.temporaryDirectory
+        let url = FileManager.default
+            .temporaryDirectory
             .appendingPathComponent("openarc-download-hover-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url

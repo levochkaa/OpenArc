@@ -2207,7 +2207,7 @@ final class BrowserNativeSidebarNSView: NSView {
         let button = (footer as? BrowserSidebarLibraryButtonHosting & NSView).map {
             content.convert($0.libraryButtonFrame, from: $0)
         } ?? .zero
-        guard !downloadsTray.frame.contains(point), !button.contains(point) else {
+        guard !BrowserDownloadsTrayView.keepsOpen(at: point, tray: downloadsTray.frame, button: button) else {
             // Progress moves, and a finished download turns into its file.
             downloadsTray.refresh(downloadsTrayEntries())
             placeDownloadsTray()
@@ -3012,6 +3012,14 @@ final class BrowserDownloadsTrayView: NSView {
         onHoverChanged()
     }
 
+    /// Whether the pointer still holds the tray open: over it, over the Library button,
+    /// or in the strip between them that it crosses on its way up.
+    static func keepsOpen(at point: NSPoint, tray: NSRect, button: NSRect) -> Bool {
+        let top = min(tray.maxY, button.maxY), bottom = max(tray.minY, button.minY)
+        let gap = NSRect(x: tray.minX, y: min(top, bottom), width: tray.width, height: abs(bottom - top))
+        return tray.contains(point) || button.contains(point) || gap.contains(point)
+    }
+
     /// Files and canceled downloads by date, then the running downloads, newest last.
     /// A running download's file is already on disk; it shows once, with its progress.
     static func merged(files: [Entry], canceled: [Entry], running: [Entry]) -> [Entry] {
@@ -3218,6 +3226,7 @@ final class BrowserDownloadsTrayRow: BrowserNativePressableView {
 /// their QuickLook thumbnail or their icon.
 final class BrowserDownloadThumbnailView: NSView {
     private(set) var url: URL?
+
     private let content = CALayer()
 
     override init(frame: NSRect) {
