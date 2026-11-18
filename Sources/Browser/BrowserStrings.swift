@@ -1099,6 +1099,10 @@ enum BrowserStrings {
         "browser.undo.move_action",
         comment: "Undo menu action name for moving sidebar rows or Spaces.",
     )
+    static let undoCopyAction = NSLocalizedString(
+        "browser.undo.copy_action",
+        comment: "Undo menu action name for copying sidebar rows with an Option-drag.",
+    )
     static let undoRenameAction = NSLocalizedString(
         "browser.undo.rename_action",
         comment: "Undo menu action name for renaming a tab, folder, Space or Split View.",

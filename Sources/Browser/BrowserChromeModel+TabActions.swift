@@ -256,20 +256,38 @@ extension BrowserChromeModel {
         toTopOfSpace spaceID: String,
     ) -> Bool {
         withArrangementUndo(BrowserStrings.undoMoveAction) {
-            guard supportsSpaces, spaces.contains(where: { $0.id == spaceID }) else { return false }
-            let container: BrowserSidebarDropContainer
-            switch payload.primary {
-            case .tab(let id):
-                guard let tab = tabs.first(where: { $0.id == id }), tab.placement != .app, tab.spaceID != spaceID
-                else { return false }
-                container = tab.placement == .spacePinned ? .pinned(spaceID) : .temporary(spaceID)
-            case .folder(let id):
-                guard let folder = pinnedTabFolders.first(where: { $0.id == id }), folder.spaceID != spaceID
-                else { return false }
-                container = .pinned(spaceID)
-            }
-            let first = BrowserSidebarTabTree(snapshot: sidebarSnapshot).items(in: container).first
-            return commitSidebarDrop(payload: payload, destination: .init(container: container, beforeItem: first))
+            guard let destination = topOfSpaceDestination(for: payload, spaceID: spaceID),
+                  destination.container.spaceID != spaceOfSidebarItem(payload.primary)
+            else { return false }
+            return commitSidebarDrop(payload: payload, destination: destination)
+        }
+    }
+
+    /// The top of the section the dragged items keep in a Space: pinned rows
+    /// and folders among the pinned rows, temporary tabs in Today. Favorites
+    /// belong to no Space.
+    func topOfSpaceDestination(
+        for payload: BrowserSidebarDragPayload,
+        spaceID: String,
+    ) -> BrowserSidebarDropDestination? {
+        guard supportsSpaces, spaces.contains(where: { $0.id == spaceID }) else { return nil }
+        let container: BrowserSidebarDropContainer
+        switch payload.primary {
+        case .tab(let id):
+            guard let tab = tabs.first(where: { $0.id == id }), tab.placement != .app else { return nil }
+            container = tab.placement == .spacePinned ? .pinned(spaceID) : .temporary(spaceID)
+        case .folder(let id):
+            guard pinnedTabFolders.contains(where: { $0.id == id }) else { return nil }
+            container = .pinned(spaceID)
+        }
+        let first = BrowserSidebarTabTree(snapshot: sidebarSnapshot).items(in: container).first
+        return .init(container: container, beforeItem: first)
+    }
+
+    private func spaceOfSidebarItem(_ item: BrowserSidebarItemID) -> String? {
+        switch item {
+        case .tab(let id): tabs.first { $0.id == id }?.spaceID
+        case .folder(let id): pinnedTabFolders.first { $0.id == id }?.spaceID
         }
     }
 

@@ -31,6 +31,8 @@ final class BrowserNativeSidebarNSView: NSView {
     var footerHeightProvider: ((CGFloat) -> CGFloat)?
     /// The Space a swipe is moving toward and how far, nil when no swipe is on.
     var onSpacePagerProgress: (String?, CGFloat) -> Void = { _, _ in }
+    /// Option held at the drop copies the dragged items instead of moving them.
+    var isCopyModifierHeld: () -> Bool = { NSEvent.modifierFlags.contains(.option) }
     /// The footer's Space icons, which accept dragged tabs.
     weak var spaceDock: BrowserSpaceDockNSView?
 
@@ -65,6 +67,7 @@ final class BrowserNativeSidebarNSView: NSView {
     private let dragIndicator = BrowserSidebarInsertionIndicator()
     private let dragPreview = BrowserNativeSidebarDragPreview()
     private let dragEvents = BrowserSidebarDragEventSession()
+    private var showsCopyCursor = false
 
     private let landingAnimation = BrowserNativeAnimation()
     private var dragPreviewTargetSize: CGSize?
@@ -231,7 +234,10 @@ final class BrowserNativeSidebarNSView: NSView {
         dragEvents.onMove = { [weak self] point in self?.updateDrag(atWindowPoint: point) }
         dragEvents.onRelease = { [weak self] point in self?.finishDragging(atWindowPoint: point) }
         dragEvents.onCancel = { [weak self] in self?.cancelDragging() }
-        dragEvents.onTick = { [weak self] elapsed in self?.autoscrollDrag(elapsed: elapsed) }
+        dragEvents.onTick = { [weak self] elapsed in
+            self?.autoscrollDrag(elapsed: elapsed)
+            self?.updateCopyCursor()
+        }
 
         scrollObserver.onScrollDelta = { [weak self] delta in
             guard let self else { return }
@@ -1790,7 +1796,7 @@ final class BrowserNativeSidebarNSView: NSView {
         dragEvents.stop()
         guard let payload = state.drag.payload else { return }
         let from = dragPreview.frame
-        state.drag.release(at: point, cancel: cancelled)
+        state.drag.release(at: point, cancel: cancelled, copy: !cancelled && isCopyModifierHeld())
         state.update(
             snapshot: state.model.sidebarSnapshot,
             sidebarWidth: state.sidebarWidth,
@@ -1802,9 +1808,10 @@ final class BrowserNativeSidebarNSView: NSView {
             snapshot: state.snapshot,
             appTile: state.snapshot.appTabs.contains { .tab($0.id) == payload.primary },
         )
-        ensureDestinationVisible(payload.primary)
-        let target = restingFrame(for: payload.primary)
-        let exact = isItemRendered(payload.primary)
+        let landing = state.drag.landingItem ?? payload.primary
+        ensureDestinationVisible(landing)
+        let target = restingFrame(for: landing)
+        let exact = isItemRendered(landing)
         let to = target ?? from
         dragPreview.onBeginDragSession = { [weak self] value in
             guard let self else { return false }
@@ -1884,7 +1891,20 @@ final class BrowserNativeSidebarNSView: NSView {
         page.scroll.reflectScrolledClipView(clip)
     }
 
+    /// The pointer carries the system's copy badge while Option would copy the drop.
+    private func updateCopyCursor() {
+        let copies = state.drag.isDragging && isCopyModifierHeld()
+            && (state.drag.proposal != nil || state.drag.dockSpaceID != nil)
+        guard copies != showsCopyCursor else { return }
+        showsCopyCursor = copies
+        (copies ? NSCursor.dragCopy : NSCursor.arrow).set()
+    }
+
     private func completeDragPresentation() {
+        if showsCopyCursor {
+            showsCopyCursor = false
+            NSCursor.arrow.set()
+        }
         tabSelectedBeforeDrag = nil
         draggedPageThumbnail = nil
         draggedPageThumbnailTabID = nil

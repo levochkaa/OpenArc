@@ -57,6 +57,8 @@ import AppKit
     /// The Space whose dock icon is under the pointer. A drop there moves the
     /// items to the top of their section in that Space.
     private(set) var dockSpaceID: String?
+    /// The copies an Option-drop made; the preview lands on them, not on the originals.
+    private(set) var copied: BrowserSidebarDragPayload?
     /// Finds the page drop for a window point and the dragged tab and shows its
     /// preview; a nil point clears the preview. Set by the window root.
     var pageSplitDropResolver: ((CGPoint?, String) -> PageSplitDropTarget?)?
@@ -83,10 +85,12 @@ import AppKit
     private var edgeDirection: Int?
     private var edgeSpringWork: DispatchWorkItem?
 
+    var landingItem: BrowserSidebarItemID? { copied?.primary ?? payload?.primary }
+
     var isDragging: Bool { phase == .dragging }
-    var hiddenTabIDs: Set<String> { payload?.tabIDs ?? [] }
+    var hiddenTabIDs: Set<String> { (copied ?? payload)?.tabIDs ?? [] }
     var hiddenFolderID: String? {
-        if case .folder(let id) = payload?.primary {
+        if case .folder(let id) = (copied ?? payload)?.primary {
             id
         } else {
             nil
@@ -250,13 +254,21 @@ import AppKit
         onPresentationChange()
     }
 
-    @discardableResult func release(at pointer: CGPoint, cancel: Bool = false) -> Bool {
+    /// Releases the drag. With `copy` (Option held), copies of the items land
+    /// at the drop and the originals stay; `landingItem` names the copy.
+    @discardableResult func release(at pointer: CGPoint, cancel: Bool = false, copy: Bool = false) -> Bool {
         guard isDragging, let payload else { return false }
         if !cancel {
             updatePointer(pointer)
         }
+        copied = nil
+        let copyDestination = copy && !cancel
+            ? dockSpaceID.flatMap { model.topOfSpaceDestination(for: payload, spaceID: $0) } ?? proposal?.destination
+            : nil
         let committed: Bool =
-            if !cancel, let dockSpaceID {
+            if let copyDestination {
+                copyItems(payload, to: copyDestination)
+            } else if !cancel, let dockSpaceID {
                 model.moveSidebarItems(payload, toTopOfSpace: dockSpaceID)
             } else if !cancel, let target = splitTarget, case .tab(let id) = payload.primary {
                 model.openInSplitView(
@@ -295,6 +307,7 @@ import AppKit
     }
 
     func complete() {
+        copied = nil
         resetSplitDrop()
         resetDockTarget()
         clearPageDrop()
@@ -309,6 +322,16 @@ import AppKit
         plans.removeAll()
         validity.removeAll()
         onPresentationChange()
+    }
+
+    private func copyItems(
+        _ payload: BrowserSidebarDragPayload,
+        to destination: BrowserSidebarDropDestination,
+    ) -> Bool {
+        onWillCommitDrop()
+        copied = model.copySidebarItems(payload, to: destination)
+        refreshSourceMetadata()
+        return copied != nil
     }
 
     private func clearPageDrop() {
@@ -388,7 +411,7 @@ import AppKit
     }
 
     private func refreshSourceMetadata() {
-        guard let payload else { sourceContainer = nil
+        guard let payload = copied ?? payload else { sourceContainer = nil
             hiddenFolders = []
             return
         }

@@ -578,6 +578,73 @@ import Testing
         #expect(f.model.temporaryTabs.map(\.urlString)
             == ["https://x.example", "https://one.example", "https://two.example", "https://y.example"])
     }
+
+    @Test func anOptionDropCopiesTheTabAndKeepsTheOriginal() async throws {
+        let f = SidebarDragFixture()
+        let h = SidebarDragHarness(f)
+        defer { h.close() }
+        h.view.isCopyModifierHeld = { true }
+        try h.begin("x")
+        let geometry = try #require(h.state.drag.geometry)
+        let destination = BrowserSidebarDropDestination(container: .pinned("s"), beforeItem: f.item("b"))
+        let slot = try #require(geometry.slots.first { $0.proposal.destination == destination })
+        h.move(slot.hitFrame.center)
+        h.release(slot.hitFrame.center)
+        #expect(f.model.spacePinnedTabs.map(\.urlString) == [
+            "https://a.example",
+            "https://x.example",
+            "https://b.example",
+        ])
+        #expect(f.names(f.model.temporaryTabs) == ["x", "y"], "The original stays where it was")
+        let copy = try #require(f.model.spacePinnedTabs.first { $0.urlString == "https://x.example" })
+        #expect(f.model.selectedTabID == copy.id, "The copy of the tab on screen is shown")
+        #expect(h.state.drag.landingItem == .tab(copy.id))
+        #expect(try #require(h.row(f.item("x"))).dragOpacity == 1, "The original shows while the copy lands")
+        try await Task.sleep(for: .milliseconds(500))
+        #expect(h.state.drag.phase == .idle)
+        #expect(try #require(h.row(.tab(copy.id))).dragOpacity == 1)
+    }
+
+    @Test func anOptionDropOnASpaceIconCopiesToTheTopOfThatSpace() throws {
+        let f = SidebarDragFixture()
+        #expect(f.model.topOfSpaceDestination(for: f.payload("y"), spaceID: "t")
+            == .init(container: .temporary("t"), beforeItem: nil))
+        let other = try #require(f.model.topOfSpaceDestination(for: f.payload("x", "y"), spaceID: "t"))
+        let copied = try #require(f.model.copySidebarItems(f.payload("x", "y"), to: other))
+        #expect(copied.tabIDs.count == 2)
+        #expect(f.names(f.model.temporaryTabs.filter { $0.spaceID == "s" }) == ["x", "y"])
+        #expect(f.model.tabs.filter { $0.spaceID == "t" }.map(\.urlString) == [
+            "https://x.example",
+            "https://y.example",
+        ])
+        // A plain drop on the icon of the Space the tab is in changes nothing; a copy may land there.
+        #expect(!f.model.moveSidebarItems(f.payload("x"), toTopOfSpace: "s"))
+        let own = try #require(f.model.topOfSpaceDestination(for: f.payload("y"), spaceID: "s"))
+        #expect(f.model.copySidebarItems(f.payload("y"), to: own) != nil)
+        #expect(f.model.temporaryTabs.filter { $0.spaceID == "s" }.map(\.urlString)
+            == ["https://y.example", "https://x.example", "https://y.example"])
+    }
+
+    @Test func anOptionDropCopiesAFolderWithItsTabs() throws {
+        let f = SidebarDragFixture(
+            pinned: [("a", "f"), ("b", nil)],
+            folders: [.init(id: "f", spaceID: "s", title: "Folder")],
+        )
+        let copied = try #require(f.model.copySidebarItems(
+            f.folderPayload("f"),
+            to: .init(container: .pinned("s"), beforeItem: nil),
+        ))
+        guard case .folder(let copyID) = copied.primary else {
+            Issue.record("Expected a folder")
+            return
+        }
+        #expect(copyID != "f")
+        #expect(f.model.pinnedTabFolders.map(\.id).contains("f"))
+        let tree = BrowserSidebarTabTree(snapshot: f.model.sidebarSnapshot)
+        #expect(tree.items(in: .pinned("s")).last == .folder(copyID))
+        #expect(tree.tabIDs(in: .pinned("s", folderID: copyID)).count == 1)
+        #expect(f.model.copySidebarItems(f.folderPayload("f"), to: .init(container: .temporary("s"))) == nil)
+    }
 }
 
 // MARK: - SidebarDragHarness

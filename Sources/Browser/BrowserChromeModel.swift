@@ -1587,6 +1587,53 @@ enum BrowserWindowMode: Equatable {
         return true
     }
 
+    /// Option-drop: copies of the dragged tabs or folder land at the drop and the
+    /// originals stay. A copied tab opens its page anew in the background; a copied
+    /// folder brings its tabs unloaded, as Duplicate does. Returns the copies.
+    @discardableResult func copySidebarItems(
+        _ payload: BrowserSidebarDragPayload,
+        to destination: BrowserSidebarDropDestination,
+    ) -> BrowserSidebarDragPayload? {
+        switch payload.primary {
+        case .tab:
+            guard canCreateTab else { return nil }
+            let ordered = sidebarSnapshot.allTabs.filter { payload.tabIDs.contains($0.id) }
+            let pairs = ordered.compactMap { tab -> (original: String, copy: String)? in
+                guard URL(string: tab.urlString) != nil,
+                      let copy = createTab(
+                          withURLString: tab.urlString,
+                          undoActionName: BrowserStrings.undoCopyAction,
+                          makeActive: false,
+                      )
+                else { return nil }
+                return (tab.id, copy)
+            }
+            guard let first = pairs.first?.copy else { return nil }
+            // The copies stay at the end of Today if their place went away during the drag.
+            let copied = BrowserSidebarDragPayload(primary: .tab(first), tabIDs: Set(pairs.map(\.copy)))
+            _ = withArrangementUndo(BrowserStrings.undoCopyAction) {
+                commitSidebarDrop(payload: copied, destination: destination)
+            }
+            // The copy of the tab on screen takes its place on screen.
+            if let shown = pairs.first(where: { $0.original == selectedTabID })?.copy {
+                selectTab(id: shown)
+            }
+            return copied
+        case .folder(let id):
+            guard destination.container.section == .spacePinned,
+                  let copyID = withArrangementUndo(BrowserStrings.undoCopyAction, { duplicateFolder(id: id) })
+            else { return nil }
+            let tree = BrowserSidebarTabTree(snapshot: sidebarSnapshot)
+            let folder = pinnedTabFolders.first { $0.id == copyID }
+            let tabIDs = folder.map { Set(tree.tabIDs(in: .pinned($0.spaceID, folderID: copyID))) } ?? []
+            let copied = BrowserSidebarDragPayload(primary: .folder(copyID), tabIDs: tabIDs)
+            _ = withArrangementUndo(BrowserStrings.undoCopyAction) {
+                commitSidebarDrop(payload: copied, destination: destination)
+            }
+            return copied
+        }
+    }
+
     /// Link route: shows the Space and opens the link as its tab.
     /// False when the Space is gone, so the link can open as usual.
     @discardableResult func openURL(_ url: URL, inSpaceWithID spaceID: String) -> Bool {
