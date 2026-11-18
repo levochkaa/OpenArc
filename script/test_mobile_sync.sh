@@ -60,7 +60,7 @@ cleanup() {
     cat "$fixture_log" >&2 2>/dev/null || true
     if [[ -n "$container_id" ]]; then docker logs --tail 40 "$container_id" >&2 || true; fi
   fi
-  if [[ -n "$container_id" ]]; then docker rm --force "$container_id" >/dev/null || true; fi
+  if [[ -n "$container_id" ]]; then docker rm --force --volumes "$container_id" >/dev/null || true; fi
   rm -rf "$fixture_directory"
   exit "$status"
 }
@@ -68,9 +68,11 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-# This disposable database has no persistent volume and only a loopback port.
+# The data directory is a tmpfs, so the disposable database leaves no volume
+# behind. Only a loopback port is published.
 container_id="$(docker run --detach --rm --name "$container_name" \
   --label openarc.sync-test=true --publish 127.0.0.1::5432 \
+  --tmpfs /var/lib/postgresql/data:rw \
   --env "POSTGRES_DB=$database_name" --env POSTGRES_USER=sync_test \
   --env POSTGRES_PASSWORD=disposable-local-test-password postgres:17)"
 ready=false

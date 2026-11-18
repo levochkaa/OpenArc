@@ -30,7 +30,7 @@ cleanup() {
     if [[ "$status" != 0 ]]; then
       docker logs --tail 40 "$container_id" >&2 || true
     fi
-    docker rm --force "$container_id" >/dev/null || true
+    docker rm --force --volumes "$container_id" >/dev/null || true
   fi
   exit "$status"
 }
@@ -38,10 +38,12 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-# This container has no persistent volume and cannot reach an existing database.
+# This container keeps its data on a tmpfs, so it leaves no volume behind,
+# and cannot reach an existing database.
 container_id="$(docker run --detach --rm --name "$container_name" \
   --label openarc.sync-test=true \
   --publish 127.0.0.1::5432 \
+  --tmpfs /var/lib/postgresql/data:rw \
   --env "POSTGRES_DB=$database_name" \
   --env POSTGRES_USER=sync_test \
   --env POSTGRES_PASSWORD=disposable-local-test-password \
