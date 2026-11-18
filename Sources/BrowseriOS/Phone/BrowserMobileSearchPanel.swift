@@ -3,7 +3,8 @@
 import UIKit
 
 /// The search sheet that grows out of the bar for New Tab: a field over a
-/// dark glass panel, with suggestions under it.
+/// dark glass panel, with suggestions under it. The field starts as the
+/// bar's New Tab capsule and widens once the panel is up.
 final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDataSource, UITableViewDelegate {
     // MARK: Private
 
@@ -93,7 +94,13 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
     var onSubmit: ((String) -> Void)?
     var onSelect: ((BrowserMobileSearchSuggestions.Item) -> Void)?
 
+    /// Whether the field is full width, or still the bar's New Tab capsule.
+    private(set) var isFieldExpanded = true
+
     private let fieldBackground = UIView()
+    private let plusGlyph = UIImageView(image: UIImage(
+        systemName: "plus", withConfiguration: UIImage.SymbolConfiguration(pointSize: 20, weight: .semibold),
+    ))
     private let table = UITableView(frame: .zero, style: .plain)
     private var suggestions = BrowserMobileSearchSuggestions(query: "", candidates: [])
     private var isDeleting = false
@@ -129,6 +136,10 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
         field.delegate = self
         field.addTarget(self, action: #selector(textChanged), for: .editingChanged)
         fieldBackground.addSubview(field)
+        plusGlyph.tintColor = .white
+        plusGlyph.contentMode = .center
+        plusGlyph.alpha = 0
+        fieldBackground.addSubview(plusGlyph)
         table.backgroundColor = .clear
         table.separatorStyle = .none
         table.rowHeight = Self.rowHeight
@@ -145,20 +156,72 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        fieldBackground.frame = CGRect(
+        let full = CGRect(
             x: Self.margin, y: Self.fieldTop, width: bounds.width - Self.margin * 2, height: Self.fieldHeight,
         )
-        field.frame = fieldBackground.bounds.insetBy(dx: 18, dy: 0)
-        let tableTop = Self.fieldTop + Self.fieldHeight + 6
+        let capsule = CGRect(
+            x: (bounds.width - BrowserMobilePhoneBarView.plusWidth) / 2, y: BrowserMobilePhoneBarView.controlTopInset,
+            width: BrowserMobilePhoneBarView.plusWidth, height: BrowserMobilePhoneBarView.controlHeight,
+        )
+        let frame = isFieldExpanded ? full : capsule
+        fieldBackground.frame = frame
+        fieldBackground.layer.cornerRadius = frame.height / 2
+        // The text keeps its full width, so it does not reflow while the
+        // capsule widens; the capsule clips it.
+        field.frame = CGRect(x: 18, y: 0, width: full.width - 36, height: frame.height)
+        let glyphSide = BrowserMobilePhoneBarView.controlHeight
+        plusGlyph.frame = CGRect(
+            x: isFieldExpanded ? 4 : (frame.width - glyphSide) / 2, y: (frame.height - glyphSide) / 2,
+            width: glyphSide, height: glyphSide,
+        )
+        let tableTop = frame.maxY + 6
         table.frame = CGRect(x: 0, y: tableTop, width: bounds.width, height: max(bounds.height - tableTop, 0))
     }
 
-    func begin(text: String) {
+    /// Lays the field out as the full-width field or as the New Tab capsule;
+    /// call it inside an animation to morph between them.
+    func setFieldExpanded(_ expanded: Bool) {
+        isFieldExpanded = expanded
+        fieldBackground.clipsToBounds = true
+        setNeedsLayout()
+        layoutIfNeeded()
+        // The plus fades as the capsule starts to widen and the placeholder
+        // comes in after it, so the two do not overlap.
+        let inAnimation = UIView.inheritedAnimationDuration > 0
+        guard inAnimation else {
+            field.alpha = expanded ? 1 : 0
+            plusGlyph.alpha = expanded ? 0 : 1
+            return
+        }
+        UIView.animate(withDuration: expanded ? 0.12 : 0.2, delay: expanded ? 0 : 0.08, options: [
+            .beginFromCurrentState, .overrideInheritedDuration, .overrideInheritedCurve,
+        ]) {
+            self.plusGlyph.alpha = expanded ? 0 : 1
+        }
+        UIView.animate(withDuration: expanded ? 0.2 : 0.1, delay: expanded ? 0.08 : 0, options: [
+            .beginFromCurrentState, .overrideInheritedDuration, .overrideInheritedCurve,
+        ]) {
+            self.field.alpha = expanded ? 1 : 0
+        }
+    }
+
+    /// Whether a downward drag at `point` should move the panel rather than
+    /// scroll the suggestions.
+    func dragMovesPanel(at point: CGPoint, downward: Bool) -> Bool {
+        guard table.frame.contains(point) else { return true }
+        return downward && table.contentOffset.y <= -table.adjustedContentInset.top + 1
+    }
+
+    /// Fills the field and the suggestions without focusing it.
+    func prepare(text: String) {
         field.text = text
         lastTypedLength = text.count
         refresh(complete: false)
+    }
+
+    func focus() {
         field.becomeFirstResponder()
-        if !text.isEmpty {
+        if field.text?.isEmpty == false {
             DispatchQueue.main.async { [weak self] in self?.field.selectAll(nil) }
         }
     }

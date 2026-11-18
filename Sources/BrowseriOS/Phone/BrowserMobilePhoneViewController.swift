@@ -94,6 +94,10 @@ final class BrowserMobilePhoneViewController: UIViewController {
     private var surface: UIView?
     private var surfaceTint: UIView?
     private var dismissCatcher: UIView?
+    /// Drags the open search panel down to close it.
+    private weak var surfacePan: UIPanGestureRecognizer?
+    private var surfaceGhosts = [UIView]()
+    private var surfaceDragStartTop: CGFloat = 0
     private lazy var pagePanel = BrowserMobilePagePanel()
     private lazy var searchPanel = BrowserMobileSearchPanel()
     private var searchReplacesPage = false
@@ -157,6 +161,8 @@ final class BrowserMobilePhoneViewController: UIViewController {
             for: .touchUpInside,
         )
         bar.moreButton.addAction(UIAction { [weak self] _ in self?.openPageMenu() }, for: .touchUpInside)
+        bar.spacesButton.addAction(UIAction { [weak self] _ in self?.showSpaces() }, for: .touchUpInside)
+        bar.settingsButton.addAction(UIAction { [weak self] _ in self?.showSettings() }, for: .touchUpInside)
         bar.expandRecognizer.addTarget(self, action: #selector(expandBar))
         configureBarSwipe()
         NotificationCenter.default.addObserver(
@@ -277,6 +283,8 @@ final class BrowserMobilePhoneViewController: UIViewController {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
             guard let self else { return }
             isBackdropSampleScheduled = false
+            // Over the switcher the bar stays dark.
+            guard mode != .switcher else { return }
             guard let id = workspace.selectedTabID, !contentView.isHidden else {
                 setBackdropDark(false)
                 return
@@ -506,8 +514,29 @@ final class BrowserMobilePhoneViewController: UIViewController {
 
     /// Grows a panel out of the bar: a surface takes the bar's frame and color,
     /// then springs up to `height` while the bar's controls fade.
-    private func openSurface(height: CGFloat, dark: Bool, content: UIView) {
-        guard surface == nil else { return }
+    /// The page menu grows out of the bar, its address row widening out of
+    /// the New Tab capsule.
+    private func openPagePanel(height: CGFloat) {
+        guard let surface = makeSurface(height: height, dark: false, content: pagePanel, revealsContent: true)
+        else { return }
+        pagePanel.setAddressExpanded(false)
+        addSurfacePan(to: surface)
+        let target = CGRect(x: 0, y: view.bounds.height - height, width: view.bounds.width, height: height)
+        UIView.animate(springDuration: 0.42, bounce: 0.12, initialSpringVelocity: 0, delay: 0, options: [
+            .allowUserInteraction, .beginFromCurrentState,
+        ]) {
+            surface.frame = target
+            surface.layer.cornerRadius = 36
+            self.surfaceTint?.alpha = 0
+            self.pagePanel.setAddressExpanded(true)
+        }
+    }
+
+    /// Puts a surface over the bar with the bar's frame and color, holding
+    /// `content` laid out at `height`. Content that shows from the start
+    /// (`revealsContent`) is not faded in.
+    private func makeSurface(height: CGFloat, dark: Bool, content: UIView, revealsContent: Bool) -> UIView? {
+        guard surface == nil else { return nil }
         setBarCollapsed(false, animated: false)
         layoutBar()
         let catcher = UIControl(frame: view.bounds)
@@ -547,26 +576,35 @@ final class BrowserMobilePhoneViewController: UIViewController {
         surface.clipsToBounds = true
         content.frame = CGRect(x: 0, y: 0, width: view.bounds.width, height: height)
         content.autoresizingMask = [.flexibleWidth]
-        content.alpha = 0
+        content.alpha = revealsContent ? 1 : 0
         container.addSubview(content)
+        // The tab stack and the page menu button ride the panel's top edge
+        // and fade; they come back the same way when it closes.
+        surfaceGhosts = [bar.tabStack, bar.moreButton].compactMap { control in
+            // The pressed button opening the panel would be copied dimmed.
+            control.isHighlighted = false
+            guard let ghost = control.snapshotView(afterScreenUpdates: true) else { return nil }
+            ghost.frame = control.frame
+            ghost.isUserInteractionEnabled = false
+            container.addSubview(ghost)
+            return ghost
+        }
         view.insertSubview(surface, aboveSubview: bar)
         self.surface = surface
-        let target = CGRect(x: 0, y: view.bounds.height - height, width: view.bounds.width, height: height)
+        if revealsContent {
+            // The content takes over the New Tab capsule in place.
+            bar.plusButton.alpha = 0
+        }
         UIView.animate(withDuration: 0.1, delay: 0, options: [.beginFromCurrentState]) {
             self.bar.tabStack.alpha = 0
             self.bar.plusButton.alpha = 0
             self.bar.moreButton.alpha = 0
         }
-        UIView.animate(springDuration: 0.42, bounce: 0.12, initialSpringVelocity: 0, delay: 0, options: [
-            .allowUserInteraction, .beginFromCurrentState,
-        ]) {
-            surface.frame = target
-            surface.layer.cornerRadius = 36
-            self.surfaceTint?.alpha = 0
+        let ghosts = surfaceGhosts
+        UIView.animate(withDuration: 0.2, delay: 0, options: [.beginFromCurrentState, .curveEaseOut]) {
+            ghosts.forEach { $0.alpha = 0 }
         }
-        UIView.animate(withDuration: 0.22, delay: 0.06, options: [.beginFromCurrentState]) {
-            content.alpha = 1
-        }
+        return surface
     }
 
     /// Shrinks the open panel back into the bar, which settles with a small bounce.
@@ -582,35 +620,39 @@ final class BrowserMobilePhoneViewController: UIViewController {
         }
         dismissCatcher?.removeFromSuperview()
         dismissCatcher = nil
-        let content = ((surface as? UIVisualEffectView)?.contentView ?? surface).subviews.last
-        UIView.animate(withDuration: 0.12, delay: 0, options: [.beginFromCurrentState]) {
-            content?.alpha = 0
-        }
+        surfacePan = nil
+        let ghosts = surfaceGhosts
         UIView.animate(springDuration: 0.5, bounce: 0.28, initialSpringVelocity: 0, delay: 0, options: [
             .allowUserInteraction, .beginFromCurrentState,
         ]) {
             surface.frame = self.expandedBarFrame
             surface.layer.cornerRadius = 0
             self.surfaceTint?.alpha = 1
+            // The field or the address row narrows back into the New Tab capsule.
             if closingMode == .search {
+                self.searchPanel.setFieldExpanded(false)
                 self.pageContainer.transform = .identity
                 self.pageContainer.frame = self.view.bounds
                 self.pageContainer.layer.cornerRadius = 0
+            } else {
+                self.pagePanel.setAddressExpanded(false)
             }
         } completion: { _ in
             if self.surface === surface {
+                self.bar.tabStack.alpha = 1
+                self.bar.plusButton.alpha = 1
+                self.bar.moreButton.alpha = 1
                 surface.removeFromSuperview()
                 self.surface = nil
+                self.surfaceGhosts = []
                 self.surfaceTint = nil
                 self.layoutPage()
                 self.layoutBar()
             }
             completion?()
         }
-        UIView.animate(withDuration: 0.25, delay: 0.12, options: [.beginFromCurrentState]) {
-            self.bar.tabStack.alpha = 1
-            self.bar.plusButton.alpha = 1
-            self.bar.moreButton.alpha = 1
+        UIView.animate(withDuration: 0.25, delay: 0.04, options: [.beginFromCurrentState]) {
+            ghosts.forEach { $0.alpha = 1 }
         }
         setNeedsStatusBarAppearanceUpdate()
     }
@@ -629,7 +671,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
             self?.closePanel { self?.editAddress() }
         }
         updatePagePanel()
-        openSurface(height: pagePanel.contentHeight + safeBottom, dark: false, content: pagePanel)
+        openPagePanel(height: pagePanel.contentHeight + safeBottom)
     }
 
     private func updatePagePanel() {
@@ -740,28 +782,59 @@ final class BrowserMobilePhoneViewController: UIViewController {
     /// Opens the search panel. With `replacesPage` the typed address loads in
     /// the current tab; otherwise it opens a new one.
     private func openSearch(text: String, replacesPage: Bool) {
-        guard workspace.isReady else { return }
+        guard beginSearch(text: text, replacesPage: replacesPage) else { return }
+        finishOpeningSearch()
+    }
+
+    /// Puts the search panel over the bar, its field still the New Tab
+    /// capsule; `finishOpeningSearch` raises it.
+    private func beginSearch(text: String, replacesPage: Bool) -> Bool {
+        guard workspace.isReady else { return false }
         if mode == .switcher {
             closeSwitcherInstantly()
         }
-        guard mode == .browsing else { return }
+        guard mode == .browsing else { return false }
         workspace.dismissFindInPage()
         mode = .search
         searchReplacesPage = replacesPage
         searchPanel.candidates = searchCandidates()
         searchPanel.onSubmit = { [weak self] text in self?.submitSearch(text) }
         searchPanel.onSelect = { [weak self] item in self?.selectSuggestion(item) }
+        searchPanel.prepare(text: text)
         let top = searchPanelTop(keyboardTop: keyboardTop ?? view.bounds.height * 0.655)
-        openSurface(height: view.bounds.height - top, dark: true, content: searchPanel)
-        searchPanel.begin(text: text)
+        guard let surface = makeSurface(
+            height: view.bounds.height - top, dark: true, content: searchPanel, revealsContent: true,
+        ) else {
+            mode = .browsing
+            return false
+        }
+        searchPanel.setFieldExpanded(false)
+        addSurfacePan(to: surface)
         pageContainer.layer.cornerRadius = 0
+        setNeedsStatusBarAppearanceUpdate()
+        return true
+    }
+
+    /// Raises the search panel above the keyboard: the capsule widens into the
+    /// field and the page shrinks into a card.
+    private func finishOpeningSearch() {
+        guard mode == .search, let surface else { return }
+        searchPanel.focus()
+        let top = searchPanelTop(keyboardTop: keyboardTop ?? view.bounds.height * 0.655)
         let card = searchCardFrame()
+        UIView.animate(springDuration: 0.42, bounce: 0.12, initialSpringVelocity: 0, delay: 0, options: [
+            .allowUserInteraction, .beginFromCurrentState,
+        ]) {
+            surface.frame = CGRect(x: 0, y: top, width: self.view.bounds.width, height: self.view.bounds.height - top)
+            surface.layer.cornerRadius = 36
+            self.surfaceTint?.alpha = 0
+            self.searchPanel.setFieldExpanded(true)
+        }
         UIView.animate(springDuration: 0.42, bounce: 0.1, initialSpringVelocity: 0, delay: 0, options: [
             .allowUserInteraction, .beginFromCurrentState,
         ]) {
             self.applyPageCard(card)
         }
-        setNeedsStatusBarAppearanceUpdate()
     }
 
     /// The page shrinks into a card above the search panel.
@@ -881,6 +954,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
             openSearch(text: "", replacesPage: false)
             return
         }
+        setBarCollapsed(false, animated: false)
         mode = .switcher
         let currentID = workspace.selectedTabID
         if let currentID {
@@ -900,12 +974,14 @@ final class BrowserMobilePhoneViewController: UIViewController {
             switcher.setLivePicture(live, for: currentID)
         }
         switcher.backdrop.image = currentID.flatMap { thumbnails.image(for: $0) }
-        view.addSubview(switcher)
+        // The bar stays: its controls change over the switcher.
+        view.insertSubview(switcher, belowSubview: bar)
         self.switcher = switcher
         isAnimatingSwitcher = true
         setNeedsStatusBarAppearanceUpdate()
+        setBackdropDark(true)
 
-        let chrome = [switcher.backdrop, switcher.spacesButton, switcher.plusButton, switcher.settingsButton]
+        let chrome = [switcher.backdrop]
         let background = switcher.backgroundColor
         switcher.backgroundColor = .clear
         for view in chrome {
@@ -933,9 +1009,8 @@ final class BrowserMobilePhoneViewController: UIViewController {
                 card.alpha = 0
             }
         }
-        bar.isUserInteractionEnabled = false
         UIView.animate(withDuration: 0.15) {
-            self.bar.alpha = 0
+            self.bar.setShowsSwitcherControls(true)
             for card in entries.compactMap({ switcher.card(for: $0.id) }) where card.alpha == 0 {
                 card.alpha = 1
             }
@@ -974,9 +1049,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
                 openSearch(text: "", replacesPage: false)
             }
         }
-        switcher.onNewTab = { [weak self] in self?.openSearch(text: "", replacesPage: false) }
-        switcher.onSpaces = { [weak self] in self?.showSpaces() }
-        switcher.onSettings = { [weak self] in self?.showSettings() }
+        switcher.onDismiss = { [weak self] in self?.returnFromSwitcher() }
     }
 
     /// The chosen card grows to fill the screen, then the page takes its place.
@@ -994,9 +1067,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
             for other in others {
                 other.alpha = 0
             }
-            switcher.spacesButton.alpha = 0
-            switcher.plusButton.alpha = 0
-            switcher.settingsButton.alpha = 0
+            self.bar.setShowsSwitcherControls(false)
         }
         UIView.animate(springDuration: 0.24, bounce: 0, initialSpringVelocity: 0, delay: 0, options: []) {
             card.bounds.size = self.view.bounds.size
@@ -1005,11 +1076,47 @@ final class BrowserMobilePhoneViewController: UIViewController {
         } completion: { _ in
             self.finishSwitcher()
         }
-        bar.isUserInteractionEnabled = true
-        // The bar comes back over the growing card, not after it.
-        view.bringSubviewToFront(bar)
-        UIView.animate(withDuration: 0.12, delay: 0.04) {
-            self.bar.alpha = 1
+    }
+
+    /// A tap between the cards: the open tab grows back to full screen while
+    /// the others fly into the tab stack, the way they came.
+    private func returnFromSwitcher() {
+        guard let switcher, mode == .switcher, !isAnimatingSwitcher else { return }
+        let selected = workspace.selectedTabID.flatMap { switcher.card(for: $0) == nil ? nil : $0 }
+        guard let id = selected ?? switcher.entries.last?.id, let card = switcher.card(for: id) else {
+            finishSwitcher()
+            return
+        }
+        isAnimatingSwitcher = true
+        if id != workspace.selectedTabID {
+            workspace.selectTab(id: id)
+        }
+        matchBackdrop(toPictureOf: id)
+        card.superview?.bringSubviewToFront(card)
+        let stackCenter = bar.convert(bar.tabStack.center, to: view)
+        let others = switcher.entries.compactMap { $0.id == id ? nil : switcher.card(for: $0.id) }
+        UIView.animate(springDuration: 0.26, bounce: 0, initialSpringVelocity: 0, delay: 0, options: []) {
+            card.titleAlpha = 0
+            card.bounds.size = self.view.bounds.size
+            card.center = CGPoint(x: self.view.bounds.midX, y: self.view.bounds.midY)
+            card.layoutIfNeeded()
+            for other in others {
+                let scale = BrowserMobileTabStackButton.cardSize.width / max(other.bounds.width, 1)
+                other.titleAlpha = 0
+                other.center = stackCenter
+                other.transform = CGAffineTransform(rotationAngle: BrowserMobileTabStackButton.frontAngle)
+                    .scaledBy(x: scale, y: scale)
+            }
+        } completion: { _ in
+            self.finishSwitcher()
+        }
+        UIView.animate(withDuration: 0.12, delay: 0.1) {
+            for other in others {
+                other.alpha = 0
+            }
+        }
+        UIView.animate(withDuration: 0.15) {
+            self.bar.setShowsSwitcherControls(false)
         }
     }
 
@@ -1021,8 +1128,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
         switcher = nil
         isAnimatingSwitcher = false
         mode = .browsing
-        bar.alpha = 1
-        bar.isUserInteractionEnabled = true
+        bar.setShowsSwitcherControls(false)
         setNeedsStatusBarAppearanceUpdate()
         render()
         if let id, let picture {
@@ -1141,19 +1247,27 @@ final class BrowserMobilePhoneViewController: UIViewController {
     }
 }
 
-// MARK: - Bar swipe between tabs
+// MARK: UIGestureRecognizerDelegate
 
-extension BrowserMobilePhoneViewController {
-    /// A sideways drag on the bar moves to the previous tab, as on the system's
-    /// home indicator; the next tab's picture grows out of the tab stack.
+extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
+    /// A drag from the bar to another tab: sideways goes to the previous tab
+    /// as on the system's home indicator, up from the tab stack pulls the
+    /// previous tab out of the stack while the page shrinks into a card.
     fileprivate final class BarSwipe {
+        enum Kind {
+            case sideways
+            case up
+        }
+
+        let kind: Kind
         let fromID: String
         let toID: String?
         let incoming: UIImageView
         let outgoing: UIView
         let backdrop: UIView
 
-        init(fromID: String, toID: String?, incoming: UIImageView, outgoing: UIView, backdrop: UIView) {
+        init(kind: Kind, fromID: String, toID: String?, incoming: UIImageView, outgoing: UIView, backdrop: UIView) {
+            self.kind = kind
             self.fromID = fromID
             self.toID = toID
             self.incoming = incoming
@@ -1162,76 +1276,227 @@ extension BrowserMobilePhoneViewController {
         }
     }
 
+    /// How far up the finger goes for the page to reach its smallest card.
+    private static let upSwipeTravel: CGFloat = 380
+
+    func gestureRecognizerShouldBegin(_ gesture: UIGestureRecognizer) -> Bool {
+        guard let pan = gesture as? UIPanGestureRecognizer else { return true }
+        let velocity = pan.velocity(in: view)
+        if pan === surfacePan {
+            guard mode == .search || mode == .pageMenu, abs(velocity.y) > abs(velocity.x) else { return false }
+            return mode == .pageMenu
+                || searchPanel.dragMovesPanel(at: pan.location(in: searchPanel), downward: velocity.y > 0)
+        }
+        // The bar: sideways for tabs, up for search or the previous tab.
+        guard mode == .browsing, swipe == nil, surface == nil else { return false }
+        return abs(velocity.x) > abs(velocity.y) || velocity.y < 0
+    }
+
+    func gestureRecognizer(
+        _ gesture: UIGestureRecognizer, shouldBeRequiredToFailBy other: UIGestureRecognizer,
+    ) -> Bool {
+        // The suggestions scroll only when a drag does not move the panel.
+        gesture === surfacePan && other.view is UIScrollView
+    }
+
     private func configureBarSwipe() {
         let pan = UIPanGestureRecognizer(target: self, action: #selector(barSwiped(_:)))
+        pan.delegate = self
         bar.addGestureRecognizer(pan)
     }
 
     @objc private func barSwiped(_ gesture: UIPanGestureRecognizer) {
-        let width = view.bounds.width
         switch gesture.state {
         case .began:
-            guard mode == .browsing, swipe == nil, let current = workspace.selectedTabID else { return }
             let velocity = gesture.velocity(in: view)
-            guard abs(velocity.x) > abs(velocity.y) else { return }
-            let tabs = workspace.switcherTabs
-            let index = tabs.firstIndex { $0.id == current }
-            // Right goes back in time; left from the newest tab only rubber-bands.
-            let target = velocity.x > 0 ? index.flatMap { $0 > 0 ? tabs[$0 - 1].id : nil } : nil
-            thumbnails.capture(current, workspace: workspace, width: thumbnailWidth)
-            let backdrop = UIView(frame: view.bounds)
-            backdrop.backgroundColor = .black
-            view.insertSubview(backdrop, belowSubview: pageContainer)
-            let outgoing = pageContainer.snapshotView(afterScreenUpdates: false) ?? UIView()
-            outgoing.frame = view.bounds
-            outgoing.layer.cornerCurve = .continuous
-            outgoing.clipsToBounds = true
-            view.insertSubview(outgoing, belowSubview: bar)
-            let incoming = target.flatMap { pagePicture(for: $0) } ?? UIImageView()
-            incoming.backgroundColor = .white
-            incoming.clipsToBounds = true
-            incoming.layer.cornerCurve = .continuous
-            incoming.frame = view.bounds
-            incoming.isHidden = target == nil
-            view.insertSubview(incoming, belowSubview: bar)
-            pageContainer.isHidden = true
-            swipe = BarSwipe(fromID: current, toID: target, incoming: incoming, outgoing: outgoing, backdrop: backdrop)
-            updateSwipe(progress: 0)
-        case .changed:
-            guard let swipe else { return }
-            let x = gesture.translation(in: view).x
-            let progress = swipe.toID == nil ? -rubberBand(-x, limit: width * 0.12) / width : max(x, 0) / width
-            updateSwipe(progress: progress)
-        case .cancelled, .ended, .failed:
-            guard let swipe else { return }
-            let x = gesture.translation(in: view).x
-            let velocity = gesture.velocity(in: view).x
-            let completes = gesture.state == .ended && swipe.toID != nil && (x > width * 0.3 || velocity > 400)
-            if completes, let toID = swipe.toID {
-                workspace.selectTab(id: toID)
-                matchBackdrop(toPictureOf: toID)
+            if abs(velocity.x) > abs(velocity.y) {
+                beginTabSwipe(.sideways, toPrevious: velocity.x > 0)
+            } else if bar.tabStack.frame.insetBy(dx: -8, dy: -8).contains(gesture.location(in: bar)),
+                      !bar.isCollapsed
+            {
+                beginTabSwipe(.up, toPrevious: true)
+            } else if beginSearch(text: "", replacesPage: false), let surface {
+                surfaceDragStartTop = surface.frame.minY
             }
-            UIView.animate(
-                springDuration: 0.3,
-                bounce: completes ? 0 : 0.15,
-                initialSpringVelocity: 0,
-                delay: 0,
-                options: [.allowUserInteraction],
-            ) {
-                self.updateSwipe(progress: completes ? 1 : 0)
-            } completion: { _ in
-                swipe.outgoing.removeFromSuperview()
-                swipe.backdrop.removeFromSuperview()
-                self.pageContainer.isHidden = false
-                if self.swipe === swipe { self.swipe = nil }
-                self.render()
-                if completes, let toID = swipe.toID {
-                    self.coverWhileLoading(toID, with: swipe.incoming)
+        case .changed:
+            let translation = gesture.translation(in: view)
+            if let swipe {
+                updateSwipe(progress: swipeProgress(swipe, translation: translation))
+            } else if mode == .search, let surface, surfacePan != nil {
+                dragSearchUp(surface, by: translation.y)
+            }
+        case .cancelled, .ended, .failed:
+            if swipe != nil {
+                endTabSwipe(gesture)
+            } else if mode == .search, let surface, searchPanel.isFieldExpanded == false {
+                let travel = surfaceDragStartTop - surface.frame.minY
+                if gesture.state == .ended, travel > 50 || gesture.velocity(in: view).y < -400 {
+                    finishOpeningSearch()
                 } else {
-                    swipe.incoming.removeFromSuperview()
+                    closePanel()
                 }
             }
         default: break
+        }
+    }
+
+    /// The search panel follows the finger up out of the bar, its field still
+    /// the New Tab capsule.
+    private func dragSearchUp(_ surface: UIView, by translation: CGFloat) {
+        let top = searchPanelTop(keyboardTop: keyboardTop ?? view.bounds.height * 0.655)
+        let lift = max(-translation, 0)
+        let reach = surfaceDragStartTop - top
+        // Past where the panel settles it gives only a little.
+        let travel = lift <= reach ? lift : reach + rubberBand(lift - reach, limit: 40)
+        let y = surfaceDragStartTop - travel
+        surface.frame = CGRect(x: 0, y: y, width: view.bounds.width, height: view.bounds.height - y)
+        let progress = min(travel / max(reach, 1), 1)
+        surface.layer.cornerRadius = 36 * min(progress * 3, 1)
+        surfaceTint?.alpha = 1 - min(progress * 2, 1)
+    }
+
+    private func addSurfacePan(to surface: UIView) {
+        let pan = UIPanGestureRecognizer(target: self, action: #selector(surfaceDragged(_:)))
+        pan.delegate = self
+        surface.addGestureRecognizer(pan)
+        surfacePan = pan
+    }
+
+    /// Drags an open panel: down follows the finger (and lets the page grow
+    /// back from its search card), up gives only a little.
+    @objc private func surfaceDragged(_ gesture: UIPanGestureRecognizer) {
+        guard mode == .search || mode == .pageMenu, let surface else { return }
+        let isSearch = mode == .search
+        let card = isSearch ? searchCardFrame() : view.bounds
+        switch gesture.state {
+        case .began:
+            surfaceDragStartTop = surface.frame.minY
+        case .changed:
+            let dy = gesture.translation(in: view).y
+            let y = dy >= 0 ? surfaceDragStartTop + dy : surfaceDragStartTop - rubberBand(-dy, limit: 30)
+            surface.frame = CGRect(x: 0, y: y, width: view.bounds.width, height: view.bounds.height - y)
+            if isSearch {
+                let progress = max(dy, 0) / max(expandedBarFrame.minY - surfaceDragStartTop, 1)
+                applyPageCard(interpolate(card, view.bounds, min(progress, 1)))
+            }
+        case .cancelled, .ended, .failed:
+            let dy = gesture.translation(in: view).y
+            if gesture.state == .ended, dy > 80 || gesture.velocity(in: view).y > 500 {
+                closePanel()
+                return
+            }
+            let top = surfaceDragStartTop
+            UIView.animate(springDuration: 0.4, bounce: 0.1, initialSpringVelocity: 0, delay: 0, options: [
+                .allowUserInteraction, .beginFromCurrentState,
+            ]) {
+                surface.frame = CGRect(
+                    x: 0,
+                    y: top,
+                    width: self.view.bounds.width,
+                    height: self.view.bounds.height - top,
+                )
+                if isSearch {
+                    self.applyPageCard(card)
+                }
+            }
+        default: break
+        }
+    }
+
+    private func interpolate(_ from: CGRect, _ to: CGRect, _ progress: CGFloat) -> CGRect {
+        CGRect(
+            x: from.minX + (to.minX - from.minX) * progress,
+            y: from.minY + (to.minY - from.minY) * progress,
+            width: from.width + (to.width - from.width) * progress,
+            height: from.height + (to.height - from.height) * progress,
+        )
+    }
+
+    private func beginTabSwipe(_ kind: BarSwipe.Kind, toPrevious: Bool) {
+        guard mode == .browsing, swipe == nil, let current = workspace.selectedTabID else { return }
+        let tabs = workspace.switcherTabs
+        let index = tabs.firstIndex { $0.id == current }
+        // Right and up go back in time; left from the newest tab only rubber-bands.
+        let target = toPrevious ? index.flatMap { $0 > 0 ? tabs[$0 - 1].id : nil } : nil
+        thumbnails.capture(current, workspace: workspace, width: thumbnailWidth)
+        let backdrop = UIView(frame: view.bounds)
+        backdrop.backgroundColor = kind == .up ? UIColor(red: 0.1, green: 0.1, blue: 0.13, alpha: 1) : .black
+        view.insertSubview(backdrop, belowSubview: pageContainer)
+        let outgoing = pageContainer.snapshotView(afterScreenUpdates: false) ?? UIView()
+        outgoing.frame = view.bounds
+        outgoing.layer.cornerCurve = .continuous
+        outgoing.clipsToBounds = true
+        view.insertSubview(outgoing, belowSubview: bar)
+        let incoming = target.flatMap { pagePicture(for: $0) } ?? UIImageView()
+        incoming.backgroundColor = .white
+        incoming.clipsToBounds = true
+        incoming.layer.cornerCurve = .continuous
+        incoming.frame = view.bounds
+        incoming.isHidden = target == nil
+        view.insertSubview(incoming, belowSubview: bar)
+        pageContainer.isHidden = true
+        swipe = BarSwipe(
+            kind: kind, fromID: current, toID: target, incoming: incoming, outgoing: outgoing, backdrop: backdrop,
+        )
+        updateSwipe(progress: 0)
+    }
+
+    private func swipeProgress(_ swipe: BarSwipe, translation: CGPoint) -> CGFloat {
+        let width = view.bounds.width
+        switch swipe.kind {
+        case .sideways:
+            let x = translation.x
+            return swipe.toID == nil ? -rubberBand(-x, limit: width * 0.12) / width : max(x, 0) / width
+        case .up:
+            let lift = max(-translation.y, 0)
+            let travel = Self.upSwipeTravel
+            return lift <= travel ? lift / travel : 1 + rubberBand(lift - travel, limit: 60) / travel
+        }
+    }
+
+    private func endTabSwipe(_ gesture: UIPanGestureRecognizer) {
+        guard let swipe else { return }
+        let width = view.bounds.width
+        let translation = gesture.translation(in: view)
+        let velocity = gesture.velocity(in: view)
+        let completes: Bool =
+            switch swipe.kind {
+            case .sideways:
+                gesture.state == .ended && swipe.toID != nil
+                    && (translation.x > width * 0.3 || velocity.x > 400)
+            case .up:
+                // Any real lift lands on the previous tab unless the finger
+                // heads back down.
+                gesture.state == .ended && swipe.toID != nil
+                    && -translation.y > 40 && velocity.y < 300
+            }
+        if completes, let toID = swipe.toID {
+            workspace.selectTab(id: toID)
+            matchBackdrop(toPictureOf: toID)
+        }
+        UIView.animate(
+            springDuration: 0.3,
+            bounce: completes ? 0 : 0.15,
+            initialSpringVelocity: 0,
+            delay: 0,
+            options: [.allowUserInteraction],
+        ) {
+            if completes, swipe.kind == .up {
+                self.landUpSwipe()
+            } else {
+                self.updateSwipe(progress: completes ? 1 : 0)
+            }
+        } completion: { _ in
+            swipe.outgoing.removeFromSuperview()
+            swipe.backdrop.removeFromSuperview()
+            self.pageContainer.isHidden = false
+            if self.swipe === swipe { self.swipe = nil }
+            self.render()
+            if completes, let toID = swipe.toID {
+                self.coverWhileLoading(toID, with: swipe.incoming)
+            } else {
+                swipe.incoming.removeFromSuperview()
+            }
         }
     }
 
@@ -1289,11 +1554,18 @@ extension BrowserMobilePhoneViewController {
         return limit * (1 - 1 / (value / limit * 0.55 + 1))
     }
 
-    /// Lays out both pages for a swipe that is `progress` of the way done:
-    /// the current page slides right and shrinks while the previous one grows
-    /// out of the tab stack.
+    /// Lays out both pages for a swipe that is `progress` of the way done.
     private func updateSwipe(progress: CGFloat) {
         guard let swipe else { return }
+        switch swipe.kind {
+        case .sideways: layoutSidewaysSwipe(swipe, progress: progress)
+        case .up: layoutUpSwipe(swipe, progress: progress)
+        }
+    }
+
+    /// The current page slides right and shrinks while the previous one grows
+    /// out of the tab stack.
+    private func layoutSidewaysSwipe(_ swipe: BarSwipe, progress: CGFloat) {
         let bounds = view.bounds
         let p = max(min(progress, 1), -1)
         let outgoingScale = 1 - 0.12 * max(p, 0)
@@ -1314,5 +1586,49 @@ extension BrowserMobilePhoneViewController {
         swipe.incoming.transform = CGAffineTransform(rotationAngle: angle).scaledBy(x: scale, y: scale)
         swipe.incoming.layer.cornerRadius = 40 * (1 - p) / max(scale, 0.05)
         swipe.incoming.alpha = min(1, 0.4 + p * 3)
+    }
+
+    /// The page shrinks into a card that rests on the bar while the previous
+    /// tab's picture comes out of the tab stack over it.
+    private func layoutUpSwipe(_ swipe: BarSwipe, progress: CGFloat) {
+        let bounds = view.bounds
+        let p = max(progress, 0)
+        let scale = 1 - 0.28 * p
+        let bottom = bounds.height - (bounds.height - expandedBarFrame.minY + 6) * min(1, p * 2)
+        let lift = bottom - bounds.midY - bounds.height * scale / 2
+        swipe.outgoing.transform = CGAffineTransform(translationX: 0, y: lift).scaledBy(x: scale, y: scale)
+        swipe.outgoing.layer.cornerRadius = 44 * min(p * 4, 1) / scale
+        guard swipe.toID != nil else { return }
+        let q = min(p, 1)
+        let stack = bar.convert(bar.tabStack.center, to: view)
+        let startScale = BrowserMobileTabStackButton.cardSize.width / bounds.width
+        let scale2 = startScale + (0.36 - startScale) * q
+        let target = CGPoint(x: bounds.width * 0.27, y: bounds.height * 0.62)
+        swipe.incoming.bounds = bounds
+        swipe.incoming.center = CGPoint(x: stack.x + (target.x - stack.x) * q, y: stack.y + (target.y - stack.y) * q)
+        swipe.incoming.transform = CGAffineTransform(rotationAngle: BrowserMobileTabStackButton.frontAngle * (1 - q))
+            .scaledBy(x: scale2, y: scale2)
+        swipe.incoming.layer.cornerRadius = 40 / max(scale2, 0.05)
+        swipe.incoming.alpha = min(1, 0.4 + q * 3)
+    }
+
+    /// The previous tab fills the screen while the page's card drops into the
+    /// tab stack.
+    private func landUpSwipe() {
+        guard let swipe else { return }
+        let bounds = view.bounds
+        swipe.incoming.transform = .identity
+        swipe.incoming.bounds = bounds
+        swipe.incoming.center = CGPoint(x: bounds.midX, y: bounds.midY)
+        swipe.incoming.layer.cornerRadius = 0
+        swipe.incoming.alpha = 1
+        let stack = bar.convert(bar.tabStack.center, to: view)
+        let scale = BrowserMobileTabStackButton.cardSize.width / bounds.width
+        swipe.outgoing.transform = CGAffineTransform(
+            translationX: stack.x - bounds.midX, y: stack.y - bounds.midY,
+        )
+        .rotated(by: BrowserMobileTabStackButton.frontAngle)
+        .scaledBy(x: scale, y: scale)
+        swipe.outgoing.alpha = 0
     }
 }

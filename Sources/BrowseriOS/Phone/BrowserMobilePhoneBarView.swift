@@ -6,7 +6,8 @@ import UIKit
 
 /// The phone's bottom bar: the tab stack on the left, New Tab in the middle,
 /// the page menu on the right. Scrolling down shrinks it to a strip over the
-/// home indicator.
+/// home indicator. Over the tab switcher the same bar shows Spaces and
+/// Settings in place of the tab stack and the page menu.
 final class BrowserMobilePhoneBarView: UIView {
     // MARK: Internal
 
@@ -21,11 +22,15 @@ final class BrowserMobilePhoneBarView: UIView {
     let tabStack = BrowserMobileTabStackButton()
     let plusButton = UIButton(type: .custom)
     let moreButton = UIButton(type: .custom)
+    let spacesButton = UIButton(type: .custom)
+    let settingsButton = UIButton(type: .custom)
     /// Brings the collapsed bar back. It is off while the controls show, so
     /// it never takes their taps.
     let expandRecognizer = UITapGestureRecognizer()
 
     private(set) var isCollapsed = false
+    /// Spaces and Settings in place of the tab stack and the page menu.
+    private(set) var showsSwitcherControls = false
 
     /// Dark glass and light glyphs over a dark page.
     var isDark = false {
@@ -35,6 +40,10 @@ final class BrowserMobilePhoneBarView: UIView {
             applyTheme()
         }
     }
+
+    // MARK: Private
+
+    private var roundButtons: [UIButton] { [moreButton, spacesButton, settingsButton] }
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -63,7 +72,23 @@ final class BrowserMobilePhoneBarView: UIView {
             for: .normal,
         )
         moreButton.layer.cornerRadius = Self.roundButtonSide / 2
-        for button in [plusButton, moreButton] {
+        for (button, symbol, size, title, id) in [
+            (spacesButton, "desktopcomputer", 16, String(localized: "Spaces", table: "Mobile"), "browser.spaces"),
+            (settingsButton, "gear", 18, String(localized: "Settings", table: "Mobile"), "browser.settings"),
+        ] as [(UIButton, String, CGFloat, String, String)] {
+            button.setImage(
+                UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(
+                    pointSize: size, weight: .medium,
+                )),
+                for: .normal,
+            )
+            button.accessibilityLabel = title
+            button.accessibilityIdentifier = id
+            button.layer.cornerRadius = Self.roundButtonSide / 2
+            button.alpha = 0
+            button.isUserInteractionEnabled = false
+        }
+        for button in roundButtons + [plusButton] {
             button.layer.borderWidth = 1 / 3
             button.addTarget(self, action: #selector(pressDown(_:)), for: [.touchDown, .touchDragEnter])
             button.addTarget(self, action: #selector(pressUp(_:)), for: [
@@ -80,6 +105,8 @@ final class BrowserMobilePhoneBarView: UIView {
         background.contentView.addSubview(tabStack)
         background.contentView.addSubview(plusButton)
         background.contentView.addSubview(moreButton)
+        background.contentView.addSubview(spacesButton)
+        background.contentView.addSubview(settingsButton)
         applyTheme()
     }
 
@@ -93,6 +120,9 @@ final class BrowserMobilePhoneBarView: UIView {
         plusButton.center = CGPoint(x: bounds.midX, y: centerY)
         moreButton.bounds = CGRect(x: 0, y: 0, width: Self.roundButtonSide, height: Self.roundButtonSide)
         moreButton.center = CGPoint(x: bounds.maxX - 24 - Self.roundButtonSide / 2, y: centerY)
+        settingsButton.frame = moreButton.frame
+        spacesButton.bounds = moreButton.bounds
+        spacesButton.center = CGPoint(x: 24 + Self.roundButtonSide / 2, y: centerY)
         tabStack.bounds = CGRect(x: 0, y: 0, width: 76, height: 64)
         tabStack.center = CGPoint(x: 9 + 38, y: centerY)
     }
@@ -109,6 +139,20 @@ final class BrowserMobilePhoneBarView: UIView {
         return collapsed ? strip : controlTopInset + controlHeight + max(safeBottom - 10, 12)
     }
 
+    /// Swaps the tab stack and the page menu for Spaces and Settings; call it
+    /// inside an animation to crossfade them.
+    func setShowsSwitcherControls(_ shows: Bool) {
+        showsSwitcherControls = shows
+        // Over the switcher the bar has no glass of its own.
+        background.effect = shows ? nil : BrowserMobileBackdrop.glass()
+        for (view, visible) in [
+            (tabStack, !shows), (moreButton, !shows), (spacesButton, shows), (settingsButton, shows),
+        ] as [(UIView, Bool)] {
+            view.alpha = visible ? 1 : 0
+            view.isUserInteractionEnabled = visible
+        }
+    }
+
     func setCollapsed(_ collapsed: Bool) {
         isCollapsed = collapsed
         expandRecognizer.isEnabled = collapsed
@@ -118,10 +162,8 @@ final class BrowserMobilePhoneBarView: UIView {
         }
     }
 
-    // MARK: Private
-
     private func applyTheme() {
-        for button in [plusButton, moreButton] {
+        for button in roundButtons + [plusButton] {
             button.backgroundColor = BrowserMobileBackdrop.buttonFill
             button.layer.borderColor = BrowserMobileBackdrop.buttonBorder
                 .resolvedColor(with: background.contentView.traitCollection)

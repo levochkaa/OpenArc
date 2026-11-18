@@ -167,3 +167,35 @@ import UIKit
     #expect(BrowserMobileFavicons.isBlank(blank))
     #expect(!BrowserMobileFavicons.isBlank(mark))
 }
+
+// MARK: - Bar and panels
+
+@MainActor @Test func mobileBarSwapsItsSideControlsOverTheSwitcher() {
+    let bar = BrowserMobilePhoneBarView(frame: CGRect(x: 0, y: 0, width: 402, height: 86))
+    bar.layoutIfNeeded()
+    #expect(bar.spacesButton.alpha == 0 && !bar.spacesButton.isUserInteractionEnabled)
+    #expect(bar.background.effect != nil)
+    bar.setShowsSwitcherControls(true)
+    #expect(bar.tabStack.alpha == 0 && !bar.tabStack.isUserInteractionEnabled)
+    #expect(bar.moreButton.alpha == 0 && bar.settingsButton.alpha == 1 && bar.spacesButton.alpha == 1)
+    #expect(bar.plusButton.alpha == 1, "New Tab stays in place")
+    #expect(bar.background.effect == nil, "The switcher shows through the bar")
+    #expect(bar.settingsButton.frame == bar.moreButton.frame)
+    #expect(abs(bar.spacesButton.center.y - bar.plusButton.center.y) < 0.5)
+    bar.setShowsSwitcherControls(false)
+    #expect(bar.tabStack.alpha == 1 && bar.moreButton.alpha == 1 && bar.settingsButton.alpha == 0)
+    #expect(bar.background.effect != nil)
+}
+
+@MainActor @Test func mobileSearchPanelMovesOnlyWhenTheSuggestionsAreAtTheTop() {
+    let panel = BrowserMobileSearchPanel(frame: CGRect(x: 0, y: 0, width: 402, height: 400))
+    panel.prepare(text: "")
+    panel.setFieldExpanded(false)
+    #expect(!panel.isFieldExpanded)
+    #expect(!panel.field.isFirstResponder, "Preparing does not bring up the keyboard")
+    panel.setFieldExpanded(true)
+    #expect(panel.isFieldExpanded)
+    #expect(panel.dragMovesPanel(at: CGPoint(x: 200, y: 20), downward: false), "The field area always moves it")
+    #expect(panel.dragMovesPanel(at: CGPoint(x: 200, y: 200), downward: true))
+    #expect(!panel.dragMovesPanel(at: CGPoint(x: 200, y: 200), downward: false), "Up over suggestions scrolls")
+}

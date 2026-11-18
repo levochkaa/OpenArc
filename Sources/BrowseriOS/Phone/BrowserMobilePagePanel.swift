@@ -3,7 +3,8 @@
 import UIKit
 
 /// The page menu that grows out of the bar: address row with navigation,
-/// tiles for page actions, then the page's display options.
+/// tiles for page actions, then the page's display options. The address row
+/// starts as the bar's New Tab capsule and widens once the panel is up.
 final class BrowserMobilePagePanel: UIView {
     // MARK: Internal
 
@@ -28,7 +29,16 @@ final class BrowserMobilePagePanel: UIView {
 
     // MARK: Private
 
+    /// Whether the address row is full width, or still the New Tab capsule.
+    private(set) var isAddressExpanded = true
+
     private let addressRow = UIView()
+    private let addressContent = UIView()
+    private let plusGlyph = UIImageView(image: UIImage(
+        systemName: "plus", withConfiguration: UIImage.SymbolConfiguration(pointSize: 20, weight: .semibold),
+    ))
+    /// Everything under the address row.
+    private let body = UIView()
     private var backButton = UIButton()
     private var forwardButton = UIButton()
     private let hostButton = UIButton(type: .system)
@@ -53,7 +63,13 @@ final class BrowserMobilePagePanel: UIView {
         addressRow.layer.cornerRadius = Self.rowHeight / 2
         addressRow.layer.cornerCurve = .continuous
         addressRow.layer.borderWidth = 1 / 3
+        addressRow.clipsToBounds = true
+        addSubview(body)
         addSubview(addressRow)
+        addressRow.addSubview(addressContent)
+        plusGlyph.contentMode = .center
+        plusGlyph.alpha = 0
+        addressRow.addSubview(plusGlyph)
         self.backButton = rowButton("chevron.left", "Back", "browser.back") { [weak self] in self?.onBack?() }
         self.forwardButton = rowButton("chevron.right", "Forward", "browser.forward") { [weak self] in
             self?.onForward?()
@@ -68,7 +84,7 @@ final class BrowserMobilePagePanel: UIView {
         hostButton.accessibilityIdentifier = "browser.address"
         hostButton.addAction(UIAction { [weak self] _ in self?.onAddress?() }, for: .touchUpInside)
         for view in [backButton, forwardButton, hostButton, copyButton, reloadButton] {
-            addressRow.addSubview(view)
+            addressContent.addSubview(view)
         }
         var configuration = UIButton.Configuration.plain()
         configuration.title = String(localized: "Display Options", table: "Mobile")
@@ -97,7 +113,7 @@ final class BrowserMobilePagePanel: UIView {
         )
         displayChevron.contentMode = .center
         displayButton.addSubview(displayChevron)
-        addSubview(displayButton)
+        body.addSubview(displayButton)
     }
 
     @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
@@ -105,7 +121,22 @@ final class BrowserMobilePagePanel: UIView {
     override func layoutSubviews() {
         super.layoutSubviews()
         let width = bounds.width - Self.margin * 2
-        addressRow.frame = CGRect(x: Self.margin, y: Self.topInset, width: width, height: Self.rowHeight)
+        body.frame = bounds
+        let capsule = CGRect(
+            x: (bounds.width - BrowserMobilePhoneBarView.plusWidth) / 2, y: BrowserMobilePhoneBarView.controlTopInset,
+            width: BrowserMobilePhoneBarView.plusWidth, height: BrowserMobilePhoneBarView.controlHeight,
+        )
+        let row = isAddressExpanded
+            ? CGRect(x: Self.margin, y: Self.topInset, width: width, height: Self.rowHeight)
+            : capsule
+        addressRow.frame = row
+        addressRow.layer.cornerRadius = row.height / 2
+        // The row's controls keep their full-width places, centered in the
+        // capsule while it widens; the capsule clips them.
+        addressContent.frame = CGRect(
+            x: (row.width - width) / 2, y: (row.height - Self.rowHeight) / 2, width: width, height: Self.rowHeight,
+        )
+        plusGlyph.frame = CGRect(x: (row.width - 40) / 2, y: (row.height - 40) / 2, width: 40, height: 40)
         let side: CGFloat = 40
         let midY = Self.rowHeight / 2
         backButton.frame = CGRect(x: 8, y: midY - side / 2, width: side, height: side)
@@ -156,13 +187,14 @@ final class BrowserMobilePagePanel: UIView {
         for button in [backButton, forwardButton, copyButton, reloadButton] {
             button.tintColor = .label
         }
+        plusGlyph.tintColor = .label
         if newTiles.count != tiles.count {
             tiles.forEach { $0.removeFromSuperview() }
             tileLabels.forEach { $0.removeFromSuperview() }
             tiles = newTiles.map { _ in UIButton(type: .custom) }
             tileLabels = newTiles.map { _ in UILabel() }
-            tiles.forEach(addSubview)
-            tileLabels.forEach(addSubview)
+            tiles.forEach(body.addSubview)
+            tileLabels.forEach(body.addSubview)
             setNeedsLayout()
         }
         for (index, tile) in newTiles.enumerated() {
@@ -191,6 +223,36 @@ final class BrowserMobilePagePanel: UIView {
             label.minimumScaleFactor = 0.8
             label.textColor = .label.withAlphaComponent(0.66)
             label.alpha = button.alpha
+        }
+    }
+
+    /// Lays the address row out full width, or as the New Tab capsule with
+    /// the rest of the menu hidden; call it inside an animation to morph.
+    func setAddressExpanded(_ expanded: Bool) {
+        isAddressExpanded = expanded
+        setNeedsLayout()
+        layoutIfNeeded()
+        let apply = {
+            self.plusGlyph.alpha = expanded ? 0 : 1
+            self.addressContent.alpha = expanded ? 1 : 0
+            self.body.alpha = expanded ? 1 : 0
+        }
+        guard UIView.inheritedAnimationDuration > 0 else {
+            apply()
+            return
+        }
+        // The plus fades as the capsule starts to widen and the controls come
+        // in after it; closing, the controls go first.
+        UIView.animate(withDuration: expanded ? 0.12 : 0.2, delay: expanded ? 0 : 0.08, options: [
+            .beginFromCurrentState, .overrideInheritedDuration, .overrideInheritedCurve,
+        ]) {
+            self.plusGlyph.alpha = expanded ? 0 : 1
+        }
+        UIView.animate(withDuration: expanded ? 0.22 : 0.1, delay: expanded ? 0.06 : 0, options: [
+            .beginFromCurrentState, .overrideInheritedDuration, .overrideInheritedCurve,
+        ]) {
+            self.addressContent.alpha = expanded ? 1 : 0
+            self.body.alpha = expanded ? 1 : 0
         }
     }
 

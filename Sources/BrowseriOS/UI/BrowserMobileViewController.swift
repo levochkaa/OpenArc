@@ -261,6 +261,11 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
     private weak var presentedArchive: BrowserMobileArchiveViewController?
 
     private let phoneTitleButton = UIButton(type: .system)
+    private var phoneSpaceItems = [String: UIBarButtonItem]()
+    /// A sideways drag between Spaces in the phone sheet: the neighbor's rows
+    /// slide in beside the current ones.
+    private var phoneSpacePage: (spaceID: String, side: CGFloat, preview: UIView)?
+    private weak var phoneSpacePan: UIPanGestureRecognizer?
 
     var sidebarDragHasHoverProjection: Bool { isApplyingHoverProjection }
 
@@ -507,7 +512,8 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
     override func tableView(_: UITableView, trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath)
         -> UISwipeActionsConfiguration?
     {
-        guard !isSelectingRows, workspace.isReady, workspace.profileDocument?.canEdit != false,
+        // In the phone sheet a sideways drag pages between Spaces.
+        guard !isPhoneSheet, !isSelectingRows, workspace.isReady, workspace.profileDocument?.canEdit != false,
               case .tab(let id, _) = row(at: indexPath),
               let tab = workspace.tabs.first(where: { $0.id == id }) else { return nil }
         let removes = workspace.profileDocument != nil && tab.placement != .temporary
@@ -1097,13 +1103,16 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         title.hidesSharedBackground = true
         // New Tab, Archive and Account live in the switcher and Settings.
         navigationItem.leftBarButtonItems = [title]
+        let pan = UIPanGestureRecognizer(target: self, action: #selector(phoneSpacePanned(_:)))
+        pan.delegate = self
+        tableView.addGestureRecognizer(pan)
+        phoneSpacePan = pan
     }
 
-    private func renderPhoneSheet(_ document: BrowserMobileProfileDocument?) {
-        let space = workspace.spaces.first { $0.id == workspace.selectedSpaceID }
+    private func setPhoneTitle(_ title: String) {
         var configuration = UIButton.Configuration.plain()
         configuration.attributedTitle = AttributedString(
-            space?.title ?? String(localized: "Spaces", table: "Mobile"),
+            title,
             attributes: AttributeContainer([
                 .font: UIFont.systemFont(ofSize: 22, weight: .bold), .foregroundColor: UIColor.white,
             ]),
@@ -1111,10 +1120,137 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         configuration.contentInsets = .init(top: 0, leading: 12, bottom: 0, trailing: 0)
         configuration.titleLineBreakMode = .byTruncatingTail
         phoneTitleButton.configuration = configuration
+    }
+
+    private func highlightPhoneSpace(_ id: String?) {
+        for (spaceID, item) in phoneSpaceItems {
+            item.tintColor = spaceID == id ? .white : UIColor(white: 1, alpha: 0.3)
+            item.accessibilityTraits = spaceID == id ? [.button, .selected] : [.button]
+        }
+    }
+
+    private func phoneSpaceTitle(_ id: String?) -> String {
+        workspace.spaces.first { $0.id == id }?.title ?? String(localized: "Spaces", table: "Mobile")
+    }
+
+    @objc private func phoneSpacePanned(_ gesture: UIPanGestureRecognizer) {
+        let width = tableView.bounds.width
+        guard let host = tableView.superview else { return }
+        let dx = gesture.translation(in: host).x
+        let spaces = workspace.spaces
+        guard let index = spaces.firstIndex(where: { $0.id == workspace.selectedSpaceID }) else { return }
+        switch gesture.state {
+        case .began, .changed:
+            // Dragging left brings in the next Space, right the previous one.
+            let side: CGFloat = dx < 0 ? 1 : -1
+            let neighbor = index + Int(side)
+            var offset = dx
+            if dx != 0, spaces.indices.contains(neighbor) {
+                if phoneSpacePage?.spaceID != spaces[neighbor].id {
+                    phoneSpacePage?.preview.removeFromSuperview()
+                    let preview = phoneSpacePreview(for: spaces[neighbor].id)
+                    host.insertSubview(preview, aboveSubview: tableView)
+                    phoneSpacePage = (spaces[neighbor].id, side, preview)
+                }
+            } else {
+                phoneSpacePage?.preview.removeFromSuperview()
+                phoneSpacePage = nil
+                // No Space that way: the rows give only a little.
+                offset = dx / (1 + abs(dx) / 120)
+            }
+            layoutPhoneSpacePage(offset: offset, width: width)
+        case .cancelled, .ended, .failed:
+            let velocity = gesture.velocity(in: host).x
+            let page = phoneSpacePage
+            let completes = gesture.state == .ended && page.map { page in
+                let projected = dx + velocity * 0.15
+                return -projected * page.side > width / 2
+            } ?? false
+            UIView.animate(springDuration: 0.32, bounce: 0, initialSpringVelocity: 0, delay: 0, options: [
+                .allowUserInteraction, .beginFromCurrentState,
+            ]) {
+                self.layoutPhoneSpacePage(offset: completes ? -(page?.side ?? 0) * width : 0, width: width)
+            } completion: { _ in
+                self.phoneSpacePage?.preview.removeFromSuperview()
+                self.phoneSpacePage = nil
+                self.tableView.transform = .identity
+                self.phoneTitleButton.alpha = 1
+                if completes, let page {
+                    self.workspace.dismissFindInPage()
+                    self.workspace.selectSpace(id: page.spaceID)
+                    self.render()
+                    self.tableView.setContentOffset(
+                        CGPoint(x: 0, y: -self.tableView.adjustedContentInset.top), animated: false,
+                    )
+                } else {
+                    self.render()
+                }
+            }
+        default: break
+        }
+    }
+
+    /// Moves the rows by `offset`, the neighbor's beside them, and crossfades
+    /// the title and the Space under the rows at the halfway point.
+    private func layoutPhoneSpacePage(offset: CGFloat, width: CGFloat) {
+        tableView.transform = CGAffineTransform(translationX: offset, y: 0)
+        let progress = min(abs(offset) / max(width, 1), 1)
+        if let page = phoneSpacePage {
+            page.preview.center = CGPoint(
+                x: tableView.center.x + offset + page.side * width, y: tableView.center.y,
+            )
+        }
+        let past = progress > 0.5 && phoneSpacePage != nil
+        let shownID = past ? phoneSpacePage?.spaceID : workspace.selectedSpaceID
+        setPhoneTitle(phoneSpaceTitle(shownID))
+        phoneTitleButton.alpha = abs(1 - progress * 2)
+        highlightPhoneSpace(shownID)
+    }
+
+    /// The rows another Space would show, laid out like the table at its top.
+    private func phoneSpacePreview(for spaceID: String) -> UIView {
+        let preview = UIView(frame: CGRect(origin: .zero, size: tableView.bounds.size))
+        preview.backgroundColor = Self.phoneSheetColor
+        preview.clipsToBounds = true
+        preview.isUserInteractionEnabled = false
+        guard let document = workspace.profileDocument else { return preview }
+        let tabs = workspace.tabs.filter { $0.placement == .app || $0.spaceID == spaceID }
+        let sections = sharedRows(
+            document.snapshot, spaceID: spaceID, available: Set(tabs.map(\.id)), expanded: [],
+        )
+        // Choosing the Space keeps the open tab only when it is in that Space.
+        let selected = tabs.contains { $0.id == workspace.selectedTabID } ? workspace.selectedTabID : tabs.first?.id
+        let width = tableView.bounds.width
+        var y = tableView.adjustedContentInset.top + (rows.isEmpty ? 0 : tableView.rect(forSection: 0).minY)
+        let divides = sections.count > 2 && !sections[2].isEmpty && sections.prefix(2).contains { !$0.isEmpty }
+        for (section, sectionRows) in sections.enumerated() {
+            if section == 2, divides {
+                let line = UIView(frame: CGRect(x: 29, y: y + 10, width: width - 58, height: 1))
+                line.backgroundColor = UIColor(white: 1, alpha: 0.14)
+                preview.addSubview(line)
+                y += 21
+            }
+            for row in sectionRows {
+                guard y < preview.bounds.height else { return preview }
+                let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
+                cell.frame = CGRect(x: 0, y: y, width: width, height: tableView.rowHeight)
+                configure(cell, row: row, selectedTabID: selected)
+                cell.layoutIfNeeded()
+                preview.addSubview(cell)
+                y += tableView.rowHeight
+            }
+        }
+        return preview
+    }
+
+    private func renderPhoneSheet(_ document: BrowserMobileProfileDocument?) {
+        guard phoneSpacePage == nil else { return }
+        setPhoneTitle(phoneSpaceTitle(workspace.selectedSpaceID))
         phoneTitleButton.menu = document.map(spaceMenu)
         phoneTitleButton.isEnabled = workspace.isReady && document != nil
         phoneTitleButton.frame.size = CGSize(width: max(view.bounds.width - 140, 120), height: 44)
         var items = [UIBarButtonItem.flexibleSpace()]
+        phoneSpaceItems.removeAll()
         for (index, space) in workspace.spaces.enumerated() {
             if index > 0 { items.append(.fixedSpace(28)) }
             let selected = space.id == workspace.selectedSpaceID
@@ -1125,6 +1261,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
             item.tintColor = selected ? .white : UIColor(white: 1, alpha: 0.3)
             item.hidesSharedBackground = true
             item.accessibilityTraits = selected ? [.button, .selected] : [.button]
+            phoneSpaceItems[space.id] = item
             items.append(item)
         }
         items.append(.flexibleSpace())
@@ -1203,6 +1340,10 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
     }
 
     private func configure(_ cell: UITableViewCell, at indexPath: IndexPath) {
+        configure(cell, row: row(at: indexPath), selectedTabID: workspace.selectedTabID)
+    }
+
+    private func configure(_ cell: UITableViewCell, row: Row?, selectedTabID: String?) {
         cell.accessoryType = .none
         cell.accessibilityTraits = [.button]
         cell.accessibilityIdentifier = nil
@@ -1212,7 +1353,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         cell.contentConfiguration = nil
         cell.backgroundConfiguration = .listCell()
         var content = cell.defaultContentConfiguration()
-        switch row(at: indexPath) {
+        switch row {
         case .tab(let id, let depth):
             guard let tab = renderedTabs[id] else { return }
             content.text = displayTitle(tab)
@@ -1223,11 +1364,11 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
             content.secondaryTextProperties.lineBreakMode = .byTruncatingMiddle
             content.image = UIImage(systemName: tab.state.error == nil ? "globe" : "exclamationmark.circle")
             cell.indentationLevel = depth
-            cell.accessoryType = !isSelectingRows && workspace.selectedTabID == id ? .checkmark : .none
+            cell.accessoryType = !isSelectingRows && selectedTabID == id ? .checkmark : .none
             cell.accessibilityIdentifier = "browser.tab." + id
             cell.accessibilityTraits = (isSelectingRows
                 ? selectedItems.contains(.init(entityType: .tab, entityID: id))
-                : workspace.selectedTabID == id)
+                : selectedTabID == id)
                 ? [.button, .selected]
                 : [.button]
         case .folder(let id, let depth):
@@ -1252,13 +1393,13 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         case nil: break
         }
         if isPhoneSheet {
-            stylePhoneSheet(cell, content: &content, at: indexPath)
+            stylePhoneSheet(cell, content: &content, row: row, selectedTabID: selectedTabID)
         }
         cell.contentConfiguration = content
     }
 
     private func stylePhoneSheet(
-        _ cell: UITableViewCell, content: inout UIListContentConfiguration, at indexPath: IndexPath,
+        _ cell: UITableViewCell, content: inout UIListContentConfiguration, row: Row?, selectedTabID: String?,
     ) {
         content.secondaryText = nil
         content.textProperties.font = .systemFont(ofSize: 17)
@@ -1271,7 +1412,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         content.imageToTextPadding = 14
         content.directionalLayoutMargins.leading = 29
         var background = UIBackgroundConfiguration.clear()
-        switch row(at: indexPath) {
+        switch row {
         case .tab(let id, _):
             if let tab = renderedTabs[id], tab.state.error == nil,
                let icon = BrowserMobileFavicons.shared.iconOnDark(forPage: tab.urlString)
@@ -1280,7 +1421,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
             }
             if !isSelectingRows {
                 cell.accessoryType = .none
-                if workspace.selectedTabID == id {
+                if selectedTabID == id {
                     background.backgroundColor = UIColor(white: 1, alpha: 0.08)
                     background.cornerRadius = 12
                     background.backgroundInsets = .init(top: 2, leading: 12, bottom: 2, trailing: 12)
@@ -2065,5 +2206,16 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
                 apply()
             })
         present(alert, animated: true)
+    }
+}
+
+// MARK: UIGestureRecognizerDelegate
+
+extension BrowserMobileTabsViewController: UIGestureRecognizerDelegate {
+    func gestureRecognizerShouldBegin(_ gesture: UIGestureRecognizer) -> Bool {
+        guard gesture === phoneSpacePan, let pan = gesture as? UIPanGestureRecognizer else { return true }
+        let velocity = pan.velocity(in: tableView.superview)
+        return abs(velocity.x) > abs(velocity.y) * 1.2 && workspace.spaces.count > 1 && workspace.isReady
+            && !isSelectingRows && !isHoldingRows && !tableView.isEditing
     }
 }

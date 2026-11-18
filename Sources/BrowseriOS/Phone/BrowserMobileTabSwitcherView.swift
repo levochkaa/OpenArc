@@ -6,7 +6,8 @@ import UIKit
 
 /// The phone's tab switcher: tab pictures in an overlapping row, the newest on
 /// the right and on top. Swiping sideways moves through them, a tap opens one,
-/// flicking one up closes it.
+/// flicking one up closes it, and a tap between them goes back to the tab
+/// that was open. The bar's Spaces, New Tab and Settings sit over it.
 final class BrowserMobileTabSwitcherView: UIView, UIScrollViewDelegate, UIGestureRecognizerDelegate {
     // MARK: Internal
 
@@ -26,14 +27,10 @@ final class BrowserMobileTabSwitcherView: UIView, UIScrollViewDelegate, UIGestur
 
     var onOpen: ((String) -> Void)?
     var onClose: ((String) -> Void)?
-    var onNewTab: (() -> Void)?
-    var onSpaces: (() -> Void)?
-    var onSettings: (() -> Void)?
+    /// A tap outside the cards.
+    var onDismiss: (() -> Void)?
 
     let backdrop = UIImageView()
-    let spacesButton = UIButton(type: .custom)
-    let plusButton = UIButton(type: .custom)
-    let settingsButton = UIButton(type: .custom)
 
     private(set) var entries = [Entry]()
     /// Index of the card in the middle, fractional while scrolling.
@@ -80,18 +77,6 @@ final class BrowserMobileTabSwitcherView: UIView, UIScrollViewDelegate, UIGestur
         scroller.addGestureRecognizer(lift)
         scroller.panGestureRecognizer.require(toFail: lift)
         self.liftGesture = lift
-        configure(spacesButton, symbol: "desktopcomputer", title: "Spaces", id: "browser.spaces") { [weak self] in
-            self?.onSpaces?()
-        }
-        configure(settingsButton, symbol: "gearshape", title: "Settings", id: "browser.settings") { [weak self] in
-            self?.onSettings?()
-        }
-        configure(plusButton, symbol: "plus", title: "New Tab", id: "browser.switcherNewTab") { [weak self] in
-            self?.onNewTab?()
-        }
-        for button in [spacesButton, plusButton, settingsButton] {
-            addSubview(button)
-        }
     }
 
     @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
@@ -106,15 +91,6 @@ final class BrowserMobileTabSwitcherView: UIView, UIScrollViewDelegate, UIGestur
         if !scroller.isDragging, !scroller.isDecelerating {
             scroller.contentOffset.x = position * step
         }
-        let centerY = bounds.height - safeAreaInsets.bottom - 10 - 32 + BrowserMobilePhoneBarView.controlHeight / 2
-        let side = BrowserMobilePhoneBarView.roundButtonSide
-        spacesButton.frame = CGRect(x: 24, y: centerY - side / 2, width: side, height: side)
-        settingsButton.frame = CGRect(x: bounds.width - 24 - side, y: centerY - side / 2, width: side, height: side)
-        plusButton.frame = CGRect(
-            x: (bounds.width - BrowserMobilePhoneBarView.plusWidth) / 2,
-            y: centerY - BrowserMobilePhoneBarView.controlHeight / 2,
-            width: BrowserMobilePhoneBarView.plusWidth, height: BrowserMobilePhoneBarView.controlHeight,
-        )
         layoutCards()
     }
 
@@ -227,7 +203,10 @@ final class BrowserMobileTabSwitcherView: UIView, UIScrollViewDelegate, UIGestur
     }
 
     @objc private func tapped(_ gesture: UITapGestureRecognizer) {
-        guard let index = entryIndex(at: gesture.location(in: self)) else { return }
+        guard let index = entryIndex(at: gesture.location(in: self)) else {
+            onDismiss?()
+            return
+        }
         onOpen?(entries[index].id)
     }
 
@@ -291,32 +270,6 @@ final class BrowserMobileTabSwitcherView: UIView, UIScrollViewDelegate, UIGestur
         scroller.contentSize.width = bounds.width + step * CGFloat(max(entries.count - 1, 0))
         scroller.contentOffset.x = newPosition * step
         onClose?(id)
-    }
-
-    private func configure(
-        _ button: UIButton, symbol: String, title: String, id: String, action: @escaping () -> Void,
-    ) {
-        button.setImage(
-            UIImage(
-                systemName: symbol,
-                withConfiguration: UIImage.SymbolConfiguration(
-                    pointSize: symbol == "plus" ? 20 : 16,
-                    weight: .semibold,
-                ),
-            ),
-            for: .normal,
-        )
-        button.tintColor = .white
-        button.backgroundColor = UIColor(white: 1, alpha: 0.12)
-        button.layer.cornerRadius = symbol == "plus"
-            ? BrowserMobilePhoneBarView.controlHeight / 2
-            : BrowserMobilePhoneBarView.roundButtonSide / 2
-        button.layer.cornerCurve = .continuous
-        button.layer.borderWidth = 1 / 3
-        button.layer.borderColor = UIColor(white: 1, alpha: 0.1).cgColor
-        button.accessibilityLabel = NSLocalizedString(title, tableName: "Mobile", comment: "Tab switcher action")
-        button.accessibilityIdentifier = id
-        button.addAction(UIAction { _ in action() }, for: .touchUpInside)
     }
 }
 
