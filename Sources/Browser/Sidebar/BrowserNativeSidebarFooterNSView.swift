@@ -111,7 +111,7 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate, Browser
         createButton.sendAction(on: .leftMouseDown)
         createButton.onRelease = { [weak self] in self?.closeCreateMenuIfHeld() }
         createMenu.onClose = { [weak self] in self?.setCreateMenuOpen(false) }
-        toast.onInstall = { [weak updateController] in updateController?.installDownloadedUpdateNow() }
+        toast.onInstall = { [weak updateController] in updateController?.performToastAction() }
         toast.onAutomaticUpdatesChanged = { [weak updateController] enabled in
             updateController?.automaticUpdatesEnabled = enabled
         }

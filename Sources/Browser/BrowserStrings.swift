@@ -3256,6 +3256,16 @@ enum BrowserStrings {
         comment: "Button title for installing a downloaded update immediately.",
     )
 
+    static let updateFailedTitle = NSLocalizedString(
+        "browser.updates.failed.title",
+        comment: "Title shown when a downloaded update could not be installed.",
+    )
+
+    static let updateDownloadAction = NSLocalizedString(
+        "browser.updates.download_action",
+        comment: "Button title for downloading an update that could not be installed, to install it by hand.",
+    )
+
     static let settingsAppearance = NSLocalizedString(
         "browser.settings.general.appearance",
         comment: "Appearance setting title.",

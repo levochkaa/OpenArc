@@ -66,7 +66,7 @@ import Testing
         var actions = [String]()
         view.onInstall = { actions.append("install") }
         view.onAutomaticUpdatesChanged = { actions.append("automatic \($0)") }
-        view.update(.init(title: "Update available", actionTitle: "Relaunch"))
+        view.update(.init(title: "Update available", actionTitle: "Relaunch", action: .restart))
         view.isAutomaticUpdatesOn = false
         #expect(view.displayHeight == BrowserNativeUpdateToastView.collapsedHeight)
         view.setExpanded(true, animated: false)

@@ -523,6 +523,8 @@
 "browser.updates.channel.beta" = "Beta";
 "browser.updates.ready.title" = "New OpenArc Version Available";
 "browser.updates.restart_action" = "Restart and Update";
+"browser.updates.failed.title" = "Update Failed";
+"browser.updates.download_action" = "Download Update";
 "browser.settings.general.warn_before_quitting" = "Warn Before Quitting";
 "browser.settings.general.blurred_background" = "Blur Browser Background";
 "browser.settings.general.battery_saver" = "Battery Saver";

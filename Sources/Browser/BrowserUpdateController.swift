@@ -1,5 +1,6 @@
 // BrowserUpdateController.swift
 
+import AppKit
 import Combine
 import Foundation
 import Network
@@ -8,10 +9,6 @@ import Sparkle
 // MARK: - BrowserUpdateController
 
 @MainActor final class BrowserUpdateController: NSObject, ObservableObject {
-    // MARK: Internal
-
-    @Published private(set) var toast: BrowserUpdateToast?
-
     // MARK: Private
 
     private let preferencesStore: BrowserUserPreferencesStore
@@ -24,6 +21,11 @@ import Sparkle
     private var isWiFiAvailable = false
     private var isAutomaticUpdatePolicyActive = false
     private var immediateInstallHandler: (() -> Void)?
+    @Published private var toastState = BrowserUpdateToastState()
+
+    // MARK: Internal
+
+    var toast: BrowserUpdateToast? { toastState.toast }
 
     var automaticUpdatesEnabled: Bool {
         get { preferencesStore.automaticUpdatesEnabled }
@@ -122,14 +124,19 @@ import Sparkle
         updaterController?.checkForUpdates(sender)
     }
 
-    func installDownloadedUpdateNow() {
-        guard let immediateInstallHandler else {
-            updaterController?.checkForUpdates(nil)
-            return
+    func performToastAction() {
+        guard let toast else { return }
+        toastState.dismiss()
+        switch toast.action {
+        case .restart:
+            guard let immediateInstallHandler else {
+                updaterController?.checkForUpdates(nil)
+                return
+            }
+            immediateInstallHandler()
+        case .download(let url):
+            NSWorkspace.shared.open(url)
         }
-
-        toast = nil
-        immediateInstallHandler()
     }
 
     private func startNetworkPathMonitor() {
@@ -196,7 +203,7 @@ import Sparkle
     }
 
     private func handleUpdateChannelChange() {
-        toast = nil
+        toastState.reset()
         immediateInstallHandler = nil
 
         guard
@@ -210,11 +217,8 @@ import Sparkle
         updaterController?.updater.checkForUpdatesInBackground()
     }
 
-    private func showDownloadedUpdateToast() {
-        toast = BrowserUpdateToast(
-            title: BrowserStrings.updateReadyTitle,
-            actionTitle: BrowserStrings.updateRestartAction,
-        )
+    private func showDownloadedUpdateToast(for item: SUAppcastItem) {
+        toastState.updateDownloaded(fullArchiveURL: item.isDeltaUpdate ? nil : item.fileURL)
     }
 }
 
@@ -245,17 +249,25 @@ extension BrowserUpdateController: SPUUpdaterDelegate {
         }
     }
 
-    func updater(_: SPUUpdater, didDownloadUpdate _: SUAppcastItem) {
-        showDownloadedUpdateToast()
+    func updater(_: SPUUpdater, didDownloadUpdate item: SUAppcastItem) {
+        showDownloadedUpdateToast(for: item)
+    }
+
+    func updater(_: SPUUpdater, didAbortWithError error: Error) {
+        let error = error as NSError
+        guard error.domain == SUSparkleErrorDomain,
+              toastState.updateFailed(sparkleErrorCode: error.code) else { return }
+        NSLog("OpenArc update failed: \(error.localizedDescription)")
+        immediateInstallHandler = nil
     }
 
     func updater(
         _: SPUUpdater,
-        willInstallUpdateOnQuit _: SUAppcastItem,
+        willInstallUpdateOnQuit item: SUAppcastItem,
         immediateInstallationBlock immediateInstallHandler: @escaping () -> Void,
     ) -> Bool {
         self.immediateInstallHandler = immediateInstallHandler
-        showDownloadedUpdateToast()
+        showDownloadedUpdateToast(for: item)
         return true
     }
 }
