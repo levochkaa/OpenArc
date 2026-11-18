@@ -59,7 +59,7 @@ struct BrowserCaptureRequest {
     static func menu(for model: BrowserChromeModel) -> BrowserCaptureCardMenu {
         var menu = BrowserCaptureCardMenu()
         menu.canSaveToLibrary = !model.isIncognito && BrowserCaptureStore.shared != nil
-        menu.canCreateEasel = model.onNewEaselFromCapture != nil
+        menu.canCreateEasel = model.canCreateEasel
         return menu
     }
 
@@ -74,9 +74,10 @@ struct BrowserCaptureRequest {
             onClose()
             model?.beginAreaCapture()
         case .newEasel:
-            guard let create = model?.onNewEaselFromCapture else { return }
+            guard let model, model.canCreateEasel else { return }
+            let png = png
             onClose()
-            create(png, request.pageURL)
+            model.sendCaptureToNewEasel(png: png)
         }
     }
 

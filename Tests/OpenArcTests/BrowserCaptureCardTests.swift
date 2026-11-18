@@ -33,7 +33,7 @@ struct BrowserCaptureCardMenuTests {
         for _ in 0..<10 {
             menu.moveSelection(by: 1)
         }
-        // New Easel stays dimmed without Easels, so Retake is the last row.
+        // New Easel stays dimmed where Easels are not offered, so Retake is the last row.
         #expect(menu.selection == .retake)
         menu.canCreateEasel = true
         menu.moveSelection(by: 1)

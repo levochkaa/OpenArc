@@ -519,9 +519,6 @@ enum BrowserWindowMode: Equatable {
     private(set) var areaCaptureCopiesToClipboard = false
     /// Shows the card that offers what to do with a capture.
     var onPresentCapture: ((BrowserCaptureRequest) -> Void)?
-    /// New Easel in a capture's Send To menu, with the picture and its page; the
-    /// item stays dimmed without it.
-    var onNewEaselFromCapture: ((Data, String?) -> Void)?
     /// Pages' pending permission requests in arrival order. Only the methods
     /// in `BrowserChromeModel+SitePermissions.swift` write it.
     @Published var sitePermissionRequests = [BrowserSitePermissionRequest]() {
@@ -3390,6 +3387,8 @@ enum BrowserWindowMode: Equatable {
         else { return false }
         let pageURL = selectedTab?.urlString
         let title = selectedTab?.title
+        // New Easel in the card links the picture to this part of the page.
+        noteAreaCapture(fraction: fraction, tabID: selectedTabID)
         tabDriver.captureActiveTabPicture { [weak self] png in
             guard let self, let png, self.selectedTabID == selectedTabID,
                   let page = BrowserCaptureImaging.cgImage(png: png),
@@ -3435,6 +3434,8 @@ enum BrowserWindowMode: Equatable {
     /// Capture Image… from a picture's menu: the picture in the capture card.
     func presentCapturedImage(png: Data) {
         guard let selectedTabID else { return }
+        // An image has no part of the page to follow.
+        lastAreaCaptureSource = nil
         let pageURL = selectedTab?.urlString
         let title = selectedTab?.title
         tabDriver.captureActiveTabPicture { [weak self] page in
@@ -5004,6 +5005,10 @@ enum BrowserWindowMode: Equatable {
         }
     }
 
+    func hasNoPage(_ id: String) -> Bool {
+        closedPinnedTabIDs.contains(id) || closedAppTabIDs.contains(id)
+    }
+
     /// Pinned tabs and folders from an imported tree, appended to the model;
     /// the caller places the returned items and each folder's children.
     private func addDormantPinnedNodes(
@@ -5373,10 +5378,6 @@ enum BrowserWindowMode: Equatable {
         tabs[index].canGoBack = handoff.canGoBack
         tabs[index].canGoForward = handoff.canGoForward
         tabs[index].isLoading = handoff.isLoading
-    }
-
-    func hasNoPage(_ id: String) -> Bool {
-        closedPinnedTabIDs.contains(id) || closedAppTabIDs.contains(id)
     }
 
     private func isPageInAnotherWindow(_ id: String) -> Bool {

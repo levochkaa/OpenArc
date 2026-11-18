@@ -496,6 +496,55 @@ import Testing
         #expect(objects.last?.content.capture?.urlString == "https://example.com")
     }
 
+    @Test func theCaptureCardsNewEaselStartsAnEaselWithThePicture() throws {
+        let (model, _) = makeEaselModel()
+        let pageID = try #require(model.selectedTabID)
+        let png = try #require(BrowserEaselStoreTests.png())
+        model.noteAreaCapture(fraction: CGRect(x: 0, y: 0, width: 0.5, height: 0.5), tabID: pageID)
+        let card = BrowserCaptureCardView(
+            picture: NSImage(size: NSSize(width: 40, height: 20)),
+            pictureFrame: CGRect(x: 10, y: 10, width: 40, height: 20),
+            pageFrame: CGRect(x: 0, y: 0, width: 800, height: 600),
+            backdrop: nil,
+            menu: BrowserCaptureCardPresenter.menu(for: model),
+        )
+        #expect(card.sendToMenu.canCreateEasel)
+        let presenter = BrowserCaptureCardPresenter(
+            request: BrowserCaptureRequest(
+                png: png, kind: .area, placement: .outlined(CGRect(x: 0, y: 0, width: 0.5, height: 0.5)),
+                pagePNG: nil, pageURL: "https://example.com", title: "Example", tabID: pageID,
+            ),
+            card: card,
+            model: model,
+        )
+        var closed = 0
+        presenter.onClose = { closed += 1 }
+
+        presenter.perform(.newEasel)
+
+        #expect(closed == 1)
+        let id = try #require(model.easelID(forTabID: model.selectedTabID))
+        let capture = try #require(model.easelStore.document(id: id)?.objects.last?.content.capture)
+        #expect(capture.urlString == "https://example.com")
+        #expect(capture.region == CGRect(x: 0, y: 0, width: 0.5, height: 0.5))
+        let (incognito, _) = makeEaselModel(windowMode: .incognito)
+        #expect(!BrowserCaptureCardPresenter.menu(for: incognito).canCreateEasel)
+        #expect(!BrowserCaptureCardPresenter.menu(for: incognito).canSaveToLibrary)
+    }
+
+    @Test func anEaselsCaptureButtonCopiesThePartInsteadOfOpeningTheCard() throws {
+        let (model, driver) = makeEaselModel()
+        let content = BrowserContentNSView(hostView: NSView())
+        content.frame = NSRect(x: 0, y: 0, width: 800, height: 600)
+        content.bindTabCreation(to: model)
+        model.easelCaptureTargetID = "easel"
+        #expect(model.beginAreaCapture())
+        let overlay = try #require(content.areaCapture)
+        overlay.onFinish(CGRect(x: 0.1, y: 0.1, width: 0.2, height: 0.2))
+        #expect(driver.regionCaptures == [CGRect(x: 0.1, y: 0.1, width: 0.2, height: 0.2)])
+        #expect(content.captureCard == nil)
+    }
+
     private func makeEaselModel(
         windowMode: BrowserWindowMode = .normal,
     ) -> (BrowserChromeModel, FakeBrowserTabDriver) {
