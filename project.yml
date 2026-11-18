@@ -46,6 +46,7 @@ targetTemplates:
       - path: Sources/Browser/BrowserSessionDefaults.swift
       - path: Sources/Browser/BrowserSyncPlatformConfiguration.swift
       - path: Sources/Browser/BrowserAccountStore.swift
+      - path: Sources/Browser/BrowserRuntimeIdentity.swift
       - path: Sources/Browser/BrowserSyncModels.swift
       - path: Sources/Browser/BrowserSyncExpiryRecovery.swift
       - path: Sources/Browser/BrowserSyncExpiryModels.swift

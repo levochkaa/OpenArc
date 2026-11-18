@@ -680,14 +680,17 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
     }
 
     /// Waits until no key, click, scroll or pointer move came for 0.3 s, at most 2 s.
+    /// iOS has no session-wide input clock, so it stores at once there.
     static func waitForInputPause() async {
-        let anyInput = CGEventType(rawValue: ~0)!
-        let deadline = ContinuousClock.now + .seconds(2)
-        while CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: anyInput) < 0.3,
-              ContinuousClock.now < deadline
-        {
-            try? await Task.sleep(for: .milliseconds(50))
-        }
+        #if os(macOS)
+            let anyInput = CGEventType(rawValue: ~0)!
+            let deadline = ContinuousClock.now + .seconds(2)
+            while CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: anyInput) < 0.3,
+                  ContinuousClock.now < deadline
+            {
+                try? await Task.sleep(for: .milliseconds(50))
+            }
+        #endif
     }
 
     // MARK: Internal
