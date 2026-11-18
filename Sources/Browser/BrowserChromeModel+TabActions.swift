@@ -68,6 +68,48 @@ extension BrowserChromeModel {
         return true
     }
 
+    /// Tabs from another window's sidebar dropped on this one land at the drop in this
+    /// window's Space, and the first is shown here. A window of the same profile lists
+    /// the same tabs, so they move and the page comes along; any other window's pages
+    /// open here anew and its temporary tabs leave it. Incognito windows neither give
+    /// nor take tabs.
+    @discardableResult func acceptTabs(
+        ids: Set<String>,
+        fromWindowOf source: BrowserChromeModel,
+        at destination: BrowserSidebarDropDestination,
+    ) -> Bool {
+        guard source !== self, windowMode != .incognito, source.windowMode != .incognito,
+              destination.container.section != .app
+        else { return false }
+        let moving = source.sidebarSnapshot.allTabs.filter { ids.contains($0.id) && URL(string: $0.urlString) != nil }
+        guard !moving.isEmpty else { return false }
+        if let windowGroup, source.windowGroup === windowGroup {
+            let local = moving.compactMap { tab in tabs.first { $0.syncID == tab.syncID }?.id }
+            guard let first = local.first else { return false }
+            let payload = BrowserSidebarDragPayload(primary: .tab(first), tabIDs: Set(local))
+            let moved = withArrangementUndo(BrowserStrings.undoMoveAction) {
+                commitSidebarDrop(payload: payload, destination: destination)
+            }
+            guard moved else { return false }
+            selectTab(id: first)
+            return true
+        }
+        guard destination.container.spaceID == selectedSpaceID,
+              openURLs(moving.compactMap { URL(string: $0.urlString) }, at: destination)
+        else { return false }
+        // The tabs just opened sit at the drop, in the order they came.
+        let tree = BrowserSidebarTabTree(snapshot: sidebarSnapshot)
+        let siblings = tree.items(in: destination.container)
+        let end = destination.beforeItem.flatMap { siblings.firstIndex(of: $0) } ?? siblings.count
+        if case .tab(let id)? = siblings.indices.contains(end - moving.count) ? siblings[end - moving.count] : nil {
+            selectTab(id: id)
+        }
+        for tab in moving where tab.placement == .temporary {
+            source.closeTab(id: tab.id, forceClose: true, undoActionName: BrowserStrings.tabMoveToNewWindowAction)
+        }
+        return true
+    }
+
     /// Command-click on the icon of a pinned tab away from its page: the
     /// page moves to the top of the temporary tabs and the pinned tab goes back
     /// to its pinned page, staying selected. The moved page loads anew.

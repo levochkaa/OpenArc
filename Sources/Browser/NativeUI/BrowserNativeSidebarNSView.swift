@@ -15,6 +15,9 @@ final class BrowserNativeSidebarNSView: NSView {
 
     private static let leavingPageKey = "browser.page.leaving"
 
+    /// Every sidebar, so a tab dragged out of one can land in another window's.
+    private static let sidebars = NSHashTable<BrowserNativeSidebarNSView>.weakObjects()
+
     // MARK: Internal
 
     override var isFlipped: Bool { true }
@@ -68,6 +71,8 @@ final class BrowserNativeSidebarNSView: NSView {
     private let dragPreview = BrowserNativeSidebarDragPreview()
     private let dragEvents = BrowserSidebarDragEventSession()
     private var showsCopyCursor = false
+    /// Another window's sidebar under a tab dragged from this one.
+    private weak var otherWindowDropTarget: BrowserNativeSidebarNSView?
 
     private let landingAnimation = BrowserNativeAnimation()
     private var dragPreviewTargetSize: CGSize?
@@ -113,6 +118,7 @@ final class BrowserNativeSidebarNSView: NSView {
         self.header = header
         self.footer = footer
         super.init(frame: .zero)
+        Self.sidebars.add(self)
         (footer as? BrowserSidebarLibraryButtonHosting)?.onLibraryHoverChanged = { [weak self] hovered in
             self?.isLibraryButtonHovered = hovered
             self?.scheduleDownloadsTray()
@@ -577,6 +583,7 @@ final class BrowserNativeSidebarNSView: NSView {
     func updateDrag(atWindowPoint point: CGPoint) {
         guard state.drag.isDragging else { return }
         lastWindowDragPoint = point
+        updateOtherWindowDrop(atWindowPoint: point)
         state.drag.updateDockTarget(spaceDock?.spaceID(atWindowPoint: point))
         state.drag.updateEdgeTarget(spaceEdgeDirection(atWindowPoint: point))
         state.drag.updatePointer(content.convert(point, from: nil))
@@ -607,6 +614,18 @@ final class BrowserNativeSidebarNSView: NSView {
         guard state.drag.isDragging else { return }
         if let payload = state.drag.payload, case .tab = payload.primary, let window {
             let screenPoint = window.convertPoint(toScreen: point)
+            if let target = otherWindowSidebar(atWindowPoint: point) {
+                otherWindowDropTarget = nil
+                target.updateTabDrop(at: target.window.map { $0.convertPoint(fromScreen: screenPoint) })
+                endDragging(at: state.drag.pointer, cancelled: true)
+                completeDragPresentation()
+                dragPreview.isHidden = true
+                // Dropped in another window's sidebar: the tabs land at its line.
+                if target.dropTabs(ids: payload.tabIDs, fromWindowOf: state.model) {
+                    target.window?.makeKeyAndOrderFront(nil)
+                }
+                return
+            }
             if !window.frame.contains(screenPoint),
                NSScreen.screens.contains(where: { $0.frame.contains(screenPoint) })
             {
@@ -630,7 +649,27 @@ final class BrowserNativeSidebarNSView: NSView {
         endDragging(at: content.convert(point, from: nil), cancelled: false)
     }
 
+    /// The line a tab dragged in from another window's sidebar would take; nil ends it.
+    @discardableResult func updateTabDrop(at windowPoint: CGPoint?) -> Bool {
+        guard let windowPoint else {
+            endLinkDrop()
+            return false
+        }
+        acceptsLinkDrop = true
+        return updateLinkDrop(at: windowPoint) != []
+    }
+
+    /// Tabs from another window's sidebar land at the line.
+    @discardableResult func dropTabs(ids: Set<String>, fromWindowOf source: BrowserChromeModel) -> Bool {
+        let destination = linkDropProposal?.destination
+        endLinkDrop()
+        guard let destination else { return false }
+        return state.withSidebarAnimation { state.model.acceptTabs(ids: ids, fromWindowOf: source, at: destination) }
+    }
+
     func cancelDragging() {
+        otherWindowDropTarget?.updateTabDrop(at: nil)
+        otherWindowDropTarget = nil
         guard state.drag.phase != .idle else { return }
         if state.drag.phase == .settling {
             completeDragPresentation()
@@ -748,6 +787,34 @@ final class BrowserNativeSidebarNSView: NSView {
         let delay = state.hasSpacePagerReleaseVelocity ? Self.swipeReleaseDelay : Self.spaceSelectionDelay
         setFrame(rect, of: pagesContainer, animated: true, delay: delay)
         return delay
+    }
+
+    /// A tab dragged from this sidebar over another window's sidebar: that window
+    /// comes forward and shows where the tab would land.
+    private func updateOtherWindowDrop(atWindowPoint point: CGPoint) {
+        let target = otherWindowSidebar(atWindowPoint: point)
+        if target !== otherWindowDropTarget {
+            otherWindowDropTarget?.updateTabDrop(at: nil)
+            otherWindowDropTarget = target
+            target?.window?.orderFront(nil)
+        }
+        guard let target, let other = target.window, let window else { return }
+        target.updateTabDrop(at: other.convertPoint(fromScreen: window.convertPoint(toScreen: point)))
+    }
+
+    private func otherWindowSidebar(atWindowPoint point: CGPoint) -> BrowserNativeSidebarNSView? {
+        guard let window, case .tab? = state.drag.payload?.primary, state.model.windowMode != .incognito else {
+            return nil
+        }
+        let screenPoint = window.convertPoint(toScreen: point)
+        guard !window.frame.contains(screenPoint) else { return nil }
+        let number = NSWindow.windowNumber(at: screenPoint, belowWindowWithWindowNumber: 0)
+        return Self.sidebars.allObjects.first { sidebar in
+            guard sidebar !== self, let other = sidebar.window, other.windowNumber == number,
+                  !sidebar.isHiddenOrHasHiddenAncestor
+            else { return false }
+            return other.convertToScreen(sidebar.convert(sidebar.visibleRect, to: nil)).contains(screenPoint)
+        }
     }
 
     /// A single dragged tab activates when the gesture starts; the tab stays
@@ -1792,6 +1859,8 @@ final class BrowserNativeSidebarNSView: NSView {
     }
 
     private func endDragging(at point: CGPoint, cancelled: Bool) {
+        otherWindowDropTarget?.updateTabDrop(at: nil)
+        otherWindowDropTarget = nil
         hideOutsidePreview()
         dragEvents.stop()
         guard let payload = state.drag.payload else { return }
@@ -2155,7 +2224,7 @@ final class BrowserNativeSidebarNSView: NSView {
         if state.drag.pageSplitTarget != nil, case .tab(let id)? = state.drag.payload?.primary {
             cardTab = state.snapshot.tab(withID: id)
         }
-        let outsideWindow = !window.frame.contains(pointer)
+        let outsideWindow = !window.frame.contains(pointer) && otherWindowDropTarget == nil
         if let cardTab {
             container.showCard(for: cardTab)
         } else if outsideWindow, let thumbnail = draggedPageThumbnail {

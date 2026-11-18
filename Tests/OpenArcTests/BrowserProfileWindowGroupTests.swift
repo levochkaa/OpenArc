@@ -44,6 +44,32 @@ import Testing
         }
     }
 
+    @Test func aTabDroppedOnTheOtherWindowsSidebarLandsAtItsLineAndShowsThere() throws {
+        let pair = Pair(temporary: ["x", "y", "z"])
+        let source = pair.first.model
+        let x = try #require(source.tabs.first { $0.userTitleOverride == "x" })
+        let zHere = try #require(pair.second.tabs.first { $0.userTitleOverride == "z" })
+        #expect(pair.second.acceptTabs(
+            ids: [x.id],
+            fromWindowOf: source,
+            at: .init(container: .temporary("s"), beforeItem: .tab(zHere.id)),
+        ))
+        func today(_ model: BrowserChromeModel, _ space: String = "s") -> [String] {
+            model.sidebarSnapshot.temporaryTabs(in: space).map { $0.userTitleOverride ?? $0.title }
+        }
+        #expect(today(pair.second) == ["y", "x", "z"])
+        #expect(today(source) == ["y", "x", "z"], "The other window lists the same order")
+        #expect(pair.second.tabs.first { $0.id == pair.second.selectedTabID }?.syncID == x.syncID)
+
+        // Into the Space the other window shows.
+        pair.second.selectSpace(id: "t")
+        let y = try #require(source.tabs.first { $0.userTitleOverride == "y" })
+        #expect(pair.second.acceptTabs(ids: [y.id], fromWindowOf: source, at: .init(container: .temporary("t"))))
+        #expect(today(pair.second, "t") == ["y"])
+        #expect(today(source, "t") == ["y"])
+        #expect(!pair.second.acceptTabs(ids: [y.id], fromWindowOf: source, at: .init(container: .app)))
+    }
+
     @Test func anAdditionalWindowStartsWithTheSameTabsAndNoPages() {
         let pair = Pair()
         #expect(pair.second.tabs.map(\.syncID) == pair.first.model.tabs.map(\.syncID))
