@@ -84,6 +84,10 @@ private func makePlaces(at url: URL, _ fill: (Database) throws -> Void) throws {
         .helium: "net.imput.helium/Default",
         .comet: "Comet/Default",
         .atlas: "com.openai.atlas/browser-data/host/Default",
+        .ardia: "com.ardia.browser/Chromium/Default",
+        .aside: "Aside/Default",
+        .cra: "Cra/Chromium/Default",
+        .crest: "Crest/Chromium/Crest-2F1C",
         .chromium: "Chromium/Default",
     ]
     for (_, path) in expected {

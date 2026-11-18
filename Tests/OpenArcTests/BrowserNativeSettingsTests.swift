@@ -361,7 +361,11 @@ import Testing
             "browser.settings.site-search.import",
             in: controller.view,
         ) as? NSPopUpButton)
-        #expect(importMenu.itemTitles.dropFirst() == ["Arc", "Dia", "Google Chrome"])
+        // The Chromium browsers with a profile on this Mac, in the import list's order.
+        let installed = BrowserBookmarkImportSource.allCases
+            .filter { $0.engine == .chromium && !$0.chromiumProfileDirectories().isEmpty }
+            .map(\.browserName)
+        #expect(Array(importMenu.itemTitles.dropFirst()) == installed)
     }
 
     private func find(_ id: String, in view: NSView) -> NSView? {

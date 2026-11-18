@@ -57,6 +57,10 @@ enum BrowserBookmarkImportSource: String, CaseIterable, Identifiable {
     case helium
     case comet
     case atlas
+    case ardia
+    case aside
+    case cra
+    case crest
     case chromium
     case firefox
     case zen
@@ -84,6 +88,10 @@ enum BrowserBookmarkImportSource: String, CaseIterable, Identifiable {
         case .helium: "Helium"
         case .comet: "Comet"
         case .atlas: "ChatGPT Atlas"
+        case .ardia: "Ardia"
+        case .aside: "Aside"
+        case .cra: "Cra"
+        case .crest: "Crest"
         case .chromium: "Chromium"
         case .firefox: "Firefox"
         case .zen: "Zen"
@@ -104,7 +112,8 @@ enum BrowserBookmarkImportSource: String, CaseIterable, Identifiable {
 
     var engine: BrowserImportEngine {
         switch self {
-        case .arc, .atlas, .brave, .chrome, .chromium, .comet, .dia, .edge, .helium, .opera, .vivaldi: .chromium
+        case .arc, .ardia, .aside, .atlas, .brave, .chrome, .chromium, .comet, .cra, .crest, .dia, .edge, .helium,
+             .opera, .vivaldi: .chromium
         case .firefox, .floorp, .librewolf, .waterfox, .zen: .firefox
         case .safari: .safari
         }
@@ -123,6 +132,10 @@ enum BrowserBookmarkImportSource: String, CaseIterable, Identifiable {
         case .helium: ["net.imput.helium"]
         case .comet: ["ai.perplexity.comet"]
         case .atlas: ["com.openai.atlas"]
+        case .ardia: ["com.ardia.browser"]
+        case .aside: ["at.studio.AsideBrowser"]
+        case .cra: ["dk.kildahl.cra"]
+        case .crest: ["com.pauldavis.crest"]
         case .chromium: ["org.chromium.Chromium"]
         case .firefox: ["org.mozilla.firefox", "org.mozilla.firefoxdeveloperedition", "org.mozilla.nightly"]
         case .zen: ["app.zen-browser.zen"]
@@ -146,6 +159,10 @@ enum BrowserBookmarkImportSource: String, CaseIterable, Identifiable {
         case .vivaldi: "Vivaldi Safe Storage"
         case .helium: "Helium Storage Key"
         case .comet: "Comet Safe Storage"
+        case .ardia: "Ardia Safe Storage"
+        case .aside: "Aside Safe Storage"
+        case .cra: "Cra Safe Storage"
+        case .crest: "Crest Safe Storage"
         case .chromium: "Chromium Safe Storage"
         case .atlas, .firefox, .floorp, .librewolf, .safari, .waterfox, .zen: nil
         }
@@ -210,6 +227,10 @@ enum BrowserBookmarkImportSource: String, CaseIterable, Identifiable {
             case .helium: "net.imput.helium"
             case .comet: "Comet"
             case .atlas: "com.openai.atlas/browser-data"
+            case .ardia: "com.ardia.browser/Chromium"
+            case .aside: "Aside"
+            case .cra: "Cra/Chromium"
+            case .crest: "Crest/Chromium"
             case .chromium: "Chromium"
             case .firefox: "Firefox"
             case .zen: "zen"
@@ -256,15 +277,18 @@ enum BrowserBookmarkImportSource: String, CaseIterable, Identifiable {
         return result
     }
 
-    /// Every Chromium profile folder (`Default`, `Profile N`) with data. Opera
-    /// keeps its only profile in the data folder itself.
+    /// Every Chromium profile folder (`Default`, `Profile N`, Crest's `Crest-<id>`)
+    /// with data. Opera keeps its only profile in the data folder itself.
     func chromiumProfileDirectories(
         in locations: BrowserImportLocations = .current,
         fileManager: FileManager = .default,
     ) -> [URL] {
         chromiumUserDataDirectories(in: locations, fileManager: fileManager).flatMap { root -> [URL] in
             let named = Self.subdirectories(of: root, fileManager: fileManager)
-                .filter { $0.lastPathComponent == "Default" || $0.lastPathComponent.hasPrefix("Profile ") }
+                .filter { folder in
+                    let name = folder.lastPathComponent
+                    return name == "Default" || name.hasPrefix("Profile ") || name.hasPrefix("Crest-")
+                }
                 .sorted { $0.lastPathComponent < $1.lastPathComponent }
             return ([root] + named).filter { Self.holdsChromiumProfile($0, fileManager: fileManager) }
         }
