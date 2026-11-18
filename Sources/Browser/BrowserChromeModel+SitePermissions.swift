@@ -55,9 +55,9 @@ extension BrowserChromeModel {
             return
         }
         // Location and notifications also need macOS's permission for OpenArc,
-        // asked after the first Allow. A system refusal leaves the
-        // site unanswered: Chromium would keep a Block after the user turns
-        // access on in System Settings.
+        // asked after the first Allow. A system refusal of the location leaves
+        // the site unanswered: Chromium would keep a Block after the user
+        // turns access on in System Settings.
         guard request.kinds.contains(.location) else {
             resolveAfterSystemNotificationAuthorization(request)
             return
@@ -77,9 +77,16 @@ extension BrowserChromeModel {
             resolveSitePermissionInEngine(id, allowed: true)
             return
         }
-        requestSystemNotificationAuthorization { [weak self] granted in
+        // The site is allowed whatever macOS answers, as in Chrome: macOS
+        // alone decides whether its notifications show, so turning them on in
+        // System Settings later is enough.
+        let origin = request.displayOrigin
+        requestSystemNotificationAuthorization { [weak self] outcome in
             DispatchQueue.main.async {
-                self?.resolveSitePermissionInEngine(id, allowed: granted ? true : nil)
+                self?.resolveSitePermissionInEngine(id, allowed: true)
+                if outcome == .turnedOff {
+                    self?.onSystemNotificationsTurnedOff?(origin)
+                }
             }
         }
     }
@@ -148,7 +155,7 @@ extension BrowserChromeModel {
 
     /// Camera and microphone also need macOS's permission for OpenArc, asked
     /// the first time a site is allowed one. A system refusal leaves the site
-    /// unanswered, as for notifications, so turning access on in System
+    /// unanswered, as for the location, so turning access on in System
     /// Settings is enough for the next request.
     func resolveMediaAccessInEngine(_ request: BrowserSitePermissionRequest, allowed: Bool) {
         let kinds = request.kinds.filter(\.isMediaCapture)

@@ -331,6 +331,7 @@ final class BrowserRootView: NSView {
             CATransaction.flush()
         }
         model.onOpenExtensions = { [weak self] in self?.openExtensions() }
+        model.onSystemNotificationsTurnedOff = { [weak self] in self?.showSystemNotificationsOff(origin: $0) }
         model.onOpenExtensionRequest = { [weak self] id in
             guard let self else { return }
             (showsSiteToolbar ? toolbar : sidebar.header.urlControls).openExtensionFromMenu(id: id)
@@ -1356,6 +1357,25 @@ final class BrowserRootView: NSView {
         }
         boostEditor = editor
         editor.show()
+    }
+
+    /// A site was just allowed to notify, yet macOS has notifications off for
+    /// OpenArc: says where to turn them on.
+    private func showSystemNotificationsOff(origin: String) {
+        guard let window else { return }
+        let appName = Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String
+            ?? BrowserStrings.applicationName
+        let alert = NSAlert()
+        alert.messageText = BrowserStrings.systemNotificationsOffTitle(appName: appName)
+        alert.informativeText = BrowserStrings.systemNotificationsOffMessage(origin: origin, appName: appName)
+        alert.addButton(withTitle: BrowserStrings.systemNotificationsOffOpenSettings)
+        alert.addButton(withTitle: BrowserStrings.systemNotificationsOffNotNow)
+        alert.beginSheetModal(for: window) { response in
+            guard response == .alertFirstButtonReturn,
+                  let url = BrowserNotificationAuthorization.settingsURL
+            else { return }
+            NSWorkspace.shared.open(url)
+        }
     }
 
     private func openExtensions() {

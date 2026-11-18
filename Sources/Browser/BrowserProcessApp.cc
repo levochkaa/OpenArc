@@ -14,8 +14,10 @@ constexpr char kDisableBackgroundingOccludedWindowsSwitch[] =
 constexpr char kDisableChromeLoginPromptSwitch[] = "disable-chrome-login-prompt";
 constexpr char kEnablePrintPreviewSwitch[] = "enable-print-preview";
 constexpr char kDisableFeaturesSwitch[] = "disable-features";
+constexpr char kEnableFeaturesSwitch[] = "enable-features";
 constexpr char kImmersiveReadAnythingFeature[] = "ImmersiveReadAnything";
 constexpr char kJourneysFeature[] = "Journeys";
+constexpr char kNewMacNotificationAPIFeature[] = "NewMacNotificationAPI";
 // Chromium chooses where a new passkey goes by these; on, it picks iCloud Keychain.
 constexpr const char* kICloudKeychainPasskeyFeatures[] = {
     "WebAuthenticationICloudKeychainForGoogle",
@@ -67,6 +69,11 @@ void DisableChromiumFeature(CefRefPtr<CefCommandLine> command_line,
                                   feature);
 }
 
+void EnableChromiumFeature(CefRefPtr<CefCommandLine> command_line,
+                           const std::string& feature) {
+  AppendCommaSeparatedSwitchValue(command_line, kEnableFeaturesSwitch, feature);
+}
+
 class BrowserProcessApp : public CefApp, public CefBrowserProcessHandler {
  public:
   void OnBeforeCommandLineProcessing(
@@ -80,6 +87,12 @@ class BrowserProcessApp : public CefApp, public CefBrowserProcessHandler {
     // History lists visits by date only; its "By group" tab needs Chrome's
     // history clustering, which CEF pages do not feed.
     DisableChromiumFeature(command_line, kJourneysFeature);
+
+    // Notifications go through UNUserNotificationCenter, as OpenArc's own
+    // permission request does. macOS refuses an app that mixes it with the
+    // older NSUserNotificationCenter, Chromium's default, and then shows none
+    // of the engine's notifications.
+    EnableChromiumFeature(command_line, kNewMacNotificationAPIFeature);
 
     // Keep visible CEF WebContents composited when macOS reports the app window
     // as occluded. Chromium otherwise evicts the surface and Mission Control can

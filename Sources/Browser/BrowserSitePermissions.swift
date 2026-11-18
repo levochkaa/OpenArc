@@ -3,6 +3,7 @@
 import AVFoundation
 import CoreLocation
 import Foundation
+import OSLog
 @preconcurrency import UserNotifications
 
 // MARK: - BrowserSitePermissionKind
@@ -157,29 +158,42 @@ struct BrowserSitePermissionDecision: Codable, Equatable {
 /// macOS's own permission for OpenArc to show notifications, asked once
 /// when the first site is allowed to.
 enum BrowserNotificationAuthorization {
-    static func request(completion: @escaping @Sendable (Bool) -> Void) {
+    /// What macOS answered.
+    enum Outcome: Equatable {
+        case allowed
+        /// Its prompt was just answered with Don't Allow.
+        case refused
+        /// Turned off before, so macOS showed no prompt.
+        case turnedOff
+    }
+
+    /// System Settings › Notifications, open at OpenArc.
+    static var settingsURL: URL? {
+        URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id="
+            + (Bundle.main.bundleIdentifier ?? ""))
+    }
+
+    static func request(completion: @escaping @Sendable (Outcome) -> Void) {
         Task {
             let center = UNUserNotificationCenter.current()
-            let settings = await center.notificationSettings()
-            switch settings.authorizationStatus {
+            let status = await center.notificationSettings().authorizationStatus
+            notificationLog.log("macOS notification authorization status: \(status.rawValue, privacy: .public)")
+            switch status {
             case .authorized,
                  .provisional:
-                completion(true)
-            case .denied:
-                completion(false)
+                completion(.allowed)
             case .notDetermined:
-                do {
-                    let granted = try await center.requestAuthorization(options: [.alert, .badge, .sound])
-                    completion(granted)
-                } catch {
-                    completion(false)
-                }
-            @unknown default:
-                completion(false)
+                let granted = await (try? center.requestAuthorization(options: [.alert, .badge, .sound])) ?? false
+                notificationLog.log("macOS notification prompt answered: \(granted, privacy: .public)")
+                completion(granted ? .allowed : .refused)
+            default:
+                completion(.turnedOff)
             }
         }
     }
 }
+
+private let notificationLog = Logger(subsystem: "com.levochkaa.OpenArc", category: "Notifications")
 
 // MARK: - BrowserMediaCaptureAuthorization
 

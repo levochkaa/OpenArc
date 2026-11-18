@@ -47,6 +47,6 @@ import Foundation
     }
 
     private static func requestSystemNotificationAuthorization(completion: @escaping @Sendable (Bool) -> Void) {
-        BrowserNotificationAuthorization.request(completion: completion)
+        BrowserNotificationAuthorization.request { completion($0 == .allowed) }
     }
 }

@@ -391,8 +391,12 @@ enum BrowserWindowMode: Equatable {
     /// closes. Only `sitePermissionDecisions` writes it.
     var incognitoSitePermissionDecisions = [BrowserSitePermissionDecision]()
     /// Asks macOS to let OpenArc show notifications; tests replace it.
-    var requestSystemNotificationAuthorization: (@escaping @Sendable (Bool) -> Void) -> Void =
-        BrowserNotificationAuthorization.request
+    var requestSystemNotificationAuthorization: (
+        @escaping @Sendable (BrowserNotificationAuthorization.Outcome) -> Void,
+    ) -> Void = BrowserNotificationAuthorization.request
+    /// UI-only: tells how to turn notifications on, for the site just allowed
+    /// while they are off for OpenArc in System Settings.
+    var onSystemNotificationsTurnedOff: ((String) -> Void)?
     /// Asks macOS to let OpenArc use the location; tests replace it.
     var requestSystemLocationAuthorization: @MainActor (@escaping @MainActor (Bool) -> Void) -> Void =
         BrowserLocationAuthorization.request

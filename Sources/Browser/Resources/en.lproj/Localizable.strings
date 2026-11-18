@@ -47,6 +47,10 @@
 "browser.settings.site_permissions.empty" = "No sites have asked yet.";
 "browser.settings.site_permissions.forget" = "Forget";
 "browser.site_permission.title" = "%@ wants to";
+"browser.site_permission.notifications_off.title" = "Notifications are off for %@";
+"browser.site_permission.notifications_off.message" = "%1$@ can send notifications now, but macOS will show them only after you turn on notifications for %2$@ in System Settings.";
+"browser.site_permission.notifications_off.open_settings" = "Open System Settings";
+"browser.site_permission.notifications_off.not_now" = "Not Now";
 "browser.site_setting.camera" = "Camera";
 "browser.site_setting.microphone" = "Microphone";
 "browser.site_setting.location" = "Location";

@@ -3962,6 +3962,16 @@ enum BrowserStrings {
         comment: "Checkbox that stops the profile change question.",
     )
 
+    static let systemNotificationsOffOpenSettings = NSLocalizedString(
+        "browser.site_permission.notifications_off.open_settings",
+        comment: "Button that opens System Settings at the app's notifications.",
+    )
+
+    static let systemNotificationsOffNotNow = NSLocalizedString(
+        "browser.site_permission.notifications_off.not_now",
+        comment: "Button that closes the alert about notifications being off in macOS.",
+    )
+
     static func syncAccountLastSynced(_ date: String) -> String {
         String(
             format: NSLocalizedString(
@@ -4142,6 +4152,27 @@ enum BrowserStrings {
                 comment: "Instruction after a sign-in code was emailed, with the email placeholder.",
             ),
             email,
+        )
+    }
+
+    static func systemNotificationsOffTitle(appName: String) -> String {
+        String(
+            format: NSLocalizedString(
+                "browser.site_permission.notifications_off.title",
+                comment: "Alert title after a site is allowed to notify while macOS has notifications off for the app. %@ is the app name.",
+            ),
+            appName,
+        )
+    }
+
+    static func systemNotificationsOffMessage(origin: String, appName: String) -> String {
+        String(
+            format: NSLocalizedString(
+                "browser.site_permission.notifications_off.message",
+                comment: "Alert text after a site is allowed to notify while macOS has notifications off for the app. %1$@ is the site, %2$@ the app name.",
+            ),
+            origin,
+            appName,
         )
     }
 

@@ -33,7 +33,7 @@ It starts the copy through LaunchServices with `open -g` and `--no-activate`, `-
 | print-preview | `window.print()` opens a "Print" window over the browser window; Escape, sent in the background, closes it and the page still runs scripts. |
 | screen-share-picker | `getDisplayMedia` from a click opens OpenArc's picker sheet. With Screen Recording allowed for the copy it shares the first source and checks the track, then stops it; otherwise it presses Cancel and expects `NotAllowedError`. |
 | extension-popup | Extensions > OpenArc Smoke Test, pressed through accessibility, opens the popup; its `chrome.tabs.query({active: true, currentWindow: true})` sees the selected tab. |
-| notification-after-site-permission | A click calls `Notification.requestPermission()`; the script presses Allow on OpenArc's prompt. The copy must turn to macOS only after that. With notifications on for "OpenArc Smoke" the page gets `granted` and the notification fires `onshow`. |
+| notification-after-site-permission | A click calls `Notification.requestPermission()`; the script presses Allow on OpenArc's prompt. The copy must turn to macOS only after that. The page gets `granted` whatever macOS answers, and the notification fires `onshow`; whether macOS shows it depends on the copy's notification settings and Focus. |
 | translate-in-place | `openarc command translatePage` on a German page changes the text at the same address; the command again brings the original back. |
 | background-launch | `lsappinfo front` never names the copy during the run. |
 | stability | The main process is alive at the end, and no crash report newer than the launch names the copy's path. |
@@ -43,7 +43,7 @@ It starts the copy through LaunchServices with `open -g` and `--no-activate`, `-
 These depend on decisions macOS keeps for `com.levochkaa.OpenArc.smoketest`, which stay across runs.
 
 - **Screen Recording.** The picker asks ScreenCaptureKit for screens and windows, and macOS prompts while the copy has no decision. The script reads the TCC databases (this needs Full Disk Access for the terminal; otherwise the state is `unknown`) and skips the check until someone decides. To decide: run once with `--allow-system-prompts` and answer the prompt. Allowed: the picker lists screens and windows and the check shares one. Denied: the check covers the sheet and Cancel only.
-- **Notifications.** Turn on notifications for "OpenArc Smoke" in System Settings > Notifications to check delivery; while they are off, notification-after-site-permission is a WARN.
+- **Notifications.** Turn on notifications for "OpenArc Smoke" in System Settings > Notifications to check delivery; while they are off, OpenArc shows its hint about System Settings after Allow, and macOS shows no banner. System Settings lists the copy only while it exists, so run with `--keep` to change its toggle.
 - **Launch requests.** The engine asks macOS for notification permission only while macOS has no decision for the app, so once the copy has one, a clean launch proves nothing and no-notification-request-at-launch is a WARN. `--fresh-identity` gives the copy a new bundle id for one run and makes the check conclusive; macOS then keeps a notification entry for that id, and screen-share-picker skips.
 
 ## What a person still does

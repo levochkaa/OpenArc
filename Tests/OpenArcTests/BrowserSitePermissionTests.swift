@@ -194,29 +194,52 @@ import Testing
     #expect(fixture.resolutions().last == "4:dismiss")
 }
 
-@MainActor @Test func notificationsWaitForTheSystemsPermission() async throws {
+@MainActor @Test func notificationsWaitForMacOSAndAreAllowedWhateverItAnswers() async throws {
     let fixture = try SitePermissionFixture()
     defer { fixture.cleanup() }
-    var systemAnswer: (@Sendable (Bool) -> Void)?
-    fixture.model
-        .requestSystemNotificationAuthorization = { systemAnswer = $0 }
+    var systemAnswer: (@Sendable (BrowserNotificationAuthorization.Outcome) -> Void)?
+    var hints = [String]()
+    fixture.model.requestSystemNotificationAuthorization = { systemAnswer = $0 }
+    fixture.model.onSystemNotificationsTurnedOff = { hints.append($0) }
+
+    // The answer hops to the main queue.
+    func waitForResolutions(_ count: Int) async throws {
+        for _ in 0..<100 where fixture.resolutions().count < count {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+    }
+
     fixture.request(1, origin: "https://mail.example", kinds: [.notifications], media: false)
     fixture.model.answerSitePermissionRequest(id: 1, allowed: true)
     #expect(fixture.resolutions().isEmpty)
-    systemAnswer?(false)
-    // The answer hops to the main queue.
-    for _ in 0..<100 where fixture.resolutions().isEmpty {
-        try await Task.sleep(for: .milliseconds(10))
-    }
-    // A system refusal leaves the site unanswered, so it can ask again later.
-    #expect(fixture.resolutions() == ["1:dismiss"])
+    systemAnswer?(.allowed)
+    try await waitForResolutions(1)
+    #expect(fixture.resolutions() == ["1:allow"])
+    #expect(hints.isEmpty)
+
+    // Notifications off in System Settings: the site is still allowed, so
+    // turning them on later is enough, and the window says where.
+    fixture.request(2, origin: "https://chat.example", kinds: [.notifications], media: false)
+    fixture.model.answerSitePermissionRequest(id: 2, allowed: true)
+    systemAnswer?(.turnedOff)
+    try await waitForResolutions(2)
+    #expect(fixture.resolutions().last == "2:allow")
+    #expect(hints == ["chat.example"])
+
+    // Don't Allow in macOS's own prompt was the user's answer just now: no hint.
+    fixture.request(3, origin: "https://news.example", kinds: [.notifications], media: false)
+    fixture.model.answerSitePermissionRequest(id: 3, allowed: true)
+    systemAnswer?(.refused)
+    try await waitForResolutions(3)
+    #expect(fixture.resolutions().last == "3:allow")
+    #expect(hints == ["chat.example"])
 
     // Block does not ask the system.
     systemAnswer = nil
-    fixture.request(2, origin: "https://mail.example", kinds: [.notifications], media: false)
-    fixture.model.answerSitePermissionRequest(id: 2, allowed: false)
+    fixture.request(4, origin: "https://mail.example", kinds: [.notifications], media: false)
+    fixture.model.answerSitePermissionRequest(id: 4, allowed: false)
     #expect(systemAnswer == nil)
-    #expect(fixture.resolutions().last == "2:block")
+    #expect(fixture.resolutions().last == "4:block")
 }
 
 @MainActor @Test func cameraAndMicrophoneWaitForMacOSWhoseRefusalLeavesTheSiteUnanswered() throws {
