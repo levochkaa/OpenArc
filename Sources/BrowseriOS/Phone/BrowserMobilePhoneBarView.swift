@@ -16,9 +16,9 @@ final class BrowserMobilePhoneBarView: UIView {
     static let plusWidth: CGFloat = 76
     static let controlTopInset: CGFloat = 12
 
-    /// Glass over the page under the bar: it turns light over light pages and
-    /// dark over dark ones, and the controls inside follow.
-    let background = UIVisualEffectView(effect: BrowserMobileBackdrop.glass())
+    /// The material over the page under the bar: it turns light over light
+    /// pages and dark over dark ones, and the controls inside follow.
+    let background = BrowserMobileBarMaterial()
     let tabStack = BrowserMobileTabStackButton()
     let plusButton = UIButton(type: .custom)
     let moreButton = UIButton(type: .custom)
@@ -143,8 +143,8 @@ final class BrowserMobilePhoneBarView: UIView {
     /// inside an animation to crossfade them.
     func setShowsSwitcherControls(_ shows: Bool) {
         showsSwitcherControls = shows
-        // Over the switcher the bar has no glass of its own.
-        background.effect = shows ? nil : BrowserMobileBackdrop.glass()
+        // Over the switcher the bar has no material of its own.
+        background.showsMaterial = !shows
         for (view, visible) in [
             (tabStack, !shows), (moreButton, !shows), (spacesButton, shows), (settingsButton, shows),
         ] as [(UIView, Bool)] {
@@ -168,7 +168,7 @@ final class BrowserMobilePhoneBarView: UIView {
             button.layer.borderColor = BrowserMobileBackdrop.buttonBorder
                 .resolvedColor(with: background.contentView.traitCollection)
                 .cgColor
-            button.tintColor = .label
+            button.tintColor = BrowserMobileBackdrop.glyph
         }
     }
 

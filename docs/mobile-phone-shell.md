@@ -6,15 +6,19 @@ On iPhone (`userInterfaceIdiom == .phone`) the scene's root is `BrowserMobilePho
 
 The page fills the screen, under the status bar and the bottom bar. The engine receives the covered edges as `obscuredContentInsets`, so pages lay out above the bar and below the status bar while drawing behind both.
 
-The bottom bar (`BrowserMobilePhoneBarView`) is Liquid Glass with a light or dark tint. `BrowserMobileBackdrop` measures the luminance of the page under the bar from a 32-pixel snapshot and switches with hysteresis (dark below 0.16, light above 0.24), so a mixed page does not flicker. The bar holds three controls:
+The bottom bar (`BrowserMobilePhoneBarView`) is a blurred material over the page (`BrowserMobileBarMaterial`): `systemMaterialLight` on light pages, the thinner `systemThinMaterialDark` on dark ones so a colored page keeps more of its color. The page's own background color (WebKit's `underPageBackgroundColor`) decides: relative luminance under 0.179, where white and black text contrast the same, is dark. Until a page reports its background, a 32-pixel picture of the page under the bar decides. Glyphs are white on dark and 21% gray on light.
+
+Under the status bar an opaque band takes the page's `theme-color`, or its background, so scrolled content never shows there; the status bar's text turns light over a dark band.
+
+The bar holds three controls:
 
 - the tab stack: two tilted pictures of the previous tabs; tap opens the switcher;
 - New Tab, a 76×40 capsule;
 - the page menu chevron, a 34-point circle.
 
-Scrolling down by 14 points shrinks the bar to the home-indicator strip; scrolling up or reaching the top brings it back. While collapsed, a tap on the strip expands it; that recognizer is off while the controls show, so it never takes their taps.
+Scrolling down by 14 points slides the bar down until only the home-indicator strip shows (0.06 s, controls fade in 0.05 s); scrolling up or reaching the top brings it back (0.09 s, controls 0.12 s). The bar keeps its height while it slides, so its blur never resizes. While collapsed, a tap on the strip expands it; that recognizer is off while the controls show, so it never takes their taps.
 
-Over the tab switcher the same bar stays: the tab stack and the page menu crossfade into Spaces and Settings, New Tab stays put, and the glass goes so the switcher shows through.
+Over the tab switcher the same bar stays: the tab stack and the page menu crossfade into Spaces and Settings, New Tab stays put, and the material goes so the switcher shows through.
 
 A drag on the bar starts from anywhere on it, buttons included:
 

@@ -13,6 +13,11 @@ struct BrowserMobilePageState: Equatable {
     var canGoBack = false
     var canGoForward = false
     var error: String?
+    /// The color the page asks the browser's chrome to take (`theme-color`).
+    var themeColor: UIColor?
+    /// The page's own background color, which decides whether the bar
+    /// around it is light or dark.
+    var backgroundColor: UIColor?
 }
 
 // MARK: - BrowserMobileEngineEvent

@@ -641,6 +641,8 @@ import WebKit
             observe(\.estimatedProgress, webView: webView, id: id),
             observe(\.canGoBack, webView: webView, id: id),
             observe(\.canGoForward, webView: webView, id: id),
+            observe(\.themeColor, webView: webView, id: id),
+            observe(\.underPageBackgroundColor, webView: webView, id: id),
         ]
         return webView
     }
@@ -730,6 +732,8 @@ import WebKit
         }
         record.state.canGoBack = webView.canGoBack
         record.state.canGoForward = webView.canGoForward
+        record.state.themeColor = webView.themeColor
+        record.state.backgroundColor = webView.underPageBackgroundColor
         if record.allowsPageMetadata {
             record.committedState = record.state
             record.committedRetryLoad = record.retryLoad

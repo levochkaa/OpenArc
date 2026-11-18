@@ -51,7 +51,8 @@ final class BrowserMobilePhoneViewController: UIViewController {
     }
 
     override var preferredStatusBarStyle: UIStatusBarStyle {
-        mode == .switcher || mode == .search ? .lightContent : .default
+        if mode == .switcher || mode == .search { return .lightContent }
+        return isStatusBandDark ? .lightContent : .darkContent
     }
 
     let workspace: BrowserMobileWorkspace
@@ -72,6 +73,10 @@ final class BrowserMobilePhoneViewController: UIViewController {
 
     private let contentView: UIView
     private let pageContainer = UIView()
+    /// Covers the page under the status bar in the page's theme color, or
+    /// its background, so scrolled content never shows there.
+    private let statusBand = UIView()
+    private var isStatusBandDark = false
     private let bar = BrowserMobilePhoneBarView()
     private let emptyState = UIStackView()
     private let emptyTitle = UILabel()
@@ -119,9 +124,13 @@ final class BrowserMobilePhoneViewController: UIViewController {
     private var expandedBarHeight: CGFloat { BrowserMobilePhoneBarView.height(safeBottom: safeBottom, collapsed: false)
     }
 
+    /// The bar keeps its full height; collapsed, it slides down until only
+    /// the home indicator's strip shows, so its material never resizes.
     private var barFrame: CGRect {
-        let height = BrowserMobilePhoneBarView.height(safeBottom: safeBottom, collapsed: bar.isCollapsed)
-        return CGRect(x: 0, y: view.bounds.height - height, width: view.bounds.width, height: height)
+        let shown = BrowserMobilePhoneBarView.height(safeBottom: safeBottom, collapsed: bar.isCollapsed)
+        return CGRect(
+            x: 0, y: view.bounds.height - shown, width: view.bounds.width, height: expandedBarHeight,
+        )
     }
 
     private var expandedBarFrame: CGRect {
@@ -153,6 +162,9 @@ final class BrowserMobilePhoneViewController: UIViewController {
         pageContainer.clipsToBounds = true
         view.addSubview(pageContainer)
         pageContainer.addSubview(contentView)
+        statusBand.isUserInteractionEnabled = false
+        statusBand.backgroundColor = .white
+        pageContainer.addSubview(statusBand)
         configureEmptyState()
         view.addSubview(bar)
         bar.tabStack.addAction(UIAction { [weak self] _ in self?.openSwitcher() }, for: .touchUpInside)
@@ -215,6 +227,11 @@ final class BrowserMobilePhoneViewController: UIViewController {
             : zoomSteps.last { $0 < zoom - 0.001 } ?? zoomSteps[0]
     }
 
+    /// Whether a page's background is dark; nil before it reports one.
+    private static func isDark(_ state: BrowserMobilePageState) -> Bool? {
+        state.backgroundColor.flatMap(BrowserMobileBackdrop.luminance(of:)).map(BrowserMobileBackdrop.isDark)
+    }
+
     func render() {
         guard isViewLoaded else { return }
         let tab = workspace.selectedTab
@@ -242,6 +259,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
         updateTabStack()
         requestIcons()
         updateEmptyState()
+        updateStatusBand()
         bar.isHidden = workspace.isFindInPageVisible && mode == .browsing
         if mode == .pageMenu { updatePagePanel() }
         if mode == .search { searchPanel.candidates = searchCandidates() }
@@ -264,6 +282,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
         guard pageContainer.transform.isIdentity else { return }
         pageContainer.frame = view.bounds
         contentView.frame = pageContainer.bounds
+        statusBand.frame = CGRect(x: 0, y: 0, width: view.bounds.width, height: view.safeAreaInsets.top)
         emptyState.frame = pageContainer.bounds.inset(by: UIEdgeInsets(
             top: view.safeAreaInsets.top, left: 24, bottom: expandedBarHeight, right: 24,
         ))
@@ -275,33 +294,56 @@ final class BrowserMobilePhoneViewController: UIViewController {
 
     // MARK: Theme, icons, tab stack
 
-    /// Looks at the page under the bar shortly after a change and turns the
-    /// bar's glass dark over a dark page.
+    /// Turns the bar dark over a page whose background is dark. Before the
+    /// page reports its background, a picture of the page under the bar
+    /// decides.
     private func sampleBackdrop() {
+        // Over the switcher the bar stays dark.
+        guard mode != .switcher else { return }
+        guard let tab = workspace.selectedTab, !contentView.isHidden else {
+            setBackdropDark(false)
+            return
+        }
+        if let dark = Self.isDark(tab.state) {
+            setBackdropDark(dark)
+            return
+        }
         guard !isBackdropSampleScheduled else { return }
         isBackdropSampleScheduled = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
             guard let self else { return }
             isBackdropSampleScheduled = false
-            // Over the switcher the bar stays dark.
-            guard mode != .switcher else { return }
-            guard let id = workspace.selectedTabID, !contentView.isHidden else {
-                setBackdropDark(false)
-                return
-            }
+            guard mode != .switcher, let id = workspace.selectedTabID, !contentView.isHidden,
+                  workspace.selectedTab.flatMap({ Self.isDark($0.state) }) == nil else { return }
             let height = expandedBarHeight
             let rect = CGRect(x: 0, y: view.bounds.height - height, width: view.bounds.width, height: height)
             workspace.snapshot(tabID: id, rect: rect, width: 32) { [weak self] image in
                 guard let self, workspace.selectedTabID == id, let image = image?.cgImage,
                       let luminance = BrowserMobileBackdrop.luminance(of: image) else { return }
-                setBackdropDark(BrowserMobileBackdrop.isDark(luminance: luminance, current: bar.isDark))
+                setBackdropDark(BrowserMobileBackdrop.isDark(luminance: luminance))
             }
         }
     }
 
-    /// Turns the bar to match a tab's last picture before its page shows, so
-    /// the color changes along with a switch instead of after it.
+    private func updateStatusBand() {
+        let state = workspace.selectedTab?.state
+        statusBand.isHidden = contentView.isHidden
+        guard let color = state?.themeColor ?? state?.backgroundColor else { return }
+        statusBand.backgroundColor = color
+        let dark = BrowserMobileBackdrop.luminance(of: color).map(BrowserMobileBackdrop.isDark) ?? false
+        guard dark != isStatusBandDark else { return }
+        isStatusBandDark = dark
+        setNeedsStatusBarAppearanceUpdate()
+    }
+
+    /// Turns the bar to match a tab's background, or its last picture, before
+    /// its page shows, so the color changes along with a switch instead of
+    /// after it.
     private func matchBackdrop(toPictureOf tabID: String) {
+        if let tab = workspace.tabs.first(where: { $0.id == tabID }), let dark = Self.isDark(tab.state) {
+            setBackdropDark(dark)
+            return
+        }
         guard let image = thumbnails.image(for: tabID)?.cgImage, image.height > 0 else { return }
         let screenHeight = view.bounds.height * CGFloat(image.width) / view.bounds.width
         let barHeight = expandedBarHeight * CGFloat(image.width) / view.bounds.width
@@ -309,7 +351,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
         guard let strip = image.cropping(to: CGRect(
             x: 0, y: max(0, bottom - barHeight), width: CGFloat(image.width), height: barHeight,
         )), let luminance = BrowserMobileBackdrop.luminance(of: strip) else { return }
-        setBackdropDark(BrowserMobileBackdrop.isDark(luminance: luminance, current: bar.isDark))
+        setBackdropDark(BrowserMobileBackdrop.isDark(luminance: luminance))
     }
 
     private func setBackdropDark(_ dark: Bool) {
@@ -492,13 +534,14 @@ final class BrowserMobilePhoneViewController: UIViewController {
             layoutBar()
             return
         }
-        // Controls go first when collapsing and come back last when expanding.
-        UIView.animate(withDuration: collapsed ? 0.08 : 0.2, delay: collapsed ? 0 : 0.06, options: [
+        // Both ways take a few frames; the controls fade a little faster
+        // collapsing and a little slower expanding than the bar moves.
+        UIView.animate(withDuration: collapsed ? 0.05 : 0.12, delay: 0, options: [
             .beginFromCurrentState, .allowUserInteraction,
         ]) {
             self.bar.setCollapsed(collapsed)
         }
-        UIView.animate(withDuration: 0.22, delay: 0, options: [
+        UIView.animate(withDuration: collapsed ? 0.06 : 0.09, delay: 0, options: [
             .beginFromCurrentState, .allowUserInteraction, .curveEaseOut,
         ]) {
             self.layoutBar()
@@ -565,7 +608,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
             surface.addSubview(tint)
             surfaceTint = tint
         } else {
-            let glass = UIVisualEffectView(effect: BrowserMobileBackdrop.glass())
+            let glass = BrowserMobileBarMaterial()
             glass.frame = bar.frame
             glass.overrideUserInterfaceStyle = bar.isDark ? .dark : .light
             surface = glass

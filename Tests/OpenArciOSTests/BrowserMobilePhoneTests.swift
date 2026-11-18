@@ -47,7 +47,7 @@ import UIKit
 
 // MARK: - Bar backdrop
 
-@Test func mobileBackdropMeasuresLuminanceAndKeepsItsLookBetweenTheLimits() throws {
+@Test func mobileBackdropMeasuresLuminanceOfPicturesAndColors() throws {
     func image(white: CGFloat) throws -> CGImage {
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
@@ -61,10 +61,20 @@ import UIKit
     let white = try #require(BrowserMobileBackdrop.luminance(of: image(white: 1)))
     #expect(black < 0.01)
     #expect(white > 0.99)
-    #expect(BrowserMobileBackdrop.isDark(luminance: black, current: false))
-    #expect(!BrowserMobileBackdrop.isDark(luminance: white, current: true))
-    #expect(BrowserMobileBackdrop.isDark(luminance: 0.2, current: true))
-    #expect(!BrowserMobileBackdrop.isDark(luminance: 0.2, current: false))
+    #expect(BrowserMobileBackdrop.isDark(luminance: black))
+    #expect(!BrowserMobileBackdrop.isDark(luminance: white))
+    // Pages by background: gray 128 and pure red are light; gray 100, green
+    // 128 and a saturated blue are dark.
+    func isDark(_ red: CGFloat, _ green: CGFloat, _ blue: CGFloat) throws -> Bool {
+        let color = UIColor(red: red / 255, green: green / 255, blue: blue / 255, alpha: 1)
+        return try BrowserMobileBackdrop.isDark(luminance: #require(BrowserMobileBackdrop.luminance(of: color)))
+    }
+    #expect(try !isDark(128, 128, 128))
+    #expect(try !isDark(255, 0, 0))
+    #expect(try isDark(100, 100, 100))
+    #expect(try isDark(0, 128, 0))
+    #expect(try isDark(53, 61, 237))
+    #expect(BrowserMobileBackdrop.luminance(of: .clear) == nil)
 }
 
 // MARK: - Favicons
