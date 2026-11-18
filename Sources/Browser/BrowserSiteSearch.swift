@@ -15,86 +15,86 @@ struct BrowserSiteSearch: Codable, Equatable, Identifiable {
 
     static let queryPlaceholder = "%s"
 
-    /// The site searches seeded into a new profile, with their chip colors.
+    /// The site searches seeded into a new profile, with their chip colors in Display P3.
     static let arcDefaults: [BrowserSiteSearch] = [
         .init(
             name: "Google Drive",
             keyword: "drive.google.com",
             urlTemplate: "https://drive.google.com/drive/search?q=%s",
-            colorHex: "00A96B",
+            colorHex: "0F9D58",
         ),
         .init(
             name: "Gmail",
             keyword: "mail.google.com",
             urlTemplate: "https://mail.google.com/mail/ca/u/0/#apps/%s",
-            colorHex: "DE5C47",
+            colorHex: "D44638",
         ),
         .init(
             name: "Google Maps",
             keyword: "maps.google.com",
             urlTemplate: "https://www.google.com/maps/search/%s",
-            colorHex: "FCC600",
+            colorHex: "FBBC05",
         ),
         .init(
             name: "Google Calendar",
             keyword: "calendar.google.com",
             urlTemplate: "https://calendar.google.com/calendar/u/0/r/search?q=%s",
-            colorHex: "AD43BD",
+            colorHex: "9C27B0",
         ),
         .init(
             name: "Google Docs",
             keyword: "docs.google.com",
             urlTemplate: "https://docs.google.com/document/u/0/?q=%s",
-            colorHex: "519AF6",
+            colorHex: "4285F4",
         ),
         .init(
             name: "Dropbox",
             keyword: "dropbox.com",
             urlTemplate: "https://www.dropbox.com/search/personal?&query=%s",
-            colorHex: "0061FE",
+            colorHex: "007EE5",
         ),
         .init(
             name: "Amazon",
             keyword: "amazon.com",
             urlTemplate: "https://www.amazon.com/s?k=%s",
-            colorHex: "FFA900",
+            colorHex: "FF9900",
         ),
         .init(
             name: "GitHub",
             keyword: "github.com",
             urlTemplate: "https://github.com/search?q=%s",
-            colorHex: "8859D1",
+            colorHex: "743FC7",
         ),
         .init(
             name: "Figma",
             keyword: "figma.com",
             urlTemplate: "https://www.figma.com/files/search?q=%s",
-            colorHex: "F66526",
+            colorHex: "F24E1E",
         ),
         .init(name: "X", keyword: "x.com", urlTemplate: "https://x.com/search?q=%s", colorHex: "000000"),
         .init(
             name: "YouTube",
             keyword: "youtube.com",
             urlTemplate: "https://www.youtube.com/results?search_query=%s",
-            colorHex: "FF2600",
+            colorHex: "FF0000",
         ),
         .init(
             name: "Wikipedia",
             keyword: "wikipedia.org",
             urlTemplate: "https://wikipedia.org/w/index.php?search=%s",
-            colorHex: "FFB300",
+            colorHex: "FFA500",
         ),
         .init(
             name: "Reddit",
             keyword: "reddit.com",
             urlTemplate: "https://www.reddit.com/search/?q=%s",
-            colorHex: "FF5D00",
+            colorHex: "FF4500",
         ),
         .init(
             name: "SoundCloud",
             keyword: "soundcloud.com",
             urlTemplate: "https://soundcloud.com/search?q=%s",
-            colorHex: "FB6919",
+            colorHex: "F85216",
         ),
         .init(
             name: "Asana",
@@ -106,13 +106,13 @@ struct BrowserSiteSearch: Codable, Equatable, Identifiable {
             name: "LinkedIn",
             keyword: "linkedin.com",
             urlTemplate: "https://linkedin.com/search/results/all/?keywords=%s",
-            colorHex: "007CCD",
+            colorHex: "0B66C2",
         ),
         .init(
             name: "Apple Music",
             keyword: "music.apple.com",
             urlTemplate: "https://music.apple.com/us/search?term=%s",
-            colorHex: "FD4455",
+            colorHex: "FA2A44",
         ),
         .init(
             name: "Spotify",
@@ -126,7 +126,7 @@ struct BrowserSiteSearch: Codable, Equatable, Identifiable {
     var name: String
     var keyword: String
     var urlTemplate: String
-    /// Six hex digits; nil uses the accent color.
+    /// Six hex digits of a Display P3 color; nil uses the accent color.
     var colorHex: String?
 
     var normalizedKeyword: String {
@@ -319,6 +319,48 @@ extension BrowserSiteSearch {
         }
         guard let lhs = key(urlTemplate) else { return false }
         return lhs == key(template)
+    }
+
+    /// Earlier built-in chip colors, by the color that replaced them.
+    private static let retiredDefaultColors = [
+        "00A96B": "0F9D58",
+        "DE5C47": "D44638",
+        "FCC600": "FBBC05",
+        "AD43BD": "9C27B0",
+        "519AF6": "4285F4",
+        "0061FE": "007EE5",
+        "FFA900": "FF9900",
+        "8859D1": "743FC7",
+        "F66526": "F24E1E",
+        "FF2600": "FF0000",
+        "FFB300": "FFA500",
+        "FF5D00": "FF4500",
+        "FB6919": "F85216",
+        "007CCD": "0B66C2",
+        "FD4455": "FA2A44",
+    ]
+
+    /// A built-in entry still on an earlier built-in color takes the current one.
+    var withCurrentDefaultColor: BrowserSiteSearch {
+        guard let colorHex, let replacement = Self.retiredDefaultColors[colorHex.uppercased()],
+              Self.arcDefaults.contains(where: { $0.colorHex == replacement && $0.hasSameAddress(as: urlTemplate) })
+        else { return self }
+        var search = self
+        search.colorHex = replacement
+        return search
+    }
+
+    /// A results page's title without the site's name at its end, as
+    /// "Code search results · GitHub" or "theo - YouTube".
+    func resultsTitle(_ title: String) -> String {
+        let name = displayName
+        for separator in [" - ", " · ", " | ", " – ", " — "] {
+            let suffix = separator + name
+            if title.count > suffix.count, title.lowercased().hasSuffix(suffix.lowercased()) {
+                return String(title.dropLast(suffix.count))
+            }
+        }
+        return title
     }
 
     /// The same search under a new identity, so a restored built-in entry

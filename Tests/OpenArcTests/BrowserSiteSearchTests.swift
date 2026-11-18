@@ -9,7 +9,7 @@ private let youTube = BrowserSiteSearch(
     name: "YouTube",
     keyword: "@y",
     urlTemplate: "https://www.youtube.com/results?search_query=%s",
-    colorHex: "FF2600",
+    colorHex: "FF0000",
 )
 private let translate = BrowserSiteSearch(
     name: "Google Translate",
@@ -105,7 +105,7 @@ private let gitLab = BrowserSiteSearch(
     #expect(imported.map(\.keyword) == ["@y", "@t", "g"])
     #expect(imported[0].urlTemplate == "https://www.youtube.com/results?search_query=%s")
     // The chip color follows the site, whatever its keyword.
-    #expect(imported[0].colorHex == "FF2600")
+    #expect(imported[0].colorHex == "FF0000")
     #expect(imported[1].colorHex == nil)
     #expect(imported[2].urlTemplate == "https://www.google.com/search?q=%s&ie=UTF-8")
 }
@@ -180,7 +180,7 @@ private let gitLab = BrowserSiteSearch(
     var asked = [(String?, Int)]()
     let earlier = BrowserCommandSuggestion(
         kind: .history,
-        displayText: "Code search results",
+        displayText: "Code search results · GitHub",
         resolvedURLString: "https://github.com/search?q=repo%3Aa+x&type=code",
     )
     let model = BrowserCommandBarModel(
@@ -197,7 +197,10 @@ private let gitLab = BrowserSiteSearch(
     model.present()
     model.query = "git"
     #expect(model.beginSiteSearch())
-    #expect(model.suggestions.map(\.displayText) == ["Code search results"], "The site's earlier results")
+    #expect(
+        model.suggestions.map(\.displayText) == ["Code search results"],
+        "The site's earlier results, without the site's name",
+    )
     #expect(model.suggestions.first?.resolvedURLString == earlier.resolvedURLString)
     #expect(model.suggestions.first?.kind == .search, "Shown as a search, without its address")
     #expect(model.selectedSuggestionIndex == 0)
@@ -207,6 +210,32 @@ private let gitLab = BrowserSiteSearch(
     model.query = ""
     #expect(model.suggestions.map(\.resolvedURLString) == [earlier.resolvedURLString])
     #expect(BrowserSiteSearch(name: "Bad", keyword: "b", urlTemplate: "%s").resultsURLPrefix == nil)
+}
+
+@Test func aResultsTitleDropsOnlyTheSitesNameAtItsEnd() {
+    #expect(youTube.resultsTitle("(1) theo - YouTube") == "(1) theo")
+    #expect(gitHub.resultsTitle("Code search results · GitHub") == "Code search results")
+    #expect(gitHub.resultsTitle("GitHub") == "GitHub", "A title that is only the name stays")
+    let x = BrowserSiteSearch(name: "X", keyword: "x.com", urlTemplate: "https://x.com/search?q=%s")
+    #expect(x.resultsTitle("aside - Search / X") == "aside - Search / X")
+}
+
+@Test func builtInSitesOnAnEarlierColorTakeTheCurrentOne() throws {
+    let suite = BrowserTestDefaults.suiteName("BrowserSiteSearchColorTests")
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    var builtIn = try #require(BrowserSiteSearch.arcDefaults.first { $0.name == "GitHub" })
+    builtIn.colorHex = "8859D1"
+    var picked = builtIn
+    picked.keyword = "gh"
+    picked.colorHex = "123456"
+    var elsewhere = youTube
+    elsewhere.urlTemplate = "https://example.com/?q=%s"
+    elsewhere.colorHex = "8859D1"
+    try defaults.set(JSONEncoder().encode([builtIn, picked, elsewhere]), forKey: "browser.settings.siteSearches")
+    let loaded = BrowserUserPreferencesStore(userDefaults: defaults).siteSearches
+    #expect(loaded.map(\.colorHex) == ["743FC7", "123456", "8859D1"])
+    #expect(loaded.first?.id == builtIn.id)
 }
 
 @MainActor @Test func commandBarLeavesASiteSearchWithDeleteOrEscape() {

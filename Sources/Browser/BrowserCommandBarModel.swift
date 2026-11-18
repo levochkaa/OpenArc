@@ -482,11 +482,12 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
             // Lists only the query, which opens the site's results. Before
             // anything is typed, the site's earlier results pages.
             if trimmedQuery.isEmpty {
-                // Shown as searches: a magnifier, the page's title, no address.
+                // Shown as searches: a magnifier, the page's title without the
+                // site's name, no address.
                 suggestions = siteRecentPagesProvider(site, Self.maximumRecentPages).map {
                     BrowserCommandSuggestion(
                         kind: .search,
-                        displayText: $0.displayText,
+                        displayText: site.resultsTitle($0.displayText),
                         resolvedURLString: $0.resolvedURLString,
                     )
                 }

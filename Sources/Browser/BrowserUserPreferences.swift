@@ -524,7 +524,8 @@ final class BrowserUserPreferencesStore: ObservableObject {
         self.linkRoutes = userDefaults.data(forKey: Key.linkRoutes)
             .flatMap { try? JSONDecoder().decode([BrowserLinkRoute].self, from: $0) } ?? []
         self.siteSearches = userDefaults.data(forKey: Key.siteSearches)
-            .flatMap { try? JSONDecoder().decode([BrowserSiteSearch].self, from: $0) } ?? BrowserSiteSearch.arcDefaults
+            .flatMap { try? JSONDecoder().decode([BrowserSiteSearch].self, from: $0) }?
+            .map(\.withCurrentDefaultColor) ?? BrowserSiteSearch.arcDefaults
         self.sitePermissionDecisions = userDefaults.data(forKey: Key.sitePermissionDecisions)
             .flatMap { try? JSONDecoder().decode([BrowserSitePermissionDecision].self, from: $0) } ?? []
     }

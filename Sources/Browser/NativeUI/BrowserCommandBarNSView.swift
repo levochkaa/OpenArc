@@ -505,13 +505,13 @@ private final class BrowserCommandSuggestionTableView: NSTableView {
 // MARK: - BrowserSiteSearch + chip color
 
 extension BrowserSiteSearch {
-    /// The site's color, or the accent color for a site without one.
+    /// The site's color in Display P3, or the accent color for a site without one.
     var chipColor: NSColor {
         guard let colorHex, colorHex.count == 6, let value = UInt32(colorHex, radix: 16) else {
             return .controlAccentColor
         }
         return NSColor(
-            srgbRed: CGFloat((value >> 16) & 0xFF) / 255,
+            displayP3Red: CGFloat((value >> 16) & 0xFF) / 255,
             green: CGFloat((value >> 8) & 0xFF) / 255,
             blue: CGFloat(value & 0xFF) / 255,
             alpha: 1,
