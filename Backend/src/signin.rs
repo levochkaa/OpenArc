@@ -9,6 +9,7 @@
 //! the app with a single-use code, and the app redeems the code with its
 //! verifier.
 
+use crate::account::{AppleGrant, AppleTokens, store_apple_grant};
 use crate::auth::{ACCESS_TOKEN_SECONDS, AuthService, is_email};
 use crate::config::{Config, OAuthClient, SmtpConfig, SmtpSecurity};
 use crate::error::{ApiError, ApiResult};
@@ -97,6 +98,7 @@ pub struct SignInService {
     auth: AuthService,
     config: Arc<Config>,
     http: reqwest::Client,
+    apple: AppleTokens,
     /// Sends sign-in codes; none when SMTP is not configured.
     mail: Option<Mail>,
 }
@@ -118,7 +120,8 @@ impl SignInService {
             }),
             None => None,
         };
-        Ok(Self { pool, auth, config, http, mail })
+        let apple = AppleTokens::new(&config, http.clone());
+        Ok(Self { pool, auth, config, http, apple, mail })
     }
 
     pub fn providers(&self) -> Value {
@@ -256,24 +259,33 @@ impl SignInService {
             .ok_or(WebFailure::Expired)?;
         let id: Uuid = pending.get("id");
         let nonce: String = pending.get("nonce");
-        let identity = match provider {
+        let (identity, grant) = match provider {
             WebProvider::Apple => self.apple_identity(params, &nonce).await,
-            WebProvider::Google => self.google_identity(params.get("code"), &nonce).await,
-            WebProvider::Github => self.github_identity(params.get("code")).await,
+            WebProvider::Google => {
+                self.google_identity(params.get("code"), &nonce).await.map(|identity| (identity, None))
+            }
+            WebProvider::Github => self.github_identity(params.get("code")).await.map(|identity| (identity, None)),
         }
         .map_err(|error| provider_failure(provider, error))?;
         let code = random_token().map_err(|error| provider_failure(provider, error))?;
-        self.issue_web_code(id, &identity, &code).await.map_err(|error| match error {
+        self.issue_web_code(id, &identity, grant.as_ref(), &code).await.map_err(|error| match error {
             ApiError::Status(..) => WebFailure::Expired,
             error => provider_failure(provider, anyhow::anyhow!("{error:?}")),
         })?;
         Ok(code)
     }
 
-    async fn issue_web_code(&self, id: Uuid, identity: &Identity, code: &str) -> ApiResult<()> {
+    async fn issue_web_code(
+        &self,
+        id: Uuid,
+        identity: &Identity,
+        grant: Option<&AppleGrant>,
+        code: &str,
+    ) -> ApiResult<()> {
         let mut client = self.pool.get().await?;
         let tx = client.transaction().await?;
         let user_id = resolve_user(&tx, identity).await?;
+        store_apple_grant(&tx, &identity.subject, grant).await?;
         let updated = tx
             .execute(
                 "UPDATE auth_web_sign_ins
@@ -289,7 +301,13 @@ impl SignInService {
         Ok(())
     }
 
-    async fn apple_identity(&self, params: &HashMap<String, String>, nonce: &str) -> anyhow::Result<Identity> {
+    /// The identity Apple posted, and a refresh token for its code when the
+    /// server holds a Sign in with Apple key.
+    async fn apple_identity(
+        &self,
+        params: &HashMap<String, String>,
+        nonce: &str,
+    ) -> anyhow::Result<(Identity, Option<AppleGrant>)> {
         let token = params.get("id_token").context("Apple sent no identity token")?;
         let services_id = self.config.sign_in.apple_services_id.as_deref().context("Apple is not configured")?;
         let apple = self
@@ -298,12 +316,18 @@ impl SignInService {
             .await
             .map_err(|error| anyhow::anyhow!("Apple identity token rejected: {error:?}"))?;
         anyhow::ensure!(apple.nonce.as_deref() == Some(nonce), "Apple identity token has another nonce");
-        Ok(Identity {
+        let redirect_uri = self.redirect_uri(WebProvider::Apple);
+        let grant = self
+            .apple
+            .redeem(services_id, params.get("code").map(String::as_str), Some(&redirect_uri), &apple.apple_subject)
+            .await;
+        let identity = Identity {
             provider: "apple",
             subject: apple.apple_subject,
             email: apple.email,
             email_verified: apple.email_verified,
-        })
+        };
+        Ok((identity, grant))
     }
 
     async fn google_identity(&self, code: Option<&String>, nonce: &str) -> anyhow::Result<Identity> {
@@ -709,7 +733,7 @@ fn normalized_email(text: &str) -> Option<String> {
 }
 
 /// The claims of a JWT, without checking its signature.
-fn jwt_claims(token: &str) -> anyhow::Result<Value> {
+pub(crate) fn jwt_claims(token: &str) -> anyhow::Result<Value> {
     let payload = token.split('.').nth(1).context("malformed token")?;
     Ok(serde_json::from_slice(&URL_SAFE_NO_PAD.decode(payload.trim_end_matches('='))?)?)
 }

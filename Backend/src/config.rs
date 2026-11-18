@@ -32,6 +32,10 @@ pub struct Config {
 pub struct SignInConfig {
     /// The Services ID of Sign in with Apple on the web.
     pub apple_services_id: Option<String>,
+    /// The Sign in with Apple key that signs client secrets. With it the
+    /// server keeps Apple refresh tokens and revokes them when an account is
+    /// deleted.
+    pub apple_key: Option<AppleKey>,
     pub google: Option<OAuthClient>,
     pub github: Option<OAuthClient>,
     /// The mail server that sends sign-in codes; any provider's SMTP works.
@@ -58,6 +62,25 @@ pub enum SmtpSecurity {
     None,
 }
 
+/// A Sign in with Apple private key from the developer account.
+#[derive(Clone, PartialEq)]
+pub struct AppleKey {
+    pub team_id: String,
+    pub key_id: String,
+    /// The `.p8` file's PEM text.
+    pub private_key: String,
+}
+
+impl std::fmt::Debug for AppleKey {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("AppleKey")
+            .field("team_id", &self.team_id)
+            .field("key_id", &self.key_id)
+            .finish_non_exhaustive()
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct OAuthClient {
     pub id: String,
@@ -69,6 +92,8 @@ pub struct OAuthClient {
 pub struct ProviderEndpoints {
     pub apple_keys: String,
     pub apple_authorize: String,
+    pub apple_token: String,
+    pub apple_revoke: String,
     pub google_authorize: String,
     pub google_token: String,
     pub github_authorize: String,
@@ -190,12 +215,14 @@ fn sign_in_config(
     let google = client("GOOGLE");
     let github = client("GITHUB");
     let apple_services_id = present("OPENARC_APPLE_SERVICES_ID");
+    let apple_key = apple_key(&present, issues);
     if (apple_services_id.is_some() || google.is_some() || github.is_some()) && !has_public_base_url {
         issues.push("OPENARC_PUBLIC_BASE_URL: required for web sign-in, whose redirects return to it".to_string());
     }
     let endpoint = |key: &str, default: &str| present(key).unwrap_or_else(|| default.to_string());
     SignInConfig {
         apple_services_id,
+        apple_key,
         google,
         github,
         smtp: smtp_config(&present, issues),
@@ -203,12 +230,40 @@ fn sign_in_config(
         endpoints: ProviderEndpoints {
             apple_keys: endpoint("OPENARC_APPLE_KEYS_URL", crate::auth::APPLE_KEYS_URL),
             apple_authorize: endpoint("OPENARC_APPLE_AUTHORIZE_URL", "https://appleid.apple.com/auth/authorize"),
+            apple_token: endpoint("OPENARC_APPLE_TOKEN_URL", "https://appleid.apple.com/auth/token"),
+            apple_revoke: endpoint("OPENARC_APPLE_REVOKE_URL", "https://appleid.apple.com/auth/revoke"),
             google_authorize: endpoint("OPENARC_GOOGLE_AUTHORIZE_URL", "https://accounts.google.com/o/oauth2/v2/auth"),
             google_token: endpoint("OPENARC_GOOGLE_TOKEN_URL", "https://oauth2.googleapis.com/token"),
             github_authorize: endpoint("OPENARC_GITHUB_AUTHORIZE_URL", "https://github.com/login/oauth/authorize"),
             github_token: endpoint("OPENARC_GITHUB_TOKEN_URL", "https://github.com/login/oauth/access_token"),
             github_api: endpoint("OPENARC_GITHUB_API_URL", "https://api.github.com"),
         },
+    }
+}
+
+/// The team, key ID and PEM key, set together. A PEM given on one line may
+/// write its line breaks as `\n`.
+fn apple_key(present: &dyn Fn(&str) -> Option<String>, issues: &mut Vec<String>) -> Option<AppleKey> {
+    let team_id = present("OPENARC_APPLE_TEAM_ID");
+    let key_id = present("OPENARC_APPLE_KEY_ID");
+    let private_key = present("OPENARC_APPLE_PRIVATE_KEY");
+    match (team_id, key_id, private_key) {
+        (Some(team_id), Some(key_id), Some(private_key)) => {
+            let private_key = private_key.replace("\\n", "\n");
+            if jsonwebtoken::EncodingKey::from_ec_pem(private_key.as_bytes()).is_err() {
+                issues.push("OPENARC_APPLE_PRIVATE_KEY: expected the PEM text of a Sign in with Apple key".to_string());
+                return None;
+            }
+            Some(AppleKey { team_id: team_id.trim().to_string(), key_id: key_id.trim().to_string(), private_key })
+        }
+        (None, None, None) => None,
+        _ => {
+            issues.push(
+                "OPENARC_APPLE_TEAM_ID, OPENARC_APPLE_KEY_ID and OPENARC_APPLE_PRIVATE_KEY: set all three or none"
+                    .to_string(),
+            );
+            None
+        }
     }
 }
 

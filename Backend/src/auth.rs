@@ -26,6 +26,8 @@ pub struct AppleIdentity {
     pub email: Option<String>,
     pub email_verified: bool,
     pub nonce: Option<String>,
+    /// The client ID the token was issued to.
+    pub audience: String,
 }
 
 #[derive(Clone)]
@@ -61,6 +63,7 @@ struct SubjectClaims {
 #[derive(Deserialize)]
 struct AppleClaims {
     sub: Option<String>,
+    aud: Option<serde_json::Value>,
     exp: Option<u64>,
     email: Option<serde_json::Value>,
     /// A boolean, or "true" and "false" as strings in older tokens.
@@ -185,7 +188,18 @@ impl AuthService {
             Some(serde_json::Value::String(verified)) => verified == "true",
             _ => false,
         };
-        Ok(AppleIdentity { apple_subject, email, email_verified, nonce: claims.nonce })
+        // Validation accepted one of the audiences, so one of them is there.
+        let audience = match &claims.aud {
+            Some(serde_json::Value::String(audience)) => Some(audience.clone()),
+            Some(serde_json::Value::Array(values)) => values
+                .iter()
+                .filter_map(serde_json::Value::as_str)
+                .find(|value| audiences.iter().any(|audience| audience == value))
+                .map(str::to_string),
+            _ => None,
+        }
+        .ok_or_else(|| ApiError::Internal(anyhow::anyhow!("Apple identity token has no audience")))?;
+        Ok(AppleIdentity { apple_subject, email, email_verified, nonce: claims.nonce, audience })
     }
 
     /// The key with this ID from a cached key set, refetched when it is old

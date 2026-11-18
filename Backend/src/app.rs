@@ -1,6 +1,7 @@
 //! Routes, request validation order (body first, then the bearer token) and
 //! response conventions: JSON as JavaScript wrote it, 201 for POST.
 
+use crate::account::AccountService;
 use crate::auth::AuthService;
 use crate::body::JsonBody;
 use crate::config::Config;
@@ -21,7 +22,7 @@ use axum::extract::{Path, Request, State};
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, header};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post};
+use axum::routing::{delete, get, post};
 use base64::Engine;
 use http_body_util::BodyExt;
 use serde_json::{Value, json};
@@ -38,6 +39,7 @@ pub struct AppState {
     pub config: Arc<Config>,
     pub auth: AuthService,
     pub sync: Arc<SyncService>,
+    pub account: AccountService,
     pub sign_in: SignInService,
     pub updates: UpdatesService,
     pub shares: Arc<ShareService>,
@@ -60,6 +62,7 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/auth/web/exchange", post(exchange_web_sign_in))
         .route("/v1/auth/email/start", post(start_email_sign_in))
         .route("/v1/auth/email/verify", post(verify_email_sign_in))
+        .route("/v1/account", delete(delete_account))
         .route("/v1/devices", post(register_device))
         .route("/v1/sync/push", post(push))
         .route("/v1/sync/pull", post(pull))
@@ -184,6 +187,15 @@ fn see_other(location: &str) -> Response {
 fn no_store(mut response: Response) -> Response {
     response.headers_mut().insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
     response
+}
+
+/// Deletes the signed-in account and all its data: 204, also when it is
+/// already gone. Only the token's signature is checked, so a retry after a
+/// lost reply still succeeds.
+async fn delete_account(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Response> {
+    let user_id = authorized_user(&state, &headers)?;
+    state.account.delete(user_id).await?;
+    Ok(no_store(StatusCode::NO_CONTENT.into_response()))
 }
 
 async fn register_device(
@@ -445,6 +457,7 @@ const STATIC_ROUTES: &[&str] = &[
     "/v1/auth/web/exchange",
     "/v1/auth/email/start",
     "/v1/auth/email/verify",
+    "/v1/account",
     "/v1/devices",
     "/v1/sync/push",
     "/v1/sync/pull",

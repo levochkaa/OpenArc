@@ -23,6 +23,7 @@ const MIGRATIONS: &[(&str, &str)] = &[
     ("007_sign_in_methods.sql", include_str!("../migrations/007_sign_in_methods.sql")),
     ("008_sync_boosts.sql", include_str!("../migrations/008_sync_boosts.sql")),
     ("009_shares.sql", include_str!("../migrations/009_shares.sql")),
+    ("010_account_deletion.sql", include_str!("../migrations/010_account_deletion.sql")),
 ];
 
 /// Connections idle this long are closed, as node-postgres did, so a proxy

@@ -51,8 +51,10 @@ fn app_with(github_api: &str, extra: &[(&str, &str)]) -> Router {
     let http = reqwest::Client::new();
     let auth = AuthService::new(&config, http.clone());
     let pool = crate::db::pool(&config.database_url).unwrap();
+    let apple = crate::account::AppleTokens::new(&config, http.clone());
     router(AppState {
-        sync: Arc::new(SyncService::new(pool.clone(), auth.clone())),
+        account: crate::account::AccountService::new(pool.clone(), apple.clone()),
+        sync: Arc::new(SyncService::new(pool.clone(), auth.clone(), apple)),
         sign_in: SignInService::new(pool.clone(), auth.clone(), config.clone(), http.clone()).unwrap(),
         shares: Arc::new(ShareService::new(pool, &config.share_base_url)),
         updates: UpdatesService::new(config.clone(), http, github_api),
@@ -141,6 +143,23 @@ async fn requires_auth_before_sync_push_reaches_storage() {
     let (status, _, body) = send(app(), request).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
     assert_eq!(body, r#"{"error":"unauthorized"}"#);
+}
+
+#[tokio::test]
+async fn account_deletion_needs_a_valid_token_and_the_delete_method() {
+    for authorization in [None, Some("Bearer invalid-token"), Some("bearer x")] {
+        let mut builder = Request::delete("/v1/account");
+        if let Some(authorization) = authorization {
+            builder = builder.header("authorization", authorization);
+        }
+        let (status, _, body) = send(app(), builder.body(Body::empty()).unwrap()).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED, "{authorization:?}");
+        assert_eq!(body, r#"{"error":"unauthorized"}"#);
+    }
+    let (status, _, _) = send(app(), Request::get("/v1/account").body(Body::empty()).unwrap()).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, _, _) = send(app(), Request::delete("/V1/Account/").body(Body::empty()).unwrap()).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED, "routes ignore case and a trailing slash");
 }
 
 #[tokio::test]
@@ -445,6 +464,7 @@ mod apple {
                 .unwrap();
             assert_eq!(identity.apple_subject, "local-apple-subject");
             assert_eq!(identity.email.as_deref(), Some("local@example.test"));
+            assert_eq!(identity.audience, audience, "the client ID a refresh token would be issued to");
         }
         assert!(*fixture.requests.lock().unwrap() > 0, "the fixture must fetch its local key set");
     }

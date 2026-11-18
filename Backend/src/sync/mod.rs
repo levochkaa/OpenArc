@@ -11,6 +11,7 @@ mod store;
 pub use events::{Outcome, SyncEvent, legacy_events, v4_event};
 pub use store::SyncStore;
 
+use crate::account::{AppleTokens, store_apple_grant};
 use crate::auth::AuthService;
 use crate::error::{ApiError, ApiResult};
 use crate::js_json;
@@ -27,6 +28,7 @@ const EXPIRY_RESPONSE_LIMIT: usize = 4 * 1024 * 1024;
 pub struct SyncService {
     pool: Pool,
     auth: AuthService,
+    apple: AppleTokens,
 }
 
 /// The receipt digest covers the parsed protocol and ordered changes or
@@ -46,14 +48,16 @@ pub fn receipt_payload(request: &Value) -> Value {
 }
 
 impl SyncService {
-    pub fn new(pool: Pool, auth: AuthService) -> Self {
-        Self { pool, auth }
+    pub fn new(pool: Pool, auth: AuthService, apple: AppleTokens) -> Self {
+        Self { pool, auth, apple }
     }
 
     /// Native Sign in with Apple. The account is the Apple identity's, as for
     /// every other sign-in method.
     pub async fn authenticate_with_apple(&self, body: &Value) -> ApiResult<Value> {
         let apple = self.auth.verify_apple_identity_token(text(body, "identityToken")).await?;
+        let code = body.get("authorizationCode").and_then(Value::as_str);
+        let grant = self.apple.redeem(&apple.audience, code, None, &apple.apple_subject).await;
         let identity = Identity {
             provider: "apple",
             subject: apple.apple_subject,
@@ -63,6 +67,7 @@ impl SyncService {
         let mut client = self.pool.get().await?;
         let tx = client.transaction().await?;
         let user_id = resolve_user(&tx, &identity).await?;
+        store_apple_grant(&tx, &identity.subject, grant.as_ref()).await?;
         let session =
             create_session(&tx, &self.auth, user_id, text(body, "deviceName"), text(body, "devicePlatform")).await?;
         tx.commit().await?;
@@ -72,14 +77,16 @@ impl SyncService {
     pub async fn register_device(&self, user_id: Uuid, body: &Value) -> ApiResult<Value> {
         let client = self.pool.get().await?;
         let public_key = body.get("publicKey").and_then(Value::as_str);
+        // A token outlives a deleted account; its account must still exist.
         let device = client
-            .query_one(
+            .query_opt(
                 "INSERT INTO devices (user_id, name, platform, public_key)
-                 VALUES ($1, $2, $3, $4)
+                 SELECT id, $2, $3, $4 FROM app_users WHERE id = $1
                  RETURNING id, name, platform, public_key, last_seen_at, created_at",
                 &[&user_id, &text(body, "name"), &text(body, "platform"), &public_key],
             )
-            .await?;
+            .await?
+            .ok_or(ApiError::Unauthorized)?;
         Ok(json!({"device": serialize_device(&device)}))
     }
 
@@ -259,8 +266,8 @@ impl SyncService {
                  FROM devices WHERE id = $1 AND user_id = $2 FOR UPDATE",
                 &[&device_id, &user_id],
             )
-            .await?
-            .ok_or_else(|| ApiError::Forbidden("Device does not belong to user".to_string()))?;
+            .await?;
+        let Some(device) = device else { return Err(missing_device(&tx, user_id).await) };
         let is_v4 = protocol == Some(4);
         let is_v6 = protocol == Some(6);
         // Version 6 reads everything version 5 reads, plus boosts.
@@ -315,9 +322,19 @@ async fn assert_device_belongs_to_user(
 ) -> ApiResult<()> {
     let found = tx.query_opt("SELECT 1 FROM devices WHERE id = $1 AND user_id = $2", &[&device_id, &user_id]).await?;
     if found.is_none() {
-        return Err(ApiError::Forbidden("Device does not belong to user".to_string()));
+        return Err(missing_device(tx, user_id).await);
     }
     Ok(())
+}
+
+/// A device the account does not have is forbidden; an account that was
+/// deleted is unauthorized, so its other devices learn they are signed out.
+async fn missing_device(tx: &deadpool_postgres::Transaction<'_>, user_id: Uuid) -> ApiError {
+    match tx.query_opt("SELECT 1 FROM app_users WHERE id = $1", &[&user_id]).await {
+        Ok(Some(_)) => ApiError::Forbidden("Device does not belong to user".to_string()),
+        Ok(None) => ApiError::Unauthorized,
+        Err(error) => error.into(),
+    }
 }
 
 /// Bounds a version 5 acknowledgement: every irreversible expiry must fit

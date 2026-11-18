@@ -9,6 +9,7 @@ servers:
 tags:
   - name: System
   - name: Authentication
+  - name: Account
   - name: Devices
   - name: Sync
   - name: Updates
@@ -147,6 +148,25 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AuthSessionResponse"
+        default:
+          $ref: "#/components/responses/Error"
+  /v1/account:
+    delete:
+      operationId: deleteAccount
+      description: >-
+        Deletes the signed-in account and everything the server stores for it:
+        devices, sign-in methods, synced Spaces, folders, tabs and Boosts, the
+        event history, tombstones and mutation receipts. Sign in with Apple
+        refresh tokens the server holds are revoked at Apple. Access tokens of
+        the account stop working on every device. An account that is already
+        deleted answers 204 again, so a client can retry after a lost reply.
+        At most five requests per account in 15 minutes; more answer 429.
+      tags: [Account]
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: The account is deleted.
         default:
           $ref: "#/components/responses/Error"
   /v1/devices:
@@ -552,6 +572,14 @@ components:
         identityToken:
           type: string
           minLength: 1
+        authorizationCode:
+          type: string
+          minLength: 1
+          maxLength: 1024
+          description: >-
+            The authorization code from the same sign-in. With a Sign in with
+            Apple key configured, the server redeems it for a refresh token,
+            which deleting the account revokes.
         deviceName:
           type: string
           minLength: 1

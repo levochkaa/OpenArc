@@ -1,6 +1,7 @@
 //! OpenArc sync server: `openarc-sync-server [serve]` runs the API,
 //! `openarc-sync-server migrate` applies pending migrations.
 
+mod account;
 mod app;
 #[cfg(test)]
 mod app_tests;
@@ -18,6 +19,7 @@ mod sync;
 mod time;
 mod updates;
 
+use crate::account::{AccountService, AppleTokens};
 use crate::app::{AppState, router};
 use crate::auth::AuthService;
 use crate::config::Config;
@@ -90,8 +92,11 @@ async fn serve() -> anyhow::Result<()> {
         .read_timeout(std::time::Duration::from_secs(300))
         .build()?;
     let auth = AuthService::with_apple_keys_url(&config, http.clone(), &config.sign_in.endpoints.apple_keys);
+    let apple = AppleTokens::new(&config, http.clone());
+    let account = AccountService::new(pool.clone(), apple.clone());
     let state = AppState {
-        sync: Arc::new(SyncService::new(pool.clone(), auth.clone())),
+        sync: Arc::new(SyncService::new(pool.clone(), auth.clone(), apple)),
+        account: account.clone(),
         sign_in: SignInService::new(pool.clone(), auth.clone(), config.clone(), http.clone())?,
         shares: Arc::new(ShareService::new(pool.clone(), &config.share_base_url)),
         updates: UpdatesService::new(config.clone(), http, GITHUB_API_URL),
@@ -99,6 +104,7 @@ async fn serve() -> anyhow::Result<()> {
         config: config.clone(),
     };
     tokio::spawn(signin::clean_up_periodically(pool.clone()));
+    tokio::spawn(account.revoke_pending_periodically());
     let listener = TcpListener::bind((config.host.as_str(), config.port)).await?;
     let address = listener.local_addr()?;
     // Test harnesses read this line to find an ephemeral port.

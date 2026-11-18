@@ -17,6 +17,8 @@ fn entity_id() -> Schema {
 pub static AUTH_APPLE_REQUEST: LazyLock<Schema> = LazyLock::new(|| {
     object(vec![
         ("identityToken", non_empty()),
+        // Redeemed for a refresh token, which account deletion revokes.
+        ("authorizationCode", optional(string_between(Some(1), Some(1024)))),
         ("deviceName", with_default(string_between(Some(1), Some(120)), json!("Mac"))),
         ("devicePlatform", with_default(string_between(Some(1), Some(60)), json!("macOS"))),
     ])
