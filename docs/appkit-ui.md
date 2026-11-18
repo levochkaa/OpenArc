@@ -33,7 +33,7 @@ Use `BrowserChromeColors` for adaptive colors and `BrowserChromeLayout` for dime
 - `BrowserNativeResizeHandle` shares delayed hover, cursor cleanup, haptics, and default-width snapping.
 - `BrowserFaviconNSView` uses the existing favicon cache. Raster resizing continues through `BrowserImageThumbnailer`.
 
-Native settings remain separate from Chromium's `openarc://settings` page. General → Import also brings in Arc's Spaces, pinned tabs, folders and Favorites from its `StorableSidebar.json` as dormant tabs (`BrowserArcSidebar`, `importArcSidebar`). General → Downloads holds the download location: the engine saves into the chosen folder through `BrowserDownloadLocation` while it exists and falls back to the user's Downloads folder; OpenArc keeps one location for the app. The Settings package hosts AppKit pane controllers. About, downloads, extension popovers, find, command input, bookmarks, and the tab switcher are native views/controllers.
+Native settings remain separate from Chromium's `openarc://settings` page. General → Import also brings in Arc's Spaces, pinned tabs, folders and Favorites from its `StorableSidebar.json` as dormant tabs (`BrowserImportedSidebar`, `importArcSidebar`). General → Downloads holds the download location: the engine saves into the chosen folder through `BrowserDownloadLocation` while it exists and falls back to the user's Downloads folder; OpenArc keeps one location for the app. The Settings package hosts AppKit pane controllers. About, downloads, extension popovers, find, command input, bookmarks, and the tab switcher are native views/controllers.
 
 Animation timing and state triggers are documented in [appkit-animations.md](appkit-animations.md).
 

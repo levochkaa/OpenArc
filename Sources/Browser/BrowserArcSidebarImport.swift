@@ -2,45 +2,13 @@
 
 import AppKit
 
-// MARK: - BrowserArcSidebar
+// MARK: - BrowserImportedSidebar + Arc
 
 /// Arc's Spaces, pinned tabs, folders and Favorites as read from its
 /// `StorableSidebar.json`. Today tabs, notes and easels are skipped; a
 /// Split View contributes its tabs. Arc stores ordered dictionaries as flat
 /// arrays that alternate keys and values.
-struct BrowserArcSidebar: Equatable {
-    // MARK: Internal
-
-    enum ImportError: Error, Equatable {
-        case missing
-        case unreadable
-    }
-
-    indirect enum Node: Equatable {
-        /// `title` is the name the user gave the tab in Arc.
-        case tab(title: String?, savedTitle: String?, urlString: String)
-        case folder(title: String?, icon: String?, children: [Node])
-
-        // MARK: Internal
-
-        /// Every tab in this node, depth first.
-        var tabs: [Node] {
-            switch self {
-            case .tab: [self]
-            case .folder(_, _, let children): children.flatMap(\.tabs)
-            }
-        }
-    }
-
-    struct Space: Equatable {
-        var title: String?
-        var icon: String?
-        var pinned: [Node]
-        var theme: BrowserSpaceTheme?
-        /// Arc's Chromium profile folder for the Space, such as `Profile 2`; nil for `Default`.
-        var profileDirectory: String?
-    }
-
+extension BrowserImportedSidebar {
     // MARK: Private
 
     /// Builds nodes from the item graph, ignoring cycles and very deep trees.
@@ -53,19 +21,17 @@ struct BrowserArcSidebar: Equatable {
             return (item["childrenIds"] as? [String] ?? []).flatMap { childID -> [Node] in
                 guard let child = items[childID], let data = child["data"] as? [String: Any] else { return [] }
                 if let tab = data["tab"] as? [String: Any] {
-                    guard let url = (tab["savedURL"] as? String).flatMap(BrowserArcSidebar.trimmed),
-                          URL(string: url)?.scheme != nil
-                    else { return [] }
-                    return [.tab(
-                        title: (child["title"] as? String).flatMap(BrowserArcSidebar.trimmed),
-                        savedTitle: (tab["savedTitle"] as? String).flatMap(BrowserArcSidebar.trimmed),
-                        urlString: url,
-                    )]
+                    return BrowserImportedSidebar.tab(
+                        url: tab["savedURL"],
+                        title: child["title"],
+                        savedTitle: tab["savedTitle"],
+                    )
+                    .map { [$0] } ?? []
                 }
                 if let list = data["list"] {
                     return [.folder(
-                        title: (child["title"] as? String).flatMap(BrowserArcSidebar.trimmed),
-                        icon: BrowserArcSidebar.icon(in: (list as? [String: Any])?["customInfo"]),
+                        title: (child["title"] as? String).flatMap(BrowserImportedSidebar.trimmed),
+                        icon: BrowserImportedSidebar.icon(in: (list as? [String: Any])?["customInfo"]),
                         children: children(of: childID, depth: depth + 1, visited: visited),
                     )]
                 }
@@ -140,26 +106,7 @@ struct BrowserArcSidebar: Equatable {
         "search": "magnifyingglass",
     ]
 
-    /// Arc keeps the file in its Application Support folder.
-    static var defaultFileURL: URL? {
-        FileManager.default
-            .urls(for: .applicationSupportDirectory, in: .userDomainMask)
-            .first?
-            .appendingPathComponent("Arc", isDirectory: true)
-            .appendingPathComponent("StorableSidebar.json")
-    }
-
-    var spaces: [Space]
-    var favorites: [Node]
-
-    var pinnedTabCount: Int { spaces.flatMap(\.pinned).flatMap(\.tabs).count }
-
-    init(spaces: [Space], favorites: [Node]) {
-        self.spaces = spaces
-        self.favorites = favorites
-    }
-
-    init(data: Data) throws {
+    init(arcData data: Data) throws {
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               let sidebar = root["sidebar"] as? [String: Any],
               let containers = sidebar["containers"] as? [Any],
@@ -190,11 +137,6 @@ struct BrowserArcSidebar: Equatable {
                 (key as? [String: Any])?["default"] as? Bool == true
             }?.value as? String
         self.favorites = favoritesID.map { reader.children(of: $0).flatMap(\.tabs) } ?? []
-    }
-
-    static func load(from url: URL) throws -> BrowserArcSidebar {
-        guard let data = FileManager.default.contents(atPath: url.path) else { throw ImportError.missing }
-        return try BrowserArcSidebar(data: data)
     }
 
     /// A Space on a profile other than Arc's first names its folder:
@@ -261,30 +203,4 @@ struct BrowserArcSidebar: Equatable {
         theme.texture = (modifiers?["overlay"] as? String).flatMap(BrowserSpaceTheme.Texture.init) ?? .grain
         return theme
     }
-
-    private static func trimmed(_ value: String) -> String? {
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
-    }
-}
-
-// MARK: - BrowserArcProfileChoice
-
-/// Which of Arc's profiles a sidebar import takes, by Arc's folder name
-/// (`Default`, `Profile 2`). A Space on a skipped profile stays behind; one on a
-/// profile in `targets` goes to that OpenArc profile; any other goes to the window's.
-struct BrowserArcProfileChoice: Equatable {
-    var skipped = Set<String>()
-    var targets = [String: String]()
-}
-
-// MARK: - BrowserArcSidebarImportResult
-
-struct BrowserArcSidebarImportResult: Equatable {
-    var spaceCount = 0
-    var pinnedTabCount = 0
-    var folderCount = 0
-    var favoriteCount = 0
-
-    var isEmpty: Bool { spaceCount == 0 && favoriteCount == 0 }
 }

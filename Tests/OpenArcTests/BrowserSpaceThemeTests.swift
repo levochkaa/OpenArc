@@ -165,7 +165,7 @@ import Testing
           "topAppsContainerIDs": []
         }]}}
         """#
-        let sidebar = try BrowserArcSidebar(data: Data(json.utf8))
+        let sidebar = try BrowserImportedSidebar(arcData: Data(json.utf8))
         let theme = try #require(sidebar.spaces.first?.theme)
         #expect(theme.colors.count == 3)
         #expect(theme.wheel == .analogous && theme.texture == .denim)

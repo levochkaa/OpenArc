@@ -1628,27 +1628,8 @@ enum BrowserStrings {
         comment: "Settings import button that adds Arc's Spaces, pinned tabs, folders and Favorites.",
     )
 
-    static let arcImportMissing = NSLocalizedString(
-        "browser.arc_import.missing",
-        comment: "Alert shown when Arc's sidebar file does not exist.",
-    )
-
-    static let arcImportUnreadable = NSLocalizedString(
-        "browser.arc_import.unreadable",
-        comment: "Alert shown when Arc's sidebar file cannot be parsed.",
-    )
-
-    static let arcImportNothing = NSLocalizedString(
-        "browser.arc_import.nothing",
-        comment: "Alert shown when Arc's sidebar has nothing to import.",
-    )
-
-    static let arcImportAlreadyImported = NSLocalizedString(
-        "browser.arc_import.already_imported",
-        comment: "Shown when every Space in Arc's sidebar is already in OpenArc.",
-    )
-    static let arcImportUnavailable = NSLocalizedString(
-        "browser.arc_import.unavailable",
+    static let sidebarImportUnavailable = NSLocalizedString(
+        "browser.sidebar_import.unavailable",
         comment: "Alert shown when the window cannot take an import right now.",
     )
 
@@ -3956,16 +3937,56 @@ enum BrowserStrings {
     }
 
     /// Shared with iOS, so it takes counts rather than the macOS import result.
-    static func arcImportResult(spaces: Int, pinnedTabs: Int, folders: Int, favorites: Int) -> String {
+    static func sidebarImportResult(spaces: Int, pinnedTabs: Int, folders: Int, favorites: Int) -> String {
         String(
             format: NSLocalizedString(
-                "browser.arc_import.result",
-                comment: "Alert after importing from Arc: Spaces, pinned tabs, folders, Favorites.",
+                "browser.sidebar_import.result",
+                comment: "Alert after importing another browser's sidebar: Spaces, pinned tabs, folders, Favorites.",
             ),
             spaces,
             pinnedTabs,
             folders,
             favorites,
+        )
+    }
+
+    static func sidebarImportMissing(from browserName: String) -> String {
+        String(
+            format: NSLocalizedString(
+                "browser.sidebar_import.missing",
+                comment: "Alert shown when a browser's sidebar files do not exist. %@ is the browser.",
+            ),
+            browserName,
+        )
+    }
+
+    static func sidebarImportUnreadable(from browserName: String) -> String {
+        String(
+            format: NSLocalizedString(
+                "browser.sidebar_import.unreadable",
+                comment: "Alert shown when a browser's sidebar files cannot be parsed. %@ is the browser.",
+            ),
+            browserName,
+        )
+    }
+
+    static func sidebarImportNothing(from browserName: String) -> String {
+        String(
+            format: NSLocalizedString(
+                "browser.sidebar_import.nothing",
+                comment: "Alert shown when a browser's sidebar has nothing to import. %@ is the browser.",
+            ),
+            browserName,
+        )
+    }
+
+    static func sidebarImportAlreadyImported(from browserName: String) -> String {
+        String(
+            format: NSLocalizedString(
+                "browser.sidebar_import.already_imported",
+                comment: "Shown when every Space in a browser's sidebar is already in OpenArc. %@ is the browser.",
+            ),
+            browserName,
         )
     }
 

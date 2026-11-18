@@ -73,14 +73,8 @@ enum BrowserOnboardingImportItem: String, CaseIterable {
     /// Profile folders of the selected browser the person unticked.
     private var skippedProfiles = Set<URL>()
     private weak var importButton: BrowserOnboardingButton?
-    /// Titles of Arc's Spaces by the profile folder they live in, read once.
-    private lazy var arcSpaceTitles: [String: [String]] = {
-        guard let url = BrowserArcSidebar.defaultFileURL,
-              let sidebar = try? BrowserArcSidebar.load(from: url)
-        else { return [:] }
-        return Dictionary(grouping: sidebar.spaces) { $0.profileDirectory ?? BrowserProfile.defaultDirectoryName }
-            .mapValues { $0.compactMap(\.title) }
-    }()
+    /// Titles of each browser's Spaces by the profile folder they live in, read once.
+    private var spaceTitlesBySource = [BrowserBookmarkImportSource: [String: [String]]]()
 
     // MARK: Private
 
@@ -473,8 +467,8 @@ enum BrowserOnboardingImportItem: String, CaseIterable {
         }
         guard importer.profiles.count > 1 else { return nil }
         let label = text(BrowserStrings.onboardingProfiles, size: 13, weight: .semibold, color: Palette.ink)
-        // Arc binds each Space to a profile, so each box names the Spaces it brings.
-        let spaces = importer.supportedItems.contains(.spaces) ? arcSpaceTitles : [:]
+        // A browser that binds each Space to a profile names the Spaces each box brings.
+        let spaces = importer.supportedItems.contains(.spaces) ? spaceTitles(of: importer.source) : [:]
         let grid = checkGrid(columns: 2, width: 330, importer.profiles.map { profile in
             let titles = spaces[profile.directory.lastPathComponent] ?? []
             let check = importCheckbox(profile.name, detail: titles.isEmpty ? nil : titles.joined(separator: ", "))
@@ -526,6 +520,15 @@ enum BrowserOnboardingImportItem: String, CaseIterable {
         check.isEnabled = !isImportRunning && !isImportFinished
         check.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         return check
+    }
+
+    private func spaceTitles(of source: BrowserBookmarkImportSource) -> [String: [String]] {
+        if let titles = spaceTitlesBySource[source] { return titles }
+        let spaces = (try? BrowserImportedSidebar.load(source).spaces) ?? []
+        let titles = Dictionary(grouping: spaces) { $0.profileDirectory ?? BrowserProfile.defaultDirectoryName }
+            .mapValues { $0.compactMap(\.title) }
+        spaceTitlesBySource[source] = titles
+        return titles
     }
 
     @objc private func toggleProfile(_ sender: NSButton) {

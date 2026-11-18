@@ -884,7 +884,7 @@ enum BrowserWindowMode: Equatable {
 
     /// Arc's sidebar can only join a persistent window that is not busy with
     /// restore or sync.
-    var canImportArcSidebar: Bool {
+    var canImportSidebar: Bool {
         supportsSpaces && windowMode.persistsSession && !isShuttingDown && !isRestoringSession
             && !isApplyingRemoteSync && !isReconcilingRemoteProjection
     }
@@ -1667,7 +1667,7 @@ enum BrowserWindowMode: Equatable {
         if items.contains(.spaces) {
             let skipped = Set(first.profiles.map(\.directory.lastPathComponent))
                 .subtracting(chosen.map(\.profileFolderName))
-            parts.append(importArcSidebarFromDisk(profiles: BrowserArcProfileChoice(
+            parts.append(importSidebarFromDisk(of: first.source, profiles: BrowserSidebarProfileChoice(
                 skipped: skipped,
                 targets: targets,
             )))
@@ -1827,29 +1827,26 @@ enum BrowserWindowMode: Equatable {
         bookmarksModel.containsBookmark(urlString: urlString)
     }
 
-    /// Adds Arc's Spaces with their pinned tabs and folders, and its Favorites
-    /// up to the app tile capacity. Imported tabs are dormant, like pinned tabs
-    /// closed earlier: their pages load when first selected. The current Space
-    /// and selection stay as they are.
-    /// Imports Arc's sidebar from its file on this Mac and says what came of
-    /// it, including why nothing did.
-    func importArcSidebarFromDisk(
-        at url: URL? = BrowserArcSidebar.defaultFileURL,
-        profiles: BrowserArcProfileChoice = .init(),
+    /// Imports another browser's Spaces from its files on this Mac and says what
+    /// came of it, including why nothing did.
+    func importSidebarFromDisk(
+        of source: BrowserBookmarkImportSource,
+        locations: BrowserImportLocations = .current,
+        profiles: BrowserSidebarProfileChoice = .init(),
     ) -> String {
-        guard canImportArcSidebar else { return BrowserStrings.arcImportUnavailable }
-        guard let url else { return BrowserStrings.arcImportMissing }
-        let sidebar: BrowserArcSidebar
+        guard canImportSidebar else { return BrowserStrings.sidebarImportUnavailable }
+        let name = source.browserName
+        let sidebar: BrowserImportedSidebar
         do {
-            sidebar = try BrowserArcSidebar.load(from: url)
-        } catch BrowserArcSidebar.ImportError.missing {
-            return BrowserStrings.arcImportMissing
+            sidebar = try BrowserImportedSidebar.load(source, locations: locations)
+        } catch BrowserImportedSidebar.ImportError.missing {
+            return BrowserStrings.sidebarImportMissing(from: name)
         } catch {
-            return BrowserStrings.arcImportUnreadable
+            return BrowserStrings.sidebarImportUnreadable(from: name)
         }
-        let result = importArcSidebar(sidebar, profiles: profiles)
+        let result = importSidebar(sidebar, profiles: profiles)
         guard result.isEmpty else {
-            return BrowserStrings.arcImportResult(
+            return BrowserStrings.sidebarImportResult(
                 spaces: result.spaceCount,
                 pinnedTabs: result.pinnedTabCount,
                 folders: result.folderCount,
@@ -1857,19 +1854,25 @@ enum BrowserWindowMode: Equatable {
             )
         }
         // Spaces skipped as already imported, not an empty sidebar.
-        return sidebar.spaces.isEmpty ? BrowserStrings.arcImportNothing : BrowserStrings.arcImportAlreadyImported
+        return sidebar.spaces.isEmpty
+            ? BrowserStrings.sidebarImportNothing(from: name)
+            : BrowserStrings.sidebarImportAlreadyImported(from: name)
     }
 
-    @discardableResult func importArcSidebar(
-        _ sidebar: BrowserArcSidebar,
-        profiles: BrowserArcProfileChoice = .init(),
-    ) -> BrowserArcSidebarImportResult {
-        guard canImportArcSidebar else { return .init() }
-        var result = BrowserArcSidebarImportResult()
+    /// Adds another browser's Spaces with their pinned tabs and folders, and its
+    /// Favorites up to the app tile capacity. Imported tabs are dormant, like pinned
+    /// tabs closed earlier: their pages load when first selected. The current Space
+    /// and selection stay as they are.
+    @discardableResult func importSidebar(
+        _ sidebar: BrowserImportedSidebar,
+        profiles: BrowserSidebarProfileChoice = .init(),
+    ) -> BrowserSidebarImportResult {
+        guard canImportSidebar else { return .init() }
+        var result = BrowserSidebarImportResult()
         let now = dateProvider()
 
         func dormantTab(
-            _ node: BrowserArcSidebar.Node,
+            _ node: BrowserImportedSidebar.Node,
             spaceID: String,
             folderID: String?,
             placement: BrowserTabPlacement,
@@ -1928,7 +1931,7 @@ enum BrowserWindowMode: Equatable {
             }
             spaces.append(space)
             var folderChildren = [String: [BrowserSidebarItemID]]()
-            func add(_ nodes: [BrowserArcSidebar.Node], folderID: String?) -> [BrowserSidebarItemID] {
+            func add(_ nodes: [BrowserImportedSidebar.Node], folderID: String?) -> [BrowserSidebarItemID] {
                 nodes.compactMap { node in
                     switch node {
                     case .tab:

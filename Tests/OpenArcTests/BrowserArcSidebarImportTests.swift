@@ -45,10 +45,10 @@ import Testing
     """
 
     @Test func parsesSpacesPinnedTreesAndFavorites() throws {
-        let sidebar = try BrowserArcSidebar(data: Data(Self.sample.utf8))
+        let sidebar = try BrowserImportedSidebar(arcData: Data(Self.sample.utf8))
         #expect(sidebar.spaces.map(\.title) == ["Work", nil])
         #expect(sidebar.spaces.first?.icon == "briefcase")
-        let docs = BrowserArcSidebar.Node.folder(
+        let docs = BrowserImportedSidebar.Node.folder(
             title: "Docs",
             icon: "bolt.fill",
             children: [
@@ -63,15 +63,17 @@ import Testing
         ], "Today tabs, notes and empty URLs are skipped; a split adds its tabs")
         #expect(sidebar.favorites == [.tab(title: nil, savedTitle: "Calendar", urlString: "https://calendar.example")])
         #expect(sidebar.pinnedTabCount == 4)
-        #expect(throws: BrowserArcSidebar.ImportError.unreadable) { try BrowserArcSidebar(data: Data("[]".utf8)) }
+        #expect(throws: BrowserImportedSidebar.ImportError.unreadable) {
+            try BrowserImportedSidebar(arcData: Data("[]".utf8))
+        }
     }
 
     @Test func importAddsDormantSpacesFoldersAndFavorites() throws {
         let f = SidebarDragFixture(temporary: ["x"])
         let selectedSpace = f.model.selectedSpaceID
-        let sidebar = try BrowserArcSidebar(data: Data(Self.sample.utf8))
+        let sidebar = try BrowserImportedSidebar(arcData: Data(Self.sample.utf8))
         let createdBefore = f.driver.createdTabRequests.count
-        let result = f.model.importArcSidebar(sidebar)
+        let result = f.model.importSidebar(sidebar)
         #expect(result == .init(spaceCount: 2, pinnedTabCount: 4, folderCount: 4, favoriteCount: 1))
         #expect(f.model.selectedSpaceID == selectedSpace, "The current Space stays selected")
         let work = try #require(f.model.spaces.first { $0.title == "Work" })
@@ -91,7 +93,7 @@ import Testing
         #expect(saved.tabs.contains { $0.urlString == "https://docs.example" && $0.placement == .spacePinned })
         #expect(saved.spaces?.contains { $0.title == "Work" } == true)
 
-        #expect(f.model.importArcSidebar(sidebar).spaceCount == 1, "Work is already there; the untitled Space is not")
+        #expect(f.model.importSidebar(sidebar).spaceCount == 1, "Work is already there; the untitled Space is not")
 
         // Opening a Space of unloaded tabs shows none; selecting one loads it.
         let mail = try #require(f.model.tabs.first { $0.urlString == "https://mail.example" && $0.spaceID == work.id })
@@ -107,7 +109,9 @@ import Testing
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
-        let url = directory.appendingPathComponent("StorableSidebar.json")
+        let locations = BrowserImportLocations(home: directory, applicationSupport: directory)
+        let url = directory.appendingPathComponent("Arc/StorableSidebar.json")
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         let sidebar = """
         {"sidebar": {"containers": [{"global": {}}, {
           "spaces": ["S1", {"id": "S1", "title": "Work", "containerIDs": ["pinned", "P1"]}],
@@ -120,9 +124,10 @@ import Testing
         try Data(sidebar.utf8).write(to: url)
         let f = SidebarDragFixture(temporary: ["x"])
         let spaces = f.model.spaces.count
-        #expect(f.model.importArcSidebarFromDisk(at: url) != BrowserStrings.arcImportAlreadyImported)
+        let already = BrowserStrings.sidebarImportAlreadyImported(from: "Arc")
+        #expect(f.model.importSidebarFromDisk(of: .arc, locations: locations) != already)
         #expect(f.model.spaces.count > spaces)
-        #expect(f.model.importArcSidebarFromDisk(at: url) == BrowserStrings.arcImportAlreadyImported)
+        #expect(f.model.importSidebarFromDisk(of: .arc, locations: locations) == already)
     }
 
     @Test func importFromDiskSaysWhyNothingCameIn() throws {
@@ -130,10 +135,16 @@ import Testing
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         let f = SidebarDragFixture(temporary: ["x"])
-        let missing = directory.appendingPathComponent("StorableSidebar.json")
-        #expect(f.model.importArcSidebarFromDisk(at: missing) == BrowserStrings.arcImportMissing)
-        try Data("{}".utf8).write(to: missing)
-        #expect(f.model.importArcSidebarFromDisk(at: missing) == BrowserStrings.arcImportUnreadable)
+        let locations = BrowserImportLocations(home: directory, applicationSupport: directory)
+        #expect(f.model.importSidebarFromDisk(of: .arc, locations: locations)
+            == BrowserStrings.sidebarImportMissing(from: "Arc"))
+        try FileManager.default.createDirectory(
+            at: directory.appendingPathComponent("Arc"),
+            withIntermediateDirectories: true,
+        )
+        try Data("{}".utf8).write(to: directory.appendingPathComponent("Arc/StorableSidebar.json"))
+        #expect(f.model.importSidebarFromDisk(of: .arc, locations: locations)
+            == BrowserStrings.sidebarImportUnreadable(from: "Arc"))
     }
 
     @Test func everyArcSpaceIconMapsToASymbolThatExists() throws {
@@ -146,12 +157,12 @@ import Testing
         search
         """.split(whereSeparator: \.isWhitespace).map(String.init)
         #expect(arcIcons.count == 61)
-        let unmapped = Set(arcIcons).subtracting(BrowserArcSidebar.arcIconSymbols.keys)
+        let unmapped = Set(arcIcons).subtracting(BrowserImportedSidebar.arcIconSymbols.keys)
         #expect(unmapped == ["skull", "github", "linear", "figma"], "Only those have no symbol")
-        for (name, symbol) in BrowserArcSidebar.arcIconSymbols {
+        for (name, symbol) in BrowserImportedSidebar.arcIconSymbols {
             #expect(NSImage(systemSymbolName: symbol, accessibilityDescription: nil) != nil, "\(name) → \(symbol)")
         }
-        let sidebar = try BrowserArcSidebar(data: Data("""
+        let sidebar = try BrowserImportedSidebar(arcData: Data("""
         {"sidebar": {"containers": [{"spaces": [
           "A", {"title": "A", "customInfo": {"iconType": {"icon": "bulb"}}},
           "B", {"title": "B", "customInfo": {"iconType": {"icon": "github"}}}
@@ -161,7 +172,7 @@ import Testing
     }
 
     @Test func eachSpaceGoesToTheProfileChosenForItsArcProfile() throws {
-        let sidebar = try BrowserArcSidebar(data: Data(Self.profilesSample.utf8))
+        let sidebar = try BrowserImportedSidebar(arcData: Data(Self.profilesSample.utf8))
         #expect(sidebar.spaces.map(\.profileDirectory) == [nil, "Profile 2", "Profile 3"])
 
         let f = SidebarDragFixture(temporary: ["x"])
@@ -171,7 +182,7 @@ import Testing
             cachePath: { "/profiles/\($0)" },
             createProfile: { nil },
         )
-        let result = f.model.importArcSidebar(sidebar, profiles: BrowserArcProfileChoice(
+        let result = f.model.importSidebar(sidebar, profiles: BrowserSidebarProfileChoice(
             skipped: ["Profile 3"],
             targets: ["Profile 2": "Profile 7"],
         ))

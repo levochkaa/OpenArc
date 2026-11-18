@@ -1551,7 +1551,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
     private func arcSidebarImportRow() -> NSView {
         let model = model
         let button = BrowserActionButton(BrowserStrings.settingsImportArcSidebar) { [weak self] in
-            let message = model.importArcSidebarFromDisk()
+            let message = model.importSidebarFromDisk(of: .arc)
             let alert = NSAlert()
             alert.messageText = BrowserStrings.settingsImportArcSidebar
             alert.informativeText = message
