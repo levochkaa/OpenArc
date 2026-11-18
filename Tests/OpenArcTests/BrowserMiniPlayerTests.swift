@@ -88,6 +88,11 @@ import Testing
         #expect(!f.model.returnToPictureInPicture(tabID: f.id("y")), "No video, no window")
     }
 
+    @Test func aLongTitleScrollsOnlyPastItsRow() {
+        #expect(BrowserMiniPlayerNSView.marqueeDistance(titleWidth: 300, rowWidth: 160) == 140)
+        #expect(BrowserMiniPlayerNSView.marqueeDistance(titleWidth: 100, rowWidth: 160) == 0)
+    }
+
     @Test func backToTabInThePictureInPictureWindowShowsTheTab() {
         let f = SidebarDragFixture(pinned: [], temporary: ["x", "y"])
         let x = f.id("x")

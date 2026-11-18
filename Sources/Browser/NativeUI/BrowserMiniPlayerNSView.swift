@@ -81,9 +81,10 @@ final class BrowserMiniPlayerNSView: NSView {
         style: .sidebarClose,
         action: {},
     )
-    /// Holds the title row's text.
+    /// Clips the title, which scrolls when it is longer than its row.
     private let titleClip = NSView()
     private var tracking: NSTrackingArea?
+    private var marqueeDistance: CGFloat = 0
 
     /// How far it has grown, from 0 to 1.
     private var expansion: CGFloat = 0
@@ -108,7 +109,7 @@ final class BrowserMiniPlayerNSView: NSView {
         outline.cornerRadius = 8
         outline.strokeColor = NSColor.labelColor.withAlphaComponent(0.08)
         addSubview(outline)
-        titleLabel.lineBreakMode = .byTruncatingTail
+        titleLabel.lineBreakMode = .byClipping
         titleClip.wantsLayer = true
         titleClip.layer?.masksToBounds = true
         titleClip.isHidden = true
@@ -217,7 +218,14 @@ final class BrowserMiniPlayerNSView: NSView {
             width: max(titleEnd - inset - 8, 0),
             height: 16,
         )
-        titleLabel.frame = titleClip.bounds
+        let titleWidth = ceil(titleLabel.intrinsicContentSize.width)
+        titleLabel.frame = NSRect(x: 0, y: 0, width: max(titleWidth, titleClip.bounds.width), height: 16)
+        updateMarquee()
+    }
+
+    /// How far a title longer than its row scrolls to show its end, or 0.
+    static func marqueeDistance(titleWidth: CGFloat, rowWidth: CGFloat) -> CGFloat {
+        max(ceil(titleWidth - rowWidth), 0)
     }
 
     func update(_ item: BrowserMiniPlayerItem) {
@@ -259,6 +267,37 @@ final class BrowserMiniPlayerNSView: NSView {
         } completion: { [weak self] in
             self?.applyExpansion(to, final: true)
         }
+    }
+
+    /// While the player is open, a long title scrolls to its end and back,
+    /// resting at both ends.
+    private func updateMarquee() {
+        guard let layer = titleLabel.layer ?? {
+            titleLabel.wantsLayer = true
+            return titleLabel.layer
+        }() else { return }
+        let distance = Self.marqueeDistance(
+            titleWidth: ceil(titleLabel.intrinsicContentSize.width),
+            rowWidth: titleClip.bounds.width,
+        )
+        let key = "marquee"
+        guard isExpanded, distance > 0, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
+            layer.removeAnimation(forKey: key)
+            marqueeDistance = 0
+            return
+        }
+        guard distance != marqueeDistance || layer.animation(forKey: key) == nil else { return }
+        marqueeDistance = distance
+        let travel = Double(distance) / 30
+        let rest = 1.5
+        let total = rest * 2 + travel * 2
+        let animation = CAKeyframeAnimation(keyPath: "transform.translation.x")
+        animation.values = [0, 0, -distance, -distance, 0]
+        animation.keyTimes = [0, rest / total, (rest + travel) / total, (rest * 2 + travel) / total, 1]
+            .map { NSNumber(value: $0) }
+        animation.duration = total
+        animation.repeatCount = .infinity
+        layer.add(animation, forKey: key)
     }
 
     /// Holding the speaker opens a level slider under the controls.
