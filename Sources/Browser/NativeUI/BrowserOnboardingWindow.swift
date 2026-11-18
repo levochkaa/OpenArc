@@ -1,6 +1,7 @@
 // BrowserOnboardingWindow.swift
 
 import AppKit
+import UniformTypeIdentifiers
 
 // MARK: - BrowserOnboardingImportItem
 
@@ -97,7 +98,8 @@ enum BrowserOnboardingImportItem: String, CaseIterable {
             defer: false,
         )
         super.init()
-        self.selectedProfile = profiles.first { $0.source == .arc } ?? profiles.first
+        // The most recently used browser with something to read; Safari waits for its ZIP.
+        self.selectedProfile = profiles.first { $0.hasImportableData } ?? profiles.first
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.isMovableByWindowBackground = true
@@ -341,17 +343,19 @@ enum BrowserOnboardingImportItem: String, CaseIterable {
         let tiles = BrowserOnboardingTileFlow(tiles: profiles.map { profile in
             let tile = BrowserOnboardingBrowserTile(
                 name: profile.source.browserName,
-                detail: BrowserOnboardingBrowserFacts.lastUsed(profile).map(BrowserStrings.onboardingUsedAgo),
-                icon: BrowserOnboardingBrowserFacts.icon(for: profile.source),
+                detail: profile.lastUsed.map(BrowserStrings.onboardingUsedAgo),
+                icon: profile.applicationURL.map { NSWorkspace.shared.icon(forFile: $0.path) },
             )
             tile.isSelected = profile.source == selectedProfile?.source
-                && profile.profileDirectory == selectedProfile?.profileDirectory
             tile.isEnabled = !isImportRunning
             tile.onPick = { [weak self] in self?.pick(profile) }
             return tile
         })
 
-        var body: [NSView] = [tiles]
+        var body: [NSView] = [scrollingIfTall(tiles)]
+        if let selectedProfile, let detail = selectedProfileDetail(selectedProfile) {
+            body.append(detail)
+        }
         let source = selectedProfile?.source
         let available = Item.allCases.filter { item in source.map { item.isAvailable(from: $0) } ?? false }
         let grid = NSGridView(numberOfColumns: 3, rows: 0)
@@ -382,7 +386,11 @@ enum BrowserOnboardingImportItem: String, CaseIterable {
         switch importState {
         case .choosing:
             let name = source?.browserName ?? ""
-            let importButton = primary(BrowserStrings.onboardingImportFrom(name)) { [weak self] in self?.runImport() }
+            let needsArchive = selectedProfile.map { $0.source.importsFromExportArchive && $0.archiveURL == nil }
+                ?? false
+            let importButton = needsArchive
+                ? primary(BrowserStrings.onboardingChooseSafariExport) { [weak self] in self?.chooseArchive() }
+                : primary(BrowserStrings.onboardingImportFrom(name)) { [weak self] in self?.runImport() }
             actions = [quiet(leaving) { [weak self] in self?.advance() }, importButton]
         case .running:
             let spinner = NSProgressIndicator()
@@ -420,9 +428,85 @@ enum BrowserOnboardingImportItem: String, CaseIterable {
             title: BrowserStrings.onboardingImportTitle,
             subtitle: BrowserStrings.onboardingImportSubtitle,
             body: column,
-            note: isImportFinished ? nil : BrowserStrings.onboardingImportKeychainNote,
+            note: !isImportFinished && selectedProfile?.needsKeychainKey == true
+                ? BrowserStrings.onboardingImportKeychainNote
+                : nil,
             actions: actions,
         )
+    }
+
+    /// More than two rows of browsers scroll, so the actions stay in the window.
+    private func scrollingIfTall(_ tiles: BrowserOnboardingTileFlow) -> NSView {
+        let size = tiles.intrinsicContentSize
+        let limit = BrowserOnboardingBrowserTile.size.height * 2 + 12
+        guard size.height > limit else { return tiles }
+        let scroll = NSScrollView()
+        scroll.drawsBackground = false
+        scroll.hasVerticalScroller = true
+        scroll.autohidesScrollers = true
+        scroll.translatesAutoresizingMaskIntoConstraints = false
+        tiles.translatesAutoresizingMaskIntoConstraints = true
+        tiles.frame = NSRect(origin: .zero, size: size)
+        scroll.documentView = tiles
+        NSLayoutConstraint.activate([
+            scroll.widthAnchor.constraint(equalToConstant: size.width + 16),
+            scroll.heightAnchor.constraint(equalToConstant: limit),
+        ])
+        return scroll
+    }
+
+    /// Under the tiles: which profile to read when the browser has several, and for
+    /// Safari, which exported ZIP, since Safari keeps its data out of reach.
+    private func selectedProfileDetail(_ importer: BrowserProfileImporter) -> NSView? {
+        if importer.source.importsFromExportArchive {
+            guard let archive = importer.archiveURL else {
+                return text(BrowserStrings.onboardingSafariExportHint, size: 13, color: Palette.ink, width: 600)
+            }
+            let name = text(archive.lastPathComponent, size: 13, weight: .medium, color: Palette.ink, width: 400)
+            let change = quiet(BrowserStrings.onboardingChooseAnother) { [weak self] in self?.chooseArchive() }
+            change.isEnabled = !isImportRunning && !isImportFinished
+            let row = NSStackView(views: [name, change])
+            row.spacing = 8
+            return row
+        }
+        guard importer.profiles.count > 1 else { return nil }
+        let label = text(BrowserStrings.onboardingProfile, size: 13, color: Palette.ink, width: 120)
+        let popup = NSPopUpButton(frame: .zero, pullsDown: false)
+        popup.addItems(withTitles: importer.profiles.map(\.name))
+        if let index = importer.profiles.firstIndex(where: { $0.directory == importer.profileDirectory }) {
+            popup.selectItem(at: index)
+        }
+        popup.target = self
+        popup.action = #selector(pickProfile(_:))
+        popup.isEnabled = !isImportRunning && !isImportFinished
+        popup.setAccessibilityLabel(BrowserStrings.onboardingProfile)
+        let row = NSStackView(views: [label, popup])
+        row.spacing = 8
+        return row
+    }
+
+    @objc private func pickProfile(_ sender: NSPopUpButton) {
+        guard let selectedProfile, selectedProfile.profiles.indices.contains(sender.indexOfSelectedItem) else { return }
+        self.selectedProfile = selectedProfile.selecting(selectedProfile.profiles[sender.indexOfSelectedItem])
+        importState = .choosing
+        render()
+    }
+
+    private func chooseArchive() {
+        guard let selectedProfile else { return }
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.zip]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.message = BrowserStrings.onboardingSafariExportHint
+        panel.beginSheetModal(for: window) { [weak self] response in
+            MainActor.assumeIsolated {
+                guard let self, response == .OK, let url = panel.url else { return }
+                self.selectedProfile = selectedProfile.withArchive(url)
+                self.importState = .choosing
+                self.render()
+            }
+        }
     }
 
     private func pick(_ profile: BrowserProfileImporter) {
@@ -593,30 +677,6 @@ enum BrowserOnboardingPalette {
     static let actionRed = NSColor(srgbRed: 0xE5 / 255, green: 0x26 / 255, blue: 0x2B / 255, alpha: 1)
     static let tile = NSColor(srgbRed: 0xF3 / 255, green: 0xEF / 255, blue: 0xD6 / 255, alpha: 1)
     static let tileHover = NSColor(srgbRed: 0xEC / 255, green: 0xE7 / 255, blue: 0xCB / 255, alpha: 1)
-}
-
-// MARK: - BrowserOnboardingBrowserFacts
-
-/// What the import step shows about a browser it found: its app icon and when it was last used.
-enum BrowserOnboardingBrowserFacts {
-    private static let bundleIdentifiers = [
-        "arc": "company.thebrowser.Browser",
-        "dia": "company.thebrowser.dia",
-        "chrome": "com.google.Chrome",
-        "safari": "com.apple.Safari",
-    ]
-
-    static func icon(for source: BrowserBookmarkImportSource) -> NSImage? {
-        guard let identifier = bundleIdentifiers[source.rawValue],
-              let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: identifier)
-        else { return nil }
-        return NSWorkspace.shared.icon(forFile: url.path)
-    }
-
-    static func lastUsed(_ profile: BrowserProfileImporter) -> Date? {
-        let preferences = profile.profileDirectory.appendingPathComponent("Preferences").path
-        return (try? FileManager.default.attributesOfItem(atPath: preferences))?[.modificationDate] as? Date
-    }
 }
 
 // MARK: - BrowserOnboardingBlueField

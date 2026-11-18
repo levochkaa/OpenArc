@@ -122,6 +122,10 @@
 "browser.onboarding.import_from" = "Import from %@";
 "browser.onboarding.importing" = "Importing from %@…";
 "browser.onboarding.try_again" = "Try Again";
+"browser.onboarding.profile" = "Profile";
+"browser.onboarding.safari_export_hint" = "Safari keeps its data out of other apps' reach. In Safari, choose File › Export Browsing Data to File, then pick the ZIP it saves.";
+"browser.onboarding.choose_safari_export" = "Choose Safari Export…";
+"browser.onboarding.choose_another" = "Choose Another…";
 "browser.menu.show_welcome" = "Welcome to OpenArc…";
 "browser.onboarding.import_nothing_done" = "Nothing was imported. If macOS asked for your password, allow access and try again.";
 "browser.screen_share.title" = "Share your screen with %@";
