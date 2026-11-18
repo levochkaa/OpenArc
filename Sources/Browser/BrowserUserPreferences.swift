@@ -10,6 +10,7 @@ enum BrowserSettingsRoute {
     static let rootURL = URL(string: "openarc://settings/")!
     static let searchEnginesURL = URL(string: "openarc://settings/searchEngines")!
     static let privacyURL = URL(string: "openarc://settings/privacy")!
+    static let clearBrowsingDataURL = URL(string: "openarc://settings/clearBrowserData")!
     static let passwordManagerURL = URL(string: "openarc://password-manager/passwords")!
     static let notificationsURL = URL(string: "openarc://settings/content/notifications")!
     static let languageURL = URL(string: "openarc://settings/languages")!

@@ -3161,6 +3161,71 @@ enum BrowserStrings {
         comment: "Error when a sign-in provider failed.",
     )
 
+    static let syncAccountDelete = NSLocalizedString(
+        "browser.sync.account.delete",
+        comment: "Button that starts deleting the sync account.",
+    )
+
+    static let syncAccountDeleteDetail = NSLocalizedString(
+        "browser.sync.account.delete_detail",
+        comment: "What Delete Account does, next to its button.",
+    )
+
+    static let syncAccountDeleteTitle = NSLocalizedString(
+        "browser.sync.account.delete_title",
+        comment: "Title of the account deletion confirmation.",
+    )
+
+    static let syncAccountDeleteMessage = NSLocalizedString(
+        "browser.sync.account.delete_message",
+        comment: "What account deletion removes and what stays on the Mac.",
+    )
+
+    static let syncAccountDeleteClearBrowsingData = NSLocalizedString(
+        "browser.sync.account.delete_clear_browsing_data",
+        comment: "Checkbox that opens Clear Browsing Data after the account is deleted.",
+    )
+
+    static let syncAccountDeleteConfirm = NSLocalizedString(
+        "browser.sync.account.delete_confirm",
+        comment: "Destructive button that confirms account deletion.",
+    )
+
+    static let syncAccountDeleteCancel = NSLocalizedString(
+        "browser.sync.account.delete_cancel",
+        comment: "Button that keeps the account.",
+    )
+
+    static let syncAccountDeleting = NSLocalizedString(
+        "browser.sync.account.deleting",
+        comment: "Status while the server deletes the account.",
+    )
+
+    static let syncAccountDeletedTitle = NSLocalizedString(
+        "browser.sync.account.deleted_title",
+        comment: "Title shown after the account is deleted.",
+    )
+
+    static let syncAccountDeletedMessage = NSLocalizedString(
+        "browser.sync.account.deleted_message",
+        comment: "Message shown after the account is deleted.",
+    )
+
+    static let syncAccountDeleteOffline = NSLocalizedString(
+        "browser.sync.account.delete_offline",
+        comment: "Error when account deletion cannot reach the server.",
+    )
+
+    static let syncAccountDeleteSignInAgain = NSLocalizedString(
+        "browser.sync.account.delete_sign_in_again",
+        comment: "Error when the access token is no longer valid for account deletion.",
+    )
+
+    static let syncAccountDeleteFailed = NSLocalizedString(
+        "browser.sync.account.delete_failed",
+        comment: "Error when the server fails to delete the account.",
+    )
+
     static let settingsAutomaticUpdates = NSLocalizedString(
         "browser.settings.general.automatic_updates",
         comment: "Automatic updates setting title.",

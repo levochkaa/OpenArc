@@ -302,6 +302,7 @@ import Testing
     func requiresSignIn() -> Bool { false }
     func completeAuthentication(for _: BrowserAuthSession) {}
     func signOut() {}
+    func forgetAccount(removingCredentials: () throws -> Void) throws { try removingCredentials() }
     func bindingState(for _: BrowserAuthSession) -> BrowserSyncBindingState { .needsConsent }
     func enableSync(for _: BrowserAuthSession) {}
     func resumeSync(for _: BrowserAuthSession) {}

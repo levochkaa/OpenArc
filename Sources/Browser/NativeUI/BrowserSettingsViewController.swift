@@ -537,6 +537,29 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
         syncControls()
     }
 
+    /// What deletion removes and what stays, with Cancel as the default.
+    /// Clearing browsing data is the user's choice: the checkbox opens its
+    /// page once the account is gone.
+    static func accountDeletionAlert() -> (alert: NSAlert, clearBrowsingData: NSButton) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = BrowserStrings.syncAccountDeleteTitle
+        alert.informativeText = BrowserStrings.syncAccountDeleteMessage
+        let delete = alert.addButton(withTitle: BrowserStrings.syncAccountDeleteConfirm)
+        delete.hasDestructiveAction = true
+        delete.keyEquivalent = ""
+        let cancel = alert.addButton(withTitle: BrowserStrings.syncAccountDeleteCancel)
+        cancel.keyEquivalent = "\r"
+        let clearBrowsingData = NSButton(
+            checkboxWithTitle: BrowserStrings.syncAccountDeleteClearBrowsingData,
+            target: nil,
+            action: nil,
+        )
+        clearBrowsingData.setAccessibilityIdentifier("browser.settings.account.delete.clear-browsing-data")
+        alert.accessoryView = clearBrowsingData
+        return (alert, clearBrowsingData)
+    }
+
     private static func signInTitle(for provider: BrowserAccountProvider) -> String {
         switch provider {
         case .apple: BrowserStrings.syncAccountContinueWithApple
@@ -715,7 +738,12 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                 ),
             ]),
             section(BrowserStrings.settingsPrivacySection, rows: [
-                blockerToggle(.ads, "block-ads", BrowserStrings.settingsBlockAds, BrowserStrings.settingsBlockAdsDetail),
+                blockerToggle(
+                    .ads,
+                    "block-ads",
+                    BrowserStrings.settingsBlockAds,
+                    BrowserStrings.settingsBlockAdsDetail,
+                ),
                 blockerToggle(
                     .trackers,
                     "block-trackers",
@@ -761,13 +789,14 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
         }
         button.setAccessibilityIdentifier("browser.settings.filter-lists.update")
         let sync = { [weak status, weak button] in
-            if updater.isUpdating {
-                status?.stringValue = BrowserStrings.settingsFilterListsUpdating
-            } else if let date = updater.lastDownloaded {
-                status?.stringValue = BrowserStrings.settingsFilterListsUpdated(date)
-            } else {
-                status?.stringValue = BrowserStrings.settingsFilterListsBundled
-            }
+            status?.stringValue =
+                if updater.isUpdating {
+                    BrowserStrings.settingsFilterListsUpdating
+                } else if let date = updater.lastDownloaded {
+                    BrowserStrings.settingsFilterListsUpdated(date)
+                } else {
+                    BrowserStrings.settingsFilterListsBundled
+                }
             button?.isEnabled = !updater.isUpdating && BrowserContentBlocker.shared.settings.isEnabled
         }
         updater.changes.receive(on: RunLoop.main).sink { sync() }.store(in: &observations)
@@ -1714,6 +1743,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
             if let error = accountStore.lastError {
                 rows.append(note(error, symbol: "exclamationmark.triangle.fill", tint: .systemRed))
             }
+            rows.append(deleteAccountRow(accountStore))
             replaceRows(rows, in: accountsBody)
         } else {
             BrowserNativeControls.replaceViews([signInPanel()], in: accountsBody)
@@ -1917,6 +1947,60 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
             detail,
         ], spacing: 4)
         return row(label: withIcon("account.sync", label), control: control)
+    }
+
+    /// Delete Account…, which asks first. While the server deletes, the
+    /// button says so and stays disabled.
+    private func deleteAccountRow(_ accountStore: BrowserAccountStore) -> NSView {
+        let isDeleting = accountStore.isDeletingAccount
+        let button = BrowserActionButton(
+            isDeleting ? BrowserStrings.syncAccountDeleting : BrowserStrings.syncAccountDelete,
+        ) { [weak self] in
+            self?.confirmAccountDeletion(accountStore)
+        }
+        button.isEnabled = !isDeleting
+        button.setAccessibilityIdentifier("browser.settings.account.delete")
+        let detail = BrowserNativeControls.label(
+            BrowserStrings.syncAccountDeleteDetail,
+            size: 12,
+            color: .secondaryLabelColor,
+            wraps: true,
+        )
+        return row(label: detail, control: button)
+    }
+
+    private func confirmAccountDeletion(_ accountStore: BrowserAccountStore) {
+        guard !accountStore.isDeletingAccount else { return }
+        let (alert, clearBrowsingData) = Self.accountDeletionAlert()
+        let finish: (NSApplication.ModalResponse) -> Void = { [weak self] response in
+            guard response == .alertFirstButtonReturn else { return }
+            let clears = clearBrowsingData.state == .on
+            Task { @MainActor [weak self] in
+                guard await accountStore.deleteAccount() else { return }
+                self?.showAccountDeleted(clearingBrowsingData: clears)
+            }
+        }
+        if let window = view.window {
+            alert.beginSheetModal(for: window, completionHandler: finish)
+        } else {
+            finish(alert.runModal())
+        }
+    }
+
+    private func showAccountDeleted(clearingBrowsingData: Bool) {
+        let alert = NSAlert()
+        alert.messageText = BrowserStrings.syncAccountDeletedTitle
+        alert.informativeText = BrowserStrings.syncAccountDeletedMessage
+        let finish: (NSApplication.ModalResponse) -> Void = { [weak self] _ in
+            if clearingBrowsingData {
+                self?.openURL(BrowserSettingsRoute.clearBrowsingDataURL)
+            }
+        }
+        if let window = view.window {
+            alert.beginSheetModal(for: window, completionHandler: finish)
+        } else {
+            finish(alert.runModal())
+        }
     }
 
     /// One line of status with an optional symbol before it.

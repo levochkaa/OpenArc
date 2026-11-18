@@ -23,6 +23,7 @@ import UIKit
     func pauseSync()
     func resumeSync()
     func signOut()
+    func deleteAccount(erasingWebsiteData: Bool) async -> Bool
     func retrySync()
 }
 
@@ -65,12 +66,14 @@ extension BrowserMobileSyncSession: BrowserMobileAccountSessionPresenting {
     private let pauseButton = UIButton(type: .system)
     private let resumeButton = UIButton(type: .system)
     private let signOutButton = UIButton(type: .system)
+    private let deleteAccountButton = UIButton(type: .system)
     private let retryButton = UIButton(type: .system)
     private let cancelButton = UIButton(type: .system)
     private let progress = UIActivityIndicatorView(style: .medium)
     private var observation: AnyCancellable?
     private var signInTask: Task<Void, Never>?
     private var signInAttempt: UUID?
+    private var deleteTask: Task<Void, Never>?
     private var localError: String?
     private var renderedServerURL: URL?
     /// The account whose sign-in methods this screen asked for; a new server
@@ -207,9 +210,23 @@ extension BrowserMobileSyncSession: BrowserMobileAccountSessionPresenting {
         configure(cancelButton, title: "Cancel Sign-In", id: "account.cancelSignIn") { [weak self] in
             self?.cancelOwnedSignIn()
         }
-        for button in [enableButton, pauseButton, resumeButton, retryButton, signOutButton, cancelButton] {
+        configure(deleteAccountButton, title: "Delete Account…", id: "account.delete") { [weak self] in
+            self?.confirmAccountDeletion()
+        }
+        deleteAccountButton.configuration?.baseForegroundColor = .systemRed
+        let buttons = [
+            enableButton,
+            pauseButton,
+            resumeButton,
+            retryButton,
+            signOutButton,
+            cancelButton,
+            deleteAccountButton,
+        ]
+        for button in buttons {
             stack.addArrangedSubview(button)
         }
+        stack.setCustomSpacing(32, after: cancelButton)
     }
 
     /// The server's other sign-in methods: a button per web provider, then a
@@ -315,17 +332,24 @@ extension BrowserMobileSyncSession: BrowserMobileAccountSessionPresenting {
         resumeButton.isHidden = !account.isAuthenticated || account.bindingState != .paused
         signOutButton.isHidden = !account.isAuthenticated
         cancelButton.isHidden = !account.isSigningIn || signInTask == nil
-        if account.isSigningIn {
+        deleteAccountButton.isHidden = !account.isAuthenticated
+        let isDeleting = account.isDeletingAccount || deleteTask != nil
+        for button in [deleteAccountButton, signOutButton, enableButton, pauseButton, resumeButton, retryButton] {
+            button.isEnabled = !isDeleting
+        }
+        if account.isSigningIn || isDeleting {
             progress.startAnimating()
         } else {
             progress.stopAnimating()
         }
-        progress.isHidden = !account.isSigningIn
+        progress.isHidden = !account.isSigningIn && !isDeleting
         let error = localError ?? account.lastError ?? session.lastSyncError
         errorLabel.text = error
         errorLabel.isHidden = error == nil
         retryButton.isHidden = session.lastSyncError == nil || account.bindingState != .enabled
-        if account.isSigningIn {
+        if isDeleting {
+            statusLabel.text = Self.localized("Deleting account…")
+        } else if account.isSigningIn {
             statusLabel.text = Self.localized("Signing in…")
         } else if !account.isConfigured {
             statusLabel.text = Self.localized("Enter your sync server to sign in.")
@@ -420,6 +444,56 @@ extension BrowserMobileSyncSession: BrowserMobileAccountSessionPresenting {
             localError = error.localizedDescription
         }
         render()
+    }
+
+    /// What deletion removes and what stays. Website data goes only when the
+    /// user picks the second button.
+    private func confirmAccountDeletion() {
+        guard deleteTask == nil, session.account.isAuthenticated, presentedViewController == nil else { return }
+        let alert = UIAlertController(
+            title: Self.localized("Delete your OpenArc account?"),
+            message: Self.localized(
+                "This deletes your account from the sync server, with the Spaces, tabs and Boosts synced to it. Your other devices stop syncing. You can’t undo this.\n\nSpaces and tabs on this device stay here. So do cookies, site logins and other website data, unless you erase them too.",
+            ),
+            preferredStyle: .alert,
+        )
+        alert.addAction(UIAlertAction(title: Self.localized("Delete Account"), style: .destructive) { [weak self] _ in
+            self?.deleteAccount(erasingWebsiteData: false)
+        })
+        alert.addAction(UIAlertAction(
+            title: Self.localized("Delete Account and Website Data"), style: .destructive,
+        ) { [weak self] _ in
+            self?.deleteAccount(erasingWebsiteData: true)
+        })
+        alert.addAction(UIAlertAction(title: Self.localized("Cancel"), style: .cancel))
+        alert.view.accessibilityIdentifier = "account.deleteConfirmation"
+        present(alert, animated: true)
+    }
+
+    private func deleteAccount(erasingWebsiteData: Bool) {
+        guard deleteTask == nil else { return }
+        cancelOwnedSignIn()
+        deleteTask = Task { [weak self, session] in
+            let deleted = await session.deleteAccount(erasingWebsiteData: erasingWebsiteData)
+            guard let self else { return }
+            deleteTask = nil
+            render()
+            if deleted {
+                showAccountDeleted()
+            }
+        }
+        render()
+    }
+
+    private func showAccountDeleted() {
+        guard view.window != nil, presentedViewController == nil else { return }
+        let alert = UIAlertController(
+            title: Self.localized("Account deleted"),
+            message: Self.localized("Spaces and tabs on this device stay here and no longer sync."),
+            preferredStyle: .alert,
+        )
+        alert.addAction(UIAlertAction(title: Self.localized("OK"), style: .default))
+        present(alert, animated: true)
     }
 
     @objc private func signIn() {

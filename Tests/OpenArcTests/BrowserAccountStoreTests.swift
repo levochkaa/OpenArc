@@ -435,6 +435,13 @@ import Testing
         }
     }
 
+    func forgetAccount(removingCredentials: () throws -> Void) throws {
+        signInRequired = true
+        state = .needsConsent
+        try removingCredentials()
+        signInRequired = false
+    }
+
     func bindingState(for _: BrowserAuthSession) -> BrowserSyncBindingState { state }
 
     func enableSync(for session: BrowserAuthSession) throws {

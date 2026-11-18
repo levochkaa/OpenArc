@@ -65,6 +65,14 @@
 "Retry Sync" = "Retry Sync";
 "Sign Out" = "Sign Out";
 "Cancel Sign-In" = "Cancel Sign-In";
+"Delete Account…" = "Delete Account…";
+"Delete your OpenArc account?" = "Delete your OpenArc account?";
+"This deletes your account from the sync server, with the Spaces, tabs and Boosts synced to it. Your other devices stop syncing. You can’t undo this.\n\nSpaces and tabs on this device stay here. So do cookies, site logins and other website data, unless you erase them too." = "This deletes your account from the sync server, with the Spaces, tabs and Boosts synced to it. Your other devices stop syncing. You can’t undo this.\n\nSpaces and tabs on this device stay here. So do cookies, site logins and other website data, unless you erase them too.";
+"Delete Account" = "Delete Account";
+"Delete Account and Website Data" = "Delete Account and Website Data";
+"Deleting account…" = "Deleting account…";
+"Account deleted" = "Account deleted";
+"Spaces and tabs on this device stay here and no longer sync." = "Spaces and tabs on this device stay here and no longer sync.";
 "Signing in…" = "Signing in…";
 "Enter your sync server to sign in." = "Enter your sync server to sign in.";
 "Sign in to sync this profile." = "Sign in to sync this profile.";

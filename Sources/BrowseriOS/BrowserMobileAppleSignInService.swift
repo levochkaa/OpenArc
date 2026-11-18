@@ -6,7 +6,7 @@ import UIKit
 // MARK: - BrowserMobileAppleAuthorizationRequest
 
 @MainActor protocol BrowserMobileAppleAuthorizationRequest: AnyObject {
-    func start(completion: @escaping @MainActor (Result<String, Error>) -> Void)
+    func start(completion: @escaping @MainActor (Result<BrowserAppleCredential, Error>) -> Void)
     func cancel()
 }
 
@@ -19,7 +19,7 @@ import UIKit
         let id: UUID
         let window: UIWindow
         let request: any BrowserMobileAppleAuthorizationRequest
-        let continuation: CheckedContinuation<String, Error>
+        let continuation: CheckedContinuation<BrowserAppleCredential, Error>
     }
 
     private weak var presentationWindow: UIWindow?
@@ -49,6 +49,11 @@ import UIKit
     }
 
     func requestIdentityToken() async throws -> String {
+        try await requestCredential().identityToken
+    }
+
+    /// The identity token and the authorization code of one sign-in.
+    func requestCredential() async throws -> BrowserAppleCredential {
         guard pending == nil else { throw BrowserMobileAppleSignInError.requestInProgress }
         guard let window = presentationWindow, !window.isHidden,
               window.windowScene?.activationState == .foregroundActive
@@ -78,7 +83,7 @@ import UIKit
         attempt.continuation.resume(throwing: CancellationError())
     }
 
-    private func finish(id: UUID, result: Result<String, Error>) {
+    private func finish(id: UUID, result: Result<BrowserAppleCredential, Error>) {
         guard let attempt = pending, attempt.id == id else { return }
         pending = nil
         attempt.continuation.resume(with: result)
@@ -118,7 +123,7 @@ enum BrowserMobileAppleSignInError: LocalizedError {
 
     private let window: UIWindow
     private var controller: ASAuthorizationController?
-    private var completion: (@MainActor (Result<String, Error>) -> Void)?
+    private var completion: (@MainActor (Result<BrowserAppleCredential, Error>) -> Void)?
 
     init(window: UIWindow) {
         self.window = window
@@ -127,7 +132,7 @@ enum BrowserMobileAppleSignInError: LocalizedError {
 
     // MARK: Internal
 
-    func start(completion: @escaping @MainActor (Result<String, Error>) -> Void) {
+    func start(completion: @escaping @MainActor (Result<BrowserAppleCredential, Error>) -> Void) {
         self.completion = completion
         let request = ASAuthorizationAppleIDProvider().createRequest()
         request.requestedScopes = [.email, .fullName]
@@ -157,7 +162,10 @@ enum BrowserMobileAppleSignInError: LocalizedError {
             finish(.failure(BrowserAppleSignInError.missingIdentityToken))
             return
         }
-        finish(.success(token))
+        // The server redeems the code for a refresh token, which deleting
+        // the account revokes.
+        let code = credential.authorizationCode.flatMap { String(data: $0, encoding: .utf8) }
+        finish(.success(BrowserAppleCredential(identityToken: token, authorizationCode: code)))
     }
 
     func authorizationController(controller: ASAuthorizationController, didCompleteWithError error: Error) {
@@ -165,7 +173,7 @@ enum BrowserMobileAppleSignInError: LocalizedError {
         finish(.failure(error))
     }
 
-    private func finish(_ result: Result<String, Error>) {
+    private func finish(_ result: Result<BrowserAppleCredential, Error>) {
         let callback = completion
         completion = nil
         controller = nil

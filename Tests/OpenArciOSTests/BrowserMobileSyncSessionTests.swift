@@ -119,6 +119,38 @@ import UIKit
         #expect(try f.store.loadSnapshotStrict() == snapshot)
     }
 
+    @Test func deletingTheAccountSignsOutUnbindsAndErasesWebsiteDataOnlyWhenAsked() async throws {
+        let f = try MobileSyncRuntimeFixture()
+        defer { f.cleanup() }
+        let host = try MobileSyncRuntimeWindow()
+        defer { host.close() }
+        f.runtime.setSceneActive(true, sceneID: "active")
+        await f.runtime.signIn(from: host.window)
+        f.runtime.enableSync()
+        await f.drain()
+        #expect(try f.store.syncOwner() == f.owner)
+        let snapshot = f.document.snapshot
+
+        f.remote.deletionError = URLError(.notConnectedToInternet)
+        #expect(await !f.runtime.deleteAccount(erasingWebsiteData: true))
+        #expect(f.runtime.account.isAuthenticated && f.runtime.account.bindingState == .enabled)
+        #expect(f.runtime.account.lastError == BrowserStrings.syncAccountDeleteOffline)
+        #expect(f.remote.websiteDataErasures == 0, "website data stays while the account exists")
+
+        f.remote.deletionError = nil
+        #expect(await f.runtime.deleteAccount(erasingWebsiteData: true))
+        #expect(f.remote.deletions == [f.remote.session, f.remote.session])
+        #expect(!f.runtime.account.isAuthenticated && f.auth.session == nil)
+        #expect(f.remote.websiteDataErasures == 1)
+        #expect(try f.store.syncOwner() == nil && !f.store.requiresSyncSignIn())
+        #expect(try f.document.snapshot == snapshot && (f.store.loadSnapshotStrict()) == snapshot)
+
+        await f.runtime.signIn(from: host.window)
+        #expect(f.runtime.account.bindingState == .needsConsent, "a new account can adopt the profile")
+        #expect(await f.runtime.deleteAccount(erasingWebsiteData: false))
+        #expect(f.remote.websiteDataErasures == 1)
+    }
+
     @Test func runtimeReportsAndRetriesTransportErrorWithoutDroppingLocalQueue() async throws {
         let f = try MobileSyncRuntimeFixture(cached: true, bound: true)
         defer { f.cleanup() }
@@ -284,6 +316,7 @@ import UIKit
             environment: configured ? ["OPENARC_SYNC_BASE_URL": remote.baseURL.absoluteString] : [:],
             packagedServerURL: nil, clientFactory: { [remote] _ in remote },
             pushDebounce: .zero, pollInterval: nil, retryDelay: nil,
+            eraseWebsiteData: { [remote] in remote.websiteDataErasures += 1 },
         )
     }
 
@@ -309,6 +342,9 @@ import UIKit
     var events = [BrowserSyncEvent]()
     var pullFails = false
     var authenticationGates = [MobileSyncRuntimeGate]()
+    var deletions = [BrowserAuthSession]()
+    var deletionError: Error?
+    var websiteDataErasures = 0
 
     // MARK: Private
 
@@ -339,6 +375,13 @@ import UIKit
             await authenticationGates[index].wait()
         }
         return session
+    }
+
+    func deleteAccount(authSession: BrowserAuthSession) throws {
+        deletions.append(authSession)
+        if let deletionError {
+            throw deletionError
+        }
     }
 
     func waitForAuthentication(count: Int) async {

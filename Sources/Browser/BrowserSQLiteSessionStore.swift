@@ -1158,6 +1158,43 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
         }
     }
 
+    /// Unbinds the profile from a deleted account: its owner, cursor, outbox
+    /// and baselines go, so the next account adopts the profile from scratch.
+    /// Spaces, tabs, folders, Boosts and the Archive stay. Sign-in stays
+    /// required until `allowSyncSignIn` confirms the credentials are gone.
+    func forgetSyncAccount() throws {
+        try dbQueue.write { db in
+            try db.execute(
+                sql: "INSERT OR REPLACE INTO browser_preferences (key, value) VALUES (?, '1')",
+                arguments: [Key.syncRequiresSignIn],
+            )
+            try db.execute(sql: """
+            DELETE FROM browser_sync_state;
+            DELETE FROM browser_sync_baseline;
+            DELETE FROM browser_sync_outbox;
+            DELETE FROM browser_sync_expiry_imports;
+            DELETE FROM browser_sync_automatic_expiry;
+            DELETE FROM browser_sync_boost_baseline;
+            """)
+            try db.execute(
+                sql: "UPDATE browser_preferences SET value = '0' WHERE key = ?",
+                arguments: [Key.syncCursor],
+            )
+        }
+    }
+
+    /// Ends the sign-in requirement of a profile no account owns, once its
+    /// credentials are removed.
+    func allowSyncSignIn() throws {
+        try dbQueue.write { db in
+            guard try storedSyncOwner(db) == nil else { throw BrowserSyncStoreError.ownerMismatch }
+            try db.execute(
+                sql: "UPDATE browser_preferences SET value = '0' WHERE key = ?",
+                arguments: [Key.syncRequiresSignIn],
+            )
+        }
+    }
+
     /// Only a newly authenticated, durably saved credential may clear logout.
     /// Completing authentication never adopts an unbound local profile.
     func completeSyncAuthentication(for owner: BrowserSyncOwner) throws {

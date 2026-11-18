@@ -3,6 +3,7 @@
 import Combine
 import Foundation
 import UIKit
+import WebKit
 
 // MARK: - BrowserMobileSyncSession
 
@@ -37,6 +38,7 @@ import UIKit
     private let expirySweepInterval: TimeInterval
     private let expiryActivityRefreshInterval: TimeInterval
     private let dateProvider: @MainActor () -> Date
+    private let eraseWebsiteData: @MainActor () async -> Void
     private var activeScenes = Set<String>()
     private var generation: UInt64 = 0
     private var signInAttempt: UUID?
@@ -62,6 +64,7 @@ import UIKit
         retryDelay: Duration? = .seconds(2),
         expirySweepInterval: TimeInterval = 60, expiryActivityRefreshInterval: TimeInterval = 300,
         dateProvider: @escaping @MainActor () -> Date = Date.init,
+        eraseWebsiteData: @escaping @MainActor () async -> Void = BrowserMobileSyncSession.eraseWebsiteData,
     ) {
         self.store = store
         self.document = document
@@ -76,6 +79,7 @@ import UIKit
         self.expirySweepInterval = expirySweepInterval
         self.expiryActivityRefreshInterval = expiryActivityRefreshInterval
         self.dateProvider = dateProvider
+        self.eraseWebsiteData = eraseWebsiteData
         self.account = BrowserAccountStore(
             syncClient: nil, authSessionStore: authSessionStore, syncCoordinator: nil,
             appleSignInService: identityProvider, webSignInService: webSignInService,
@@ -112,6 +116,14 @@ import UIKit
               || (configuration.baseURL.scheme == "http" && ["localhost", "127.0.0.1", "[::1]", "::1"].contains(host))
         else { return nil }
         return configuration
+    }
+
+    /// Every kind of data the pages' shared WebKit store keeps.
+    static func eraseWebsiteData() async {
+        await WKWebsiteDataStore.default().removeData(
+            ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(),
+            modifiedSince: .distantPast,
+        )
     }
 
     func configureServer(_ raw: String) throws {
@@ -218,6 +230,20 @@ import UIKit
         account.signOut()
         lastSyncError = nil
         lastErrorPhase = nil
+    }
+
+    /// Deletes the account on the server, then signs out and unbinds this
+    /// profile; its Spaces and tabs stay. With `erasingWebsiteData`, cookies,
+    /// caches and site storage on this device go too, once the account is gone.
+    @discardableResult func deleteAccount(erasingWebsiteData: Bool) async -> Bool {
+        cancelSignIn()
+        guard await account.deleteAccount() else { return false }
+        lastSyncError = nil
+        lastErrorPhase = nil
+        if erasingWebsiteData {
+            await eraseWebsiteData()
+        }
+        return true
     }
 
     func retrySync() {

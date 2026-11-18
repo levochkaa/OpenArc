@@ -85,8 +85,21 @@ final class BrowserRemoteSyncClient: @unchecked Sendable {
         deviceName: String,
         devicePlatform: String,
     ) async throws -> BrowserAuthSession {
+        try await authenticateWithApple(
+            identityToken: identityToken, authorizationCode: nil, deviceName: deviceName,
+            devicePlatform: devicePlatform,
+        )
+    }
+
+    func authenticateWithApple(
+        identityToken: String,
+        authorizationCode: String?,
+        deviceName: String,
+        devicePlatform: String,
+    ) async throws -> BrowserAuthSession {
         let output = try await openAPIClient(accessToken: nil).authenticateWithApple(.init(body: .json(.init(
             identityToken: identityToken,
+            authorizationCode: authorizationCode,
             deviceName: deviceName,
             devicePlatform: devicePlatform,
         ))))
@@ -98,6 +111,33 @@ final class BrowserRemoteSyncClient: @unchecked Sendable {
             }
         case .default(let statusCode, let response):
             throw Self.signInError(statusCode: statusCode, body: response.body, rejectedCode: .signInExpired)
+        }
+    }
+
+    /// 204 also when the account was already deleted, so a retry after a lost
+    /// reply succeeds.
+    func deleteAccount(authSession: BrowserAuthSession) async throws {
+        guard authSession.belongs(to: baseURL) else { throw BrowserSyncAccountError.serverChanged }
+        let output: Operations.deleteAccount.Output
+        do {
+            output = try await openAPIClient(accessToken: authSession.accessToken).deleteAccount()
+        } catch let error as ClientError where error.underlyingError is URLError {
+            // The request may have reached the server; a retry is safe either way.
+            throw BrowserAccountDeletionError.offline
+        }
+        switch output {
+        case .noContent: return
+        case .default(let statusCode, let response):
+            switch statusCode {
+            case 401: throw BrowserAccountDeletionError.signInRequired
+            case 429: throw BrowserAccountDeletionError.tooManyRequests
+            default:
+                switch response.body {
+                case .json(let error): throw BrowserAccountDeletionError.server(
+                        statusCode: statusCode, message: error.message,
+                    )
+                }
+            }
         }
     }
 
@@ -618,6 +658,9 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
     func resumeSync(for session: BrowserAuthSession) throws
     func suspendSync() throws
     func signOut() throws
+    /// After the server deleted the account: stops sync, unbinds the profile
+    /// and removes its credentials. Local Spaces, tabs and Boosts stay.
+    func forgetAccount(removingCredentials: () throws -> Void) throws
     func accountSessionDidChange(_ session: BrowserAuthSession?)
 }
 
@@ -789,6 +832,15 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
     func signOut() throws {
         accountSessionDidChange(nil)
         try localStore.requireSyncSignIn()
+    }
+
+    func forgetAccount(removingCredentials: () throws -> Void) throws {
+        accountSessionDidChange(nil)
+        // Sign-in stays required until the credentials are gone, so a failed
+        // Keychain removal cannot sign back in at launch.
+        try localStore.forgetSyncAccount()
+        try removingCredentials()
+        try localStore.allowSyncSignIn()
     }
 
     func accountSessionDidChange(_ session: BrowserAuthSession?) {

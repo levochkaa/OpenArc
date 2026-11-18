@@ -43,13 +43,13 @@ import UIKit
         service.cancel()
         await #expect(throws: CancellationError.self) { try await old.value }
         #expect(first.cancellations == 1)
-        let fresh = Task { try await service.requestIdentityToken() }
+        let fresh = Task { try await service.requestCredential() }
         await second.waitUntilStarted()
-        first.complete(.success("stale-token"))
+        first.complete(.success(.init(identityToken: "stale-token")))
         first.complete(.failure(MobileAccountTestError.failure))
-        second.complete(.success("current-token"))
-        second.complete(.success("duplicate-token"))
-        #expect(try await fresh.value == "current-token")
+        second.complete(.success(.init(identityToken: "current-token", authorizationCode: "current-code")))
+        second.complete(.success(.init(identityToken: "duplicate-token")))
+        #expect(try await fresh.value == .init(identityToken: "current-token", authorizationCode: "current-code"))
         #expect(anchors.count == 2 && anchors.allSatisfy { $0 === host.window })
     }
 
@@ -136,6 +136,28 @@ import UIKit
         #expect(controller.view.accountView("account.signIn")?.isHidden == false)
     }
 
+    @Test func accountSheetAsksBeforeDeletingAndOffersToEraseWebsiteData() async throws {
+        let session = MobileAccountSession(binding: .enabled, authenticated: true)
+        let controller = BrowserMobileAccountViewController(session: session)
+        let host = try MobileAccountHost(controller: UINavigationController(rootViewController: controller))
+        defer { host.close() }
+        try host.press("account.delete", in: controller)
+        await host.drainUI()
+        let alert = try #require(controller.presentedViewController as? UIAlertController)
+        #expect(alert.title == "Delete your OpenArc account?")
+        #expect(alert.message?.contains("cookies, site logins and other website data") == true)
+        #expect(alert.actions.map(\.title) == ["Delete Account", "Delete Account and Website Data", "Cancel"])
+        #expect(alert.actions.map(\.style) == [.destructive, .destructive, .cancel])
+        #expect(session.websiteDataErasures.isEmpty, "nothing is deleted before a choice")
+        #expect(session.account.isAuthenticated)
+        alert.dismiss(animated: false)
+        await host.drainUI()
+
+        session.account.signOut()
+        await host.drainUI()
+        #expect(controller.view.accountView("account.delete")?.isHidden == true)
+    }
+
     @Test func accountSheetOwnsSignInWindowAndDismissalCancelsPendingAttempt() async throws {
         let session = MobileAccountSession()
         session.identity.holds = true
@@ -171,17 +193,17 @@ import UIKit
 
     // MARK: Private
 
-    private var completion: (@MainActor (Result<String, Error>) -> Void)?
+    private var completion: (@MainActor (Result<BrowserAppleCredential, Error>) -> Void)?
     private var started: CheckedContinuation<Void, Never>?
 
-    func start(completion: @escaping @MainActor (Result<String, Error>) -> Void) {
+    func start(completion: @escaping @MainActor (Result<BrowserAppleCredential, Error>) -> Void) {
         self.completion = completion
         started?.resume()
         started = nil
     }
 
     func cancel() { cancellations += 1 }
-    func complete(_ result: Result<String, Error>) { completion?(result) }
+    func complete(_ result: Result<BrowserAppleCredential, Error>) { completion?(result) }
     func waitUntilStarted() async {
         guard completion == nil else { return }
         await withCheckedContinuation { started = $0 }
@@ -246,6 +268,7 @@ import UIKit
     var signInAttempt: UUID?
     var cancellations = 0
     var retries = 0
+    var websiteDataErasures = [Bool]()
 
     var changePublisher: AnyPublisher<Void, Never> {
         Publishers.Merge(change, account.objectWillChange).eraseToAnyPublisher()
@@ -315,6 +338,11 @@ import UIKit
     func pauseSync() { account.pauseSync() }
     func resumeSync() { account.resumeSync() }
     func signOut() { account.signOut() }
+    func deleteAccount(erasingWebsiteData: Bool) async -> Bool {
+        websiteDataErasures.append(erasingWebsiteData)
+        return await account.deleteAccount()
+    }
+
     func retrySync() {
         retries += 1
         lastSyncError = nil
@@ -380,6 +408,8 @@ import UIKit
         requests += 1
         return session
     }
+
+    func deleteAccount(authSession _: BrowserAuthSession) {}
 }
 
 // MARK: - MobileAccountAuthStorage
@@ -413,6 +443,11 @@ import UIKit
         if state == .enabled {
             state = .paused
         }
+    }
+
+    func forgetAccount(removingCredentials: () throws -> Void) throws {
+        state = .needsConsent
+        try removingCredentials()
     }
 
     func bindingState(for _: BrowserAuthSession) -> BrowserSyncBindingState { state }

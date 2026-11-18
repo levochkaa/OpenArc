@@ -10,6 +10,24 @@ import Security
 /// Native Sign in with Apple, which only apps from the App Store can use.
 @MainActor protocol BrowserAppleIdentityProviding: AnyObject {
     func requestIdentityToken() async throws -> String
+    func requestCredential() async throws -> BrowserAppleCredential
+}
+
+/// Providers that only return an identity token, like test doubles.
+extension BrowserAppleIdentityProviding {
+    func requestCredential() async throws -> BrowserAppleCredential {
+        try await BrowserAppleCredential(identityToken: requestIdentityToken())
+    }
+}
+
+// MARK: - BrowserAppleCredential
+
+/// What native Sign in with Apple returns. The server redeems the
+/// authorization code for a refresh token, which it revokes when the account
+/// is deleted.
+struct BrowserAppleCredential: Equatable {
+    let identityToken: String
+    var authorizationCode: String?
 }
 
 // MARK: - BrowserWebSignInPresenting
@@ -43,6 +61,11 @@ enum BrowserWebSignInError: Error, Equatable {
     func authenticateWithApple(
         identityToken: String, deviceName: String, devicePlatform: String,
     ) async throws -> BrowserAuthSession
+    func authenticateWithApple(
+        identityToken: String, authorizationCode: String?, deviceName: String, devicePlatform: String,
+    ) async throws -> BrowserAuthSession
+    /// Deletes the signed-in account and everything the server keeps for it.
+    func deleteAccount(authSession: BrowserAuthSession) async throws
     func signInProviders() async throws -> [BrowserAccountProvider]
     func exchangeWebSignIn(
         code: String, codeVerifier: String, deviceName: String, devicePlatform: String,
@@ -55,6 +78,18 @@ enum BrowserWebSignInError: Error, Equatable {
 
 /// Clients that only offer native Sign in with Apple, like test doubles.
 extension BrowserAccountAuthenticating {
+    func authenticateWithApple(
+        identityToken: String, authorizationCode _: String?, deviceName: String, devicePlatform: String,
+    ) async throws -> BrowserAuthSession {
+        try await authenticateWithApple(
+            identityToken: identityToken, deviceName: deviceName, devicePlatform: devicePlatform,
+        )
+    }
+
+    func deleteAccount(authSession _: BrowserAuthSession) throws {
+        throw BrowserAccountSignInError.notConfigured
+    }
+
     func signInProviders() -> [BrowserAccountProvider] { [.apple] }
 
     func exchangeWebSignIn(
@@ -167,6 +202,38 @@ enum BrowserAccountSignInError: LocalizedError, Equatable {
     }
 }
 
+// MARK: - BrowserAccountDeletionError
+
+enum BrowserAccountDeletionError: LocalizedError, Equatable {
+    /// The access token expired or was revoked; the account may still exist.
+    case signInRequired
+    case tooManyRequests
+    case offline
+    case server(statusCode: Int, message: String?)
+
+    // MARK: Internal
+
+    var errorDescription: String? {
+        switch self {
+        case .signInRequired: BrowserStrings.syncAccountDeleteSignInAgain
+        case .tooManyRequests: BrowserStrings.syncAccountTooManyRequests
+        case .offline: BrowserStrings.syncAccountDeleteOffline
+        case .server(_, let message): message ?? BrowserStrings.syncAccountDeleteFailed
+        }
+    }
+
+    /// Network failures read as offline; the server's errors keep their meaning.
+    static func from(_ error: Error) -> Self {
+        if let error = error as? Self {
+            return error
+        }
+        if error is URLError {
+            return .offline
+        }
+        return .server(statusCode: 0, message: nil)
+    }
+}
+
 // MARK: - BrowserAppleSignInError
 
 enum BrowserAppleSignInError: Error {
@@ -196,6 +263,7 @@ enum BrowserAppleSignInError: Error {
 
     @Published private(set) var session: BrowserAuthSession?
     @Published private(set) var isSigningIn = false
+    @Published private(set) var isDeletingAccount = false
     @Published private(set) var lastError: String?
     @Published private(set) var bindingState: BrowserSyncBindingState?
     /// The sign-in methods the server offers, once loaded.
@@ -312,10 +380,11 @@ enum BrowserAppleSignInError: Error {
         defer { endSignIn(attempt) }
         do {
             guard let appleSignInService else { throw BrowserAccountSignInError.notConfigured }
-            let identityToken = try await appleSignInService.requestIdentityToken()
+            let credential = try await appleSignInService.requestCredential()
             guard isCurrent(attempt) else { return }
             let session = try await attempt.client.authenticateWithApple(
-                identityToken: identityToken,
+                identityToken: credential.identityToken,
+                authorizationCode: credential.authorizationCode,
                 deviceName: deviceIdentity.name,
                 devicePlatform: deviceIdentity.platform,
             )
@@ -482,9 +551,36 @@ enum BrowserAppleSignInError: Error {
         }
     }
 
+    /// Deletes the account on the server, then signs out here and unbinds
+    /// this profile from it. Spaces, tabs and Boosts on this device stay, and
+    /// stop syncing. On failure the account stays signed in, `lastError` says
+    /// why, and sync goes on. Returns whether the account is gone.
+    @discardableResult func deleteAccount() async -> Bool {
+        guard let session, let syncClient, !isDeletingAccount else { return false }
+        cancelSignIn()
+        clearEmailSignIn()
+        isDeletingAccount = true
+        lastError = nil
+        defer { isDeletingAccount = false }
+        // Nothing may reach the server while it deletes; a push or pull that
+        // returns after deletion would find no account.
+        syncCoordinator?.accountSessionDidChange(nil)
+        do {
+            try await syncClient.deleteAccount(authSession: session)
+        } catch {
+            if self.session == session, bindingState == .enabled {
+                syncCoordinator?.accountSessionDidChange(session)
+            }
+            lastError = BrowserAccountDeletionError.from(error).localizedDescription
+            return false
+        }
+        forgetDeletedAccount()
+        return true
+    }
+
     /// Nil while another sign-in runs or sync is unavailable.
     private func beginSignIn() -> SignInAttempt? {
-        guard !isSigningIn else { return nil }
+        guard !isSigningIn, !isDeletingAccount else { return nil }
         guard let syncClient, let syncCoordinator else {
             lastError = unavailableMessage
             return nil
@@ -526,6 +622,28 @@ enum BrowserAppleSignInError: Error {
         }
         attempt.coordinator.accountSessionDidChange(session)
         clearEmailSignIn()
+    }
+
+    /// The account no longer exists: the profile forgets it, so a later
+    /// sign-in, which makes a new account, can sync the profile again.
+    private func forgetDeletedAccount() {
+        session = nil
+        bindingState = nil
+        lastSyncDate = nil
+        var failures = [String]()
+        do {
+            try syncCoordinator?.forgetAccount { [authSessionStore] in try authSessionStore.clearSession() }
+        } catch {
+            // Never leave a token this profile could sign back in with.
+            failures.append(error.localizedDescription)
+            try? syncCoordinator?.signOut()
+            do {
+                try authSessionStore.clearSession()
+            } catch {
+                failures.append(error.localizedDescription)
+            }
+        }
+        lastError = failures.isEmpty ? nil : failures.joined(separator: "\n")
     }
 
     /// Closing the sign-in page is not an error.
