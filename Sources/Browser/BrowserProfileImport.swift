@@ -51,6 +51,11 @@ struct BrowserProfileImporter {
     /// The chosen profile's latest activity.
     var lastUsed: Date?
 
+    /// The profile's folder name, such as `Default` or `Profile 2`.
+    var profileFolderName: String {
+        profileDirectory.lastPathComponent
+    }
+
     var keychainService: String? {
         source.keychainService
     }
@@ -205,6 +210,11 @@ struct BrowserProfileImporter {
         importer.profiles = profiles
         importer.applicationURL = applicationURL
         return importer
+    }
+
+    /// The same browser on each of these profiles.
+    func selecting(_ chosen: [BrowserImportProfile]) -> [BrowserProfileImporter] {
+        chosen.map(selecting)
     }
 
     /// The same browser read from Safari's exported ZIP.

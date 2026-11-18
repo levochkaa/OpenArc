@@ -357,13 +357,13 @@ import Foundation
         }
     }
 
-    @discardableResult func importCookies(_ cookies: [BrowserImportedCookie]) -> Int {
+    @discardableResult func importCookies(_ cookies: [BrowserImportedCookie], profileCachePath: String?) -> Int {
         controller.importCookies(cookies.map {
             [
                 "url": $0.urlString, "host": $0.host, "name": $0.name, "value": $0.value, "path": $0.path,
                 "expires": $0.expires, "secure": $0.isSecure, "httpOnly": $0.isHTTPOnly, "sameSite": $0.sameSite,
             ]
-        })
+        }, profileCachePath: profileCachePath)
     }
 
     func fillPasswordInMainFrame(username: String, password: String, origin: String, tabID: String) -> Bool {

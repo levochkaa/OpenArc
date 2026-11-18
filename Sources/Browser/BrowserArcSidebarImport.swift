@@ -37,6 +37,8 @@ struct BrowserArcSidebar: Equatable {
         var icon: String?
         var pinned: [Node]
         var theme: BrowserSpaceTheme?
+        /// Arc's Chromium profile folder for the Space, such as `Profile 2`; nil for `Default`.
+        var profileDirectory: String?
     }
 
     // MARK: Private
@@ -180,6 +182,7 @@ struct BrowserArcSidebar: Equatable {
                 icon: Self.icon(in: space["customInfo"]),
                 pinned: pinnedID.map { reader.children(of: $0) } ?? [],
                 theme: Self.theme(in: space["customInfo"]),
+                profileDirectory: Self.profileDirectory(in: space["profile"]),
             )
         }
         let favoritesID = Self.pairs(container["topAppsContainerIDs"] as? [Any] ?? [])
@@ -192,6 +195,13 @@ struct BrowserArcSidebar: Equatable {
     static func load(from url: URL) throws -> BrowserArcSidebar {
         guard let data = FileManager.default.contents(atPath: url.path) else { throw ImportError.missing }
         return try BrowserArcSidebar(data: data)
+    }
+
+    /// A Space on a profile other than Arc's first names its folder:
+    /// `{"custom": {"_0": {"directoryBasename": "Profile 2"}}}`.
+    private static func profileDirectory(in profile: Any?) -> String? {
+        let custom = ((profile as? [String: Any])?["custom"] as? [String: Any])?["_0"] as? [String: Any]
+        return (custom?["directoryBasename"] as? String).flatMap(trimmed)
     }
 
     private static func pairs(_ array: [Any]) -> [(key: Any, value: Any)] {
@@ -256,6 +266,16 @@ struct BrowserArcSidebar: Equatable {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
     }
+}
+
+// MARK: - BrowserArcProfileChoice
+
+/// Which of Arc's profiles a sidebar import takes, by Arc's folder name
+/// (`Default`, `Profile 2`). A Space on a skipped profile stays behind; one on a
+/// profile in `targets` goes to that OpenArc profile; any other goes to the window's.
+struct BrowserArcProfileChoice: Equatable {
+    var skipped = Set<String>()
+    var targets = [String: String]()
 }
 
 // MARK: - BrowserArcSidebarImportResult

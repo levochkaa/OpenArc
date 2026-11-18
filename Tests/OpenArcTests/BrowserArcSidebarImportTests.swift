@@ -33,6 +33,17 @@ import Testing
       ]}]}}
     """
 
+    /// Arc binds each Space to a Chromium profile; the first profile's Spaces name none.
+    static let profilesSample = """
+    {"sidebar": {"containers": [{
+      "spaces": ["S1", {"id": "S1", "title": "Home", "profile": {"default": true}, "containerIDs": []},
+                 "S2", {"id": "S2", "title": "Work", "containerIDs": [],
+                        "profile": {"custom": {"_0": {"machineID": "M", "directoryBasename": "Profile 2"}}}},
+                 "S3", {"id": "S3", "title": "Side", "containerIDs": [],
+                        "profile": {"custom": {"_0": {"directoryBasename": "Profile 3"}}}}],
+      "items": []}]}}
+    """
+
     @Test func parsesSpacesPinnedTreesAndFavorites() throws {
         let sidebar = try BrowserArcSidebar(data: Data(Self.sample.utf8))
         #expect(sidebar.spaces.map(\.title) == ["Work", nil])
@@ -147,5 +158,68 @@ import Testing
         ], "items": []}]}}
         """.utf8))
         #expect(sidebar.spaces.map(\.icon) == ["lightbulb.fill", nil], "Unknown names get the default icon")
+    }
+
+    @Test func eachSpaceGoesToTheProfileChosenForItsArcProfile() throws {
+        let sidebar = try BrowserArcSidebar(data: Data(Self.profilesSample.utf8))
+        #expect(sidebar.spaces.map(\.profileDirectory) == [nil, "Profile 2", "Profile 3"])
+
+        let f = SidebarDragFixture(temporary: ["x"])
+        f.model.profileDirectories = BrowserSpaceProfileDirectories(
+            windowProfile: "Default",
+            profiles: { [] },
+            cachePath: { "/profiles/\($0)" },
+            createProfile: { nil },
+        )
+        let result = f.model.importArcSidebar(sidebar, profiles: BrowserArcProfileChoice(
+            skipped: ["Profile 3"],
+            targets: ["Profile 2": "Profile 7"],
+        ))
+        #expect(result.spaceCount == 2, "Side's profile was left out")
+        let home = try #require(f.model.spaces.first { $0.title == "Home" })
+        let work = try #require(f.model.spaces.first { $0.title == "Work" })
+        #expect(f.model.spaceProfilesByID[home.id] == nil, "Arc's first profile fills the window's")
+        #expect(f.model.spaceProfilesByID[work.id] == "Profile 7")
+        #expect(!f.model.spaces.contains { $0.title == "Side" })
+    }
+
+    @Test func anotherProfileGetsItsOwnOpenArcProfileOnce() async throws {
+        let f = SidebarDragFixture(temporary: ["x"])
+        var created = [BrowserProfile]()
+        f.model.profileDirectories = BrowserSpaceProfileDirectories(
+            windowProfile: "Default",
+            profiles: { created },
+            cachePath: { "/profiles/\($0)" },
+            createProfile: { nil },
+            createNamedProfile: { name in
+                let profile = BrowserProfile(directoryName: "Profile \(created.count + 1)", name: name)
+                created.append(profile)
+                return profile.id
+            },
+        )
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: home) }
+        var personal = BrowserProfileImporter(
+            source: .firefox,
+            profileDirectory: home.appendingPathComponent("a.default"),
+        )
+        personal.profileName = "Personal"
+        var work = BrowserProfileImporter(source: .firefox, profileDirectory: home.appendingPathComponent("b.work"))
+        work.profileName = "Work"
+        let spacesBefore = f.model.spaces.count
+
+        _ = await f.model.importProfiles([personal, work], items: [.bookmarks])
+        #expect(created.isEmpty, "Bookmarks alone come into this window's profile")
+
+        _ = await f.model.importProfiles([personal, work], items: [.signIns])
+        #expect(created.map(\.name) == ["Work"], "The first profile fills the window's")
+        let space = try #require(f.model.spaces.last)
+        #expect(f.model.spaces.count == spacesBefore + 1)
+        #expect(space.title == "Work", "Its sign-ins get a Space to be used in")
+        #expect(f.model.spaceProfilesByID[space.id] == "Profile 1")
+
+        _ = await f.model.importProfiles([personal, work], items: [.signIns])
+        #expect(created.count == 1, "A second import finds the profile it made")
+        #expect(f.model.spaces.count == spacesBefore + 1)
     }
 }

@@ -3702,9 +3702,9 @@ enum BrowserStrings {
         comment: "Window menu item that brings every app window to the front.",
     )
 
-    static let onboardingProfile = NSLocalizedString(
-        "browser.onboarding.profile",
-        comment: "First-run welcome window: picks which profile of a browser to import.",
+    static let onboardingProfiles = NSLocalizedString(
+        "browser.onboarding.profiles",
+        comment: "First-run welcome window: heads the checkboxes that pick which profiles of a browser to import.",
     )
 
     static let onboardingSafariExportHint = NSLocalizedString(

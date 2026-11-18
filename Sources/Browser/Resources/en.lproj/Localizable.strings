@@ -122,7 +122,7 @@
 "browser.onboarding.import_from" = "Import from %@";
 "browser.onboarding.importing" = "Importing from %@…";
 "browser.onboarding.try_again" = "Try Again";
-"browser.onboarding.profile" = "Profile";
+"browser.onboarding.profiles" = "Profiles";
 "browser.onboarding.safari_export_hint" = "Safari keeps its data out of other apps' reach. In Safari, choose File › Export Browsing Data to File, then pick the ZIP it saves.";
 "browser.onboarding.choose_safari_export" = "Choose Safari Export…";
 "browser.onboarding.choose_another" = "Choose Another…";

@@ -54,7 +54,7 @@ enum BrowserOnboardingImportItem: String, CaseIterable {
     private typealias Palette = BrowserOnboardingPalette
 
     var onFinish: () -> Void = {}
-    var importItems: (_ items: Set<Item>, _ profile: BrowserProfileImporter) async -> String = { _, _ in "" }
+    var importItems: (_ items: Set<Item>, _ profiles: [BrowserProfileImporter]) async -> String = { _, _ in "" }
     var setAsDefault: () -> Void = {}
     var isDefaultBrowser: () -> Bool = { false }
 
@@ -70,6 +70,17 @@ enum BrowserOnboardingImportItem: String, CaseIterable {
     private var currentStep: NSView?
     private var importState = ImportState.choosing
     private var unchecked = Set<Item>()
+    /// Profile folders of the selected browser the person unticked.
+    private var skippedProfiles = Set<URL>()
+    private weak var importButton: BrowserOnboardingButton?
+    /// Titles of Arc's Spaces by the profile folder they live in, read once.
+    private lazy var arcSpaceTitles: [String: [String]] = {
+        guard let url = BrowserArcSidebar.defaultFileURL,
+              let sidebar = try? BrowserArcSidebar.load(from: url)
+        else { return [:] }
+        return Dictionary(grouping: sidebar.spaces) { $0.profileDirectory ?? BrowserProfile.defaultDirectoryName }
+            .mapValues { $0.compactMap(\.title) }
+    }()
 
     // MARK: Private
 
@@ -86,6 +97,11 @@ enum BrowserOnboardingImportItem: String, CaseIterable {
     private var isImportFinished: Bool {
         if case .finished = importState { return true }
         return false
+    }
+
+    /// The selected browser's profiles that stay ticked.
+    private var chosenProfiles: [BrowserImportProfile] {
+        selectedProfile?.profiles.filter { !skippedProfiles.contains($0.directory) } ?? []
     }
 
     init(preferences: BrowserUserPreferencesStore, importOnly: Bool = false) {
@@ -358,29 +374,13 @@ enum BrowserOnboardingImportItem: String, CaseIterable {
         }
         let source = selectedProfile?.source
         let available = Item.allCases.filter { item in source.map { item.isAvailable(from: $0) } ?? false }
-        let grid = NSGridView(numberOfColumns: 3, rows: 0)
-        grid.rowSpacing = 10
-        grid.columnSpacing = 28
-        var row = [NSView]()
-        for item in available {
-            let check = NSButton(checkboxWithTitle: item.title, target: nil, action: nil)
+        body.append(checkGrid(available.map { item in
+            let check = importCheckbox(item.title)
             check.state = unchecked.contains(item) ? .off : .on
-            check.attributedTitle = NSAttributedString(string: item.title, attributes: [
-                .foregroundColor: Palette.ink, .font: NSFont.systemFont(ofSize: 13),
-            ])
-            check.isEnabled = !isImportRunning && !isImportFinished
             check.setAccessibilityIdentifier("browser.onboarding.item.\(item.rawValue)")
             checks[item] = check
-            row.append(check)
-            if row.count == 3 {
-                grid.addRow(with: row)
-                row = []
-            }
-        }
-        if !row.isEmpty {
-            grid.addRow(with: row + Array(repeating: NSGridCell.emptyContentView, count: 3 - row.count))
-        }
-        body.append(grid)
+            return check
+        }))
 
         let actions: [NSView]
         switch importState {
@@ -391,6 +391,8 @@ enum BrowserOnboardingImportItem: String, CaseIterable {
             let importButton = needsArchive
                 ? primary(BrowserStrings.onboardingChooseSafariExport) { [weak self] in self?.chooseArchive() }
                 : primary(BrowserStrings.onboardingImportFrom(name)) { [weak self] in self?.runImport() }
+            importButton.isEnabled = needsArchive || !chosenProfiles.isEmpty
+            self.importButton = importButton
             actions = [quiet(leaving) { [weak self] in self?.advance() }, importButton]
         case .running:
             let spinner = NSProgressIndicator()
@@ -470,26 +472,71 @@ enum BrowserOnboardingImportItem: String, CaseIterable {
             return row
         }
         guard importer.profiles.count > 1 else { return nil }
-        let label = text(BrowserStrings.onboardingProfile, size: 13, color: Palette.ink, width: 120)
-        let popup = NSPopUpButton(frame: .zero, pullsDown: false)
-        popup.addItems(withTitles: importer.profiles.map(\.name))
-        if let index = importer.profiles.firstIndex(where: { $0.directory == importer.profileDirectory }) {
-            popup.selectItem(at: index)
-        }
-        popup.target = self
-        popup.action = #selector(pickProfile(_:))
-        popup.isEnabled = !isImportRunning && !isImportFinished
-        popup.setAccessibilityLabel(BrowserStrings.onboardingProfile)
-        let row = NSStackView(views: [label, popup])
-        row.spacing = 8
-        return row
+        let label = text(BrowserStrings.onboardingProfiles, size: 13, weight: .semibold, color: Palette.ink)
+        // Arc binds each Space to a profile, so each box names the Spaces it brings.
+        let spaces = importer.supportedItems.contains(.spaces) ? arcSpaceTitles : [:]
+        let grid = checkGrid(columns: 2, width: 330, importer.profiles.map { profile in
+            let titles = spaces[profile.directory.lastPathComponent] ?? []
+            let check = importCheckbox(profile.name, detail: titles.isEmpty ? nil : titles.joined(separator: ", "))
+            check.state = skippedProfiles.contains(profile.directory) ? .off : .on
+            check.target = self
+            check.action = #selector(toggleProfile(_:))
+            check.identifier = NSUserInterfaceItemIdentifier(profile.directory.path)
+            return check
+        })
+        let column = NSStackView(views: [label, grid])
+        column.orientation = .vertical
+        column.alignment = .leading
+        column.spacing = 10
+        return column
     }
 
-    @objc private func pickProfile(_ sender: NSPopUpButton) {
-        guard let selectedProfile, selectedProfile.profiles.indices.contains(sender.indexOfSelectedItem) else { return }
-        self.selectedProfile = selectedProfile.selecting(selectedProfile.profiles[sender.indexOfSelectedItem])
-        importState = .choosing
-        render()
+    /// Checkboxes in columns of one width, so a browser with fewer items
+    /// keeps the same spacing and nothing moves when another tile is picked.
+    private func checkGrid(columns: Int = 3, width: CGFloat = 200, _ boxes: [NSButton]) -> NSGridView {
+        let grid = NSGridView(numberOfColumns: columns, rows: 0)
+        grid.rowSpacing = 10
+        grid.columnSpacing = 24
+        for start in stride(from: 0, to: boxes.count, by: columns) {
+            let row = Array(boxes[start..<min(start + columns, boxes.count)])
+            grid.addRow(with: row + Array(repeating: NSGridCell.emptyContentView, count: columns - row.count))
+        }
+        for index in 0..<columns {
+            grid.column(at: index).width = width
+        }
+        grid.setContentHuggingPriority(.required, for: .horizontal)
+        return grid
+    }
+
+    /// A checkbox in the paper's ink, with an optional muted detail after the title.
+    private func importCheckbox(_ title: String, detail: String? = nil) -> NSButton {
+        let check = NSButton(checkboxWithTitle: title, target: nil, action: nil)
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineBreakMode = .byTruncatingTail
+        let font = NSFont.systemFont(ofSize: 13)
+        let label = NSMutableAttributedString(string: title, attributes: [
+            .foregroundColor: Palette.ink, .font: font, .paragraphStyle: paragraph,
+        ])
+        if let detail {
+            label.append(NSAttributedString(string: "  " + detail, attributes: [
+                .foregroundColor: Palette.muted, .font: font, .paragraphStyle: paragraph,
+            ]))
+        }
+        check.attributedTitle = label
+        check.isEnabled = !isImportRunning && !isImportFinished
+        check.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        return check
+    }
+
+    @objc private func toggleProfile(_ sender: NSButton) {
+        guard let path = sender.identifier?.rawValue else { return }
+        let directory = URL(fileURLWithPath: path, isDirectory: true)
+        if sender.state == .on {
+            skippedProfiles = skippedProfiles.filter { $0.path != directory.path }
+        } else if let profile = selectedProfile?.profiles.first(where: { $0.directory.path == directory.path }) {
+            skippedProfiles.insert(profile.directory)
+        }
+        importButton?.isEnabled = !chosenProfiles.isEmpty
     }
 
     private func chooseArchive() {
@@ -518,13 +565,18 @@ enum BrowserOnboardingImportItem: String, CaseIterable {
 
     private func runImport() {
         guard !isImportRunning, let selectedProfile else { return }
+        // A browser with several profiles imports the ticked ones; with one, that one.
+        let importers = selectedProfile.profiles.count > 1
+            ? selectedProfile.selecting(chosenProfiles)
+            : [selectedProfile]
+        guard !importers.isEmpty else { return }
         let chosen = Set(checks.filter { $0.value.state == .on }.keys)
         unchecked = Set(checks.filter { $0.value.state == .off }.keys)
         importState = .running
         render()
         Task { [weak self] in
             guard let self else { return }
-            let result = await importItems(chosen, selectedProfile)
+            let result = await importItems(chosen, importers)
             importState = .finished(result)
             render()
         }

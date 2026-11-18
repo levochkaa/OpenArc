@@ -312,7 +312,9 @@ enum BrowserBookmarkImportSource: String, CaseIterable, Identifiable {
             let lastUsed = activity.max()
                 ?? Self.modificationDate(of: directory.appendingPathComponent("Preferences"), fileManager: fileManager)
             let fallbackName = roots.contains(path) ? browserName : directory.lastPathComponent
-            let name = info?.name.flatMap { $0.isEmpty ? nil : $0 } ?? fallbackName
+            // Chromium's placeholder for an unnamed first profile reads as its folder.
+            let name = info?.name.flatMap { $0.isEmpty || BrowserProfile.placeholderNames.contains($0) ? nil : $0 }
+                ?? fallbackName
             return BrowserImportProfile(name: name, directory: directory, lastUsed: lastUsed)
         }
     }

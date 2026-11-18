@@ -306,9 +306,11 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
     firstPartyURLString:(NSString *)firstPartyURLString
             inTabWithID:(NSString *)tabID
              completion:(void (^)(NSString *_Nullable))completion;
-/// Sets cookies in this window's profile. Each holds url, host, name, value, path,
-/// expires (microseconds since 1601), secure, httpOnly and sameSite.
-- (NSInteger)importCookies:(NSArray<NSDictionary<NSString *, id> *> *)cookies;
+/// Sets cookies in the profile kept at `profileCachePath`, or in this window's own when
+/// it is nil. Each holds url, host, name, value, path, expires (microseconds since
+/// 1601), secure, httpOnly and sameSite.
+- (NSInteger)importCookies:(NSArray<NSDictionary<NSString *, id> *> *)cookies
+          profileCachePath:(nullable NSString *)profileCachePath;
 /// Runs a DevTools method on a tab's page. The result is JSON, or nil on failure.
 - (void)executeDevToolsMethod:(NSString *)method
                        params:(NSString *)paramsJSON

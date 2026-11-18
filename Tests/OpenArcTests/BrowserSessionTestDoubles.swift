@@ -160,6 +160,7 @@ import Foundation
     var currentTranslationState = BrowserPageTranslationState.none
 
     var importedCookies = [BrowserImportedCookie]()
+    var importedCookieProfilePaths = [String?]()
     var devToolsMethods = [String]()
     var devToolsResults = [String: String]()
     var mainFrameFills = [(username: String, password: String)]()
@@ -201,8 +202,9 @@ import Foundation
         completion(devToolsResults[method] ?? "{}")
     }
 
-    @discardableResult func importCookies(_ cookies: [BrowserImportedCookie]) -> Int {
+    @discardableResult func importCookies(_ cookies: [BrowserImportedCookie], profileCachePath: String?) -> Int {
         importedCookies.append(contentsOf: cookies)
+        importedCookieProfilePaths.append(profileCachePath)
         return cookies.count
     }
 

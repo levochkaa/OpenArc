@@ -1404,8 +1404,8 @@ NSMenuDelegate, NSUserInterfaceValidations {
 
     private func showOnboarding(importOnly: Bool = false) {
         let controller = BrowserOnboardingWindowController(preferences: userPreferencesStore, importOnly: importOnly)
-        controller.importItems = { [weak self] items, profile in
-            await self?.importTargetModel?.importProfile(profile, items: items) ?? ""
+        controller.importItems = { [weak self] items, profiles in
+            await self?.importTargetModel?.importProfiles(profiles, items: items) ?? ""
         }
         controller.setAsDefault = { [weak self] in self?.setAsDefaultBrowser(nil) }
         controller.isDefaultBrowser = { [weak self] in self?.defaultBrowserService.isDefaultBrowser ?? false }
@@ -4054,6 +4054,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
                     store.profile(withID: directory).map { store.profileDirectoryURL(for: $0).path }
                 },
                 createProfile: { store.createProfile().id },
+                createNamedProfile: { store.createProfile(named: $0).id },
             )
         }
         let mayWelcome = profileWindowSessions.isEmpty && webAppConfiguration == nil

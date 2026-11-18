@@ -1641,24 +1641,70 @@ enum BrowserWindowMode: Equatable {
         _ profile: BrowserProfileImporter,
         items requested: Set<BrowserOnboardingImportItem>,
     ) async -> String {
-        let items = requested.intersection(profile.supportedItems)
+        await importProfiles([profile], items: requested)
+    }
+
+    /// Copies what the person chose from some profiles of one browser, and reports
+    /// it in one line. The browser's `Default` profile, or the first one chosen,
+    /// fills this window's profile. Each other one gets an OpenArc profile of its
+    /// name, which takes its Spaces and sign-ins.
+    /// Bookmarks, history and passwords come into this window's profile.
+    func importProfiles(
+        _ chosen: [BrowserProfileImporter],
+        items requested: Set<BrowserOnboardingImportItem>,
+    ) async -> String {
+        guard let first = chosen.first else { return BrowserStrings.onboardingImportResult([]) }
+        let items = requested.intersection(first.supportedItems)
+        let main = chosen.first { $0.profileFolderName == BrowserProfile.defaultDirectoryName } ?? first
+        var targets = [String: String]()
+        if !items.isDisjoint(with: [.spaces, .signIns]) {
+            for importer in chosen where importer.profileDirectory != main.profileDirectory {
+                targets[importer.profileFolderName] = importTargetProfile(named: importer.profileName)
+            }
+        }
+
         var parts = [String]()
         if items.contains(.spaces) {
-            parts.append(importArcSidebarFromDisk())
+            let skipped = Set(first.profiles.map(\.directory.lastPathComponent))
+                .subtracting(chosen.map(\.profileFolderName))
+            parts.append(importArcSidebarFromDisk(profiles: BrowserArcProfileChoice(
+                skipped: skipped,
+                targets: targets,
+            )))
         }
-        if items.contains(.bookmarks),
-           let bookmarks = await Task.detached(priority: .userInitiated, operation: { profile.bookmarkItems() }).value
-        {
-            let result = bookmarksModel.importBookmarkItems(bookmarks, from: profile.source)
-            if result.importedCount > 0 {
-                parts.append(BrowserStrings.onboardingImportCount(
-                    result.importedCount,
-                    BrowserStrings.onboardingItemBookmarks,
-                ))
+        // A profile with no Space would keep its sign-ins where no page could use them.
+        for importer in chosen {
+            guard let target = targets[importer.profileFolderName],
+                  !spaceProfilesByID.values.contains(target)
+            else { continue }
+            var space = makeSpace()
+            if let title = sanitizedSpaceTitle(from: importer.profileName) {
+                space.title = title
+            }
+            spaces.append(space)
+            spaceProfilesByID[space.id] = target
+            persistCurrentSessionIfAllowed()
+        }
+        if items.contains(.bookmarks) {
+            let found = await Task.detached(priority: .userInitiated) {
+                chosen.compactMap { importer in importer.bookmarkItems().map { (importer.profileName, $0) } }
+            }.value
+            // Several profiles each keep their own folder inside the import's.
+            let bookmarks = found.count > 1
+                ? found.map { BrowserBookmarkImportItem(title: $0.0, urlString: nil, children: $0.1) }
+                : found.first?.1
+            if let bookmarks {
+                let result = bookmarksModel.importBookmarkItems(bookmarks, from: first.source)
+                if result.importedCount > 0 {
+                    parts.append(BrowserStrings.onboardingImportCount(
+                        result.importedCount,
+                        BrowserStrings.onboardingItemBookmarks,
+                    ))
+                }
             }
         }
         if items.contains(.siteSearches),
-           let imported = BrowserSiteSearchImport.load(profileDirectories: [profile.profileDirectory])
+           let imported = BrowserSiteSearchImport.load(profileDirectories: chosen.map(\.profileDirectory))
         {
             userPreferencesStore.siteSearches = BrowserSiteSearchImport.merge(
                 imported,
@@ -1672,7 +1718,7 @@ enum BrowserWindowMode: Equatable {
             }
         }
         if items.contains(.history) {
-            let documents = await Task.detached(priority: .userInitiated) { profile.history() }.value
+            let documents = await Task.detached(priority: .userInitiated) { chosen.flatMap { $0.history() } }.value
             if !documents.isEmpty {
                 historyStore.importDocuments(documents)
                 parts.append(BrowserStrings.onboardingImportCount(
@@ -1682,23 +1728,32 @@ enum BrowserWindowMode: Equatable {
             }
         }
         let wantsSecrets = items.contains(.passwords) || items.contains(.signIns)
-        let key = wantsSecrets && profile.needsKeychainKey ? try? profile.encryptionKey() : nil
+        // One browser seals every profile with the same key.
+        let key = wantsSecrets && first.needsKeychainKey ? try? first.encryptionKey() : nil
         if items.contains(.passwords), let passwordStore {
-            let logins = await Task.detached(priority: .userInitiated) { profile.savedLogins(key: key) }.value
+            let logins = await Task.detached(priority: .userInitiated) {
+                chosen.flatMap { $0.savedLogins(key: key) }
+            }.value
             let saved = logins.filter { passwordStore.save($0.password, for: $0.login) }.count
             if saved > 0 {
                 parts.append(BrowserStrings.onboardingImportCount(saved, BrowserStrings.onboardingItemPasswords))
             }
         }
         if items.contains(.signIns) {
-            let cookies = await Task.detached(priority: .userInitiated) { profile.signInCookies(key: key) }.value
-            let set = cookies.isEmpty ? 0 : tabDriver.importCookies(cookies)
+            var set = 0
+            for importer in chosen {
+                let cookies = await Task.detached(priority: .userInitiated) { importer.signInCookies(key: key) }.value
+                guard !cookies.isEmpty else { continue }
+                let path = targets[importer.profileFolderName].flatMap { profileDirectories?.cachePath($0) }
+                set += tabDriver.importCookies(cookies, profileCachePath: path)
+            }
             if set > 0 {
                 parts.append(BrowserStrings.onboardingImportCount(set, BrowserStrings.onboardingItemSignIns))
             }
         }
         if items.contains(.extensions) {
-            let urls = profile.extensionStoreURLs()
+            var seen = Set<URL>()
+            let urls = chosen.flatMap { $0.extensionStoreURLs() }.filter { seen.insert($0).inserted }
             for url in urls {
                 openURLInNewTab(url)
             }
@@ -1778,7 +1833,10 @@ enum BrowserWindowMode: Equatable {
     /// and selection stay as they are.
     /// Imports Arc's sidebar from its file on this Mac and says what came of
     /// it, including why nothing did.
-    func importArcSidebarFromDisk(at url: URL? = BrowserArcSidebar.defaultFileURL) -> String {
+    func importArcSidebarFromDisk(
+        at url: URL? = BrowserArcSidebar.defaultFileURL,
+        profiles: BrowserArcProfileChoice = .init(),
+    ) -> String {
         guard canImportArcSidebar else { return BrowserStrings.arcImportUnavailable }
         guard let url else { return BrowserStrings.arcImportMissing }
         let sidebar: BrowserArcSidebar
@@ -1789,7 +1847,7 @@ enum BrowserWindowMode: Equatable {
         } catch {
             return BrowserStrings.arcImportUnreadable
         }
-        let result = importArcSidebar(sidebar)
+        let result = importArcSidebar(sidebar, profiles: profiles)
         guard result.isEmpty else {
             return BrowserStrings.arcImportResult(
                 spaces: result.spaceCount,
@@ -1802,7 +1860,10 @@ enum BrowserWindowMode: Equatable {
         return sidebar.spaces.isEmpty ? BrowserStrings.arcImportNothing : BrowserStrings.arcImportAlreadyImported
     }
 
-    @discardableResult func importArcSidebar(_ sidebar: BrowserArcSidebar) -> BrowserArcSidebarImportResult {
+    @discardableResult func importArcSidebar(
+        _ sidebar: BrowserArcSidebar,
+        profiles: BrowserArcProfileChoice = .init(),
+    ) -> BrowserArcSidebarImportResult {
         guard canImportArcSidebar else { return .init() }
         var result = BrowserArcSidebarImportResult()
         let now = dateProvider()
@@ -1841,6 +1902,8 @@ enum BrowserWindowMode: Equatable {
                     .map { $0.pinnedURLString ?? $0.urlString }))
         }
         for arcSpace in sidebar.spaces {
+            let arcProfile = arcSpace.profileDirectory ?? BrowserProfile.defaultDirectoryName
+            guard !profiles.skipped.contains(arcProfile) else { continue }
             let title = sanitizedSpaceTitle(from: arcSpace.title)
             let arcURLs = pinnedURLs(arcSpace.pinned.flatMap(\.tabs).compactMap { node in
                 if case .tab(_, _, let url) = node {
@@ -1854,6 +1917,9 @@ enum BrowserWindowMode: Equatable {
             }
             var space = makeSpace()
             spaceThemesByID[space.id] = arcSpace.theme
+            if let profile = profiles.targets[arcProfile], profile != profileDirectories?.windowProfile {
+                spaceProfilesByID[space.id] = profile
+            }
             if let title {
                 space.title = title
             }
@@ -4664,6 +4730,18 @@ enum BrowserWindowMode: Equatable {
             tabRowsChangedInBatch = false
             onTabRowsChanged?()
         }
+    }
+
+    /// The OpenArc profile another browser's profile comes into: one of the same
+    /// name made earlier, or a new one. Nil keeps it in this window's profile.
+    private func importTargetProfile(named name: String) -> String? {
+        guard let profileDirectories else { return nil }
+        if let existing = profileDirectories.profiles().first(where: {
+            !$0.isDefault && $0.id != profileDirectories.windowProfile && $0.displayName == name
+        }) {
+            return existing.id
+        }
+        return profileDirectories.createNamedProfile(name)
     }
 
     @discardableResult private func archiveTab(id: String) -> Bool {

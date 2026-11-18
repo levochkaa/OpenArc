@@ -6126,16 +6126,13 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
   client->Start(request, it->second.browser->GetHost()->GetRequestContext());
 }
 
-- (NSInteger)importCookies:(NSArray<NSDictionary<NSString *, id> *> *)cookies {
-  CefRefPtr<CefCookieManager> manager = CefCookieManager::GetGlobalManager(nullptr);
-  if (!_tabRecords.empty()) {
-    for (const auto &entry : _tabRecords) {
-      if (entry.second.browser) {
-        manager = entry.second.browser->GetHost()->GetRequestContext()->GetCookieManager(nullptr);
-        break;
-      }
-    }
-  }
+- (NSInteger)importCookies:(NSArray<NSDictionary<NSString *, id> *> *)cookies
+          profileCachePath:(NSString *)profileCachePath {
+  // The window's own context, not a tab's: a tab may belong to a Space on another profile.
+  CefRefPtr<CefRequestContext> context =
+      profileCachePath.length > 0 ? [self requestContextForProfileCachePath:profileCachePath] : _requestContext;
+  CefRefPtr<CefCookieManager> manager =
+      context ? context->GetCookieManager(nullptr) : CefCookieManager::GetGlobalManager(nullptr);
   if (!manager) {
     return 0;
   }
@@ -6961,7 +6958,12 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
   if (self.profileCachePathForNewTabs.length == 0) {
     return _requestContext;
   }
-  const std::string path = ToStdString(self.profileCachePathForNewTabs);
+  return [self requestContextForProfileCachePath:self.profileCachePathForNewTabs];
+}
+
+/// The data store of a Space's profile, made once per window.
+- (CefRefPtr<CefRequestContext>)requestContextForProfileCachePath:(NSString *)profileCachePath {
+  const std::string path = ToStdString(profileCachePath);
   auto found = _spaceProfileContexts.find(path);
   if (found != _spaceProfileContexts.end()) {
     return found->second;

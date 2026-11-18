@@ -76,7 +76,8 @@ final class BrowserProfileStore: ObservableObject {
         rootCacheURL.appendingPathComponent(profile.directoryName, isDirectory: true)
     }
 
-    @discardableResult func createProfile() -> BrowserProfile {
+    /// A new profile, named `name` when given.
+    @discardableResult func createProfile(named name: String? = nil) -> BrowserProfile {
         var localState = loadLocalState()
         let existingDirectoryNames = Set(
             profileDirectoryNames(in: localState)
@@ -90,7 +91,7 @@ final class BrowserProfileStore: ObservableObject {
 
         let profile = BrowserProfile(
             directoryName: "Profile \(profileIndex)",
-            name: "Profile \(profileIndex + 1)",
+            name: name ?? "Profile \(profileIndex + 1)",
         )
         _ = ensureProfile(profile, in: &localState)
         writeLocalState(localState)
@@ -422,4 +423,6 @@ struct BrowserSpaceProfileDirectories {
     let profiles: () -> [BrowserProfile]
     let cachePath: (String) -> String?
     let createProfile: () -> String?
+    /// Makes a profile with the given name; imports use it for another browser's profiles.
+    var createNamedProfile: (String) -> String? = { _ in nil }
 }
