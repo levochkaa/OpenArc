@@ -85,6 +85,22 @@ import Testing
         #expect(!f.model.captureAreaForCard(fraction: part, tabID: "other"))
     }
 
+    @Test func captureImageFromThePageMenuOpensTheImageCentered() throws {
+        let f = SidebarDragFixture(temporary: ["x"])
+        f.model.selectTab(id: f.id("x"))
+        f.driver.emitTabCreationState(id: f.id("x"), state: .ready)
+        var requests = [BrowserCaptureRequest]()
+        f.model.onPresentCapture = { requests.append($0) }
+        let png = Data([0x89, 0x50, 0x4E, 0x47])
+
+        f.model.handlePageContextCommand(.captureImage, argument: png.base64EncodedString())
+        f.model.handlePageContextCommand(.captureImage, argument: "not base64")
+
+        let request = try #require(requests.first)
+        #expect(requests.count == 1)
+        #expect(request.png == png && request.kind == .image && request.placement == .centered)
+    }
+
     @Test func shiftCommandDragCopiesWhileTheMenuOpensTheCard() {
         let f = SidebarDragFixture(temporary: ["x"])
         f.model.selectTab(id: f.id("x"))

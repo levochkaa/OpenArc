@@ -3107,6 +3107,7 @@ enum PageContextMenuCommand {
   kContextDirectionLeftToRight,
   kContextDirectionRightToLeft,
   kContextWritingDirection,
+  kContextCaptureImage,
 };
 
 /// Speech › Start Speaking reads the selection aloud, as macOS apps do.
@@ -3150,6 +3151,31 @@ class CopyImageCallback final : public CefDownloadImageCallback {
 
  private:
   IMPLEMENT_REFCOUNTING(CopyImageCallback);
+};
+
+/// Hands a page's image, once downloaded at its own size, to the capture card.
+class CaptureImageCallback final : public CefDownloadImageCallback {
+ public:
+  explicit CaptureImageCallback(void (^done)(NSData *)) : done_([done copy]) {}
+
+  void OnDownloadImageFinished(const CefString &, int, CefRefPtr<CefImage> image) override {
+    if (!image) {
+      return;
+    }
+    int width = 0;
+    int height = 0;
+    CefRefPtr<CefBinaryValue> png = image->GetAsPNG(1.0, true, width, height);
+    if (!png || png->GetSize() == 0) {
+      return;
+    }
+    NSMutableData *data = [NSMutableData dataWithLength:png->GetSize()];
+    png->GetData(data.mutableBytes, data.length, 0);
+    done_(data);
+  }
+
+ private:
+  void (^done_)(NSData *);
+  IMPLEMENT_REFCOUNTING(CaptureImageCallback);
 };
 
 /// Builds the menu from what lies under the pointer: a link, an image or video,
@@ -3204,6 +3230,9 @@ void BuildPageContextMenu(CefRefPtr<CefBrowser> browser, CefRefPtr<CefContextMen
     }
     model->AddItem(kContextSaveMedia,
                    LocalizedMenuTitle(hasImage ? @"browser.context.save_image" : @"browser.context.save_media"));
+    if (hasImage && allowsLinkTargets) {
+      model->AddItem(kContextCaptureImage, LocalizedMenuTitle(@"browser.context.capture_image"));
+    }
     if (mediaType == CM_MEDIATYPE_VIDEO && allowsLinkTargets) {
       model->AddItem(kContextCopyVideoFrame, LocalizedMenuTitle(@"browser.context.copy_video_frame"));
     }
@@ -9162,6 +9191,20 @@ bool BrowserTabClient::OnContextMenuCommand(CefRefPtr<CefBrowser> browser,
     case kContextOpenLinkInNewWindow:
       [delegate browserTabController:controller performPageContextCommand:@"openInNewWindow" argument:link];
       return true;
+    case kContextCaptureImage: {
+      __weak BrowserTabController *weakController = controller;
+      browser->GetHost()->DownloadImage(
+          params->GetSourceUrl(), false, 0, false, new CaptureImageCallback(^(NSData *png) {
+            BrowserTabController *strongController = weakController;
+            id<BrowserTabControllerDelegate> target = strongController.delegate;
+            if ([target respondsToSelector:@selector(browserTabController:performPageContextCommand:argument:)]) {
+              [target browserTabController:strongController
+                  performPageContextCommand:@"captureImage"
+                                   argument:[png base64EncodedStringWithOptions:0]];
+            }
+          }));
+      return true;
+    }
     case kContextSearchImage: {
       NSURLComponents *lens = [NSURLComponents componentsWithString:@"https://lens.google.com/uploadbyurl"];
       lens.queryItems = @[ [NSURLQueryItem queryItemWithName:@"url"

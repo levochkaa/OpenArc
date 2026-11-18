@@ -41,6 +41,8 @@ enum BrowserPageContextCommand: String {
     case savePage
     case viewSource
     case importPasswords
+    /// The argument is the image's PNG, base64-encoded.
+    case captureImage
 }
 
 // MARK: - BrowserExtensionTabReport

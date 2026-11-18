@@ -1598,6 +1598,10 @@ enum BrowserWindowMode: Equatable {
             _ = viewSourceOfSelectedTab()
         case .importPasswords:
             onImportFromBrowser?()
+        case .captureImage:
+            if let png = Data(base64Encoded: argument) {
+                presentCapturedImage(png: png)
+            }
         }
     }
 

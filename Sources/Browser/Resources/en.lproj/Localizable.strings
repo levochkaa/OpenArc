@@ -766,6 +766,7 @@
 "browser.context.save_image" = "Save Image As…";
 "browser.context.save_media" = "Save Video As…";
 "browser.context.copy_image" = "Copy Image";
+"browser.context.capture_image" = "Capture Image…";
 "browser.context.copy_image_address" = "Copy Image Address";
 "browser.context.search_google_for_image" = "Search Google for Image";
 "browser.context.look_up" = "Look Up “%@”";
