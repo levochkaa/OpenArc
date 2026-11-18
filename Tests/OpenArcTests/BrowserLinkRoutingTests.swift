@@ -59,6 +59,7 @@ import Testing
     @Test func aRoutedLinkOpensAsATabOfItsSpace() throws {
         let f = SidebarDragFixture(temporary: ["x"])
         #expect(f.model.selectedSpaceID == "s")
+        f.model.userPreferencesStore.littleArcEnabled = false
         #expect(f.model.canOpenLittleWindow && !f.model.opensExternalLinksInLittleWindow)
 
         let url = try #require(URL(string: "https://figma.com/file"))

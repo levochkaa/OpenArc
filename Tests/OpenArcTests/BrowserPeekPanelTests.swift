@@ -218,11 +218,12 @@ import Testing
         #expect(chosen.last == "a", "Typing narrows the Spaces")
     }
 
-    @Test func smallWindowIsOptInAndOpensAStandaloneWindow() throws {
+    @Test func smallWindowIsOnByDefaultAndOpensAStandaloneWindow() throws {
         let f = SidebarDragFixture(temporary: ["x"])
-        #expect(!f.model.opensExternalLinksInLittleWindow, "Links keep opening as tabs by default")
+        #expect(f.model.opensExternalLinksInLittleWindow, "Links from other apps open in a small window by default")
+        f.model.userPreferencesStore.littleArcEnabled = false
+        #expect(!f.model.opensExternalLinksInLittleWindow)
         f.model.userPreferencesStore.littleArcEnabled = true
-        #expect(f.model.opensExternalLinksInLittleWindow)
         try f.model.openInLittleWindow(#require(URL(string: "https://example.com/a")))
         #expect(f.driver.littleWindowURLs == ["https://example.com/a"])
 

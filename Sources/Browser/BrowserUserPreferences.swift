@@ -363,8 +363,8 @@ final class BrowserUserPreferencesStore: ObservableObject {
         didSet { userDefaults.set(peekEnabled, forKey: Self.peekEnabledKey) }
     }
 
-    /// Links from other apps open in a small window. Off by
-    /// default, so links keep opening as tabs unless the user opts in.
+    /// Links from other apps open in a small window, from which the page can
+    /// move into a Space. On by default.
     @Published var littleArcEnabled: Bool {
         didSet { userDefaults.set(littleArcEnabled, forKey: Key.littleArcEnabled) }
     }
@@ -510,7 +510,7 @@ final class BrowserUserPreferencesStore: ObservableObject {
             : $0
         }
         self.peekEnabled = Self.loadBool(userDefaults, key: Self.peekEnabledKey, defaultValue: true)
-        self.littleArcEnabled = Self.loadBool(userDefaults, key: Key.littleArcEnabled, defaultValue: false)
+        self.littleArcEnabled = Self.loadBool(userDefaults, key: Key.littleArcEnabled, defaultValue: true)
         self.opensOptionCommandClicksInLittleWindow = userDefaults.bool(forKey: Self.littleWindowOptionCommandClickKey)
         self.opensLittleWindowFromAnyApp = userDefaults.bool(forKey: Key.opensLittleWindowFromAnyApp)
         self.smallWindowLifetime = userDefaults.object(forKey: Self.smallWindowLifetimeKey) == nil
