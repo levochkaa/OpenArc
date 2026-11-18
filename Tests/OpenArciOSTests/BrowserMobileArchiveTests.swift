@@ -636,7 +636,7 @@ extension BrowserMobileUITests {
             #expect(entry.tab.urlString == url.absoluteString && entry.tab.userTitleOverride == "Saved custom title")
 
             let bars = (sidebar.navigationItem.leftBarButtonItems ?? []) +
-                (sidebar.navigationItem.rightBarButtonItems ?? [])
+                (sidebar.navigationItem.rightBarButtonItems ?? []) + (sidebar.toolbarItems ?? [])
             let archiveButton = try #require(bars.first { $0.accessibilityIdentifier == "browser.archive" })
             let archiveAction = try #require(archiveButton.action)
             #expect(UIApplication.shared.sendAction(
@@ -735,7 +735,7 @@ extension BrowserMobileUITests {
     func open(expectingRows: Bool = true) async throws -> BrowserMobileArchiveViewController {
         let sidebar = root.tabsController
         let bars = (sidebar.navigationItem.leftBarButtonItems ?? []) +
-            (sidebar.navigationItem.rightBarButtonItems ?? [])
+            (sidebar.navigationItem.rightBarButtonItems ?? []) + (sidebar.toolbarItems ?? [])
         let button = try #require(bars.first { $0.accessibilityIdentifier == "browser.archive" })
         let action = try #require(button.action)
         #expect(UIApplication.shared.sendAction(action, to: button.target, from: button, for: nil))

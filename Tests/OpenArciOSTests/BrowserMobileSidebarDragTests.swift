@@ -2383,7 +2383,9 @@ extension BrowserMobileUITests {
     }
 
     func openSpacePalette() throws -> SidebarSpaceDropHarness {
-        let button = try #require(sidebar.navigationItem.titleView as? UIButton)
+        let button = try #require(sidebar.tableView.tableHeaderView?.subviews.first {
+            $0.accessibilityIdentifier == "browser.spaces"
+        } as? UIButton)
         #expect(button.accessibilityIdentifier == "browser.spaces")
         #expect(button.window === window)
         #expect(button.interactions.contains { $0 is UISpringLoadedInteraction })

@@ -42,7 +42,9 @@ extension BrowserMobileUITests {
         defer { f.cleanup() }
         await f.workspace.restore()
         f.loadSidebar()
-        let picker = try #require(f.sidebar.navigationItem.titleView as? UIButton)
+        let picker = try #require(f.sidebar.tableView.tableHeaderView?.subviews.first {
+            $0.accessibilityIdentifier == "browser.spaces"
+        } as? UIButton)
         let menu = try #require(picker.menu)
         let target = try #require(menu.children.compactMap { $0 as? UIAction }.first { $0.title == "Second" })
         #expect(menu.children.compactMap { $0 as? UIAction }.first { $0.title == "First" }?.state == .on)
@@ -58,6 +60,30 @@ extension BrowserMobileUITests {
         #expect(f.rowIDs(section: 2) == ["browser.tab.other"])
         #expect(f.workspace.tabs.count == 6)
         #expect(try f.store.loadSnapshotStrict()?.tabs.count == 6)
+        #expect(await f.workspace.shutdown())
+    }
+
+    @Test func bottomBarListsSpacesAndSwitchesBetweenThem() async throws {
+        let f = try SharedSidebarFixture()
+        defer { f.cleanup() }
+        await f.workspace.restore()
+        f.loadSidebar()
+        let items = f.sidebar.toolbarItems ?? []
+        let first = try #require(items.first { $0.accessibilityIdentifier == "browser.space.first" })
+        let second = try #require(items.first { $0.accessibilityIdentifier == "browser.space.second" })
+        #expect(first.accessibilityTraits.contains(.selected))
+        #expect(!second.accessibilityTraits.contains(.selected))
+        #expect(items.contains { $0.accessibilityIdentifier == "browser.archive" } == f.workspace.supportsArchive)
+
+        try performSidebarAction(#require(second.primaryAction))
+        #expect(f.workspace.selectedSpaceID == "second")
+        let selected = (f.sidebar.toolbarItems ?? []).filter { $0.accessibilityTraits.contains(.selected) }
+        #expect(selected.map(\.accessibilityIdentifier) == ["browser.space.second"])
+
+        f.sidebar.showSpace(offset: -1)
+        #expect(f.workspace.selectedSpaceID == "first")
+        f.sidebar.showSpace(offset: -1)
+        #expect(f.workspace.selectedSpaceID == "first", "There is no Space before the first")
         #expect(await f.workspace.shutdown())
     }
 
