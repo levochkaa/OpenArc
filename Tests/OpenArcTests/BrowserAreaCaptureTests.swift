@@ -44,6 +44,71 @@ import Testing
         )
     }
 
+    @Test func aClickCapturesTheElementUnderThePointer() throws {
+        let window = NSWindow(
+            contentRect: NSRect(x: -10000, y: -10000, width: 600, height: 400),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false,
+        )
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let overlay = BrowserAreaCaptureOverlay(pageFrame: CGRect(x: 100, y: 50, width: 400, height: 300))
+        overlay.frame = NSRect(x: 0, y: 0, width: 600, height: 400)
+        window.contentView = overlay
+        var results = [CGRect?]()
+        overlay.onFinish = { results.append($0) }
+        func event(_ type: NSEvent.EventType, _ x: CGFloat, _ y: CGFloat) throws -> NSEvent {
+            try #require(NSEvent.mouseEvent(
+                with: type, location: NSPoint(x: x, y: 400 - y), modifierFlags: [], timestamp: 0,
+                windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1,
+            ))
+        }
+
+        overlay.showHoveredElement(fraction: CGRect(x: 0.25, y: 0.5, width: 0.5, height: 0.25))
+        #expect(overlay.hoveredElement == CGRect(x: 200, y: 200, width: 200, height: 75))
+        try overlay.mouseDown(with: event(.leftMouseDown, 250, 220))
+        try overlay.mouseUp(with: event(.leftMouseUp, 250, 220))
+        #expect(results == [CGRect(x: 0.25, y: 0.5, width: 0.5, height: 0.25)])
+
+        overlay.showHoveredElement(fraction: CGRect(x: 0.9, y: 0.9, width: 0.5, height: 0.5))
+        #expect(overlay.hoveredElement == CGRect(x: 460, y: 320, width: 40, height: 30), "Kept on the page")
+        overlay.showHoveredElement(fraction: nil)
+        #expect(overlay.hoveredElement == nil)
+    }
+
+    @Test func thePageTurnsGrayAroundTheElementInColor() throws {
+        let overlay = BrowserAreaCaptureOverlay(pageFrame: CGRect(x: 0, y: 0, width: 100, height: 100))
+        overlay.frame = NSRect(x: 0, y: 0, width: 100, height: 100)
+        let colors = try #require(CGContext(
+            data: nil, width: 100, height: 100, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue,
+        ))
+        colors.setFillColor(red: 1, green: 0, blue: 0, alpha: 1)
+        colors.fill(CGRect(x: 0, y: 0, width: 100, height: 100))
+        overlay.pagePicture = colors.makeImage()
+        overlay.showHoveredElement(fraction: CGRect(x: 0.5, y: 0.5, width: 0.4, height: 0.4))
+        let bitmap = try #require(overlay.bitmapImageRepForCachingDisplay(in: overlay.bounds))
+        overlay.cacheDisplay(in: overlay.bounds, to: bitmap)
+        let scale = CGFloat(bitmap.pixelsWide) / overlay.bounds.width
+        func color(_ x: CGFloat, _ y: CGFloat) throws -> NSColor {
+            try #require(bitmap.colorAt(x: Int(x * scale), y: Int(y * scale))?.usingColorSpace(.sRGB))
+        }
+        let outside = try color(10, 10)
+        #expect(abs(outside.redComponent - outside.greenComponent) < 0.05, "Gray around the element")
+        let inside = try color(70, 70)
+        #expect(inside.redComponent > 0.9 && inside.greenComponent < 0.15, "The element keeps its colors")
+    }
+
+    @Test func theElementAnswerReadsEitherEncoding() {
+        let frame = CGRect(x: 0.1, y: 0.2, width: 0.3, height: 0.4)
+        #expect(BrowserCaptureImaging.elementFrame(fromAnswer: "[0.1,0.2,0.3,0.4]") == frame)
+        #expect(BrowserCaptureImaging.elementFrame(fromAnswer: "\"[0.1,0.2,0.3,0.4]\"") == frame)
+        #expect(BrowserCaptureImaging.elementFrame(fromAnswer: "") == nil)
+        #expect(BrowserCaptureImaging.elementFrame(fromAnswer: "[0,0,0,1]") == nil)
+        #expect(BrowserCaptureImaging.elementFrameScript(at: CGPoint(x: 0.5, y: 0.25)).contains("(0.5, 0.25)"))
+    }
+
     @Test func captureAsksTheWindowForAnOutlineThenTheEngineForThatPart() {
         let f = SidebarDragFixture(temporary: ["x"])
         f.model.selectTab(id: f.id("x"))

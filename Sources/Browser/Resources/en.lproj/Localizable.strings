@@ -1295,3 +1295,4 @@
 "browser.capture.card.edit" = "Edit";
 "browser.capture.card.retake" = "Retake";
 "browser.capture.card.new_easel" = "New Easel";
+"browser.capture.area_hint" = "Click or drag to capture a portion of this page";

@@ -339,6 +339,27 @@ final class BrowserContentNSView: NSView {
         let page = pageFrame(forTabID: pageTabID)
         let overlay = BrowserAreaCaptureOverlay(pageFrame: page)
         overlay.frame = bounds
+        captureModel?.captureSelectedPagePicture { [weak overlay] png in
+            overlay?.pagePicture = png.flatMap(BrowserCaptureImaging.cgImage(png:))
+        }
+        var asking = false
+        var waiting: CGPoint?
+        func ask(_ point: CGPoint) {
+            guard !asking else {
+                waiting = point
+                return
+            }
+            asking = true
+            captureModel?.selectedPageElementFrame(at: point) { [weak overlay] frame in
+                asking = false
+                overlay?.showHoveredElement(fraction: frame)
+                if let next = waiting {
+                    waiting = nil
+                    ask(next)
+                }
+            }
+        }
+        overlay.onHover = { ask($0) }
         overlay.onFinish = { [weak self, weak overlay] fraction in
             guard let overlay, overlay.superview != nil else { return }
             overlay.removeFromSuperview()

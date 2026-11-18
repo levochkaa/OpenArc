@@ -63,6 +63,37 @@ enum BrowserCaptureImaging {
         return context.makeImage()
     }
 
+    /// Finds the element under a point of the page, given as fractions of
+    /// the page view, and answers with its frame in the same fractions.
+    static func elementFrameScript(at point: CGPoint) -> String {
+        let x = point.x.isFinite ? point.x : 0
+        let y = point.y.isFinite ? point.y : 0
+        return """
+        (function (fx, fy) {
+          var w = window.innerWidth, h = window.innerHeight;
+          var e = document.elementFromPoint(fx * w, fy * h);
+          if (!e || !w || !h) return '';
+          var r = e.getBoundingClientRect();
+          return JSON.stringify([r.left / w, r.top / h, r.width / w, r.height / h]);
+        })(\(x), \(y))
+        """
+    }
+
+    /// The frame from `elementFrameScript`'s answer, which may come back as
+    /// the JSON text itself or as that text encoded once more.
+    static func elementFrame(fromAnswer answer: String?) -> CGRect? {
+        guard var text = answer?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }
+        if text.hasPrefix("\""),
+           let decoded = try? JSONSerialization.jsonObject(with: Data(text.utf8), options: .fragmentsAllowed) as? String
+        {
+            text = decoded
+        }
+        guard let numbers = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [Double], numbers.count == 4,
+              numbers.allSatisfy(\.isFinite), numbers[2] > 0, numbers[3] > 0
+        else { return nil }
+        return CGRect(x: numbers[0], y: numbers[1], width: numbers[2], height: numbers[3])
+    }
+
     /// The size a picture of `pixelSize` takes on the page: its pixels as
     /// points, scaled down to fit `bounds`.
     static func fittedSize(pixelSize: CGSize, in bounds: CGSize) -> CGSize {

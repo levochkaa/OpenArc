@@ -2148,6 +2148,10 @@ enum BrowserStrings {
         "browser.capture.toast_hint_trailing",
         comment: "Text after the keys.",
     )
+    static let captureAreaHint = NSLocalizedString(
+        "browser.capture.area_hint",
+        comment: "Note at the bottom of the page while the user picks what to capture.",
+    )
     static let captureCardSendTo = NSLocalizedString(
         "browser.capture.card.send_to",
         comment: "Placeholder of the field that filters the capture card's menu.",

@@ -3409,6 +3409,29 @@ enum BrowserWindowMode: Equatable {
         return true
     }
 
+    /// A picture of the shown page, for the gray page behind an outline.
+    func captureSelectedPagePicture(completion: @escaping @MainActor (Data?) -> Void) {
+        guard selectedTabID != nil else {
+            completion(nil)
+            return
+        }
+        tabDriver.captureActiveTabPicture(completion: completion)
+    }
+
+    /// The element under `point` of the shown page, both as fractions of the page view.
+    func selectedPageElementFrame(at point: CGPoint, completion: @escaping @MainActor (CGRect?) -> Void) {
+        guard let selectedTabID else {
+            completion(nil)
+            return
+        }
+        tabDriver.evaluateJavaScript(
+            BrowserCaptureImaging.elementFrameScript(at: point),
+            inTabWithID: selectedTabID,
+        ) { answer in
+            completion(BrowserCaptureImaging.elementFrame(fromAnswer: answer))
+        }
+    }
+
     /// Capture Image… from a picture's menu: the picture in the capture card.
     func presentCapturedImage(png: Data) {
         guard let selectedTabID else { return }
