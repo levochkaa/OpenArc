@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Rendered by script/automation_install.sh; see docs/chromium-updates.md. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>@LABEL@</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>@PYTHON@</string>
+    <string>-I</string>
+    <string>@CHECKOUT@/script/cef_cross/chromium_watch.py</string>
+    <string>mac-tick</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>@CHECKOUT@</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>@PATH@</string>
+    <key>OPENARC_CEF_REMOTE_HOST</key>
+    <string>@REMOTE_HOST@</string>
+    <key>OPENARC_CEF_REMOTE_ROOT</key>
+    <string>@REMOTE_ROOT@</string>
+  </dict>
+  <key>StartInterval</key>
+  <integer>@INTERVAL@</integer>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>LowPriorityIO</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>@LOG@</string>
+  <key>StandardErrorPath</key>
+  <string>@LOG@</string>
+</dict>
+</plist>

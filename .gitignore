@@ -16,3 +16,4 @@ ThirdParty/cef/*
 # Local notes, kept out of the repository
 research/
 LOCAL.md
+__pycache__/

@@ -24,6 +24,8 @@ CEF is built on a Linux x64 machine and copied to the Mac. A build there does no
 
 After the export changes, run `./build.sh build`, `./build.sh test` and the engine smoke test ([cef-smoke-test.md](cef-smoke-test.md)).
 
+New stable releases are built automatically and handed to an agent; see [chromium-updates.md](chromium-updates.md).
+
 On the WSL host (24 threads, 52 GB) the first build of a new base took about 1.5 hours; an override rebuild with the framework's ThinLTO link takes 1.5 to 5 minutes, packaging about a minute, and `pull` seconds over the LAN.
 
 ### After changing an override

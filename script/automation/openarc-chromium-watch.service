@@ -1,0 +1,13 @@
+# Rendered by script/automation_install.sh; see docs/chromium-updates.md.
+[Unit]
+Description=OpenArc: look for a new stable Chromium and build CEF for it
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+Environment=CEF_CROSS_ROOT=@ROOT@
+ExecStart=/usr/bin/env python3 -I @ROOT@/openarc/main/tools/chromium_watch.py check
+# The build runs in its own tmux scope; never kill it with this unit.
+KillMode=process
+Nice=10
