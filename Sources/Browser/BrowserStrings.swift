@@ -3742,6 +3742,11 @@ enum BrowserStrings {
         comment: "Window menu item that brings every app window to the front.",
     )
 
+    static let onboardingTryAgain = NSLocalizedString(
+        "browser.onboarding.try_again",
+        comment: "First-run welcome window: retries an import that brought nothing.",
+    )
+
     static func syncAccountLastSynced(_ date: String) -> String {
         String(
             format: NSLocalizedString(
@@ -3776,6 +3781,50 @@ enum BrowserStrings {
         parts.isEmpty
             ? NSLocalizedString("browser.onboarding.import_nothing_done", comment: "Result when nothing was imported.")
             : parts.joined(separator: " · ")
+    }
+
+    static func onboardingStepCounter(_ step: Int, _ count: Int) -> String {
+        String(
+            format: NSLocalizedString(
+                "browser.onboarding.step_counter",
+                comment: "First-run welcome window: which step of how many. First value: step. Second: count.",
+            ),
+            step,
+            count,
+        )
+    }
+
+    /// "Used 5 hours ago" under a browser found on this Mac.
+    static func onboardingUsedAgo(_ date: Date) -> String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .full
+        return String(
+            format: NSLocalizedString(
+                "browser.onboarding.used_ago",
+                comment: "First-run welcome window: when a browser was last used. Value: a relative time, such as 5 hours ago.",
+            ),
+            formatter.localizedString(for: date, relativeTo: Date()),
+        )
+    }
+
+    static func onboardingImportFrom(_ browser: String) -> String {
+        String(
+            format: NSLocalizedString(
+                "browser.onboarding.import_from",
+                comment: "First-run welcome window: the import button. Value: browser name.",
+            ),
+            browser,
+        )
+    }
+
+    static func onboardingImporting(_ browser: String) -> String {
+        String(
+            format: NSLocalizedString(
+                "browser.onboarding.importing",
+                comment: "First-run welcome window: shown while importing. Value: browser name.",
+            ),
+            browser,
+        )
     }
 
     static func onboardingImportCount(_ count: Int, _ item: String) -> String {
