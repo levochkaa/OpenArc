@@ -131,6 +131,8 @@ import Combine
     let openInButton = BrowserPeekOpenInButton()
     /// "Copied Current URL" with Share, after Copy Link.
     let copiedToast = BrowserCaptureToastView()
+    /// Where Copy Link writes; tests give the panel a private pasteboard.
+    var pasteboard = NSPasteboard.general
     /// The address of the link under the pointer, at the page's bottom left.
     let linkStatus = BrowserLinkStatusView()
 
@@ -760,7 +762,6 @@ import Combine
     /// browser window at the card's top right.
     @discardableResult @objc func copyLink() -> Bool {
         guard canCopyLink else { return false }
-        let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(currentURLString, forType: .string)
         if let url = URL(string: currentURLString) {

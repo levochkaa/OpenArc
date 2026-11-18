@@ -286,6 +286,8 @@ enum BrowserWindowMode: Equatable {
     @Published private(set) var sessionPersistenceFailure: BrowserSessionPersistenceFailure?
     let hostView: NSView
     let userPreferencesStore: BrowserUserPreferencesStore
+    /// Where Copy commands write; tests give each model a private pasteboard.
+    var pasteboard = NSPasteboard.general
     /// The text Use Selection to Find reads; tests replace the system pasteboard.
     var findPasteboardText: () -> String? = { NSPasteboard(name: .find).string(forType: .string) }
     var findPasteboardChangeCount: () -> Int = { NSPasteboard(name: .find).changeCount }
@@ -3450,7 +3452,6 @@ enum BrowserWindowMode: Equatable {
     /// Copy URL as Markdown: `[title](url)` for the selected tab.
     @discardableResult func copySelectedTabLinkAsMarkdown() -> Bool {
         guard let selectedTab, !selectedTab.urlString.isEmpty else { return false }
-        let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         return pasteboard.setString(
             BrowserMarkdownLink.text(
@@ -3467,7 +3468,6 @@ enum BrowserWindowMode: Equatable {
     /// and Safari follow.
     @discardableResult func copySelectedTextAsQuoteLink() async -> Bool {
         guard let tab = selectedTab else { return false }
-        let pasteboard = NSPasteboard.general
         let changeCount = pasteboard.changeCount
         let text = await tabDriver.requestActiveTabSelectedText() ?? ""
         // A late answer must not replace what was copied or selected since.
@@ -3545,7 +3545,6 @@ enum BrowserWindowMode: Equatable {
             .compactMap { tabURLString(forTabID: $0) }
             .filter { !$0.isEmpty }
         guard !links.isEmpty else { return false }
-        let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         return pasteboard.setString(links.joined(separator: "\n"), forType: .string)
     }
@@ -3558,7 +3557,6 @@ enum BrowserWindowMode: Equatable {
             return false
         }
 
-        let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         return pasteboard.setString(BrowserTrackingParameters.cleaned(urlString), forType: .string)
     }

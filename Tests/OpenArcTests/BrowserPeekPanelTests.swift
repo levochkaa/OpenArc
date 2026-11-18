@@ -109,12 +109,9 @@ import Testing
         )
 
         panel.update(urlString: "https://example.com/a")
-        let pasteboard = NSPasteboard.general
-        let saved = pasteboard.string(forType: .string)
-        defer {
-            pasteboard.clearContents()
-            if let saved { pasteboard.setString(saved, forType: .string) }
-        }
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        panel.pasteboard = pasteboard
         panel.copyLinkButton.performClick(nil)
         #expect(pasteboard.string(forType: .string) == "https://example.com/a")
         #expect(!panel.copiedToast.isHidden, "Copying shows the note")

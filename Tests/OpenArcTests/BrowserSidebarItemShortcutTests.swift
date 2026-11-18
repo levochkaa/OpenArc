@@ -172,22 +172,9 @@ import Testing
         let f = SidebarDragFixture(temporary: ["x"])
         f.model.selectTab(id: f.id("x"))
         #expect(f.model.canCopySelectedTextAsQuoteLink)
-        let pasteboard = NSPasteboard.general
-        let saved = pasteboard.pasteboardItems?.map { item in
-            Dictionary(uniqueKeysWithValues: item.types.compactMap { type in
-                item.data(forType: type).map { (type, $0) }
-            })
-        } ?? []
-        defer {
-            pasteboard.clearContents()
-            pasteboard.writeObjects(saved.map { types in
-                let item = NSPasteboardItem()
-                for (type, data) in types {
-                    item.setData(data, forType: type)
-                }
-                return item
-            })
-        }
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        f.model.pasteboard = pasteboard
         f.driver.selectedText = "Example text"
         #expect(await f.model.copySelectedTextAsQuoteLink())
         #expect(pasteboard.string(forType: .string) == "https://x.example#:~:text=Example%20text")

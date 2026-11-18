@@ -154,22 +154,9 @@ import Testing
             pinned: [("one", "folder"), ("two", "folder"), ("out", nil)],
             folders: [.init(id: "folder", spaceID: "s", title: "Folder")],
         )
-        let pasteboard = NSPasteboard.general
-        let saved = pasteboard.pasteboardItems?.map { item in
-            Dictionary(uniqueKeysWithValues: item.types.compactMap { type in
-                item.data(forType: type).map { (type, $0) }
-            })
-        } ?? []
-        defer {
-            pasteboard.clearContents()
-            pasteboard.writeObjects(saved.map { types in
-                let item = NSPasteboardItem()
-                for (type, data) in types {
-                    item.setData(data, forType: type)
-                }
-                return item
-            })
-        }
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        f.model.pasteboard = pasteboard
         #expect(f.model.copyAllLinks(inFolderID: "folder"))
         #expect(pasteboard.string(forType: .string) == "https://one.example\nhttps://two.example")
         #expect(!f.model.copyAllLinks(inFolderID: "missing"))
@@ -183,22 +170,9 @@ import Testing
     @Test func copyURLFromTheMenuCopiesAndAsksForTheNote() {
         let f = SidebarDragFixture()
         f.model.selectTab(id: f.id("x"))
-        let pasteboard = NSPasteboard.general
-        let saved = pasteboard.pasteboardItems?.map { item in
-            Dictionary(uniqueKeysWithValues: item.types.compactMap { type in
-                item.data(forType: type).map { (type, $0) }
-            })
-        } ?? []
-        defer {
-            pasteboard.clearContents()
-            pasteboard.writeObjects(saved.map { types in
-                let item = NSPasteboardItem()
-                for (type, data) in types {
-                    item.setData(data, forType: type)
-                }
-                return item
-            })
-        }
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        f.model.pasteboard = pasteboard
         var noted = [URL]()
         f.model.onCopiedCurrentURL = { noted.append($0) }
         #expect(f.model.copyCurrentURLWithNote())
