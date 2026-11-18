@@ -51,6 +51,7 @@ targetTemplates:
       - path: Sources/Browser/BrowserSyncExpiryRecovery.swift
       - path: Sources/Browser/BrowserSyncExpiryModels.swift
       - path: Sources/Browser/BrowserSyncBoostModels.swift
+      - path: Sources/Browser/BrowserBoostStyle.swift
       - path: Sources/Browser/BrowserSyncSemanticModels.swift
       - path: Sources/Browser/BrowserSyncFolderModels.swift
       - path: Sources/Browser/BrowserSyncSemanticProjection.swift

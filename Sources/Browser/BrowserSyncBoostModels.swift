@@ -71,13 +71,16 @@ struct BrowserSyncBoostStyle: Codable, Equatable {
             && colors.map(Self.areSyncable) ?? true
     }
 
+    #if os(macOS)
     /// A boost's style with every number moved into the bounds sync accepts.
+    /// The iPhone keeps synced boosts without showing them, so only the Mac makes one.
     init(_ boost: BrowserBoost) {
         self.colors = boost.colors.map(Self.bounded)
         self.fontFamily = boost.fontFamily
         self.textCase = boost.textCase
         self.textZoom = boost.textZoom.map { Self.bounded($0, to: Self.textZoomRange, default: 1) }
     }
+    #endif
 
     init(
         colors: BrowserBoostColors? = nil,
