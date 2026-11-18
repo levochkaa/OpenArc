@@ -67,7 +67,7 @@ struct BrowserCaptureCardMenuTests {
 
 // MARK: - BrowserCaptureCardLayoutTests
 
-struct BrowserCaptureCardLayoutTests {
+@MainActor struct BrowserCaptureCardLayoutTests {
     private let page = CGRect(x: 0, y: 0, width: 1490, height: 1024)
 
     @Test func theMenuSitsBesideTheFrameTopAligned() {
