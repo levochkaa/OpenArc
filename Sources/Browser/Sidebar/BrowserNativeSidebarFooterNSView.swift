@@ -87,7 +87,8 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate, Browser
         scroll.documentView = spacesContainer
         scroll.automaticallyAdjustsContentInsets = false
         downloadsButton.setAccessibilityIdentifier("browser.sidebar.library")
-        downloadsButton.tooltipPlacement = .aboveCapsule
+        // Beside the button, so it leaves the downloads tray above it in view.
+        downloadsButton.tooltipPlacement = .trailingCapsule
         downloadsButton.onAction = { [weak state] in
             guard let model = state?.model else { return }
             if model.downloadsModel.hasActiveDownloads {

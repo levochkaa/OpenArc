@@ -180,6 +180,16 @@ struct BrowserNativeChromeButtonStyle {
         hoverBackground: BrowserChromeColors.rowHover,
         pressedScale: BrowserChromeLayout.sidebarCloseButtonPressedScale,
     )
+    /// A Library row's "…": shown while the row is hovered, filled while it is.
+    static let libraryRowMore = BrowserNativeChromeButtonStyle(
+        size: 26,
+        cornerRadius: 6,
+        symbolSize: 13,
+        symbolWeight: .semibold,
+        foreground: BrowserChromeColors.sidebarRowText,
+        hoverBackground: BrowserChromeColors.rowHover,
+        pressedScale: BrowserChromeLayout.sidebarCloseButtonPressedScale,
+    )
     /// Close beside the small window bar's field: a filled square.
     static let commandBarClose = BrowserNativeChromeButtonStyle(
         size: 24,

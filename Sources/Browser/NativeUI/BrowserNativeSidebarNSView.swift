@@ -2149,7 +2149,16 @@ final class BrowserNativeSidebarNSView: NSView {
                 isCanceled: true,
             )
         }
-        return BrowserDownloadsTrayView.merged(files: files, canceled: canceled, running: running)
+        let failed = downloads.items.filter { $0.state == .interrupted }.map { item in
+            BrowserDownloadsTrayView.Entry(
+                url: URL(fileURLWithPath: item.fileName),
+                date: item.startedAt,
+                progress: BrowserStrings.downloadsTrayFailed,
+                title: item.fileName,
+                isCanceled: true,
+            )
+        }
+        return BrowserDownloadsTrayView.merged(files: files, canceled: canceled + failed, running: running)
     }
 
     private func setDownloadsTrayShown(_ shown: Bool) {
@@ -2158,7 +2167,6 @@ final class BrowserNativeSidebarNSView: NSView {
             downloadsTrayTimer?.invalidate()
             downloadsTrayTimer = nil
             guard downloadsTray.superview != nil else { return }
-            BrowserNativeTooltipPresenter.shared.isSuppressed = state.isSpacePagerDragging
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = 0.15
                 downloadsTray.animator().alphaValue = 0
@@ -2172,8 +2180,6 @@ final class BrowserNativeSidebarNSView: NSView {
             return
         }
         downloadsTray.show(entries)
-        // The button's tooltip would cover the newest row.
-        BrowserNativeTooltipPresenter.shared.isSuppressed = true
         if downloadsTray.superview == nil {
             content.addSubview(downloadsTray, positioned: .above, relativeTo: miniPlayers)
         }
@@ -2959,7 +2965,7 @@ final class BrowserDownloadsTrayView: NSView {
         var title: String?
         /// Stops a running download.
         var onCancel: (() -> Void)?
-        /// A canceled download: no file to show, open or reveal.
+        /// A canceled or failed download: no file to show, open or reveal.
         var isCanceled = false
     }
 
@@ -2971,7 +2977,7 @@ final class BrowserDownloadsTrayView: NSView {
     private(set) var isHovered = false
     var onHoverChanged: () -> Void = {}
 
-    private var rows = [BrowserDownloadsTrayRow]()
+    private(set) var rows = [BrowserDownloadsTrayRow]()
 
     private var tracking: NSTrackingArea?
 
@@ -3032,7 +3038,8 @@ final class BrowserDownloadsTrayView: NSView {
         return Array(entries.sorted { $0.date > $1.date }.prefix(limit).reversed())
     }
 
-    /// New progress for the same rows, without rebuilding them under the pointer.
+    /// New progress for the same rows, without rebuilding them under the pointer; a
+    /// finished download turns its row into the file.
     func refresh(_ entries: [Entry]) {
         guard entries.map(\.url) == rows.map(\.entry.url) else {
             show(entries)
@@ -3043,71 +3050,88 @@ final class BrowserDownloadsTrayView: NSView {
         }
     }
 
+    /// Rows for `entries`, reusing the ones that show the same file, so the row under a
+    /// still pointer keeps its highlight.
     func show(_ entries: [Entry]) {
-        for row in rows {
-            row.removeFromSuperview()
-        }
+        var reusable = rows
         rows = entries.map { entry in
+            if let index = reusable.firstIndex(where: { $0.entry.url == entry.url }) {
+                let row = reusable.remove(at: index)
+                row.update(entry)
+                return row
+            }
             let row = BrowserDownloadsTrayRow(entry: entry)
             addSubview(row)
             return row
         }
+        for row in reusable {
+            row.removeFromSuperview()
+        }
         needsLayout = true
+        guard window != nil else { return }
+        layoutSubtreeIfNeeded()
+        for row in rows {
+            row.syncHoverWithPointer()
+        }
     }
 }
 
 // MARK: - BrowserDownloadsTrayRow
 
-/// A file's icon, name and when it arrived; a click opens it.
-private final class BrowserDownloadsTrayRow: NSView {
+/// A file's thumbnail, name and when it arrived. Hover shows its full name; a click
+/// opens it, a drag takes a copy along, and its menu copies, sends or trashes it.
+final class BrowserDownloadsTrayRow: BrowserNativePressableView {
+    static let thumbnailSize: CGFloat = 40
+
     override var isFlipped: Bool { true }
 
     private(set) var entry: BrowserDownloadsTrayView.Entry
 
-    private let highlight = BrowserNativeSurface()
-    private let icon = NSImageView()
-    private let ring = BrowserDownloadsTrayProgressRing()
-    private let title = NSTextField(labelWithString: "")
-    private let detail = NSTextField(labelWithString: "")
-    private let cancelButton = BrowserNativeChromeButton(
+    let cancelButton = BrowserNativeChromeButton(
         symbol: "xmark",
         title: BrowserStrings.downloadsCancelAction,
         style: .sidebarClose,
         action: {},
     )
-    private var tracking: NSTrackingArea?
+
+    private let highlight = BrowserNativeSurface()
+    private let thumbnail = BrowserDownloadThumbnailView()
+    private let ring = BrowserDownloadsTrayProgressRing()
+    private let title = NSTextField(labelWithString: "")
+    private let detail = NSTextField(labelWithString: "")
+
+    /// A finished file that can be opened, dragged and acted on.
+    var isFile: Bool { entry.progress == nil && !entry.isCanceled }
+
+    var showsProgress: Bool { !ring.isHidden }
 
     init(entry: BrowserDownloadsTrayView.Entry) {
         self.entry = entry
         super.init(frame: .zero)
+        pressedScale = 1
         highlight.cornerRadius = 10
         highlight.strokeWidth = 0
         highlight.fillColor = BrowserChromeColors.rowHover
         highlight.isHidden = true
-        icon.image = entry.progress == nil
-            ? NSWorkspace.shared.icon(forFile: entry.url.path)
-            : NSWorkspace.shared.icon(for: UTType(filenameExtension: entry.url.pathExtension) ?? .data)
-        icon.imageScaling = .scaleProportionallyUpOrDown
-        title.stringValue = entry.title ?? entry.url.lastPathComponent
         title.font = .systemFont(ofSize: 14)
         title.textColor = BrowserChromeColors.primaryText
         title.lineBreakMode = .byTruncatingTail
-        detail.stringValue = entry.progress
-            ?? RelativeDateTimeFormatter().localizedString(for: entry.date, relativeTo: Date())
-        cancelButton.isHidden = entry.onCancel == nil
-        // A running download is a ring that fills, with an arrow, in place of its file's icon.
-        ring.isHidden = entry.progress == nil || entry.isCanceled
-        icon.isHidden = entry.progress != nil
-        ring.fraction = entry.fraction ?? 0
-        cancelButton.onAction = { [entry] in entry.onCancel?() }
         detail.font = .systemFont(ofSize: 12)
         detail.textColor = BrowserChromeColors.secondaryText
         detail.lineBreakMode = .byTruncatingTail
-        for view in [highlight, icon, ring, title, detail, cancelButton] as [NSView] {
+        for view in [highlight, thumbnail, ring, title, detail, cancelButton] as [NSView] {
             addSubview(view)
         }
-        setAccessibilityRole(.button)
-        setAccessibilityLabel(title.stringValue)
+        // The full name shows at the row's trailing corner, past the sidebar's edge.
+        tooltipPlacement = .belowLeading
+        tooltipAnchorXFraction = 0.97
+        cancelButton.onAction = { [weak self] in self?.entry.onCancel?() }
+        onClick = { [weak self] _ in self?.open() }
+        // The second click of a double click opens nothing more.
+        onDoubleClick = { _ in }
+        onBeginDragSession = { [weak self] _ in self?.beginFileDrag() ?? false }
+        menuProvider = { [weak self] in self?.makeMenu() ?? BrowserNativeMenus.menu() }
+        configure(entry)
     }
 
     @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -3115,7 +3139,8 @@ private final class BrowserDownloadsTrayRow: NSView {
     override func layout() {
         super.layout()
         highlight.frame = bounds.insetBy(dx: 4, dy: 2)
-        icon.frame = NSRect(x: 9, y: (bounds.height - 38) / 2, width: 38, height: 38)
+        let side = Self.thumbnailSize
+        thumbnail.frame = NSRect(x: 8, y: (bounds.height - side) / 2, width: side, height: side)
         ring.frame = NSRect(x: 14, y: (bounds.height - 28) / 2, width: 28, height: 28)
         let textX: CGFloat = 60
         let size = cancelButton.intrinsicContentSize.width > 0 ? BrowserChromeLayout.sidebarCloseButtonSize : 24
@@ -3130,40 +3155,109 @@ private final class BrowserDownloadsTrayRow: NSView {
         detail.frame = NSRect(x: textX, y: bounds.height / 2 + 1, width: width, height: 16)
     }
 
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        if let tracking { removeTrackingArea(tracking) }
-        let area = NSTrackingArea(
-            rect: .zero,
-            options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
-            owner: self,
-        )
-        addTrackingArea(area)
-        tracking = area
+    override func interactionChanged() {
+        super.interactionChanged()
+        highlight.isHidden = !isHovered
     }
 
-    override func mouseEntered(with _: NSEvent) { highlight.isHidden = false }
-    override func mouseExited(with _: NSEvent) { highlight.isHidden = true }
-    override func mouseUp(with _: NSEvent) {
-        guard entry.progress == nil else { return }
+    /// The same row with new progress, or turned into its file once the download finished.
+    func update(_ entry: BrowserDownloadsTrayView.Entry) {
+        configure(entry)
+    }
+
+    private func configure(_ entry: BrowserDownloadsTrayView.Entry) {
+        let wasFile = isFile && thumbnail.url == entry.url
+        self.entry = entry
+        let name = entry.title ?? entry.url.lastPathComponent
+        title.stringValue = name
+        tooltipTitle = name
+        detail.stringValue = entry.progress
+            ?? RelativeDateTimeFormatter().localizedString(for: entry.date, relativeTo: Date())
+        let running = entry.progress != nil && !entry.isCanceled
+        // A running download is a ring that fills, with an arrow, in place of its file.
+        ring.isHidden = !running
+        ring.fraction = entry.fraction ?? 0
+        cancelButton.isHidden = entry.onCancel == nil
+        thumbnail.isHidden = running || entry.isCanceled
+        if isFile, !wasFile {
+            thumbnail.show(entry.url, side: Self.thumbnailSize)
+        }
+        setAccessibilityRole(.button)
+        setAccessibilityLabel(name)
+        refreshTooltip()
+        needsLayout = true
+    }
+
+    private func open() {
+        guard isFile else { return }
         NSWorkspace.shared.open(entry.url)
     }
 
-    override func menu(for _: NSEvent) -> NSMenu? {
-        guard !entry.isCanceled else { return nil }
+    private func beginFileDrag() -> Bool {
+        guard isFile else { return false }
+        return BrowserDownloadFileDrag.shared.begin(fileURL: entry.url, from: self) { [weak self] in
+            self?.resetInteraction()
+        }
+    }
+
+    private func makeMenu() -> NSMenu {
+        if isFile {
+            return BrowserDownloadFileMenu.menu(for: BrowserDownloadFile(url: entry.url), inTray: true)
+        }
         let menu = BrowserNativeMenus.menu()
-        BrowserNativeMenus.add(BrowserStrings.libraryRevealInFinder, to: menu) { [entry] in
-            NSWorkspace.shared.activateFileViewerSelecting([entry.url])
+        if let onCancel = entry.onCancel {
+            BrowserNativeMenus.add(BrowserStrings.downloadsCancelAction, to: menu) { onCancel() }
         }
         return menu
     }
+}
 
-    func update(_ entry: BrowserDownloadsTrayView.Entry) {
-        self.entry = entry
-        if let progress = entry.progress {
-            detail.stringValue = progress
+// MARK: - BrowserDownloadThumbnailView
+
+/// A downloaded file as a picture: a picture fills a rounded square, other files show
+/// their QuickLook thumbnail or their icon.
+final class BrowserDownloadThumbnailView: NSView {
+    private(set) var url: URL?
+    private let content = CALayer()
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        layer?.addSublayer(content)
+        content.masksToBounds = true
+        setAccessibilityElement(false)
+    }
+
+    @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func hitTest(_: NSPoint) -> NSView? { nil }
+
+    override func layout() {
+        super.layout()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        content.frame = bounds
+        CATransaction.commit()
+    }
+
+    func show(_ url: URL, side: CGFloat) {
+        self.url = url
+        let file = BrowserDownloadFile(url: url)
+        set(BrowserDownloadThumbnail.cached(url) ?? NSWorkspace.shared.icon(forFile: url.path), filled: file.isImage)
+        BrowserDownloadThumbnail.load(url, side: side, scale: window?.backingScaleFactor ?? 2) { [weak self] image in
+            guard let self, self.url == url else { return }
+            set(image, filled: file.isImage)
         }
-        ring.fraction = entry.fraction ?? 0
+    }
+
+    private func set(_ image: NSImage, filled: Bool) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        content.contents = image.layerContents(forContentsScale: window?.backingScaleFactor ?? 2)
+        content.contentsScale = window?.backingScaleFactor ?? 2
+        content.contentsGravity = filled ? .resizeAspectFill : .resizeAspect
+        content.cornerRadius = filled ? 6 : 0
+        CATransaction.commit()
     }
 }
 

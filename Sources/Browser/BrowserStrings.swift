@@ -995,6 +995,52 @@ enum BrowserStrings {
         comment: "Detail text for an interrupted download.",
     )
 
+    static let downloadsTrayFailed = NSLocalizedString(
+        "browser.downloads.tray_failed",
+        comment: "Tray row detail for a download that stopped with an error.",
+    )
+
+    static let downloadsCopyImage = NSLocalizedString(
+        "browser.downloads.copy_image",
+        comment: "Menu item that copies a downloaded picture.",
+    )
+
+    static let downloadsCopyFile = NSLocalizedString(
+        "browser.downloads.copy_file",
+        comment: "Menu item that copies a downloaded file.",
+    )
+
+    static let downloadsOpenImage = NSLocalizedString(
+        "browser.downloads.open_image",
+        comment: "Menu item that opens a downloaded picture.",
+    )
+
+    static let downloadsRemoveFromList = NSLocalizedString(
+        "browser.downloads.remove_from_list",
+        comment: "Menu item that drops a download from the list and keeps the file.",
+    )
+
+    static let downloadsMoveToTrash = NSLocalizedString(
+        "browser.downloads.move_to_trash",
+        comment: "Menu item that moves a downloaded file to the Trash.",
+    )
+
+    static let downloadsMoreActions = NSLocalizedString(
+        "browser.downloads.more_actions",
+        comment: "Tooltip and accessibility label of the button that opens a download's menu.",
+    )
+
+    /// "Open in Preview": the app that opens the file by default.
+    static func downloadsOpenIn(_ application: String) -> String {
+        String(
+            format: NSLocalizedString(
+                "browser.downloads.open_in_app",
+                comment: "Menu item that opens a downloaded file. %@ is the app's name.",
+            ),
+            application,
+        )
+    }
+
     static let findBarPlaceholder = NSLocalizedString(
         "browser.find_bar.placeholder",
         comment: "Placeholder shown in the page find field.",

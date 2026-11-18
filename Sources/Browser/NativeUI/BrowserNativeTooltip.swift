@@ -148,7 +148,8 @@ final class BrowserNativeTooltipContent: BrowserNativeSurface {
         case .belowLeading: cornerRadius = BrowserChromeLayout.tooltipCornerRadius
             roundsTopLeadingCorner = false
             topLeadingCornerRadius = BrowserChromeLayout.tooltipTopLeadingCornerRadius
-        case .aboveCapsule: cornerRadius = bounds.height / 2
+        case .aboveCapsule,
+             .trailingCapsule: cornerRadius = bounds.height / 2
             roundsTopLeadingCorner = true
         }
     }

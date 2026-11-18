@@ -8,6 +8,9 @@ import Foundation
 enum BrowserTooltipPlacement {
     case belowLeading
     case aboveCapsule
+    /// A capsule beside the source's trailing edge, centered on it, for buttons with
+    /// something above them that the tooltip must not cover.
+    case trailingCapsule
 }
 
 // MARK: - BrowserTooltipPlacementResolver
@@ -70,6 +73,11 @@ enum BrowserTooltipPlacementResolver {
             CGPoint(
                 x: sourceFrame.midX - tooltipSize.width / 2,
                 y: sourceFrame.minY - verticalGap - tooltipSize.height,
+            )
+        case .trailingCapsule:
+            CGPoint(
+                x: sourceFrame.maxX + verticalGap,
+                y: sourceFrame.midY - tooltipSize.height / 2,
             )
         }
     }

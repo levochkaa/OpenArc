@@ -196,6 +196,14 @@
 "browser.downloads.detail.canceled" = "Canceled";
 "browser.downloads.tray_canceled_from_host" = "Canceled · from %@";
 "browser.downloads.detail.interrupted" = "Interrupted";
+"browser.downloads.tray_failed" = "Failed to Download";
+"browser.downloads.copy_image" = "Copy Image";
+"browser.downloads.copy_file" = "Copy File";
+"browser.downloads.open_image" = "Open Image";
+"browser.downloads.open_in_app" = "Open in %@";
+"browser.downloads.remove_from_list" = "Remove from List";
+"browser.downloads.move_to_trash" = "Move to Trash";
+"browser.downloads.more_actions" = "More";
 "browser.downloads.progress.known_total" = "%@ of %@";
 "browser.downloads.progress.known_total_with_speed" = "%@ of %@ • %@/s";
 "browser.downloads.progress.unknown_total" = "%@ downloaded";

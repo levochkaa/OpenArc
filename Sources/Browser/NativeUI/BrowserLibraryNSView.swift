@@ -389,6 +389,28 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
         return text
     }
 
+    /// A running download stops or shows its file; a finished one gets the file's menu.
+    static func downloadMenu(for item: BrowserDownloadItem, in downloads: BrowserDownloadsModel?) -> NSMenu {
+        if item.state == .completed, let url = item.fileURL, FileManager.default.fileExists(atPath: url.path) {
+            return BrowserDownloadFileMenu.menu(
+                for: BrowserDownloadFile(url: url),
+                inTray: false,
+                onRemoveFromList: { [weak downloads] in downloads?.remove(item) },
+                onTrashed: { [weak downloads] in downloads?.remove(item) },
+            )
+        }
+        let menu = BrowserNativeMenus.menu()
+        if item.state == .inProgress {
+            BrowserNativeMenus.add(BrowserStrings.downloadsCancelAction, to: menu) { downloads?.cancel(item) }
+            if item.fileURL != nil {
+                BrowserNativeMenus.add(BrowserStrings.libraryRevealInFinder, to: menu) { downloads?.reveal(item) }
+            }
+        } else {
+            BrowserNativeMenus.add(BrowserStrings.downloadsRemoveFromList, to: menu) { downloads?.remove(item) }
+        }
+        return menu
+    }
+
     private static func matches(fileName: String, kind: String) -> Bool {
         let type = UTType(filenameExtension: (fileName as NSString).pathExtension)
         return switch kind {
@@ -631,16 +653,10 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
                     .icon(for: UTType(filenameExtension: (name as NSString).pathExtension) ?? .data),
                 progress: progress,
                 onOpen: { [weak downloads] in downloads?.open(item) },
-                menu: { [weak downloads] in
-                    let menu = BrowserNativeMenus.menu()
-                    if item.state == .inProgress {
-                        BrowserNativeMenus
-                            .add(BrowserStrings.downloadsCancelAction, to: menu) { downloads?.cancel(item) }
-                    }
-                    BrowserNativeMenus.add(BrowserStrings.libraryRevealInFinder, to: menu) { downloads?.reveal(item) }
-                    return menu
-                },
+                menu: { [weak downloads] in Self.downloadMenu(for: item, in: downloads) },
                 identity: item.id,
+                fileURL: item.state == .completed ? item.fileURL : nil,
+                isDownload: true,
             )))
         }
         return result
@@ -966,19 +982,34 @@ struct BrowserLibraryRowContent {
     /// A switch at the row's end, shown when set.
     var isOn: Bool?
     var onToggle: ((Bool) -> Void)?
+    /// A finished download's file, which the row can be dragged out as.
+    var fileURL: URL?
+    /// A download row shows "…" for its menu, and its full name, while hovered.
+    var isDownload = false
 }
 
 // MARK: - BrowserLibraryRow
 
-private final class BrowserLibraryRow: BrowserNativePressableView {
+final class BrowserLibraryRow: BrowserNativePressableView {
+    /// A row's name waits longer than a button's before its tooltip shows.
+    override var tooltipTarget: BrowserTooltipCoordinator.Target { .row }
+
     // MARK: Private
 
     private let content: BrowserLibraryRowContent
+    private let moreButton = BrowserNativeChromeButton(
+        symbol: "ellipsis",
+        title: BrowserStrings.downloadsMoreActions,
+        style: .libraryRowMore,
+        action: {},
+    )
     private let favicon = BrowserFaviconNSView()
     private let pageIcon = NSImageView()
     private let title = NSTextField(labelWithString: "")
     private let detail = NSTextField(labelWithString: "")
     private let toggle = BrowserActionToggle()
+
+    var isMoreButtonShown: Bool { !moreButton.isHidden }
 
     // MARK: Internal
 
@@ -1022,6 +1053,19 @@ private final class BrowserLibraryRow: BrowserNativePressableView {
             toggle.onChange = { [content] on in content.onToggle?(on) }
             addSubview(toggle)
         }
+        moreButton.isHidden = true
+        guard content.isDownload else { return }
+        tooltipTitle = content.title
+        moreButton.onAction = { [weak self] in self?.showMoreMenu() }
+        addSubview(moreButton)
+        if let url = content.fileURL {
+            onBeginDragSession = { [weak self] _ in
+                guard let self else { return false }
+                return BrowserDownloadFileDrag.shared.begin(fileURL: url, from: self) { [weak self] in
+                    self?.resetInteraction()
+                }
+            }
+        }
     }
 
     @available(*, unavailable) required init?(coder _: NSCoder) { fatalError() }
@@ -1030,12 +1074,29 @@ private final class BrowserLibraryRow: BrowserNativePressableView {
         super.layout()
         favicon.frame = NSRect(x: 12, y: 13, width: 16, height: 16)
         pageIcon.frame = favicon.frame
-        let trailing: CGFloat = content.isOn == nil ? 8 : 8 + 26 + 8
+        let moreSize = BrowserNativeChromeButtonStyle.libraryRowMore.size
+        moreButton.frame = NSRect(
+            x: bounds.width - moreSize - 8,
+            y: (bounds.height - moreSize) / 2,
+            width: moreSize,
+            height: moreSize,
+        )
+        var trailing: CGFloat = content.isOn == nil ? 8 : 8 + 26 + 8
         if content.isOn != nil {
             toggle.frame = NSRect(x: bounds.width - 8 - 26, y: (bounds.height - 16) / 2, width: 26, height: 16)
         }
+        if content.isDownload {
+            trailing += moreSize + 4
+        }
         title.frame = NSRect(x: 38, y: 6, width: max(bounds.width - 38 - trailing, 0), height: 16)
         detail.frame = NSRect(x: 38, y: 22, width: max(bounds.width - 38 - trailing, 0), height: 14)
+    }
+
+    override func interactionChanged() {
+        super.interactionChanged()
+        if content.isDownload {
+            moreButton.isHidden = !isHovered
+        }
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -1050,6 +1111,13 @@ private final class BrowserLibraryRow: BrowserNativePressableView {
             NSColor.controlAccentColor.setFill()
             NSRect(x: 38, y: bounds.height - 4, width: (bounds.width - 46) * progress, height: 2).fill()
         }
+    }
+
+    func showMoreMenu() {
+        let menu = content.menu()
+        guard !menu.items.isEmpty else { return }
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: moreButton.bounds.maxY + 4), in: moreButton)
+        synchronizeHoverWithPointer()
     }
 }
 

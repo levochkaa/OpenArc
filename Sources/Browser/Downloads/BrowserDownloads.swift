@@ -126,6 +126,12 @@ struct BrowserDownloadItem: Identifiable, Codable, Equatable {
         changed()
     }
 
+    func remove(id: String) {
+        guard items.contains(where: { $0.id == id }) else { return }
+        items.removeAll { $0.id == id }
+        changed()
+    }
+
     private func changed() {
         save()
         NotificationCenter.default.post(name: Self.didChangeNotification, object: self)
@@ -265,6 +271,13 @@ struct BrowserDownloadItem: Identifiable, Codable, Equatable {
     func clearFinishedDownloads() {
         items.removeAll { $0.state.isFinished }
         history?.removeAll()
+    }
+
+    /// Drops a finished download from the list and the kept history; the file stays.
+    func remove(_ item: BrowserDownloadItem) {
+        guard item.state.isFinished else { return }
+        items.removeAll { $0.id == item.id }
+        history?.remove(id: item.id)
     }
 
     func cancel(_ item: BrowserDownloadItem) {
