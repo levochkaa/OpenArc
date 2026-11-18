@@ -9,6 +9,9 @@ enum BrowserImportEngine: String {
     case chromium
     case firefox
     case safari
+    /// A WebKit browser with its own sidebar files. Its cookies and keychain
+    /// items belong to it and cannot be read, so only its files come across.
+    case webkitApp
 }
 
 // MARK: - BrowserImportLocations
@@ -68,6 +71,9 @@ enum BrowserBookmarkImportSource: String, CaseIterable, Identifiable {
     case floorp
     case waterfox
     case safari
+    case yab
+    case vane
+    case search
 
     // MARK: Internal
 
@@ -99,6 +105,9 @@ enum BrowserBookmarkImportSource: String, CaseIterable, Identifiable {
         case .floorp: "Floorp"
         case .waterfox: "Waterfox"
         case .safari: "Safari"
+        case .yab: "Yab"
+        case .vane: "Vane"
+        case .search: "Search"
         }
     }
 
@@ -116,6 +125,7 @@ enum BrowserBookmarkImportSource: String, CaseIterable, Identifiable {
              .opera, .vivaldi: .chromium
         case .firefox, .floorp, .librewolf, .waterfox, .zen: .firefox
         case .safari: .safari
+        case .search, .vane, .yab: .webkitApp
         }
     }
 
@@ -143,6 +153,9 @@ enum BrowserBookmarkImportSource: String, CaseIterable, Identifiable {
         case .floorp: ["one.ablaze.floorp"]
         case .waterfox: ["net.waterfox.waterfox", "org.waterfoxproject.waterfox"]
         case .safari: ["com.apple.Safari"]
+        case .yab: ["dev.serafim.fast"]
+        case .vane: ["io.github.notnaki.vane"]
+        case .search: ["com.officecommun.search"]
         }
     }
 
@@ -164,7 +177,7 @@ enum BrowserBookmarkImportSource: String, CaseIterable, Identifiable {
         case .cra: "Cra Safe Storage"
         case .crest: "Crest Safe Storage"
         case .chromium: "Chromium Safe Storage"
-        case .atlas, .firefox, .floorp, .librewolf, .safari, .waterfox, .zen: nil
+        case .atlas, .firefox, .floorp, .librewolf, .safari, .search, .vane, .waterfox, .yab, .zen: nil
         }
     }
 
@@ -177,7 +190,7 @@ enum BrowserBookmarkImportSource: String, CaseIterable, Identifiable {
             if keychainService != nil {
                 items.formUnion([.passwords, .signIns])
             }
-            if self == .arc {
+            if keepsSidebarFiles {
                 items.insert(.spaces)
             }
             return items
@@ -185,6 +198,16 @@ enum BrowserBookmarkImportSource: String, CaseIterable, Identifiable {
             return [.bookmarks, .history, .signIns]
         case .safari:
             return [.bookmarks, .history, .passwords]
+        case .webkitApp:
+            return [.spaces, .bookmarks, .history]
+        }
+    }
+
+    /// Whether the browser keeps Spaces in files of its own that can be read.
+    var keepsSidebarFiles: Bool {
+        switch self {
+        case .arc, .cra, .crest, .search, .vane, .yab: true
+        default: false
         }
     }
 
@@ -195,6 +218,15 @@ enum BrowserBookmarkImportSource: String, CaseIterable, Identifiable {
 
     static func modificationDate(of url: URL, fileManager: FileManager) -> Date? {
         (try? fileManager.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
+    }
+
+    // MARK: WebKit apps
+
+    /// Vane is sandboxed. Its container is only looked at from outside here:
+    /// reading inside another app's container can bring up a privacy prompt,
+    /// which only an import the person started may cause.
+    static func vaneContainer(in locations: BrowserImportLocations) -> URL {
+        locations.home.appendingPathComponent("Library/Containers/io.github.notnaki.vane", isDirectory: true)
     }
 
     // MARK: Private
@@ -237,8 +269,14 @@ enum BrowserBookmarkImportSource: String, CaseIterable, Identifiable {
             case .librewolf: "librewolf"
             case .floorp: "Floorp"
             case .waterfox: "Waterfox"
-            case .safari: nil
+            case .yab: "Yab"
+            case .search: "Search"
+            case .safari, .vane: nil
             }
+        if self == .vane {
+            return Self.vaneContainer(in: locations)
+                .appendingPathComponent("Data/Library/Application Support/Vane", isDirectory: true)
+        }
         return path.map { locations.applicationSupport.appendingPathComponent($0, isDirectory: true) }
     }
 
@@ -254,8 +292,23 @@ enum BrowserBookmarkImportSource: String, CaseIterable, Identifiable {
                     BrowserFirefoxProfile.profiles(in: $0, fileManager: fileManager)
                 } ?? []
             case .safari: [BrowserImportProfile]()
+            case .webkitApp: webKitAppProfiles(in: locations, fileManager: fileManager)
             }
         return profiles.sorted { ($0.lastUsed ?? .distantPast) > ($1.lastUsed ?? .distantPast) }
+    }
+
+    /// The folder a WebKit app keeps its files in: Yab's earlier versions used `Fast`.
+    func webKitAppDirectory(
+        in locations: BrowserImportLocations = .current,
+        fileManager: FileManager = .default,
+    ) -> URL? {
+        guard self == .yab else { return dataDirectory(in: locations) }
+        let current = locations.applicationSupport.appendingPathComponent("Yab", isDirectory: true)
+        let earlier = locations.applicationSupport.appendingPathComponent("Fast", isDirectory: true)
+        let spaces = { (folder: URL) in
+            fileManager.fileExists(atPath: folder.appendingPathComponent("spaces.json").path)
+        }
+        return spaces(current) || !spaces(earlier) ? current : earlier
     }
 
     // MARK: Chromium
@@ -287,7 +340,8 @@ enum BrowserBookmarkImportSource: String, CaseIterable, Identifiable {
             let named = Self.subdirectories(of: root, fileManager: fileManager)
                 .filter { folder in
                     let name = folder.lastPathComponent
-                    return name == "Default" || name.hasPrefix("Profile ") || name.hasPrefix("Crest-")
+                    // Crest's `Default` serves only private windows; each of its Spaces has a profile.
+                    return name == "Default" && self != .crest || name.hasPrefix("Profile ") || name.hasPrefix("Crest-")
                 }
                 .sorted { $0.lastPathComponent < $1.lastPathComponent }
             return ([root] + named).filter { Self.holdsChromiumProfile($0, fileManager: fileManager) }
@@ -303,6 +357,26 @@ enum BrowserBookmarkImportSource: String, CaseIterable, Identifiable {
         chromiumProfileDirectories(in: locations, fileManager: fileManager)
             .map { $0.appendingPathComponent(fileName, isDirectory: false) }
             .filter { fileManager.fileExists(atPath: $0.path) }
+    }
+
+    /// A WebKit app has one set of files, shown as one profile named for the app.
+    private func webKitAppProfiles(
+        in locations: BrowserImportLocations,
+        fileManager: FileManager,
+    ) -> [BrowserImportProfile] {
+        guard let directory = webKitAppDirectory(in: locations, fileManager: fileManager) else { return [] }
+        if self == .vane {
+            guard fileManager.fileExists(atPath: Self.vaneContainer(in: locations).path) else { return [] }
+            return [BrowserImportProfile(name: browserName, directory: directory, lastUsed: nil)]
+        }
+        let names = (try? fileManager.contentsOfDirectory(atPath: directory.path)) ?? []
+        let files = names.filter { $0.hasSuffix(".json") }
+        guard !files.isEmpty else { return [] }
+        let lastUsed = files.compactMap {
+            Self.modificationDate(of: directory.appendingPathComponent($0), fileManager: fileManager)
+        }
+        .max()
+        return [BrowserImportProfile(name: browserName, directory: directory, lastUsed: lastUsed)]
     }
 
     /// Names and activity times from `Local State`, the profile picker's own list.
@@ -327,6 +401,11 @@ enum BrowserBookmarkImportSource: String, CaseIterable, Identifiable {
         }
         let roots = Set(chromiumUserDataDirectories(in: locations, fileManager: fileManager)
             .map(\.standardizedFileURL.path))
+        // Cra names its profiles, and Crest's are named for their Spaces, in their own files.
+        let sidebarNames = self == .cra || self == .crest
+            ? (try? BrowserImportedSidebar.load(self, locations: locations, fileManager: fileManager))?
+                .profileNames ?? [:]
+            : [:]
         return chromiumProfileDirectories(in: locations, fileManager: fileManager).map { directory in
             let path = directory.standardizedFileURL.path
             let info = infoByDirectory[path]
@@ -337,7 +416,8 @@ enum BrowserBookmarkImportSource: String, CaseIterable, Identifiable {
                 ?? Self.modificationDate(of: directory.appendingPathComponent("Preferences"), fileManager: fileManager)
             let fallbackName = roots.contains(path) ? browserName : directory.lastPathComponent
             // Chromium's placeholder for an unnamed first profile reads as its folder.
-            let name = info?.name.flatMap { $0.isEmpty || BrowserProfile.placeholderNames.contains($0) ? nil : $0 }
+            let name = sidebarNames[directory.lastPathComponent]
+                ?? info?.name.flatMap { $0.isEmpty || BrowserProfile.placeholderNames.contains($0) ? nil : $0 }
                 ?? fallbackName
             return BrowserImportProfile(name: name, directory: directory, lastUsed: lastUsed)
         }

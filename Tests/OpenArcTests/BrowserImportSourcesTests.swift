@@ -187,8 +187,12 @@ private func makePlaces(at url: URL, _ fill: (Database) throws -> Void) throws {
     #expect(safari.withArchive(archive).hasImportableData)
 }
 
-@Test func onlyArcOffersSpacesAndUnknownKeychainsOfferNoSecrets() {
-    #expect(BrowserBookmarkImportSource.allCases.filter { $0.supportedImportItems.contains(.spaces) } == [.arc])
+@Test func browsersWithSidebarFilesOfferSpacesAndUnknownKeychainsOfferNoSecrets() {
+    #expect(BrowserBookmarkImportSource.allCases.filter { $0.supportedImportItems.contains(.spaces) }
+        == [.arc, .cra, .crest, .yab, .vane, .search])
+    #expect(BrowserBookmarkImportSource.allCases.filter { $0.engine == .webkitApp }.allSatisfy {
+        $0.keychainService == nil && $0.supportedImportItems.isDisjoint(with: [.passwords, .signIns])
+    })
     #expect(!BrowserBookmarkImportSource.atlas.supportedImportItems.contains(.passwords))
     #expect(!BrowserBookmarkImportSource.atlas.supportedImportItems.contains(.signIns))
     #expect(BrowserBookmarkImportSource.helium.keychainService == "Helium Storage Key")

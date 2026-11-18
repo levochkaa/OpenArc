@@ -1058,6 +1058,11 @@ final class BrowserChromiumBookmarkStore: BrowserBookmarkStoring {
             return ImportItems(sourceWasAvailable: !lists.isEmpty, items: lists.flatMap(\.self))
         case .safari:
             return ImportItems(sourceWasAvailable: false, items: [])
+        case .webkitApp:
+            let items = source.webKitAppDirectory(fileManager: fileManager).flatMap {
+                BrowserWebKitAppImport.bookmarkItems(of: source, directory: $0)
+            }
+            return ImportItems(sourceWasAvailable: items != nil, items: items ?? [])
         }
     }
 

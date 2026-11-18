@@ -257,6 +257,8 @@ struct BrowserProfileImporter {
             return BrowserFirefoxProfile.bookmarkItems(profileDirectory: profileDirectory)
         case .safari:
             return archiveURL.flatMap { BrowserSafariArchive(url: $0).bookmarkItems() }
+        case .webkitApp:
+            return BrowserWebKitAppImport.bookmarkItems(of: source, directory: profileDirectory)
         }
     }
 
@@ -265,6 +267,7 @@ struct BrowserProfileImporter {
         case .chromium: chromiumHistory(limit: limit)
         case .firefox: BrowserFirefoxProfile.history(profileDirectory: profileDirectory, limit: limit)
         case .safari: archiveURL.map { BrowserSafariArchive(url: $0).history(limit: limit) } ?? []
+        case .webkitApp: BrowserWebKitAppImport.history(of: source, directory: profileDirectory, limit: limit)
         }
     }
 
@@ -272,7 +275,7 @@ struct BrowserProfileImporter {
     func savedLogins(key: Data?) -> [(login: BrowserSavedLogin, password: String)] {
         switch source.engine {
         case .chromium: key.map(logins(key:)) ?? []
-        case .firefox: []
+        case .firefox, .webkitApp: []
         case .safari: archiveURL.map { BrowserSafariArchive(url: $0).logins() } ?? []
         }
     }
@@ -282,7 +285,7 @@ struct BrowserProfileImporter {
         switch source.engine {
         case .chromium: key.map { cookies(key: $0, now: now) } ?? []
         case .firefox: BrowserFirefoxProfile.cookies(profileDirectory: profileDirectory, now: now)
-        case .safari: []
+        case .safari, .webkitApp: []
         }
     }
 
