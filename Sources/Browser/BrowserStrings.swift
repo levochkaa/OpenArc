@@ -4583,3 +4583,229 @@ extension BrowserStrings {
         )
     }
 }
+
+// MARK: - BrowserStrings + Sharing
+
+extension BrowserStrings {
+    static let shareSpaceAction = NSLocalizedString(
+        "browser.share.space",
+        comment: "Space menu item; publishes the Space's pinned tabs as a link.",
+    )
+    static let shareFolderAction = NSLocalizedString(
+        "browser.share.folder",
+        comment: "Folder menu item; publishes the folder's tabs as a link.",
+    )
+    static let shareSignInTitle = NSLocalizedString(
+        "browser.share.sign_in.title",
+        comment: "Alert title when sharing while signed out.",
+    )
+    static let shareSignInDetail = NSLocalizedString(
+        "browser.share.sign_in.detail",
+        comment: "Alert detail when sharing while signed out.",
+    )
+    static let shareOpenSettings = NSLocalizedString(
+        "browser.share.open_settings",
+        comment: "Button opening the account settings.",
+    )
+    static let shareNothingTitle = NSLocalizedString(
+        "browser.share.nothing.title",
+        comment: "Alert title when a Space or folder has no web pages.",
+    )
+    static let shareNothingSpace = NSLocalizedString(
+        "browser.share.nothing.space",
+        comment: "Alert detail for a Space without pinned web pages.",
+    )
+    static let shareNothingFolder = NSLocalizedString(
+        "browser.share.nothing.folder",
+        comment: "Alert detail for a folder without web pages.",
+    )
+    static let shareConfirmTitleFormat = NSLocalizedString(
+        "browser.share.confirm.title",
+        comment: "Alert title before publishing; the Space or folder name.",
+    )
+    static let shareConfirmSpaceFormat = NSLocalizedString(
+        "browser.share.confirm.space",
+        comment: "What a Space link shows; a tab count.",
+    )
+    static let shareConfirmFolderFormat = NSLocalizedString(
+        "browser.share.confirm.folder",
+        comment: "What a folder link shows; a tab count.",
+    )
+    static let shareConfirmUpdateFormat = NSLocalizedString(
+        "browser.share.confirm.update",
+        comment: "Sharing again; the date of the earlier share.",
+    )
+    static let shareConfirmStop = NSLocalizedString(
+        "browser.share.confirm.stop",
+        comment: "Where shared links are managed.",
+    )
+    static let shareConfirmAction = NSLocalizedString(
+        "browser.share.confirm.action",
+        comment: "Button that publishes and copies the link.",
+    )
+    static let shareCancel = NSLocalizedString("browser.share.cancel", comment: "Cancel button.")
+    static let shareCopiedTitleFormat = NSLocalizedString(
+        "browser.share.copied.title",
+        comment: "Alert after publishing; the Space or folder name.",
+    )
+    static let shareDone = NSLocalizedString("browser.share.done", comment: "Button closing the alert.")
+    static let shareOpenLink = NSLocalizedString(
+        "browser.share.open_link",
+        comment: "Button opening the shared page in a new tab.",
+    )
+    static let shareFailed = NSLocalizedString("browser.share.failed", comment: "Alert title when publishing fails.")
+    static let shareFailedDetail = NSLocalizedString(
+        "browser.share.failed.detail",
+        comment: "Fallback error text for sharing.",
+    )
+    static let shareSignedOut = NSLocalizedString(
+        "browser.share.signed_out",
+        comment: "Error when the account session ended.",
+    )
+    static let shareNotFound = NSLocalizedString("browser.share.not_found", comment: "Error for a missing shared link.")
+    static let shareAddUnavailable = NSLocalizedString(
+        "browser.share.add.unavailable",
+        comment: "Alert when the window cannot take a shared Space.",
+    )
+    static let shareRemovedTitle = NSLocalizedString(
+        "browser.share.removed.title",
+        comment: "Alert title for a link that no longer exists.",
+    )
+    static let shareRemovedDetail = NSLocalizedString(
+        "browser.share.removed.detail",
+        comment: "Alert detail for a link that no longer exists.",
+    )
+    static let shareAddFailed = NSLocalizedString(
+        "browser.share.add.failed",
+        comment: "Alert title when reading or adding a shared link fails.",
+    )
+    static let shareAddTitleFormat = NSLocalizedString(
+        "browser.share.add.title",
+        comment: "Alert title before adding a shared Space or folder.",
+    )
+    static let shareAddSpaceFormat = NSLocalizedString(
+        "browser.share.add.space",
+        comment: "Adding a shared Space; tab and folder counts.",
+    )
+    static let shareAddFolderFormat = NSLocalizedString(
+        "browser.share.add.folder",
+        comment: "Adding a shared folder; counts and the current Space.",
+    )
+    static let shareAddSpaceAction = NSLocalizedString(
+        "browser.share.add.space_action",
+        comment: "Button adding a shared Space.",
+    )
+    static let shareAddFolderAction = NSLocalizedString(
+        "browser.share.add.folder_action",
+        comment: "Button adding a shared folder.",
+    )
+    static let shareAlreadyAdded = NSLocalizedString(
+        "browser.share.already_added",
+        comment: "Alert when the shared Space was added before.",
+    )
+    static let shareOneTab = NSLocalizedString("browser.share.count.tab", comment: "Count of one tab.")
+    static let shareTabsFormat = NSLocalizedString("browser.share.count.tabs", comment: "Count of several tabs.")
+    static let shareOneFolder = NSLocalizedString("browser.share.count.folder", comment: "Count of one folder.")
+    static let shareFoldersFormat = NSLocalizedString(
+        "browser.share.count.folders",
+        comment: "Count of several folders.",
+    )
+    static let shareTabsInFoldersFormat = NSLocalizedString(
+        "browser.share.count.tabs_in_folders",
+        comment: "Tabs in folders, such as 7 tabs in 2 folders.",
+    )
+    static let shareKindSpace = NSLocalizedString("browser.share.kind.space", comment: "Kind of a shared link.")
+    static let shareKindFolder = NSLocalizedString("browser.share.kind.folder", comment: "Kind of a shared link.")
+    static let shareKindQuote = NSLocalizedString("browser.share.kind.quote", comment: "Kind of a shared link.")
+    static let settingsSharedLinksSection = NSLocalizedString(
+        "browser.settings.shared_links",
+        comment: "Settings section listing the account's links.",
+    )
+    static let settingsSharedLinksEmpty = NSLocalizedString(
+        "browser.settings.shared_links.empty",
+        comment: "Empty list of shared links.",
+    )
+    static let settingsSharedLinksLoading = NSLocalizedString(
+        "browser.settings.shared_links.loading",
+        comment: "Shared links are loading.",
+    )
+    static let settingsSharedLinksRetry = NSLocalizedString(
+        "browser.settings.shared_links.retry",
+        comment: "Button reloading the shared links.",
+    )
+    static let settingsSharedLinksCopy = NSLocalizedString(
+        "browser.settings.shared_links.copy",
+        comment: "Button copying a shared link.",
+    )
+    static let settingsSharedLinksStop = NSLocalizedString(
+        "browser.settings.shared_links.stop",
+        comment: "Button removing a shared link.",
+    )
+    static let settingsSharedLinksStopTitleFormat = NSLocalizedString(
+        "browser.settings.shared_links.stop.title",
+        comment: "Alert title before removing a link.",
+    )
+    static let settingsSharedLinksStopDetail = NSLocalizedString(
+        "browser.settings.shared_links.stop.detail",
+        comment: "Alert detail before removing a link.",
+    )
+
+    static func shareTabCount(_ count: Int) -> String {
+        count == 1 ? shareOneTab : String(format: shareTabsFormat, count)
+    }
+
+    static func shareFolderCount(_ count: Int) -> String {
+        count == 1 ? shareOneFolder : String(format: shareFoldersFormat, count)
+    }
+
+    /// "7 tabs", or "7 tabs in 2 folders".
+    static func shareContents(tabs: Int, folders: Int) -> String {
+        folders == 0
+            ? shareTabCount(tabs)
+            : String(format: shareTabsInFoldersFormat, shareTabCount(tabs), shareFolderCount(folders))
+    }
+
+    static func shareKindName(_ kind: BrowserShareKind) -> String {
+        switch kind {
+        case .space: shareKindSpace
+        case .folder: shareKindFolder
+        case .quote: shareKindQuote
+        }
+    }
+
+    static func shareNothingDetail(_ kind: BrowserShareKind) -> String {
+        kind == .folder ? shareNothingFolder : shareNothingSpace
+    }
+
+    static func shareConfirmTitle(_ title: String) -> String { String(format: shareConfirmTitleFormat, title) }
+
+    static func shareConfirmDetail(kind: BrowserShareKind, tabs: Int, sharedOn: Date?) -> String {
+        let format = kind == .folder ? shareConfirmFolderFormat : shareConfirmSpaceFormat
+        var lines = [String(format: format, shareTabCount(tabs))]
+        if let sharedOn {
+            lines.append(String(
+                format: shareConfirmUpdateFormat,
+                sharedOn.formatted(date: .abbreviated, time: .omitted),
+            ))
+        }
+        lines.append(shareConfirmStop)
+        return lines.joined(separator: " ")
+    }
+
+    static func shareCopiedTitle(_ title: String) -> String { String(format: shareCopiedTitleFormat, title) }
+
+    static func shareCopiedDetail(_ url: String) -> String { url + "\n\n" + shareConfirmStop }
+
+    static func shareAddTitle(_ title: String) -> String { String(format: shareAddTitleFormat, title) }
+
+    static func shareAddDetail(kind: BrowserShareKind, tabs: Int, folders: Int, into spaceTitle: String?) -> String {
+        let contents = shareContents(tabs: tabs, folders: folders)
+        return kind == .folder
+            ? String(format: shareAddFolderFormat, contents, spaceTitle ?? shareKindSpace)
+            : String(format: shareAddSpaceFormat, contents)
+    }
+
+    static func settingsSharedLinksStopTitle(_ title: String) -> String {
+        String(format: settingsSharedLinksStopTitleFormat, title)
+    }
+}

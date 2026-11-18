@@ -55,6 +55,7 @@
       <key>CFBundleURLSchemes</key>
       <array>
         <string>tb</string>
+        <string>openarc</string>
       </array>
     </dict>
   </array>

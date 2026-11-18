@@ -466,6 +466,11 @@ enum BrowserWindowMode: Equatable {
     var additionalTabURLStrings = [String]()
     /// UI-only: opens the window's theme editor for a Space.
     var onEditSpaceTheme: ((String) -> Void)?
+    /// UI-only: Share Space… and Share Folder…, with the Space's or folder's ID.
+    var onShareSpace: ((String) -> Void)?
+    var onShareFolder: ((String) -> Void)?
+    /// The profile's shared links; Copy URL as Quote publishes through it when signed in.
+    var shareStore: BrowserShareStore?
     /// UI-only: opens the window's Boost editor for a site's host.
     var onEditBoost: ((String) -> Void)?
     /// Zapping in a page for a Boost, while it lasts.
@@ -1334,6 +1339,23 @@ enum BrowserWindowMode: Equatable {
         return page
     }
 
+    /// The operation's result, or nil when it takes longer than `seconds`.
+    private static func withTimeout<T: Sendable>(
+        _ seconds: Double,
+        operation: @escaping @MainActor () async -> T,
+    ) async -> T? {
+        await withTaskGroup(of: T?.self) { group in
+            group.addTask { await operation() }
+            group.addTask {
+                try? await Task.sleep(for: .seconds(seconds))
+                return nil
+            }
+            let first = await group.next() ?? nil
+            group.cancelAll()
+            return first
+        }
+    }
+
     /// Use Selection to Find: the page copies its selection to the find
     /// pasteboard, read after a short round trip because Chromium writes it
     /// asynchronously and reports nothing when the text is unchanged.
@@ -1878,31 +1900,6 @@ enum BrowserWindowMode: Equatable {
         var result = BrowserSidebarImportResult()
         let now = dateProvider()
 
-        func dormantTab(
-            _ node: BrowserImportedSidebar.Node,
-            spaceID: String,
-            folderID: String?,
-            placement: BrowserTabPlacement,
-        )
-            -> Tab?
-        {
-            guard case .tab(let title, let savedTitle, let urlString) = node else { return nil }
-            let id = UUID().uuidString
-            restoredTabCreationIDs.insert(id)
-            return Tab(
-                id: id,
-                syncID: tabSyncIDProvider(),
-                spaceID: spaceID,
-                title: savedTitle ?? "",
-                userTitleOverride: sanitizedUserTitleOverride(from: title),
-                urlString: urlString,
-                pinnedURLString: placement.keepsPinnedURL ? normalizedPinnedURLString(from: urlString) : nil,
-                placement: placement,
-                pinnedFolderID: folderID,
-                lastActivityAt: now,
-            )
-        }
-
         func pinnedURLs(_ urls: [String]) -> Set<String> {
             Set(urls.map { comparablePinnedURLString(normalizedPinnedURLString(from: $0) ?? $0) })
         }
@@ -1938,40 +1935,14 @@ enum BrowserWindowMode: Equatable {
             }
             spaces.append(space)
             var folderChildren = [String: [BrowserSidebarItemID]]()
-            func add(_ nodes: [BrowserImportedSidebar.Node], folderID: String?) -> [BrowserSidebarItemID] {
-                nodes.compactMap { node in
-                    switch node {
-                    case .tab:
-                        guard let tab = dormantTab(node, spaceID: space.id, folderID: folderID, placement: .spacePinned)
-                        else { return nil }
-                        tabs.append(tab)
-                        closedPinnedTabIDs.insert(tab.id)
-                        result.pinnedTabCount += 1
-                        return .tab(tab.id)
-                    case .folder(let title, let icon, let children):
-                        let id = uniquePinnedTabFolderID()
-                        pinnedTabFolders.append(PinnedTabFolder(
-                            id: id,
-                            spaceID: space.id,
-                            parentFolderID: folderID,
-                            title: sanitizedPinnedTabFolderTitle(from: title) ?? BrowserStrings
-                                .pinnedTabFolderDefaultTitle,
-                            systemImageName: icon.flatMap { NSImage(
-                                systemSymbolName: $0,
-                                accessibilityDescription: nil,
-                            ) == nil
-                                ? nil
-                                : $0
-                            },
-                            isExpanded: false,
-                        ))
-                        result.folderCount += 1
-                        folderChildren[id] = add(children, folderID: id)
-                        return .folder(id)
-                    }
-                }
-            }
-            let roots = add(arcSpace.pinned, folderID: nil)
+            let roots = addDormantPinnedNodes(
+                arcSpace.pinned,
+                spaceID: space.id,
+                folderID: nil,
+                at: now,
+                folderChildren: &folderChildren,
+                result: &result,
+            )
             var tree = BrowserSidebarTabTree(snapshot: sidebarPlanningSnapshot())
             tree.children[.pinned(space.id)] = roots
             for (folderID, children) in folderChildren {
@@ -1986,7 +1957,7 @@ enum BrowserWindowMode: Equatable {
             for node in sidebar.favorites where appTabs.count < Self.appTabCapacity {
                 guard case .tab(_, _, let urlString) = node,
                       known.insert(comparablePinnedURLString(urlString)).inserted,
-                      let tab = dormantTab(node, spaceID: spaceID, folderID: nil, placement: .app)
+                      let tab = dormantTab(node, spaceID: spaceID, folderID: nil, placement: .app, at: now)
                 else { continue }
                 tabs.insert(tab, at: tabs.lastIndex { $0.placement == .app }.map { $0 + 1 } ?? 0)
                 closedAppTabIDs.insert(tab.id)
@@ -1998,6 +1969,35 @@ enum BrowserWindowMode: Equatable {
             persistCurrentSessionIfAllowed()
         }
         return result
+    }
+
+    /// Adds a shared folder at the top of a Space's pinned tabs, closed, with
+    /// dormant tabs. Returns the new folder's ID.
+    @discardableResult func addImportedFolder(
+        _ node: BrowserImportedSidebar.Node,
+        toSpaceID spaceID: String,
+    ) -> String? {
+        guard canImportSidebar, case .folder = node, spaces.contains(where: { $0.id == spaceID }) else { return nil }
+        var folderChildren = [String: [BrowserSidebarItemID]]()
+        var result = BrowserSidebarImportResult()
+        let added = addDormantPinnedNodes(
+            [node],
+            spaceID: spaceID,
+            folderID: nil,
+            at: dateProvider(),
+            folderChildren: &folderChildren,
+            result: &result,
+        )
+        guard let folder = added.first else { return nil }
+        var tree = BrowserSidebarTabTree(snapshot: sidebarPlanningSnapshot())
+        // The snapshot already lists the new rows at the end.
+        tree.children[.pinned(spaceID)] = added + tree.items(in: .pinned(spaceID)).filter { !added.contains($0) }
+        for (folderID, children) in folderChildren {
+            tree.children[.pinned(spaceID, folderID: folderID)] = children
+        }
+        applyPinnedTree(tree)
+        persistCurrentSessionIfAllowed()
+        return folder.rawID
     }
 
     func createNewSpace() {
@@ -3396,9 +3396,10 @@ enum BrowserWindowMode: Equatable {
         )
     }
 
-    /// Copy URL as Quote with no server: a link that opens the page at
-    /// the selected text and highlights it, as a text fragment Chromium and
-    /// Safari follow.
+    /// Copy URL as Quote: a link to a page showing the quote, published from the
+    /// signed-in account. Signed out, offline or refused, a link that opens the
+    /// page at the selected text and highlights it, as a text fragment Chromium
+    /// and Safari follow.
     @discardableResult func copySelectedTextAsQuoteLink() async -> Bool {
         guard let tab = selectedTab else { return false }
         let pasteboard = NSPasteboard.general
@@ -3406,11 +3407,67 @@ enum BrowserWindowMode: Equatable {
         let text = await tabDriver.requestActiveTabSelectedText() ?? ""
         // A late answer must not replace what was copied or selected since.
         guard selectedTabID == tab.id, pasteboard.changeCount == changeCount,
-              let link = BrowserQuoteLink.urlString(pageURLString: tab.urlString, quote: text)
+              let fragmentLink = BrowserQuoteLink.urlString(pageURLString: tab.urlString, quote: text)
         else { return false }
+        var link = fragmentLink
+        if let shareStore, shareStore.canPublish, !windowMode.isIncognito {
+            let quote = BrowserShareQuote(
+                text: String(text.prefix(BrowserShareConversion.maximumQuoteLength)),
+                title: tab.displayTitle,
+                urlString: fragmentLink,
+                faviconPNG: BrowserFaviconCache.shared.image(for: tab.faviconURL).flatMap {
+                    BrowserShareConversion.png($0, side: BrowserShareConversion.faviconSide)
+                },
+            )
+            if let published = await Self.withTimeout(BrowserShareConversion.quotePublishTimeout, operation: {
+                try? await shareStore.publish(.quote(quote))
+            }) ?? nil {
+                link = published.url.absoluteString
+            }
+            guard selectedTabID == tab.id, pasteboard.changeCount == changeCount else { return false }
+        }
         pasteboard.clearContents()
         pasteboard.setString(link, forType: .URL)
         return pasteboard.setString(link, forType: .string)
+    }
+
+    /// What Share Space… publishes: the Space's pinned tabs and folders with
+    /// their icons, and its theme colors. Nil without a web page to share.
+    func shareCollection(forSpaceID spaceID: String) -> BrowserShareCollection? {
+        guard let space = spaces.first(where: { $0.id == spaceID }) else { return nil }
+        let tree = BrowserSidebarTabTree(snapshot: sidebarSnapshot)
+        let items = BrowserShareConversion.items(from: shareNodes(tree.items(in: .pinned(spaceID)), tree: tree))
+        guard items.contains(where: { $0.kind == .tab }) else { return nil }
+        let icon = BrowserShareConversion.sharedIcon(space.systemImageName)
+        let colors = (spaceThemesByID[spaceID]?.colors ?? []).prefix(8).map(BrowserShareConversion.hex)
+        return BrowserShareCollection(
+            sourceID: spaceID,
+            title: space.title,
+            icon: icon,
+            iconPNG: icon == space.systemImageName ? symbolPNG(space.systemImageName, colors: colors) : nil,
+            colors: colors,
+            items: items,
+        )
+    }
+
+    /// What Share Folder… publishes: the folder's tabs and nested folders, with
+    /// its Space's colors.
+    func shareCollection(forFolderID folderID: String) -> BrowserShareCollection? {
+        let tree = BrowserSidebarTabTree(snapshot: sidebarSnapshot)
+        guard let folder = tree.folders[folderID] else { return nil }
+        let container = BrowserSidebarDropContainer.pinned(folder.spaceID, folderID: folderID)
+        let items = BrowserShareConversion.items(from: shareNodes(tree.items(in: container), tree: tree))
+        guard items.contains(where: { $0.kind == .tab }) else { return nil }
+        let symbol = folder.systemImageName
+        let colors = (spaceThemesByID[folder.spaceID]?.colors ?? []).prefix(8).map(BrowserShareConversion.hex)
+        return BrowserShareCollection(
+            sourceID: folderID,
+            title: folder.title,
+            icon: symbol.flatMap(BrowserShareConversion.sharedIcon),
+            iconPNG: symbol.flatMap { symbolPNG($0, colors: colors) },
+            colors: colors,
+            items: items,
+        )
     }
 
     /// Copy All Links: the addresses of a folder's tabs, its subfolders' too,
@@ -4747,6 +4804,112 @@ enum BrowserWindowMode: Equatable {
             tabRowsChangedInBatch = false
             onTabRowsChanged?()
         }
+    }
+
+    /// Pinned tabs and folders from an imported tree, appended to the model;
+    /// the caller places the returned items and each folder's children.
+    private func addDormantPinnedNodes(
+        _ nodes: [BrowserImportedSidebar.Node],
+        spaceID: String,
+        folderID: String?,
+        at now: Date,
+        folderChildren: inout [String: [BrowserSidebarItemID]],
+        result: inout BrowserSidebarImportResult,
+    ) -> [BrowserSidebarItemID] {
+        var added = [BrowserSidebarItemID]()
+        for node in nodes {
+            switch node {
+            case .tab:
+                guard let tab = dormantTab(node, spaceID: spaceID, folderID: folderID, placement: .spacePinned, at: now)
+                else { continue }
+                tabs.append(tab)
+                closedPinnedTabIDs.insert(tab.id)
+                result.pinnedTabCount += 1
+                added.append(.tab(tab.id))
+            case .folder(let title, let icon, let children):
+                let id = uniquePinnedTabFolderID()
+                pinnedTabFolders.append(PinnedTabFolder(
+                    id: id,
+                    spaceID: spaceID,
+                    parentFolderID: folderID,
+                    title: sanitizedPinnedTabFolderTitle(from: title) ?? BrowserStrings.pinnedTabFolderDefaultTitle,
+                    systemImageName: icon.flatMap {
+                        NSImage(systemSymbolName: $0, accessibilityDescription: nil) == nil ? nil : $0
+                    },
+                    isExpanded: false,
+                ))
+                result.folderCount += 1
+                folderChildren[id] = addDormantPinnedNodes(
+                    children,
+                    spaceID: spaceID,
+                    folderID: id,
+                    at: now,
+                    folderChildren: &folderChildren,
+                    result: &result,
+                )
+                added.append(.folder(id))
+            }
+        }
+        return added
+    }
+
+    /// A tab that loads its page when first selected, like a pinned tab closed earlier.
+    private func dormantTab(
+        _ node: BrowserImportedSidebar.Node,
+        spaceID: String,
+        folderID: String?,
+        placement: BrowserTabPlacement,
+        at now: Date,
+    ) -> Tab? {
+        guard case .tab(let title, let savedTitle, let urlString) = node else { return nil }
+        let id = UUID().uuidString
+        restoredTabCreationIDs.insert(id)
+        return Tab(
+            id: id,
+            syncID: tabSyncIDProvider(),
+            spaceID: spaceID,
+            title: savedTitle ?? "",
+            userTitleOverride: sanitizedUserTitleOverride(from: title),
+            urlString: urlString,
+            pinnedURLString: placement.keepsPinnedURL ? normalizedPinnedURLString(from: urlString) : nil,
+            placement: placement,
+            pinnedFolderID: folderID,
+            lastActivityAt: now,
+        )
+    }
+
+    private func shareNodes(_ ids: [BrowserSidebarItemID], tree: BrowserSidebarTabTree) -> [BrowserShareNode] {
+        var visited = Set<String>()
+        func nodes(_ ids: [BrowserSidebarItemID]) -> [BrowserShareNode] {
+            ids.compactMap { item in
+                switch item {
+                case .tab(let id):
+                    guard let tab = tabs.first(where: { $0.id == id }) else { return nil }
+                    let favicon = BrowserFaviconCache.shared.image(for: tab.faviconURL).flatMap {
+                        BrowserShareConversion.png($0, side: BrowserShareConversion.faviconSide)
+                    }
+                    return .tab(title: tab.displayTitle, urlString: tab.urlString, faviconPNG: favicon)
+                case .folder(let id):
+                    guard visited.insert(id).inserted, let folder = tree.folders[id] else { return nil }
+                    return .folder(
+                        title: folder.title,
+                        icon: folder.systemImageName,
+                        children: nodes(tree.items(in: .pinned(folder.spaceID, folderID: id))),
+                    )
+                }
+            }
+        }
+        return nodes(ids)
+    }
+
+    /// A symbol icon drawn for the shared page, in a color that reads on the Space's color.
+    private func symbolPNG(_ name: String, colors: [String]) -> Data? {
+        guard BrowserIconImage.emoji(from: name) == nil,
+              let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+                .withSymbolConfiguration(.init(pointSize: 40, weight: .semibold)
+                    .applying(.init(paletteColors: [BrowserShareConversion.iconInk(onColors: colors)])))
+        else { return nil }
+        return BrowserShareConversion.png(image, side: BrowserShareConversion.iconSide)
     }
 
     /// The OpenArc profile another browser's profile comes into: one of the same
@@ -8924,7 +9087,17 @@ extension BrowserCommandID {
         case .toggleDeveloperMode:
             ["developer mode", "dev mode", "developer"]
         case .editBoost:
-            ["boost", "new boost", "edit boost", "customize page", "custom css", "custom javascript", "zap", "colors", "font"]
+            [
+                "boost",
+                "new boost",
+                "edit boost",
+                "customize page",
+                "custom css",
+                "custom javascript",
+                "zap",
+                "colors",
+                "font",
+            ]
         case .viewBoosts:
             ["boosts", "view boosts", "manage boosts", "library"]
         case .editSpaceTheme:

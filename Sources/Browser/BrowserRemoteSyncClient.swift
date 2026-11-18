@@ -1651,3 +1651,150 @@ enum BrowserSyncSnapshotMerger {
         return trimmed.isEmpty ? nil : trimmed
     }
 }
+
+// MARK: - BrowserRemoteSyncClient + BrowserShareTransport
+
+extension BrowserRemoteSyncClient: BrowserShareTransport {
+    func publishShare(
+        _ request: BrowserShareRequest,
+        authSession: BrowserAuthSession,
+    ) async throws -> BrowserSharedLink {
+        guard authSession.belongs(to: baseURL) else { throw BrowserSyncAccountError.serverChanged }
+        let output = try await openAPIClient(accessToken: authSession.accessToken)
+            .publishShare(.init(body: .json(Self.publishBody(request))))
+        switch output {
+        case .created(let response):
+            switch response.body {
+            case .json(let body): return try Self.sharedLink(body)
+            }
+        case .default(let statusCode, let response):
+            throw Self.shareError(statusCode: statusCode, body: response.body)
+        }
+    }
+
+    func listShares(authSession: BrowserAuthSession) async throws -> [BrowserSharedLink] {
+        guard authSession.belongs(to: baseURL) else { throw BrowserSyncAccountError.serverChanged }
+        switch try await openAPIClient(accessToken: authSession.accessToken).listShares() {
+        case .ok(let response):
+            switch response.body {
+            case .json(let body): return try body.shares.map(Self.sharedLink)
+            }
+        case .default(let statusCode, let response):
+            throw Self.shareError(statusCode: statusCode, body: response.body)
+        }
+    }
+
+    func deleteShare(id: String, authSession: BrowserAuthSession) async throws {
+        guard authSession.belongs(to: baseURL) else { throw BrowserSyncAccountError.serverChanged }
+        switch try await openAPIClient(accessToken: authSession.accessToken)
+            .deleteShare(.init(path: .init(id: id)))
+        {
+        case .noContent: return
+        case .default(let statusCode, let response):
+            throw Self.shareError(statusCode: statusCode, body: response.body)
+        }
+    }
+
+    func readShare(id: String) async throws -> BrowserSharedContent {
+        switch try await openAPIClient(accessToken: nil).readShare(.init(path: .init(id: id))) {
+        case .ok(let response):
+            switch response.body {
+            case .json(let body):
+                guard let kind = BrowserShareKind(rawValue: body.kind.rawValue) else {
+                    throw BrowserRemoteSyncError.unexpectedOpenAPIResponse
+                }
+                return BrowserSharedContent(
+                    id: body.id,
+                    kind: kind,
+                    title: body.title,
+                    icon: body.icon,
+                    colors: body.colors ?? [],
+                    items: (body.items ?? []).map(Self.shareItem),
+                    updatedAt: body.updatedAt,
+                )
+            }
+        case .default(let statusCode, let response):
+            throw Self.shareError(statusCode: statusCode, body: response.body)
+        }
+    }
+
+    // MARK: Private
+
+    private static func publishBody(_ request: BrowserShareRequest) -> Components.Schemas.SharePublishRequest {
+        switch request {
+        case .folder(let collection),
+             .space(let collection):
+            Components.Schemas.SharePublishRequest(
+                kind: request.kind == .space ? .space : .folder,
+                sourceID: collection.sourceID,
+                title: collection.title,
+                icon: collection.icon,
+                iconImage: collection.iconPNG.map(BrowserShareLink.dataURL(png:)),
+                colors: collection.colors,
+                items: collection.items.map { item in
+                    Components.Schemas.ShareItem(
+                        _type: item.kind == .tab ? .tab : .folder,
+                        title: item.title,
+                        url: item.urlString,
+                        favicon: item.faviconPNG.map(BrowserShareLink.dataURL(png:)),
+                        icon: item.icon,
+                        parent: item.parent,
+                    )
+                },
+            )
+        case .quote(let quote):
+            Components.Schemas.SharePublishRequest(
+                kind: .quote,
+                title: quote.title,
+                text: quote.text,
+                url: quote.urlString,
+                favicon: quote.faviconPNG.map(BrowserShareLink.dataURL(png:)),
+            )
+        }
+    }
+
+    private static func shareItem(_ item: Components.Schemas.ShareItem) -> BrowserShareItem {
+        BrowserShareItem(
+            kind: item._type == .folder ? .folder : .tab,
+            title: item.title,
+            urlString: item.url,
+            faviconPNG: item.favicon.flatMap(BrowserShareLink.png(dataURL:)),
+            icon: item.icon,
+            parent: item.parent,
+        )
+    }
+
+    private static func sharedLink(_ body: Components.Schemas.ShareSummary) throws -> BrowserSharedLink {
+        guard let kind = BrowserShareKind(rawValue: body.kind.rawValue), let url = URL(string: body.url) else {
+            throw BrowserRemoteSyncError.unexpectedOpenAPIResponse
+        }
+        return BrowserSharedLink(
+            id: body.id,
+            kind: kind,
+            url: url,
+            sourceID: body.sourceID,
+            title: body.title,
+            excerpt: body.excerpt,
+            itemCount: body.itemCount,
+            createdAt: body.createdAt,
+            updatedAt: body.updatedAt,
+        )
+    }
+
+    private static func shareError(
+        statusCode: Int,
+        body: Components.Responses._Error.Body,
+    ) -> BrowserShareError {
+        let message: String? =
+            switch body {
+            case .json(let error): error.message
+            }
+        return switch statusCode {
+        case 401: .signedOut
+        case 404: .notFound
+        case 429: .tooManyRequests(message)
+        case 400: .rejected(message)
+        default: .server(statusCode: statusCode, message: message)
+        }
+    }
+}

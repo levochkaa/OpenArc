@@ -66,6 +66,7 @@ targetTemplates:
       - path: Sources/Browser/BrowserSessionWriteBuffer.swift
       - path: Sources/Browser/BrowserSQLiteSessionStore.swift
       - path: Sources/Browser/BrowserRemoteSyncClient.swift
+      - path: Sources/Browser/BrowserShareModels.swift
       - path: Sources/Browser/OpenAPI
       - path: Backend/openapi.yaml
         group: Sources/Browser/OpenAPI

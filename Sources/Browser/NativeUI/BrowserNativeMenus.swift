@@ -92,6 +92,7 @@ import AppKit
         canCreateFolder: Bool = false,
         onNewFolder: (() -> Void)? = nil,
         onNewGitHubLiveFolder: (() -> Void)? = nil,
+        onShare: (() -> Void)? = nil,
         exportTargets: [BrowserChromeModel.Space] = [],
         onExport: ((String) -> Void)? = nil,
         onResetTabs: @escaping () -> Void = {},
@@ -122,6 +123,12 @@ import AppKit
                 add(BrowserStrings.liveFolderGitHubTitle, to: live, action: onNewGitHubLiveFolder)
             }
         }
+        if let onShare {
+            if onNewFolder == nil {
+                menu.addItem(.separator())
+            }
+            add(BrowserStrings.shareSpaceAction, to: menu, action: onShare)
+        }
         if let onExport, !exportTargets.isEmpty {
             menu.addItem(.separator())
             let exportMenu = submenu(BrowserStrings.spaceExportAction(space.title), in: menu)
@@ -148,6 +155,7 @@ import AppKit
         onNewNested: (() -> Void)? = nil,
         onTurnIntoSpace: (() -> Void)? = nil,
         onCopyAllLinks: (() -> Void)? = nil,
+        onShare: (() -> Void)? = nil,
         onDuplicate: (() -> Void)? = nil,
         moveTargets: [BrowserChromeModel.Space] = [],
         onMove: @escaping (String) -> Void = { _ in },
@@ -166,6 +174,9 @@ import AppKit
         }
         if let onCopyAllLinks {
             add(BrowserStrings.pinnedTabFolderCopyAllLinksAction, to: menu, action: onCopyAllLinks)
+        }
+        if let onShare {
+            add(BrowserStrings.shareFolderAction, to: menu, action: onShare)
         }
         if !menu.items.isEmpty {
             menu.addItem(.separator())

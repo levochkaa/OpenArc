@@ -55,6 +55,12 @@ NSMenuDelegate, NSUserInterfaceValidations {
     private let defaultBrowserService = BrowserDefaultBrowserService()
     private weak var setAsDefaultBrowserMenuItem: NSMenuItem?
     private var pendingNavigationURLs = [URL]()
+    /// Shared links opened before a window could take them.
+    private var pendingShareIDs = [String]()
+    private lazy var shareFlow = BrowserShareFlowController { [weak self] in
+        self?.presentSettingsWindow(pane: .accounts)
+    }
+
     private var hasReceivedBrowserContext = false
     private var isTerminationRequested = false
     /// The first window waits behind a first-run welcome, which shows alone.
@@ -208,6 +214,16 @@ NSMenuDelegate, NSUserInterfaceValidations {
     override public init() {
         self.webAppConfiguration = BrowserWebAppConfiguration.current()
         super.init()
+        // A shared page's Add to OpenArc button, clicked in one of this app's tabs.
+        NotificationCenter.default.addObserver(forName: BrowserShareLinkEvents.open, object: nil, queue: .main) {
+            [weak self] note in
+            let id = (note.userInfo?[BrowserShareLinkEvents.urlKey] as? String)
+                .flatMap(URL.init(string:))
+                .flatMap(BrowserShareLink.id(from:))
+            MainActor.assumeIsolated {
+                if let id { self?.openShareLink(id: id) }
+            }
+        }
     }
 
     isolated deinit {
@@ -333,7 +349,11 @@ NSMenuDelegate, NSUserInterfaceValidations {
 
     public func application(_: NSApplication, open urls: [URL]) {
         for url in urls {
-            openAboutLink(url)
+            if let shareID = BrowserShareLink.id(from: url) {
+                openShareLink(id: shareID)
+            } else {
+                openAboutLink(url)
+            }
         }
     }
 
@@ -419,6 +439,9 @@ NSMenuDelegate, NSUserInterfaceValidations {
         }
         restoreAdditionalWindows()
         openPendingNavigationURLsIfPossible()
+        let shareIDs = pendingShareIDs
+        pendingShareIDs.removeAll()
+        shareIDs.forEach(openShareLink(id:))
     }
 
     public func handleApplicationWillTerminate() {
@@ -1328,6 +1351,21 @@ NSMenuDelegate, NSUserInterfaceValidations {
     func searchSmallWindowAddress(_ sender: Any?) {
         guard let panel = (sender as? BrowserPeekPanel) ?? focusedSmallWindow else { return }
         _ = presentSmallWindowSearch(in: panel, initialQuery: panel.addressForEditing)
+    }
+
+    /// `openarc://share/<id>`, from a shared page's Add to OpenArc button: asks
+    /// to add the shared Space or folder to the frontmost window's profile.
+    private func openShareLink(id: String) {
+        guard let session = activeProfileWindowSession
+            ?? profileWindowSessions.first(where: { $0.window === lastKeyProfileWindow })
+            ?? profileWindowSessions.first,
+            hasReceivedBrowserContext
+        else {
+            pendingShareIDs.append(id)
+            return
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        shareFlow.addShared(id: id, model: session.chromeModel, store: session.shareStore, window: session.window)
     }
 
     /// One download history per profile, shared by its windows.
@@ -3981,6 +4019,9 @@ NSMenuDelegate, NSUserInterfaceValidations {
             boostSyncBridge = bridge
             syncCoordinator?.setBoostApplier(bridge)
         }
+        let shareStore = source?.shareStore ?? BrowserShareStore(transport: syncClient) { [weak accountStore] in
+            accountStore?.session
+        }
         let sessionStore: BrowserTabSessionSnapshotStoring =
             if let shared = source?.chromeModel.sharedSessionStore {
                 shared
@@ -4104,8 +4145,30 @@ NSMenuDelegate, NSUserInterfaceValidations {
             window: window,
             chromeModel: chromeModel,
             accountStore: accountStore,
+            shareStore: shareStore,
             profile: profile,
         )
+        chromeModel.shareStore = shareStore
+        chromeModel.onShareSpace = { [weak self, weak session] spaceID in
+            guard let self, let session else { return }
+            shareFlow.share(
+                .space,
+                sourceID: spaceID,
+                model: session.chromeModel,
+                store: session.shareStore,
+                window: session.window,
+            )
+        }
+        chromeModel.onShareFolder = { [weak self, weak session] folderID in
+            guard let self, let session else { return }
+            shareFlow.share(
+                .folder,
+                sourceID: folderID,
+                model: session.chromeModel,
+                store: session.shareStore,
+                window: session.window,
+            )
+        }
         connectPageCommands(to: chromeModel)
         if let store = profileStore {
             chromeModel.profileDirectories = BrowserSpaceProfileDirectories(
@@ -4190,8 +4253,8 @@ NSMenuDelegate, NSUserInterfaceValidations {
         boostsCancellable = userPreferencesStore.$boosts
             .combineLatest(userPreferencesStore.$boostsEnabled)
             .sink { boosts, enabled in
-            BrowserBoostCatalog.shared.update(enabled ? boosts : [])
-        }
+                BrowserBoostCatalog.shared.update(enabled ? boosts : [])
+            }
     }
 
     /// Both page engines block through the shared blocker, which follows the preferences.

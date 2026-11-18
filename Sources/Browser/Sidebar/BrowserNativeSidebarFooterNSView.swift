@@ -263,6 +263,7 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate, Browser
                     }
                 },
                 onManageSpaces: { model.openSpacesInLibrary() },
+                onShare: model.onShareSpace.map { share in { share(space.id) } },
                 onResetTabs: { model.resetSpaceTabs(spaceID: space.id) },
                 onDelete: { [weak state] in state?.dismissRenamingIfNeeded()
                     state?.clearSidebarTabSelection()

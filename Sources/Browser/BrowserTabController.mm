@@ -2991,6 +2991,24 @@ bool HandOverExternalAppURL(CefRefPtr<CefRequest> request, NSWindow *window) {
   return true;
 }
 
+/// A shared page's Add to OpenArc button: `openarc://share/<id>`. The app
+/// takes it instead of the page.
+bool IsShareLinkURL(const CefString &url) {
+  CefURLParts parts;
+  return CefParseURL(url, parts) &&
+         LowercaseASCII(URLPartToString(parts.scheme)) == shared::kOpenArcScheme &&
+         LowercaseASCII(URLPartToString(parts.host)) == "share";
+}
+
+void PostShareLink(const CefString &url) {
+  NSString *urlString = ToNSString(url.ToString());
+  dispatch_async(dispatch_get_main_queue(), ^{
+    [NSNotificationCenter.defaultCenter postNotificationName:BrowserShareLinkEvents.open
+                                                      object:nil
+                                                    userInfo:@{BrowserShareLinkEvents.urlKey : urlString}];
+  });
+}
+
 bool IsSignInCallbackURL(const CefString &url) {
   CefURLParts parts;
   return CefParseURL(url, parts) && CefString(&parts.scheme).ToString() == "openarc-auth";
@@ -9416,6 +9434,11 @@ bool BrowserTabClient::OnBeforeBrowse(CefRefPtr<CefBrowser> browser,
     return true;
   }
 
+  if (frame->IsMain() && IsShareLinkURL(request->GetURL())) {
+    PostShareLink(request->GetURL());
+    return true;
+  }
+
   // In any frame: sites hand an app link over from a redirect or a hidden frame.
   if (HandOverExternalAppURL(request, [controller_ tabWindow])) {
     return true;
@@ -10021,6 +10044,10 @@ bool BrowserPeekClient::OnBeforeBrowse(CefRefPtr<CefBrowser>,
                                        bool) {
   CEF_REQUIRE_UI_THREAD();
   if (frame && request && HandOverExternalAppURL(request, NSApp.keyWindow)) {
+    return true;
+  }
+  if (frame && frame->IsMain() && request && IsShareLinkURL(request->GetURL())) {
+    PostShareLink(request->GetURL());
     return true;
   }
   if (!frame || !frame->IsMain() || !request || !IsSignInCallbackURL(request->GetURL())) {

@@ -1221,6 +1221,7 @@ final class BrowserNativeSidebarNSView: NSView {
                         }
                         : nil,
                     onCopyAllLinks: { _ = model.copyAllLinks(inFolderID: folder.id) },
+                    onShare: model.onShareFolder.map { share in { share(folder.id) } },
                     onDuplicate: { [weak state] in
                         state?.withSidebarAnimation { _ = model.duplicateFolder(id: folder.id) }
                     },
@@ -1740,6 +1741,7 @@ final class BrowserNativeSidebarNSView: NSView {
             canCreateFolder: model.canCreateFolder,
             onNewFolder: { model.createFolderInSelectedSpace() },
             onNewGitHubLiveFolder: { model.createGitHubLiveFolder(inSpaceID: space.id) },
+            onShare: model.onShareSpace.map { share in { share(space.id) } },
             exportTargets: state.snapshot.spaces.filter { $0.id != space.id },
             onExport: { targetID in model.exportSpace(id: space.id, intoFolderInSpaceID: targetID) },
             onResetTabs: { model.resetSpaceTabs(spaceID: space.id) },

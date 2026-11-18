@@ -147,17 +147,20 @@ final class BrowserProfileWindowSession {
     let window: NSWindow
     let chromeModel: BrowserChromeModel
     let accountStore: BrowserAccountStore
+    let shareStore: BrowserShareStore
     let profile: BrowserProfile
 
     init(
         window: NSWindow,
         chromeModel: BrowserChromeModel,
         accountStore: BrowserAccountStore,
+        shareStore: BrowserShareStore,
         profile: BrowserProfile,
     ) {
         self.window = window
         self.chromeModel = chromeModel
         self.accountStore = accountStore
+        self.shareStore = shareStore
         self.profile = profile
     }
 }

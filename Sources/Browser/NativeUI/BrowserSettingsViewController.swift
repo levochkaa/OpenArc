@@ -428,6 +428,8 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
     private let shortcutsBody = NSStackView()
     private let profilesBody = NSStackView()
     private let accountsBody = NSStackView()
+    private let sharedLinksBody = NSStackView()
+    private var sharedLinksSection: NSView?
     /// Kept across refreshes, so typing survives the account store's updates.
     private let accountEmailField = NSTextField()
     private let accountCodeField = NSTextField()
@@ -515,6 +517,9 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                 self?.syncControls()
             }
         }
+        if let shareStore = model.shareStore {
+            observe(shareStore.objectWillChange) { [weak self] in self?.refreshSharedLinks() }
+        }
     }
 
     override func viewWillAppear() {
@@ -525,6 +530,9 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
         }
         if pane == .accounts, let accountStore, !accountStore.isAuthenticated, accountStore.providers == nil {
             Task { await accountStore.loadProviders() }
+        }
+        if pane == .accounts, accountStore?.isAuthenticated == true, let shareStore = model.shareStore {
+            Task { await shareStore.refresh() }
         }
         syncControls()
     }
@@ -616,8 +624,11 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                 button?.isEnabled = !(self?.defaultBrowserService.isDefaultBrowser ?? true)
             }
         defer { releaseEmailFieldFocus() }
+        let sharedLinksSection = section(BrowserStrings.settingsSharedLinksSection, body: sharedLinksBody)
+        self.sharedLinksSection = sharedLinksSection
         scrollView.setViews([
             card(accountsBody),
+            sharedLinksSection,
             section(
                 BrowserStrings.settingsDefaultBrowserSection,
                 rows: [row(BrowserStrings.settingsDefaultBrowserPrompt, icon: "default-browser", control: button)],
@@ -1701,12 +1712,120 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
         } else {
             BrowserNativeControls.replaceViews([signInPanel()], in: accountsBody)
         }
+        refreshSharedLinks()
         scrollView.needsLayout = true
         let showsCodeEntry = accountStore?.emailSignIn != nil
         if showsCodeEntry, !isShowingEmailCodeEntry {
             view.window?.makeFirstResponder(accountCodeField)
         }
         isShowingEmailCodeEntry = showsCodeEntry
+    }
+
+    /// The account's shared links, each with Copy Link and Stop Sharing; shown
+    /// while signed in.
+    private func refreshSharedLinks() {
+        guard pane == .accounts, let sharedLinksSection else { return }
+        guard accountStore?.isAuthenticated == true, let shareStore = model.shareStore, shareStore.canPublish else {
+            sharedLinksSection.isHidden = true
+            // Another account's links never show after signing out.
+            model.shareStore?.reset()
+            return
+        }
+        sharedLinksSection.isHidden = false
+        if shareStore.loadState == .idle {
+            Task { await shareStore.refresh() }
+        }
+        let rows: [NSView] =
+            switch shareStore.loadState {
+            case .idle,
+                 .loading:
+                shareStore.links.isEmpty
+                    ? [note(BrowserStrings.settingsSharedLinksLoading)]
+                    : shareStore.links.map { sharedLinkRow($0, store: shareStore) }
+            case .failed(let message):
+                [row(
+                    label: note(message, symbol: "exclamationmark.triangle.fill", tint: .systemRed),
+                    control: BrowserActionButton(BrowserStrings.settingsSharedLinksRetry) {
+                        Task { await shareStore.refresh() }
+                    },
+                )]
+            case .loaded:
+                shareStore.links.isEmpty
+                    ? [note(BrowserStrings.settingsSharedLinksEmpty)]
+                    : shareStore.links.map { sharedLinkRow($0, store: shareStore) }
+            }
+        replaceRows(rows, in: sharedLinksBody)
+    }
+
+    private func sharedLinkRow(_ link: BrowserSharedLink, store: BrowserShareStore) -> NSView {
+        let symbol =
+            switch link.kind {
+            case .space: "square.stack"
+            case .folder: "folder"
+            case .quote: "quote.opening"
+            }
+        let what: String =
+            if link.kind == .quote, let excerpt = link.excerpt {
+                "“\(excerpt)”"
+            } else {
+                BrowserStrings.shareTabCount(link.itemCount)
+            }
+        let detail = [
+            BrowserStrings.shareKindName(link.kind),
+            what,
+            link.updatedAt.formatted(date: .abbreviated, time: .omitted),
+        ].joined(separator: " · ")
+        let icon = NSImageView(image: NSImage(systemSymbolName: symbol, accessibilityDescription: nil) ?? NSImage())
+        icon.contentTintColor = .secondaryLabelColor
+        icon.setContentHuggingPriority(.required, for: .horizontal)
+        let text = titleDetail(link.title, detail: detail)
+        let label = BrowserNativeControls.stack([icon, text], orientation: .horizontal, spacing: 10)
+        label.alignment = .centerY
+        let copy = BrowserActionButton(BrowserStrings.settingsSharedLinksCopy) {
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+            pasteboard.setString(link.url.absoluteString, forType: .URL)
+            pasteboard.setString(link.url.absoluteString, forType: .string)
+        }
+        copy.toolTip = link.url.absoluteString
+        copy.setAccessibilityIdentifier("browser.settings.shared-link.copy.\(link.id)")
+        let stop = BrowserActionButton(BrowserStrings.settingsSharedLinksStop) { [weak self] in
+            self?.confirmStopSharing(link, store: store)
+        }
+        stop.setAccessibilityIdentifier("browser.settings.shared-link.stop.\(link.id)")
+        let controls = BrowserNativeControls.stack([copy, stop], orientation: .horizontal, spacing: 8)
+        return row(label: label, control: controls)
+    }
+
+    private func confirmStopSharing(_ link: BrowserSharedLink, store: BrowserShareStore) {
+        let alert = NSAlert()
+        alert.messageText = BrowserStrings.settingsSharedLinksStopTitle(link.title)
+        alert.informativeText = BrowserStrings.settingsSharedLinksStopDetail
+        alert.addButton(withTitle: BrowserStrings.settingsSharedLinksStop)
+        alert.addButton(withTitle: BrowserStrings.shareCancel)
+        let stop: @MainActor () -> Void = { [weak self] in
+            Task { @MainActor in
+                do {
+                    try await store.remove(link)
+                } catch {
+                    let failure = NSAlert()
+                    failure.messageText = BrowserStrings.shareFailed
+                    failure.informativeText = BrowserShareStore.message(for: error)
+                    if let window = self?.view.window {
+                        failure.beginSheetModal(for: window) { _ in }
+                    } else {
+                        failure.runModal()
+                    }
+                }
+            }
+        }
+        if let window = view.window {
+            alert.beginSheetModal(for: window) { response in
+                if response == .alertFirstButtonReturn { stop() }
+            }
+        } else if alert.runModal() == .alertFirstButtonReturn {
+            stop()
+        }
     }
 
     /// Opening Accounts must not start typing into the email field, which
