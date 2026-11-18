@@ -268,7 +268,7 @@ import UIKit
     #expect(runtime.isForeground, "Old attachment cannot deactivate replacement")
     let tabs = BrowserMobileTabsViewController(workspace: replacement.workspace)
     tabs.loadViewIfNeeded()
-    #expect(tabs.toolbarItems?.contains { $0.accessibilityIdentifier == "browser.account" } == true)
+    #expect(replacement.workspace.syncSession != nil)
     scenes.discard(sessionIDs: ["first", "second"])
     await scenes.waitForPendingOperations()
     #expect(!runtime.isForeground)

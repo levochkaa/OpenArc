@@ -48,6 +48,8 @@ The page menu dims the page under it (black, 0.18, over 0.25 s). A drag down on 
 - Flick a card up: it keeps the flick's speed off the top (0.12–0.25 s, linear) and its tab closes; the neighbors close the gap (spring 0.32 s).
 - The bar opens the Spaces sheet, New Tab and Settings.
 
+Settings (`BrowserMobilePhoneSettingsViewController`, also behind the iPad sidebar's gear) lists Downloads and Archive; Search Engine, a choice of the engines the Mac offers, kept in `BrowserMobileSearchEngineSetting` and read by the scene's `BrowserNavigationResolver` on every search; Clear Website Data, which empties the default `WKWebsiteDataStore` after a confirmation and keeps tabs; Account; and the licenses.
+
 The Spaces sheet is `BrowserMobileTabsViewController` with `isPhoneSheet`: the Space's name (with the Space menu), plain rows with site icons, a line before Today, and the Spaces as icons in the toolbar. A sideways drag pages between Spaces: the rows follow the finger with the next Space's rows beside them, the name crossfades and the toolbar's Space changes at the halfway point; letting go past half the width (counting the flick) switches Spaces. Rows have no swipe actions there; their context menu closes tabs.
 
 ## Moving between tabs

@@ -56,6 +56,9 @@ import WebKit
                 sceneID: sessionID,
                 profileLoader: { try await BrowserMobileProfileRegistry.shared.document()
                 },
+                navigationResolver: BrowserNavigationResolver(
+                    searchEngineProvider: { BrowserMobileSearchEngineSetting.current() },
+                ),
             ),
             contentView: engine.hostView,
         )

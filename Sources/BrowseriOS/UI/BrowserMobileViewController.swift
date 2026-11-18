@@ -288,7 +288,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
     private var terminalRefreshTask: Task<Void, Never>?
 
     private var archiveButton = UIBarButtonItem()
-    private var accountButton = UIBarButtonItem()
+    private var settingsButton = UIBarButtonItem()
     private weak var presentedArchive: BrowserMobileArchiveViewController?
 
     private let phoneTitleButton = UIButton(type: .system)
@@ -384,19 +384,19 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
                 self?.didSelectTab?()
             },
         )
-        accountButton = UIBarButtonItem(
-            title: String(localized: "Account", table: "Mobile"), image: UIImage(systemName: "person.crop.circle"),
-            primaryAction: UIAction { [weak self] _ in self?.showAccount() },
-        )
-        accountButton.accessibilityIdentifier = "browser.account"
         archiveButton = UIBarButtonItem(
             image: UIImage(systemName: "archivebox"), style: .plain,
             target: self, action: #selector(showArchive),
         )
         archiveButton.title = String(localized: "Archive", table: "Mobile")
         archiveButton.accessibilityIdentifier = "browser.archive"
+        settingsButton = UIBarButtonItem(
+            title: String(localized: "Settings", table: "Mobile"), image: UIImage(systemName: "gearshape"),
+            primaryAction: UIAction { [weak self] _ in self?.showSettings() },
+        )
+        settingsButton.accessibilityIdentifier = "browser.settings"
         // The sidebar's bar is too narrow for more: the Space's name heads the
-        // rows, and Archive, the Spaces and Account sit along the bottom.
+        // rows, and Archive, the Spaces and Settings sit along the bottom.
         navigationItem.leftBarButtonItems = [navigationItem.leftBarButtonItem!]
         if !isPhoneSheet {
             navigationItem.title = ""
@@ -604,7 +604,6 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         }
         let canEdit = workspace.isReady && (workspace.profileDocument?.canEdit ?? true)
         navigationItem.leftBarButtonItem?.isEnabled = canEdit && !isSelectingRows
-        accountButton.isHidden = workspace.syncSession == nil
         updateSelectionButton()
         if let document = workspace.profileDocument {
             var configuration = UIButton.Configuration.plain()
@@ -1333,7 +1332,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
     }
 
     /// The sidebar's bottom bar: Archive, the Spaces as icons when they fit,
-    /// and Account.
+    /// and Settings.
     private func renderSpaceBar() {
         var items = [UIBarButtonItem]()
         if workspace.supportsArchive {
@@ -1357,9 +1356,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
             }
             items.append(.flexibleSpace())
         }
-        if workspace.syncSession != nil {
-            items.append(accountButton)
-        }
+        items.append(settingsButton)
         setToolbarItems(items, animated: false)
     }
 
@@ -2061,10 +2058,12 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         return nil
     }
 
-    private func showAccount() {
-        guard presentedViewController == nil, let session = workspace.syncSession else { return }
+    /// Settings, with Account inside, from the sidebar's bottom bar.
+    private func showSettings() {
+        guard presentedViewController == nil, !isSelectingRows, !sidebarDragHasNativeHold else { return }
         workspace.dismissFindInPage()
-        let controller = BrowserMobileAccountViewController(session: session)
+        let controller = BrowserMobilePhoneSettingsViewController(workspace: workspace)
+        controller.didRestoreFromArchive = { [weak self] in self?.didSelectTab?() }
         let navigation = UINavigationController(rootViewController: controller)
         navigation.modalPresentationStyle = .formSheet
         present(navigation, animated: true)

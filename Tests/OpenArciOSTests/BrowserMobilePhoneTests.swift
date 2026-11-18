@@ -243,3 +243,16 @@ import UIKit
     #expect(panel.dragMovesPanel(at: CGPoint(x: 200, y: 200), downward: true))
     #expect(!panel.dragMovesPanel(at: CGPoint(x: 200, y: 200), downward: false), "Up over suggestions scrolls")
 }
+
+// MARK: - Settings
+
+@Test func mobileSearchEngineSettingDefaultsToGoogleAndKeepsTheChoice() throws {
+    let suite = "BrowserMobileSearchEngineTests.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    #expect(BrowserMobileSearchEngineSetting.current(defaults) == .google)
+    BrowserMobileSearchEngineSetting.set(.duckDuckGo, defaults: defaults)
+    #expect(BrowserMobileSearchEngineSetting.current(defaults) == .duckDuckGo)
+    let resolver = BrowserNavigationResolver { BrowserMobileSearchEngineSetting.current(defaults) }
+    #expect(resolver.resolve("open arc")?.resolvedURLString.hasPrefix("https://duckduckgo.com/") == true)
+}

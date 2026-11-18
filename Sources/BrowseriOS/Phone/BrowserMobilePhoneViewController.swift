@@ -1268,22 +1268,10 @@ final class BrowserMobilePhoneViewController: UIViewController {
     private func showSettings() {
         guard presentedViewController == nil else { return }
         let controller = BrowserMobilePhoneSettingsViewController(workspace: workspace)
-        controller.showDownloads = { [weak self, weak controller] in
-            guard let downloads = self?.workspace.downloads else { return }
-            controller?.navigationController?.pushViewController(
-                BrowserMobileDownloadsViewController(downloads: downloads), animated: true,
-            )
-        }
-        controller.showArchive = { [weak self, weak controller] in
-            guard let self else { return }
-            let archive = BrowserMobileArchiveViewController(workspace: workspace)
-            archive.didRestore = { [weak self, weak controller] in
-                controller?.dismiss(animated: true)
-                guard let self, let id = workspace.selectedTabID else { return }
-                refreshSwitcherEntries()
-                closeSwitcher(opening: id)
-            }
-            controller?.navigationController?.pushViewController(archive, animated: true)
+        controller.didRestoreFromArchive = { [weak self] in
+            guard let self, let id = workspace.selectedTabID else { return }
+            refreshSwitcherEntries()
+            closeSwitcher(opening: id)
         }
         let navigation = UINavigationController(rootViewController: controller)
         navigation.overrideUserInterfaceStyle = .dark

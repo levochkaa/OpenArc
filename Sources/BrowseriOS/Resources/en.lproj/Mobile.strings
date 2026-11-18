@@ -179,6 +179,10 @@
 "Page Menu" = "Page Menu";
 "Search…" = "Search…";
 "Settings" = "Settings";
+"Search Engine" = "Search Engine";
+"Clear Website Data" = "Clear Website Data";
+"Clear Website Data?" = "Clear Website Data?";
+"This removes cookies, caches and other data websites keep on this device. You will be signed out of websites. Your tabs stay." = "This removes cookies, caches and other data websites keep on this device. You will be signed out of websites. Your tabs stay.";
 "Smaller Text" = "Smaller Text";
 "%@ Settings" = "%@ Settings";
 "App Settings" = "App Settings";
