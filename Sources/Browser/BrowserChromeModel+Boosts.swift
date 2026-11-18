@@ -24,8 +24,9 @@ extension BrowserChromeModel {
         currentTab.flatMap { userPreferencesStore.boosts.editableHost(forURLString: $0.urlString) }
     }
 
+    /// Incognito windows neither run nor edit Boosts.
     var canEditBoost: Bool {
-        currentBoostHost != nil
+        !isIncognito && currentBoostHost != nil
     }
 
     /// The current page's site, or a domain above it, has a Boost.
@@ -64,6 +65,7 @@ extension BrowserChromeModel {
     /// Open pages take the new boosts: a changed stylesheet is replaced in
     /// place, changed JavaScript reloads the page.
     func applyBoostChange(from old: [BrowserBoost], to new: [BrowserBoost]) {
+        guard !isIncognito else { return }
         for tab in tabs {
             switch BrowserBoostRefresh.refresh(forURLString: tab.urlString, from: old, to: new) {
             case .none:

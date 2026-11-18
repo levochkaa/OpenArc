@@ -1216,7 +1216,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
         case #selector(copySelectedTextAsQuoteLink(_:)):
             return activeChromeModel?.canCopySelectedTextAsQuoteLink ?? false
         case #selector(viewDownloads(_:)):
-            return activeChromeModel?.onToggleDownloads != nil
+            return activeChromeModel?.isCommandBarActionAvailable(.viewDownloads) ?? false
         case #selector(toggleSidebar(_:)):
             if let menuItem = item as? NSMenuItem {
                 menuItem.title = activeChromeModel?.isSidebarVisible == false

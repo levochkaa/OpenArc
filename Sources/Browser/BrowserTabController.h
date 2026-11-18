@@ -218,6 +218,9 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
 
 @interface BrowserTabController : NSObject
 
+/// Incognito: pages keep nothing after the window closes.
+@property(nonatomic, readonly) BOOL usesEphemeralRequestContext;
+
 /// Streaming sites open in WebKit, which plays protected video with FairPlay.
 /// Off for pages that size themselves, such as extension popups.
 @property(nonatomic) BOOL webKitPagesEnabled;

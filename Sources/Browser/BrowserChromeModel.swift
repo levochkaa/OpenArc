@@ -4484,7 +4484,7 @@ enum BrowserWindowMode: Equatable {
         case .clearTemporaryTabs:
             canClearTemporaryTabs
         case .viewDownloads:
-            onToggleDownloads != nil
+            onToggleDownloads != nil && !isIncognito
         case .viewLibrary:
             supportsSpaces
         case .togglePinTab:

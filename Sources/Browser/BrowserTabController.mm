@@ -8994,9 +8994,9 @@ static void RunPageStartScripts(CefRefPtr<CefFrame> frame) {
   }
 }
 
-/// Runs the site's Boost in a new document of any frame.
-static void RunBoostScripts(CefRefPtr<CefFrame> frame) {
-  if (!frame || !g_boost_scripts_provider) {
+/// Runs the site's Boost in a new document of any frame. Incognito pages run none.
+static void RunBoostScripts(CefRefPtr<CefFrame> frame, BrowserTabController *controller) {
+  if (!frame || !g_boost_scripts_provider || controller.usesEphemeralRequestContext) {
     return;
   }
   for (NSString *script in g_boost_scripts_provider(ToNSString(frame->GetURL().ToString()))) {
@@ -9018,7 +9018,7 @@ void BrowserTabClient::OnLoadStart(CefRefPtr<CefBrowser>,
     [controller_ resetMediaForTabID:ToNSString(tab_id_)];
     RunPageStartScripts(frame);
   }
-  RunBoostScripts(frame);
+  RunBoostScripts(frame, controller_);
 }
 
 void BrowserTabClient::OnRenderProcessTerminated(CefRefPtr<CefBrowser>,
@@ -9642,7 +9642,7 @@ void BrowserPeekClient::OnLoadStart(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame> f
     RunPageStartScripts(frame);
     [[controller_ peekPanelForSessionID:session_id_] revealPage];
   }
-  RunBoostScripts(frame);
+  RunBoostScripts(frame, controller_);
 }
 
 bool BrowserPeekClient::OnShowPermissionPrompt(

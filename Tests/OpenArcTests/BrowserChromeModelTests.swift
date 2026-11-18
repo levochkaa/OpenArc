@@ -3428,3 +3428,20 @@ private enum BrowserChromeModelTestError: Error {
     }
     #expect(!model.exportSpace(id: target, intoFolderInSpaceID: target))
 }
+
+@Test
+@MainActor func incognitoWindowNeitherEditsBoostsNorListsDownloadsInTheMenu() throws {
+    let driver = FakeBrowserTabDriver()
+    let model = makeModel(
+        driver: driver,
+        snapshotStore: InMemorySessionSnapshotStore(),
+        preferencesStore: InMemorySessionPreferencesStore(),
+        windowMode: .incognito,
+    )
+    model.onToggleDownloads = {}
+    model.handleContextReady()
+    try model.openURLInNewTab(#require(URL(string: "https://example.com/")))
+    driver.flushPendingCreateEvents()
+    #expect(!model.canEditBoost, "Incognito pages run and edit no Boosts")
+    #expect(!model.isCommandBarActionAvailable(.viewDownloads))
+}

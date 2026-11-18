@@ -123,13 +123,19 @@ import WebKit
         self.mediaToken = mediaToken
         let controller = configuration.userContentController
         controller.removeAllScriptMessageHandlers()
-        Self.installUserScripts(in: controller, mediaToken: mediaToken, boosts: BrowserBoostCatalog.shared.boosts)
+        // Incognito pages, whose store keeps nothing, run no boosts.
+        let runsBoosts = configuration.websiteDataStore.isPersistent
+        Self.installUserScripts(
+            in: controller,
+            mediaToken: mediaToken,
+            boosts: runsBoosts ? BrowserBoostCatalog.shared.boosts : [],
+        )
         configuration.applicationNameForUserAgent = Self.safariApplicationName
         self.webView = BrowserWebKitWebView(frame: .zero, configuration: configuration)
         super.init()
         // Later documents run the new boosts; the window restyles or reloads the open one.
         self.boostsObservation = BrowserBoostCatalog.shared.changes.sink { [weak self] change in
-            guard let self else { return }
+            guard let self, runsBoosts else { return }
             Self.installUserScripts(
                 in: webView.configuration.userContentController,
                 mediaToken: mediaToken,
