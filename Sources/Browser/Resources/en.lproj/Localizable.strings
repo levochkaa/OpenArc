@@ -1010,7 +1010,15 @@
 "browser.library.media_source.documents" = "Documents";
 "browser.library.media_source.desktop" = "Desktop";
 "browser.library.media_source.screenshots" = "Screenshots";
+"browser.library.media_source.captures" = "Captures";
 "browser.library.media_source.downloads" = "Downloads";
+"browser.library.capture.copy_url" = "Copy URL";
+"browser.library.capture.open_url" = "Open URL";
+"browser.library.capture.airdrop" = "AirDrop";
+"browser.library.capture.send_message" = "Send via Messages…";
+"browser.library.capture.delete" = "Delete Capture…";
+"browser.library.capture.delete_title" = "Delete this capture?";
+"browser.library.capture.delete_detail" = "The picture is removed from the Library for good.";
 "browser.peek.search_spaces" = "Search Spaces...";
 "browser.devtools.dock_right" = "Dock to Right";
 "browser.devtools.dock_bottom" = "Dock to Bottom";

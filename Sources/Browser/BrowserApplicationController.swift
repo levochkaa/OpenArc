@@ -3850,6 +3850,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
         }
 
         let rootCacheURL = URL(fileURLWithPath: runtimeConfiguration.rootCachePath, isDirectory: true)
+        BrowserCaptureStore.shared = BrowserCaptureStore(
+            directory: URL(fileURLWithPath: runtimeConfiguration.sessionStoragePath, isDirectory: true)
+                .appendingPathComponent("Captures", isDirectory: true),
+        )
         let profileStore = BrowserProfileStore(rootCacheURL: rootCacheURL)
         self.profileStore = profileStore
         observeProfileStore(profileStore)

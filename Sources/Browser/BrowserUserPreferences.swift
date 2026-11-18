@@ -1347,6 +1347,7 @@ enum BrowserLibraryMediaSource: String, CaseIterable {
     case documents
     case desktop
     case screenshots
+    case captures
     case downloads
 
     var title: String {
@@ -1354,6 +1355,7 @@ enum BrowserLibraryMediaSource: String, CaseIterable {
         case .documents: BrowserStrings.libraryMediaDocuments
         case .desktop: BrowserStrings.libraryMediaDesktop
         case .screenshots: BrowserStrings.libraryMediaScreenshots
+        case .captures: BrowserStrings.libraryMediaCaptures
         case .downloads: BrowserStrings.libraryMediaDownloads
         }
     }
@@ -1373,6 +1375,8 @@ enum BrowserLibraryMediaSource: String, CaseIterable {
                 return URL(fileURLWithPath: (location as NSString).expandingTildeInPath, isDirectory: true)
             }
             return files.urls(for: .desktopDirectory, in: .userDomainMask).first
+        case .captures:
+            return BrowserCaptureStore.shared?.directory
         case .downloads:
             return BrowserDownloadLocation.directory(customPath: downloadDirectoryPath)
         }

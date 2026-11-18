@@ -2435,6 +2435,30 @@ enum BrowserStrings {
     static let libraryMediaScreenshots = NSLocalizedString(
         "browser.library.media_source.screenshots", comment: "Media folder: where screenshots are saved.",
     )
+    static let libraryMediaCaptures = NSLocalizedString(
+        "browser.library.media_source.captures", comment: "Media source: pictures saved to the Library from captures.",
+    )
+    static let libraryCaptureCopyURL = NSLocalizedString(
+        "browser.library.capture.copy_url", comment: "Menu item of a saved capture: copies the address of its page.",
+    )
+    static let libraryCaptureOpenURL = NSLocalizedString(
+        "browser.library.capture.open_url", comment: "Menu item of a saved capture: opens its page in a new tab.",
+    )
+    static let libraryCaptureAirDrop = NSLocalizedString(
+        "browser.library.capture.airdrop", comment: "Menu item of a saved capture: sends the picture with AirDrop.",
+    )
+    static let libraryCaptureSendMessage = NSLocalizedString(
+        "browser.library.capture.send_message", comment: "Menu item of a saved capture: sends the picture in Messages.",
+    )
+    static let libraryCaptureDelete = NSLocalizedString(
+        "browser.library.capture.delete", comment: "Menu item of a saved capture: deletes it after a confirmation.",
+    )
+    static let libraryCaptureDeleteTitle = NSLocalizedString(
+        "browser.library.capture.delete_title", comment: "Title of the alert before a saved capture is deleted.",
+    )
+    static let libraryCaptureDeleteDetail = NSLocalizedString(
+        "browser.library.capture.delete_detail", comment: "Detail of the alert before a saved capture is deleted.",
+    )
     static let libraryMediaDownloads = NSLocalizedString(
         "browser.library.media_source.downloads", comment: "Media folder: the download folder.",
     )

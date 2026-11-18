@@ -233,6 +233,10 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
             model.userPreferencesStore.objectWillChange.eraseToAnyPublisher(),
             NotificationCenter.default.publisher(for: BrowserEaselStore.didChangeNotification)
                 .map { _ in () }.eraseToAnyPublisher(),
+            NotificationCenter.default
+                .publisher(for: BrowserCaptureStore.didChangeNotification)
+                .map { _ in () }
+                .eraseToAnyPublisher(),
         ])
     }
 
@@ -800,7 +804,7 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
                 rowViews.append(view)
                 y += 42
             case .tile(let url):
-                let view = BrowserLibraryMediaTile(url: url)
+                let view = BrowserLibraryMediaTile(url: url, model: model)
                 let x = 8 + CGFloat(tileColumn) * (tileSize + 8)
                 view.frame = NSRect(x: x, y: y, width: tileSize, height: tileSize)
                 document.addSubview(view)
@@ -1123,12 +1127,13 @@ final class BrowserLibraryRow: BrowserNativePressableView {
 
 // MARK: - BrowserLibraryMediaTile
 
-/// A picture from the download folder; a click opens it.
+/// A picture from a media folder; a click opens it. A saved capture's menu
+/// also reaches its page and sends or deletes it.
 private final class BrowserLibraryMediaTile: BrowserNativePressableView {
     private let url: URL
     private let image = NSImageView()
 
-    init(url: URL) {
+    init(url: URL, model: BrowserChromeModel) {
         self.url = url
         super.init(frame: .zero)
         wantsLayer = true
@@ -1140,8 +1145,12 @@ private final class BrowserLibraryMediaTile: BrowserNativePressableView {
         image.imageScaling = .scaleProportionallyUpOrDown
         addSubview(image)
         onClick = { _ in NSWorkspace.shared.open(url) }
-        menuProvider = {
+        menuProvider = { [weak self, weak model] in
             let menu = BrowserNativeMenus.menu()
+            if let store = BrowserCaptureStore.shared, let capture = store.capture(forFileURL: url) {
+                self?.addCaptureItems(to: menu, capture: capture, store: store, model: model)
+                menu.addItem(.separator())
+            }
             BrowserNativeMenus.add(BrowserStrings.libraryRevealInFinder, to: menu) {
                 NSWorkspace.shared.activateFileViewerSelecting([url])
             }
@@ -1159,6 +1168,51 @@ private final class BrowserLibraryMediaTile: BrowserNativePressableView {
     override func layout() {
         super.layout()
         image.frame = bounds
+    }
+
+    private func addCaptureItems(
+        to menu: NSMenu,
+        capture: BrowserCapture,
+        store: BrowserCaptureStore,
+        model: BrowserChromeModel?,
+    ) {
+        let pageURL = capture.pageURL.flatMap(URL.init(string:))
+        BrowserNativeMenus.add(BrowserStrings.libraryCaptureCopyURL, to: menu, enabled: pageURL != nil) {
+            guard let pageURL else { return }
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(pageURL.absoluteString, forType: .string)
+        }
+        BrowserNativeMenus
+            .add(BrowserStrings.libraryCaptureOpenURL, to: menu, enabled: pageURL != nil) { [weak model] in
+                guard let pageURL else { return }
+                model?.closeLibrary()
+                model?.openURLInNewTab(pageURL)
+            }
+        let fileURL = store.fileURL(for: capture)
+        for (title, name) in [
+            (BrowserStrings.libraryCaptureAirDrop, NSSharingService.Name.sendViaAirDrop),
+            (BrowserStrings.libraryCaptureSendMessage, NSSharingService.Name.composeMessage),
+        ] {
+            let service = NSSharingService(named: name)
+            BrowserNativeMenus.add(title, to: menu, enabled: service?.canPerform(withItems: [fileURL]) == true) {
+                service?.perform(withItems: [fileURL])
+            }
+        }
+        BrowserNativeMenus.add(BrowserStrings.libraryCaptureDelete, to: menu) { [weak self] in
+            let alert = NSAlert()
+            alert.messageText = BrowserStrings.libraryCaptureDeleteTitle
+            alert.informativeText = BrowserStrings.libraryCaptureDeleteDetail
+            alert.addButton(withTitle: BrowserStrings.menuDelete).hasDestructiveAction = true
+            alert.addButton(withTitle: BrowserStrings.cancelAction)
+            let delete = { (response: NSApplication.ModalResponse) in
+                if response == .alertFirstButtonReturn { store.delete(capture) }
+            }
+            if let window = self?.window {
+                alert.beginSheetModal(for: window, completionHandler: delete)
+            } else {
+                delete(alert.runModal())
+            }
+        }
     }
 }
 
