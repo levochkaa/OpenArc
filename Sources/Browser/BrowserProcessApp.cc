@@ -16,6 +16,14 @@ constexpr char kEnablePrintPreviewSwitch[] = "enable-print-preview";
 constexpr char kDisableFeaturesSwitch[] = "disable-features";
 constexpr char kImmersiveReadAnythingFeature[] = "ImmersiveReadAnything";
 constexpr char kJourneysFeature[] = "Journeys";
+// Chromium chooses where a new passkey goes by these; on, it picks iCloud Keychain.
+constexpr const char* kICloudKeychainPasskeyFeatures[] = {
+    "WebAuthenticationICloudKeychainForGoogle",
+    "WebAuthenticationICloudKeychainForActiveWithDrive",
+    "WebAuthenticationICloudKeychainForActiveWithoutDrive",
+    "WebAuthenticationICloudKeychainForInactiveWithDrive",
+    "WebAuthenticationICloudKeychainForInactiveWithoutDrive",
+};
 bool FeatureListContains(const std::string& features,
                          const std::string& feature) {
   size_t start = 0;
@@ -86,9 +94,15 @@ class BrowserProcessApp : public CefApp, public CefBrowserProcessHandler {
     // than the system print panel.
     command_line->AppendSwitch(kEnablePrintPreviewSwitch);
 
-    // Passkeys: phones and USB keys work as they are. Chromium itself leaves out
-    // iCloud Keychain and Touch ID without Apple's entitlements. Bluetooth for
-    // phones needs NSBluetoothAlwaysUsageDescription, or macOS kills the app.
+    // Passkeys: new ones are saved with Touch ID in OpenArc's keychain group.
+    // iCloud Keychain needs Apple's browser entitlement, which OpenArc does not
+    // have, yet Chromium would still send new passkeys there and, refused, fall
+    // back to a phone's QR code. Phones and USB keys work as they are.
+    // Bluetooth for phones needs NSBluetoothAlwaysUsageDescription, or macOS
+    // kills the app.
+    for (const char* feature : kICloudKeychainPasskeyFeatures) {
+      DisableChromiumFeature(command_line, feature);
+    }
   }
 
   CefRefPtr<CefBrowserProcessHandler> GetBrowserProcessHandler() override {
