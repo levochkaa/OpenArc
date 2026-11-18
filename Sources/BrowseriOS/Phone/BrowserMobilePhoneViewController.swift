@@ -77,6 +77,8 @@ final class BrowserMobilePhoneViewController: UIViewController {
     /// its background, so scrolled content never shows there.
     private let statusBand = UIView()
     private var isStatusBandDark = false
+    /// Darkens the page while it is the search panel's card.
+    private let pageDim = UIView()
     private let bar = BrowserMobilePhoneBarView()
     private let emptyState = UIStackView()
     private let emptyTitle = UILabel()
@@ -145,6 +147,11 @@ final class BrowserMobilePhoneViewController: UIViewController {
         return url
     }
 
+    /// The open page's site, for Site Settings.
+    private var siteHost: String? {
+        shareURL.flatMap { BrowserMobileFavicons.host(forPage: $0.absoluteString) }
+    }
+
     init(workspace: BrowserMobileWorkspace, contentView: UIView) {
         self.workspace = workspace
         self.contentView = contentView
@@ -156,7 +163,8 @@ final class BrowserMobilePhoneViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .black
+        // Shows around the page while it is a card above the search panel.
+        view.backgroundColor = UIColor(red: 22 / 255, green: 22 / 255, blue: 37 / 255, alpha: 1)
         pageContainer.backgroundColor = .systemBackground
         pageContainer.layer.cornerCurve = .continuous
         pageContainer.clipsToBounds = true
@@ -165,6 +173,10 @@ final class BrowserMobilePhoneViewController: UIViewController {
         statusBand.isUserInteractionEnabled = false
         statusBand.backgroundColor = .white
         pageContainer.addSubview(statusBand)
+        pageDim.backgroundColor = .black
+        pageDim.alpha = 0
+        pageDim.isUserInteractionEnabled = false
+        pageContainer.addSubview(pageDim)
         configureEmptyState()
         view.addSubview(bar)
         bar.tabStack.addAction(UIAction { [weak self] _ in self?.openSwitcher() }, for: .touchUpInside)
@@ -283,6 +295,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
         pageContainer.frame = view.bounds
         contentView.frame = pageContainer.bounds
         statusBand.frame = CGRect(x: 0, y: 0, width: view.bounds.width, height: view.safeAreaInsets.top)
+        pageDim.frame = pageContainer.bounds
         emptyState.frame = pageContainer.bounds.inset(by: UIEdgeInsets(
             top: view.safeAreaInsets.top, left: 24, bottom: expandedBarHeight, right: 24,
         ))
@@ -513,6 +526,10 @@ final class BrowserMobilePhoneViewController: UIViewController {
         defer { lastScrollY = y }
         sampleBackdrop()
         guard mode == .browsing, scrollView.isTracking || scrollView.isDecelerating else { return }
+        guard BrowserMobileSiteSettings.collapsesBar(onPage: workspace.selectedTab?.urlString) else {
+            setBarCollapsed(false, animated: true)
+            return
+        }
         if y <= 0 {
             setBarCollapsed(false, animated: true)
             return
@@ -588,18 +605,27 @@ final class BrowserMobilePhoneViewController: UIViewController {
         catcher.addAction(UIAction { [weak self] _ in self?.closePanel() }, for: .touchUpInside)
         view.insertSubview(catcher, belowSubview: bar)
         dismissCatcher = catcher
+        if !dark {
+            // The page dims under the page menu, status bar included.
+            catcher.backgroundColor = .black
+            catcher.alpha = 0
+            UIView.animate(withDuration: 0.25, delay: 0, options: [.allowUserInteraction]) {
+                catcher.alpha = 0.18
+            }
+        }
         let surface: UIView
         let container: UIView
         if dark {
             surface = UIView(frame: bar.frame)
             container = surface
-            let blur = UIVisualEffectView(effect: UIBlurEffect(style: .systemThinMaterialDark))
+            let blur = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterialDark))
             blur.frame = surface.bounds
             blur.autoresizingMask = [.flexibleWidth, .flexibleHeight]
             surface.addSubview(blur)
+            // Leans the material toward the backdrop so it reads darker over light pages.
             let shade = UIView(frame: surface.bounds)
             shade.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-            shade.backgroundColor = UIColor(red: 0.07, green: 0.07, blue: 0.12, alpha: 0.45)
+            shade.backgroundColor = view.backgroundColor?.withAlphaComponent(0.1)
             surface.addSubview(shade)
             // Starts the color of the bar it grows from.
             let tint = UIView(frame: surface.bounds)
@@ -661,7 +687,14 @@ final class BrowserMobilePhoneViewController: UIViewController {
         if closingMode == .search {
             searchPanel.field.resignFirstResponder()
         }
-        dismissCatcher?.removeFromSuperview()
+        if let catcher = dismissCatcher {
+            catcher.isUserInteractionEnabled = false
+            UIView.animate(withDuration: 0.25, delay: 0, options: [.beginFromCurrentState]) {
+                catcher.alpha = 0
+            } completion: { _ in
+                catcher.removeFromSuperview()
+            }
+        }
         dismissCatcher = nil
         surfacePan = nil
         let ghosts = surfaceGhosts
@@ -677,6 +710,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
                 self.pageContainer.transform = .identity
                 self.pageContainer.frame = self.view.bounds
                 self.pageContainer.layer.cornerRadius = 0
+                self.pageDim.alpha = 0
             } else {
                 self.pagePanel.setAddressExpanded(false)
             }
@@ -713,6 +747,15 @@ final class BrowserMobilePhoneViewController: UIViewController {
         pagePanel.onAddress = { [weak self] in
             self?.closePanel { self?.editAddress() }
         }
+        pagePanel.onZoomOut = { [weak self] in self?.changeZoom(larger: false) }
+        pagePanel.onZoomIn = { [weak self] in self?.changeZoom(larger: true) }
+        pagePanel.onToggleDesktop = { [weak self] in
+            guard let self else { return }
+            workspace.prefersDesktopSite.toggle()
+            closePanel()
+        }
+        pagePanel.onSiteSettings = { [weak self] in self?.showSiteSettings() }
+        pagePanel.onContentHeightChange = { [weak self] layout in self?.resizePagePanel(layout) }
         updatePagePanel()
         openPagePanel(height: pagePanel.contentHeight + safeBottom)
     }
@@ -748,47 +791,57 @@ final class BrowserMobilePhoneViewController: UIViewController {
         ) { [weak self] in
             self?.closePanel { self?.sharePage() }
         })
+        let zoom = workspace.pageZoom
         pagePanel.update(
             host: BrowserMobilePageViewController.displayAddress(tab?.urlString),
             canGoBack: tab?.state.canGoBack == true, canGoForward: tab?.state.canGoForward == true,
             isLoading: tab?.state.isLoading == true, canCopy: isWebPage,
             canReload: tab != nil && tab?.urlString != "about:blank",
-            tiles: tiles, displayMenu: isWebPage ? displayMenu() : nil,
+            tiles: tiles,
+            display: isWebPage
+                ? .init(
+                    zoomPercent: Int((zoom * 100).rounded()), canZoomOut: zoom > Self.zoomSteps[0] + 0.001,
+                    canZoomIn: zoom < Self.zoomSteps[Self.zoomSteps.count - 1] - 0.001,
+                    prefersDesktop: workspace.prefersDesktopSite,
+                )
+                : nil,
+            hasSiteSettings: siteHost != nil,
         )
     }
 
-    private func displayMenu() -> UIMenu {
-        let zoom = workspace.pageZoom
-        let smaller = UIAction(
-            title: String(localized: "Smaller Text", table: "Mobile"),
-            image: UIImage(systemName: "textformat.size.smaller"),
-            attributes: zoom <= Self.zoomSteps[0] ? [.disabled, .keepsMenuPresented] : .keepsMenuPresented,
-        ) { [weak self] _ in self?.changeZoom(larger: false) }
-        let reset = UIAction(
-            title: Double(zoom).formatted(.percent.precision(.fractionLength(0))),
-            attributes: abs(zoom - 1) < 0.001 ? [.disabled, .keepsMenuPresented] : .keepsMenuPresented,
-        ) { [weak self] _ in self?.setZoom(1) }
-        reset.accessibilityLabel = String(localized: "Actual Size", table: "Mobile")
-        let larger = UIAction(
-            title: String(localized: "Larger Text", table: "Mobile"),
-            image: UIImage(systemName: "textformat.size.larger"),
-            attributes: zoom >= Self.zoomSteps[Self.zoomSteps.count - 1]
-                ? [.disabled, .keepsMenuPresented]
-                : .keepsMenuPresented,
-        ) { [weak self] _ in self?.changeZoom(larger: true) }
-        let textSize = UIMenu(options: .displayInline, preferredElementSize: .small, children: [smaller, reset, larger])
-        let desktop = workspace.prefersDesktopSite
-        let layout = UIAction(
-            title: desktop
-                ? String(localized: "Request Mobile Website", table: "Mobile")
-                : String(localized: "Request Desktop Website", table: "Mobile"),
-            image: UIImage(systemName: desktop ? "iphone" : "desktopcomputer"),
-        ) { [weak self] _ in
-            guard let self else { return }
-            workspace.prefersDesktopSite = !desktop
-            closePanel()
+    private func showSiteSettings() {
+        guard let host = siteHost, presentedViewController == nil else { return }
+        let controller = BrowserMobileSiteSettingsViewController(host: host)
+        controller.showAppSettings = { [weak self, weak controller] in
+            controller?.dismiss(animated: true) {
+                self?.closePanel { self?.showSettings() }
+            }
         }
-        return UIMenu(children: [textSize, layout])
+        let navigation = UINavigationController(rootViewController: controller)
+        navigation.overrideUserInterfaceStyle = .dark
+        navigation.sheetPresentationController?.detents = [.medium(), .large()]
+        navigation.sheetPresentationController?.prefersGrabberVisible = true
+        navigation.sheetPresentationController?.preferredCornerRadius = 36
+        navigation.view.backgroundColor = BrowserMobileSiteSettingsViewController.sheetBackground
+        present(navigation, animated: true)
+    }
+
+    /// Display Options opened or closed: the panel grows or shrinks upward.
+    private func resizePagePanel(_ layout: @escaping () -> Void) {
+        guard mode == .pageMenu, let surface else {
+            layout()
+            return
+        }
+        let height = pagePanel.contentHeight + safeBottom
+        UIView.animate(springDuration: 0.3, bounce: 0, initialSpringVelocity: 0, delay: 0, options: [
+            .allowUserInteraction, .beginFromCurrentState,
+        ]) {
+            surface.frame = CGRect(
+                x: 0, y: self.view.bounds.height - height, width: self.view.bounds.width, height: height,
+            )
+            self.pagePanel.frame.size.height = height
+            layout()
+        }
     }
 
     private func changeZoom(larger: Bool) {
@@ -894,6 +947,10 @@ final class BrowserMobilePhoneViewController: UIViewController {
         pageContainer.center = CGPoint(x: frame.midX, y: frame.midY)
         pageContainer.transform = CGAffineTransform(scaleX: scale, y: scale)
         pageContainer.layer.cornerRadius = 24 / scale
+        pageDim.frame = pageContainer.bounds
+        // The card darkens as it shrinks, to 0.2 at its search size.
+        let cardScale = searchCardFrame().width / view.bounds.width
+        pageDim.alpha = 0.2 * min(max((1 - scale) / max(1 - cardScale, 0.01), 0), 1)
     }
 
     private func searchPanelTop(keyboardTop: CGFloat) -> CGFloat {
@@ -923,7 +980,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
         var result = workspace.switcherTabs.reversed().map { tab in
             BrowserMobileSearchSuggestions.Candidate(
                 tabID: tab.id, title: tab.userTitleOverride ?? tab.title, urlString: tab.urlString,
-                location: tab.placement == .temporary ? nil : location(of: tab),
+                location: location(of: tab),
             )
         }
         let listed = Set(result.map(\.tabID))
@@ -938,9 +995,12 @@ final class BrowserMobilePhoneViewController: UIViewController {
 
     private func location(of tab: BrowserMobileTab) -> String? {
         let space = workspace.spaces.first { $0.id == tab.spaceID }?.title
-        let place = tab.placement == .app
-            ? String(localized: "Favorites", table: "Mobile")
-            : String(localized: "Pinned", table: "Mobile")
+        let place =
+            switch tab.placement {
+            case .app: String(localized: "Favorites", table: "Mobile")
+            case .temporary: String(localized: "Tab", table: "Mobile")
+            default: String(localized: "Pinned", table: "Mobile")
+            }
         return space.map { String(localized: "\(place) in \($0)", table: "Mobile") } ?? place
     }
 

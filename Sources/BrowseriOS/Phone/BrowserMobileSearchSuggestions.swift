@@ -28,7 +28,7 @@ struct BrowserMobileSearchSuggestions: Equatable {
         let tabID: String
         let title: String
         let urlString: String
-        /// Where the tab lives, such as "Pinned in Work"; nil for an open Today tab.
+        /// Where the tab lives, such as "Pinned in Work" or "Tab in Work".
         let location: String?
     }
 
@@ -41,7 +41,7 @@ struct BrowserMobileSearchSuggestions: Equatable {
         guard !query.isEmpty else {
             completion = nil
             items = candidates.prefix(limit).map {
-                Item(kind: .tab($0.tabID), title: Self.title($0), subtitle: $0.location, iconPage: $0.urlString)
+                Item(kind: .tab($0.tabID), title: Self.title($0), subtitle: nil, iconPage: $0.urlString)
             }
             return
         }
@@ -63,7 +63,7 @@ struct BrowserMobileSearchSuggestions: Equatable {
         if let completion {
             items.append(Item(
                 kind: .address(completion), title: Self.siteTitle(completion, candidates: candidates),
-                subtitle: completion, iconPage: completedPage,
+                subtitle: nil, iconPage: completedPage,
             ))
         } else if Self.looksLikeAddress(query) {
             items.append(Item(kind: .address(query), title: query, subtitle: nil, iconPage: Self.pageURL(query)))

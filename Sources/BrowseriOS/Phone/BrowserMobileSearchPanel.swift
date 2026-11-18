@@ -86,7 +86,7 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
     static let fieldHeight: CGFloat = 46
     static let rowHeight: CGFloat = 56
 
-    let field = UITextField()
+    let field = BrowserMobileCompletingField()
     var candidates = [BrowserMobileSearchSuggestions.Candidate]() {
         didSet { refresh(complete: false) }
     }
@@ -103,8 +103,6 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
     ))
     private let table = UITableView(frame: .zero, style: .plain)
     private var suggestions = BrowserMobileSearchSuggestions(query: "", candidates: [])
-    private var isDeleting = false
-    private var lastTypedLength = 0
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -127,6 +125,7 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
         field.keyboardType = .webSearch
         field.keyboardAppearance = .dark
         field.returnKeyType = .go
+        field.enablesReturnKeyAutomatically = true
         field.autocorrectionType = .no
         field.autocapitalizationType = .none
         field.smartQuotesType = .no
@@ -168,7 +167,7 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
         fieldBackground.layer.cornerRadius = frame.height / 2
         // The text keeps its full width, so it does not reflow while the
         // capsule widens; the capsule clips it.
-        field.frame = CGRect(x: 18, y: 0, width: full.width - 36, height: frame.height)
+        field.frame = CGRect(x: 24, y: 0, width: full.width - 26, height: frame.height)
         let glyphSide = BrowserMobilePhoneBarView.controlHeight
         plusGlyph.frame = CGRect(
             x: isFieldExpanded ? 4 : (frame.width - glyphSide) / 2, y: (frame.height - glyphSide) / 2,
@@ -214,8 +213,7 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
 
     /// Fills the field and the suggestions without focusing it.
     func prepare(text: String) {
-        field.text = text
-        lastTypedLength = text.count
+        field.replaceText(text)
         refresh(complete: false)
     }
 
@@ -226,13 +224,14 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
         }
     }
 
-    func textField(_: UITextField, shouldChangeCharactersIn range: NSRange, replacementString string: String) -> Bool {
-        isDeleting = string.isEmpty && range.length > 0
+    func textFieldShouldClear(_: UITextField) -> Bool {
+        field.replaceText(field.text ?? "")
         return true
     }
 
     func textFieldShouldReturn(_ textField: UITextField) -> Bool {
         guard textField.markedTextRange == nil else { return false }
+        field.keepCompletion()
         let text = (textField.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return false }
         onSubmit?(text)
@@ -259,25 +258,17 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
     }
 
     @objc private func textChanged() {
-        refresh(complete: !isDeleting)
-        isDeleting = false
+        refresh(complete: !field.lastEditDeleted)
     }
 
     /// Lists suggestions for the typed text; while typing forward it also fills
-    /// in the rest of a known host and selects that part, so the next keystroke
-    /// replaces it.
+    /// in the rest of a known host, which the next keystroke replaces.
     private func refresh(complete: Bool) {
-        var typed = field.text ?? ""
-        if let selection = field.selectedTextRange, !selection.isEmpty, field.markedTextRange == nil {
-            typed = field.text(in: field.textRange(from: field.beginningOfDocument, to: selection.start)!) ?? typed
-        }
+        let typed = field.typedText
         suggestions = BrowserMobileSearchSuggestions(query: typed, candidates: candidates)
         table.reloadData()
         guard complete, field.markedTextRange == nil, let completion = suggestions.completion,
               completion.hasPrefix(typed.lowercased()), !typed.isEmpty else { return }
-        field.text = typed + completion.dropFirst(typed.count)
-        if let start = field.position(from: field.beginningOfDocument, offset: typed.count) {
-            field.selectedTextRange = field.textRange(from: start, to: field.endOfDocument)
-        }
+        field.showCompletion(String(completion.dropFirst(typed.count)), after: typed)
     }
 }

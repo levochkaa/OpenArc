@@ -17,7 +17,7 @@ import UIKit
     #expect(suggestions.completion == nil)
     #expect(suggestions.items.map(\.kind) == [.tab("a"), .tab("b")])
     #expect(suggestions.items.map(\.title) == ["apple.com", "Docs"], "An untitled tab shows its host")
-    #expect(suggestions.items[1].subtitle == "Pinned in Work")
+    #expect(suggestions.items[1].subtitle == nil, "The list of tabs shows titles only")
 }
 
 @Test func mobileSearchSuggestionsCompleteATypedHostFromOpenTabs() {
@@ -46,6 +46,40 @@ import UIKit
 }
 
 // MARK: - Bar backdrop
+
+@MainActor @Test func mobileCompletingFieldReplacesOrKeepsTheFilledInPart() {
+    let field = BrowserMobileCompletingField()
+    field.showCompletion("hub.com", after: "git")
+    #expect(field.text == "github.com")
+    #expect(field.typedText == "git")
+    #expect(field.completion == "hub.com")
+
+    field.deleteBackward()
+    #expect(field.text == "git", "Delete removes only the filled-in part")
+    #expect(field.completion == nil)
+    #expect(field.lastEditDeleted)
+
+    field.showCompletion("hub.com", after: "git")
+    field.keepCompletion()
+    #expect(field.text == "github.com")
+    #expect(field.typedText == "github.com")
+
+    field.showCompletion("", after: "github.com")
+    #expect(field.completion == nil)
+}
+
+@Test func mobileSiteSettingsKeepTheBarPerSite() throws {
+    let suite = "BrowserMobileSiteSettingsTests.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    #expect(BrowserMobileSiteSettings.collapsesBar(onPage: "https://example.com/a", defaults: defaults))
+    BrowserMobileSiteSettings.setCollapsesBar(false, host: "example.com", defaults: defaults)
+    #expect(!BrowserMobileSiteSettings.collapsesBar(onPage: "https://www.example.com/b", defaults: defaults))
+    #expect(BrowserMobileSiteSettings.collapsesBar(onPage: "https://other.org/", defaults: defaults))
+    #expect(BrowserMobileSiteSettings.collapsesBar(onPage: nil, defaults: defaults))
+    BrowserMobileSiteSettings.setCollapsesBar(true, host: "example.com", defaults: defaults)
+    #expect(BrowserMobileSiteSettings.collapsesBar(onPage: "https://example.com/", defaults: defaults))
+}
 
 @Test func mobileBackdropMeasuresLuminanceOfPicturesAndColors() throws {
     func image(white: CGFloat) throws -> CGImage {

@@ -46,6 +46,10 @@ final class BrowserMobileTabSwitcherView: UIView, UIScrollViewDelegate, UIGestur
     private weak var liftGesture: UIPanGestureRecognizer?
     private var liftedCard: Card?
     private var liftedID: String?
+    /// Brings the row to rest on a card after a flick, faster than the
+    /// scroll view's own deceleration.
+    private var settleLink: CADisplayLink?
+    private var settle: (start: CGFloat, target: CGFloat, velocity: CGFloat, began: CFTimeInterval)?
 
     var cardSize: CGSize {
         let width = (bounds.width * Self.cardWidthShare).rounded()
@@ -88,10 +92,15 @@ final class BrowserMobileTabSwitcherView: UIView, UIScrollViewDelegate, UIGestur
         }
         let step = bounds.width * Self.forwardStep
         scroller.contentSize = CGSize(width: bounds.width + step * CGFloat(max(entries.count - 1, 0)), height: 1)
-        if !scroller.isDragging, !scroller.isDecelerating {
+        if !scroller.isDragging, !scroller.isDecelerating, settle == nil {
             scroller.contentOffset.x = position * step
         }
         layoutCards()
+    }
+
+    override func willMove(toWindow newWindow: UIWindow?) {
+        super.willMove(toWindow: newWindow)
+        if newWindow == nil { stopSettle() }
     }
 
     override func gestureRecognizerShouldBegin(_ gesture: UIGestureRecognizer) -> Bool {
@@ -185,7 +194,52 @@ final class BrowserMobileTabSwitcherView: UIView, UIScrollViewDelegate, UIGestur
         var target = projected.rounded()
         if velocity.x > 0.2 { target = max(target, current.rounded(.up)) }
         if velocity.x < -0.2 { target = min(target, current.rounded(.down)) }
-        targetContentOffset.pointee.x = clampedPosition(target) * step
+        let targetX = clampedPosition(target) * step
+        let x = scrollView.contentOffset.x
+        let maxX = max(scrollView.contentSize.width - scrollView.bounds.width, 0)
+        // Past either end the scroll view bounces back on its own.
+        guard x >= 0, x <= maxX else {
+            targetContentOffset.pointee.x = targetX
+            return
+        }
+        targetContentOffset.pointee.x = x
+        startSettle(from: x, to: targetX, velocity: velocity.x * 1000)
+    }
+
+    func scrollViewWillBeginDragging(_: UIScrollView) {
+        stopSettle()
+    }
+
+    /// A critically damped spring from the flick's speed to the card's place.
+    private func startSettle(from start: CGFloat, to target: CGFloat, velocity: CGFloat) {
+        stopSettle()
+        settle = (start, target, velocity, CACurrentMediaTime())
+        let link = CADisplayLink(target: self, selector: #selector(settleStep))
+        link.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)
+        link.add(to: .main, forMode: .common)
+        settleLink = link
+    }
+
+    private func stopSettle() {
+        settleLink?.invalidate()
+        settleLink = nil
+        settle = nil
+    }
+
+    @objc private func settleStep() {
+        guard let settle else { return }
+        let omega: CGFloat = 20
+        let t = CGFloat(CACurrentMediaTime() - settle.began)
+        let distance = settle.start - settle.target
+        let decay = exp(-omega * t)
+        let x = settle.target + (distance + (settle.velocity + omega * distance) * t) * decay
+        let speed = (settle.velocity - (settle.velocity + omega * distance) * omega * t) * decay
+        if abs(x - settle.target) < 0.5, abs(speed) < 10 {
+            scroller.contentOffset.x = settle.target
+            stopSettle()
+        } else {
+            scroller.contentOffset.x = x
+        }
     }
 
     private func clampedPosition(_ value: CGFloat) -> CGFloat {
