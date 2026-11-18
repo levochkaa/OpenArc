@@ -20,7 +20,7 @@ import Testing
     #expect(store.hapticFeedbackEnabled)
     #expect(store.restoreWindowsOnLaunch)
     #expect(store.pictureInPictureEnabled)
-    #expect(store.bookmarksBarVisible)
+    #expect(!store.bookmarksBarVisible, "The bookmarks bar is hidden until turned on")
     #expect(!store.siteURLToolbarEnabled)
     #expect(!store.siteToolbarShowsFullURL)
     #expect(store.blurredChromeBackgroundEnabled)
@@ -49,7 +49,7 @@ import Testing
     store.hapticFeedbackEnabled = false
     store.restoreWindowsOnLaunch = false
     store.pictureInPictureEnabled = false
-    store.bookmarksBarVisible = false
+    store.bookmarksBarVisible = true
     store.siteURLToolbarEnabled = true
     store.siteToolbarShowsFullURL = true
     store.blurredChromeBackgroundEnabled = false
@@ -67,7 +67,7 @@ import Testing
     #expect(!reloadedStore.hapticFeedbackEnabled)
     #expect(!reloadedStore.restoreWindowsOnLaunch)
     #expect(!reloadedStore.pictureInPictureEnabled)
-    #expect(!reloadedStore.bookmarksBarVisible)
+    #expect(reloadedStore.bookmarksBarVisible)
     #expect(reloadedStore.siteURLToolbarEnabled)
     #expect(reloadedStore.siteToolbarShowsFullURL)
     #expect(!reloadedStore.blurredChromeBackgroundEnabled)

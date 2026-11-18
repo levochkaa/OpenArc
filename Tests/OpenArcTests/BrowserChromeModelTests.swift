@@ -3175,6 +3175,7 @@ import Testing
     )
     #expect(forwardSuggestion.shortcut == BrowserCommands.goForward.shortcut)
 
+    model.userPreferencesStore.bookmarksBarVisible = true
     model.commandBarModel.query = "bookmarks bar"
     await model.commandBarModel.waitForPendingSuggestionLoad()
 

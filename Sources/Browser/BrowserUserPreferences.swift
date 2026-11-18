@@ -269,6 +269,8 @@ final class BrowserUserPreferencesStore: ObservableObject {
         didSet { userDefaults.set(windowDraggingFromPageTopEnabled, forKey: Key.windowDraggingFromPageTopEnabled) }
     }
 
+    /// The bar of bookmarks under the toolbar. Off by default: the sidebar is
+    /// where pages are kept, and the bar is there for those who want it.
     @Published var bookmarksBarVisible: Bool {
         didSet { userDefaults.set(bookmarksBarVisible, forKey: Key.bookmarksBarVisible) }
     }
@@ -461,7 +463,7 @@ final class BrowserUserPreferencesStore: ObservableObject {
             key: Key.windowDraggingFromPageTopEnabled,
             defaultValue: true,
         )
-        self.bookmarksBarVisible = Self.loadBool(userDefaults, key: Key.bookmarksBarVisible, defaultValue: true)
+        self.bookmarksBarVisible = Self.loadBool(userDefaults, key: Key.bookmarksBarVisible, defaultValue: false)
         self.onboardingCompleted = Self.loadBool(userDefaults, key: Key.onboardingCompleted, defaultValue: false)
         self.agentAccessEnabled = Self.loadBool(userDefaults, key: Key.agentAccessEnabled, defaultValue: true)
         self.toolbarConfiguration = userDefaults.stringArray(forKey: Key.toolbarConfiguration)
