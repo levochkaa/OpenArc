@@ -106,9 +106,19 @@ use_chromium_fork_cef_export() {
 }
 
 build_wrapper_library() {
-  if [[ -f "$WRAPPER_LIB" ]]; then
+  # The export can change in place (cef_remote_build.sh install), so the
+  # wrapper remembers the CEF version it was built against; libcef refuses a
+  # wrapper from another version at launch.
+  local version_stamp="$WRAPPER_BUILD_DIR/cef_version.stamp"
+  local cef_version
+  cef_version="$(grep -m1 '#define CEF_VERSION ' "$CURRENT_LINK/include/cef_version.h" 2>/dev/null || true)"
+  if [[ -f "$WRAPPER_LIB" && "$(cat "$version_stamp" 2>/dev/null || true)" == "$cef_version" ]]; then
     printf '%s\n' "$WRAPPER_LIB"
     return 0
+  fi
+  if [[ -d "$WRAPPER_BUILD_DIR" ]]; then
+    echo "Rebuilding libcef_dll_wrapper for ${cef_version#\#define CEF_VERSION }"
+    rm -rf "$WRAPPER_BUILD_DIR"
   fi
 
   ensure_doxygen_stub
@@ -127,6 +137,7 @@ build_wrapper_library() {
     --target libcef_dll_wrapper \
     -- -quiet OTHER_LIBTOOLFLAGS=-no_warning_for_no_symbols
 
+  printf '%s\n' "$cef_version" > "$version_stamp"
   printf '%s\n' "$WRAPPER_LIB"
 }
 
