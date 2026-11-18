@@ -5,8 +5,9 @@ import Foundation
 
 // MARK: - BrowserBoost
 
-/// A site's own CSS and JavaScript, and the page elements the user hid by
-/// clicking them. It applies to its host and the host's subdomains.
+/// A site's own look and behavior: colors, a font, text size and case, its
+/// own CSS and JavaScript, and the page elements the user hid by clicking
+/// them. It applies to its host and the host's subdomains.
 struct BrowserBoost: Codable, Equatable, Identifiable {
     // MARK: Private
 
@@ -16,9 +17,17 @@ struct BrowserBoost: Codable, Equatable, Identifiable {
         case css
         case javaScript
         case zappedSelectors
+        case title
+        case colors
+        case fontFamily
+        case textCase
+        case textZoom
     }
 
     // MARK: Internal
+
+    /// The selector that keeps icon fonts out of the font and case rules.
+    static let textSelector = "*:not(i, .material-symbols-outlined, .material-icons)"
 
     var host: String
     var isEnabled: Bool
@@ -26,12 +35,36 @@ struct BrowserBoost: Codable, Equatable, Identifiable {
     var javaScript: String
     /// CSS selectors of hidden elements, in the order they were zapped.
     var zappedSelectors: [String]
+    /// The name the user gave the Boost; nil shows the default name.
+    var title: String?
+    /// How the page's colors change; nil keeps the site's own.
+    var colors: BrowserBoostColors?
+    /// The family every text of the page takes; nil keeps the site's fonts.
+    var fontFamily: String?
+    var textCase: BrowserBoostTextCase?
+    /// The page's size, 1 for the site's own.
+    var textZoom: Double?
 
     var id: String { host }
 
     /// Something to add to pages, whether or not the boost is on.
     var hasContent: Bool {
-        !css.isBlank || !javaScript.isBlank || !zappedSelectors.isEmpty
+        !css.isBlank || !javaScript.isBlank || !zappedSelectors.isEmpty || hasStyle
+    }
+
+    /// Colors, a font, a case or a size: what the editor's controls change.
+    var hasStyle: Bool {
+        colors?.isOriginal == false || fontFamily != nil || textCase != nil || zoom != 1
+    }
+
+    /// Nothing worth keeping: no content and no name of its own.
+    var isEmpty: Bool {
+        !hasContent && title == nil
+    }
+
+    /// The page's size, 1 when the site keeps its own.
+    var zoom: Double {
+        textZoom.map { min(max($0, BrowserBoostTextZoom.minimum), BrowserBoostTextZoom.maximum) } ?? 1
     }
 
     /// The JavaScript pages run, empty while the boost is off.
@@ -39,17 +72,43 @@ struct BrowserBoost: Codable, Equatable, Identifiable {
         isEnabled && !javaScript.isBlank ? javaScript : ""
     }
 
-    /// The rules pages get, empty while the boost is off: the user's CSS, then
-    /// one rule per zapped element, so a selector the page does not accept
-    /// drops only its own rule.
+    /// The rules every frame of the site gets, empty while the boost is off:
+    /// the font and case, the user's CSS, then one rule per zapped element, so
+    /// a selector the page does not accept drops only its own rule.
     var activeStylesheet: String {
         guard isEnabled else { return "" }
         var parts = [String]()
+        if let fontFamily {
+            parts.append("\(Self.textSelector) { font-family: \(BrowserBoostFont.cssValue(fontFamily)) !important; }")
+        }
+        if let textCase {
+            parts.append("\(Self.textSelector) { text-transform: \(textCase.rawValue) !important; }")
+        }
         if !css.isBlank {
             parts.append(css)
         }
         parts += zappedSelectors.map { "\($0) { display: none !important; }" }
         return parts.joined(separator: "\n")
+    }
+
+    /// The rules only the top document gets, empty while the boost is off:
+    /// the page's size and its colors, which also reach the frames inside it.
+    var activePageStylesheet: String {
+        guard isEnabled else { return "" }
+        var parts = [String]()
+        if zoom != 1 {
+            parts.append("html { zoom: \(BrowserBoostColors.number(zoom)) !important; }")
+        }
+        if let colors, !colors.isOriginal {
+            parts += colors.rules(filterID: BrowserBoostScript.tintFilterID)
+        }
+        return parts.joined(separator: "\n")
+    }
+
+    /// The color map the page's tint needs, nil while the boost is off or has none.
+    var activeTintFilter: BrowserBoostTintFilter? {
+        guard isEnabled, let colors, let tint = colors.tint else { return nil }
+        return BrowserBoostTintFilter(tint: tint, originalSaturation: colors.originalSaturation)
     }
 
     init(
@@ -58,12 +117,22 @@ struct BrowserBoost: Codable, Equatable, Identifiable {
         css: String = "",
         javaScript: String = "",
         zappedSelectors: [String] = [],
+        title: String? = nil,
+        colors: BrowserBoostColors? = nil,
+        fontFamily: String? = nil,
+        textCase: BrowserBoostTextCase? = nil,
+        textZoom: Double? = nil,
     ) {
         self.host = host
         self.isEnabled = isEnabled
         self.css = css
         self.javaScript = javaScript
         self.zappedSelectors = zappedSelectors
+        self.title = title
+        self.colors = colors
+        self.fontFamily = fontFamily
+        self.textCase = textCase
+        self.textZoom = textZoom
     }
 
     init(from decoder: Decoder) throws {
@@ -73,6 +142,27 @@ struct BrowserBoost: Codable, Equatable, Identifiable {
         self.css = try container.decodeIfPresent(String.self, forKey: .css) ?? ""
         self.javaScript = try container.decodeIfPresent(String.self, forKey: .javaScript) ?? ""
         self.zappedSelectors = try container.decodeIfPresent([String].self, forKey: .zappedSelectors) ?? []
+        // Fields a later version may shape differently are read leniently.
+        self.title = try? container.decodeIfPresent(String.self, forKey: .title)
+        self.colors = try? container.decodeIfPresent(BrowserBoostColors.self, forKey: .colors)
+        self.fontFamily = try? container.decodeIfPresent(String.self, forKey: .fontFamily)
+        self.textCase = (try? container.decodeIfPresent(String.self, forKey: .textCase))
+            .flatMap(BrowserBoostTextCase.init(rawValue:))
+        self.textZoom = try? container.decodeIfPresent(Double.self, forKey: .textZoom)
+    }
+
+    /// The name lists and the editor show.
+    func displayTitle(defaultTitle: String) -> String {
+        guard let title, !title.isBlank else { return defaultTitle }
+        return title
+    }
+
+    /// Keeps the content and name, and drops every edit of the editor's controls.
+    mutating func resetStyle() {
+        colors = nil
+        fontFamily = nil
+        textCase = nil
+        textZoom = nil
     }
 
     /// The site of a web address: its lowercased host without a trailing dot
@@ -145,20 +235,29 @@ extension [BrowserBoost] {
     }
 
     /// Changes the host's boost, creating it first. A boost left with nothing
-    /// to add is removed.
+    /// to add and no name is removed.
     mutating func updateBoost(host: String, _ change: (inout BrowserBoost) -> Void) {
         guard let host = BrowserBoost.normalizedHost(host) else { return }
         var boost = boost(forHost: host) ?? BrowserBoost(host: host)
         change(&boost)
         boost.host = host
         boost.zappedSelectors = boost.zappedSelectors.uniqued()
+        if boost.colors?.isOriginal == true {
+            boost.colors = nil
+        }
+        if boost.textZoom == 1 {
+            boost.textZoom = nil
+        }
+        if let title = boost.title, title.isBlank {
+            boost.title = nil
+        }
         if let index = firstIndex(where: { $0.host == host }) {
-            if boost.hasContent {
-                self[index] = boost
-            } else {
+            if boost.isEmpty {
                 remove(at: index)
+            } else {
+                self[index] = boost
             }
-        } else if boost.hasContent {
+        } else if !boost.isEmpty {
             append(boost)
         }
     }
@@ -189,9 +288,9 @@ enum BrowserBoostRefresh: Equatable {
         if (before?.activeJavaScript ?? "") != (after?.activeJavaScript ?? "") {
             return .reload
         }
-        let stylesheet = after?.activeStylesheet ?? ""
-        guard stylesheet != (before?.activeStylesheet ?? "") else { return .none }
-        return .restyle(BrowserBoostScript.styleScript(stylesheet: stylesheet))
+        let style = BrowserBoostScript.Style(after)
+        guard style != BrowserBoostScript.Style(before) else { return .none }
+        return .restyle(BrowserBoostScript.styleScript(style))
     }
 }
 
@@ -206,7 +305,32 @@ enum BrowserBoostScript {
         var done: Bool
     }
 
+    /// What a page's style element and SVG filter hold for a Boost.
+    struct Style: Equatable {
+        var stylesheet = ""
+        var pageStylesheet = ""
+        var tint: BrowserBoostTintFilter?
+
+        var isEmpty: Bool {
+            stylesheet.isEmpty && pageStylesheet.isEmpty && tint == nil
+        }
+
+        init(stylesheet: String = "", pageStylesheet: String = "", tint: BrowserBoostTintFilter? = nil) {
+            self.stylesheet = stylesheet
+            self.pageStylesheet = pageStylesheet
+            self.tint = tint
+        }
+
+        init(_ boost: BrowserBoost?) {
+            self.stylesheet = boost?.activeStylesheet ?? ""
+            self.pageStylesheet = boost?.activePageStylesheet ?? ""
+            self.tint = boost?.activeTintFilter
+        }
+    }
+
     static let styleElementID = "openarc-boost-style"
+    static let filterElementID = "openarc-boost-filters"
+    static let tintFilterID = "openarc-boost-tint"
 
     // MARK: Zapping
 
@@ -342,9 +466,9 @@ enum BrowserBoostScript {
 
     static func documentScripts(for boost: BrowserBoost) -> [String] {
         var scripts = [String]()
-        let stylesheet = boost.activeStylesheet
-        if !stylesheet.isEmpty {
-            scripts.append(styleScript(stylesheet: stylesheet))
+        let style = Style(boost)
+        if !style.isEmpty {
+            scripts.append(styleScript(style))
         }
         let javaScript = boost.activeJavaScript
         if !javaScript.isEmpty {
@@ -353,19 +477,67 @@ enum BrowserBoostScript {
         return scripts
     }
 
+    static func styleScript(
+        stylesheet: String,
+        pageStylesheet: String = "",
+        tint: BrowserBoostTintFilter? = nil,
+    ) -> String {
+        styleScript(Style(stylesheet: stylesheet, pageStylesheet: pageStylesheet, tint: tint))
+    }
+
     /// Puts the stylesheet last in the document, replacing an earlier one, and
-    /// moves it last again once the page is parsed, so its rules win ties. An
-    /// empty stylesheet removes it.
-    static func styleScript(stylesheet: String) -> String {
+    /// moves it last again once the page is parsed, so its rules win ties. The
+    /// top document also takes the page rules and the tint's SVG filter, which
+    /// color the frames inside it too. An empty style removes both.
+    static func styleScript(_ style: Style) -> String {
         """
         (function () {
-          var css = \(literal(stylesheet));
+          var isTop = !window.top || window.top === window;
+          var css = \(literal(style.stylesheet));
+          var pageCSS = \(literal(style.pageStylesheet));
+          if (isTop && pageCSS) css = css ? css + '\\n' + pageCSS : pageCSS;
+          var tint = isTop ? \(literal(style.tint)) : null;
           var id = \(literal(styleElementID));
+          var filterID = \(literal(filterElementID));
+          var tintID = \(literal(tintFilterID));
+          var tintKey = tint ? JSON.stringify(tint) : '';
+          function node(name, attributes, parent) {
+            var element = document.createElementNS('http://www.w3.org/2000/svg', name);
+            for (var key in attributes) element.setAttribute(key, attributes[key]);
+            if (parent) parent.appendChild(element);
+            return element;
+          }
+          function filterElement() {
+            var svg = node('svg', {
+              id: filterID, 'aria-hidden': 'true', 'data-key': tintKey, width: '0', height: '0',
+              style: 'position:absolute;width:0;height:0;overflow:hidden;pointer-events:none',
+            });
+            var filter = node('filter', {
+              id: tintID, 'color-interpolation-filters': 'sRGB', x: '0', y: '0', width: '100%', height: '100%',
+            }, svg);
+            node('feColorMatrix', {
+              type: 'matrix', result: 'lightness',
+              values: '0.2126 0.7152 0.0722 0 0 0.2126 0.7152 0.0722 0 0 0.2126 0.7152 0.0722 0 0 0 0 0 1 0',
+            }, filter);
+            var map = node('feComponentTransfer', { in: 'lightness', result: 'tinted' }, filter);
+            node('feFuncR', { type: 'table', tableValues: tint.red.join(' ') }, map);
+            node('feFuncG', { type: 'table', tableValues: tint.green.join(' ') }, map);
+            node('feFuncB', { type: 'table', tableValues: tint.blue.join(' ') }, map);
+            node('feComposite', {
+              in: 'tinted', in2: 'SourceGraphic', operator: 'arithmetic',
+              k1: '0', k2: String(1 - tint.original), k3: String(tint.original), k4: '0',
+            }, filter);
+            return svg;
+          }
           function apply() {
             var root = document.documentElement;
             var style = document.getElementById(id);
+            var svg = document.getElementById(filterID);
+            if (svg && (!tint || svg.getAttribute('data-key') !== tintKey)) { svg.remove(); svg = null; }
             if (!css) { if (style) style.remove(); return; }
             if (!root) { document.addEventListener('readystatechange', apply, { once: true }); return; }
+            if (tint && !svg) svg = filterElement();
+            if (svg && svg.parentNode !== root) root.appendChild(svg);
             if (!style) { style = document.createElement('style'); style.id = id; }
             if (style.textContent !== css) style.textContent = css;
             if (style.parentNode !== root || style.nextSibling) root.appendChild(style);
