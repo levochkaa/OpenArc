@@ -31,6 +31,8 @@ struct BrowserCommandSuggestion: Identifiable, Equatable {
     var spaceTitle: String?
     /// An open tab's icon, from the address its page last reported.
     var faviconURL: URL?
+    /// The provider an Ask row sends the text to.
+    var aiSearchProvider: BrowserAISearchProvider?
     /// The page's address as the field completes the typed text to it, such
     /// as "example.com/a" for "exam".
     var completionText: String?
@@ -717,8 +719,9 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
             }
 
             // Pages with one title on different sites stay apart; they
-            // share an address key only when they are the same page.
-            let shouldDedupeDisplayText = ![.openTab, .history, .bookmark].contains(suggestion.kind)
+            // share an address key only when they are the same page. A
+            // command keeps the search for its own name.
+            let shouldDedupeDisplayText = ![.openTab, .history, .bookmark, .command].contains(suggestion.kind)
             guard
                 !shouldDedupeDisplayText || !seenDisplayTexts.contains(displayKey),
                 !seenSuggestionKeys.contains(suggestionKey),
@@ -728,7 +731,9 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
             }
 
             assembledSuggestions.append(suggestion)
-            seenDisplayTexts.insert(displayKey)
+            if suggestion.kind != .command {
+                seenDisplayTexts.insert(displayKey)
+            }
             seenSuggestionKeys.insert(suggestionKey)
             return true
         }
@@ -851,20 +856,25 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
         return terms.allSatisfy { term in words.contains { $0.hasPrefix(term) } }
     }
 
+    /// Every word of the text starts a word of the command's title, so
+    /// "theme" and "clear cache and refresh" both name their command.
     private static func commandAnswers(_ suggestion: BrowserCommandSuggestion, _ query: String) -> Bool {
-        guard suggestion.kind == .command, query.count >= 2 else { return false }
-        let needle = query.lowercased()
-        return suggestion.displayText.lowercased().split(separator: " ").contains { $0.hasPrefix(needle) }
+        let terms = BrowserSearchIndex.words(in: query)
+        guard suggestion.kind == .command, !terms.isEmpty, terms.joined().count >= 2 else { return false }
+        let words = BrowserSearchIndex.words(in: suggestion.displayText)
+        return terms.allSatisfy { term in words.contains { $0.hasPrefix(term) } }
     }
 
     func aiSearchSuggestion(for query: String) -> BrowserCommandSuggestion {
         let provider = aiSearchProviderProvider()
-        return BrowserCommandSuggestion(
+        var suggestion = BrowserCommandSuggestion(
             kind: .aiSearch,
             displayText: BrowserStrings.commandBarAskAI(provider.title),
             detailText: query,
             resolvedURLString: provider.searchURLString(for: query),
         )
+        suggestion.aiSearchProvider = provider
+        return suggestion
     }
 
     func primarySuggestion(for query: String) -> BrowserCommandSuggestion? {

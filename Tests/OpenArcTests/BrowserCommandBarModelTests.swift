@@ -399,7 +399,7 @@ private let defaultAISuggestionTitle = BrowserStrings.commandBarAskAI(BrowserAIS
 }
 
 @Test
-@MainActor func commandSuggestionRunsCommandHandlerInsteadOfSubmittingURL() async {
+@MainActor func commandSuggestionRunsCommandHandlerInsteadOfSubmittingURL() async throws {
     var performedCommandIDs = [BrowserCommandID]()
     var submittedURLStrings = [String]()
     var openedTabIDGroups = [[String]]()
@@ -423,7 +423,7 @@ private let defaultAISuggestionTitle = BrowserStrings.commandBarAskAI(BrowserAIS
     model.present()
     model.query = "refresh"
     await model.waitForPendingSuggestionLoad()
-    model.moveSelection(by: 2)
+    try model.selectSuggestion(id: #require(model.suggestions.first { $0.kind == .command }).id)
     model.submitSelection()
 
     #expect(performedCommandIDs == [.reload])
@@ -681,6 +681,28 @@ private struct RejectingDomainParser: BrowserDomainParsing {
     #expect(model.suggestions.first?.kind == .command)
     #expect(model.suggestions.dropFirst().first?.kind == .search)
     #expect(!model.suggestions.contains { $0.kind == .aiSearch })
+}
+
+@MainActor @Test func aCommandNamedInSeveralWordsLeadsTheSearchEngineSuggestions() async {
+    let command = BrowserCommandSuggestion(
+        kind: .command,
+        displayText: "Clear Cache and Refresh",
+        commandID: .clearCacheAndRefresh,
+    )
+    let remote = (1...8).map { "clear cache and refresh \($0)" }
+    let model = makeModel(
+        suggestionProvider: FakeSuggestionProvider(suggestionsByQuery: ["clear cache and refresh": remote]),
+        localSuggestionProvider: { _, _ in [command] },
+    )
+    model.present()
+    model.query = "clear cache and refresh"
+    await model.waitForPendingSuggestionLoad()
+    #expect(model.suggestions.contains { $0.kind == .googleSuggestion })
+    #expect(model.suggestions.first?.commandID == .clearCacheAndRefresh)
+    #expect(model.suggestions.dropFirst().first?.kind == .search)
+    model.query = "clear history"
+    await model.waitForPendingSuggestionLoad()
+    #expect(model.suggestions.first?.kind == .search, "Every word has to name the command")
 }
 
 @MainActor @Test func pagesWithOneTitleOnDifferentSitesAreListedApart() {
