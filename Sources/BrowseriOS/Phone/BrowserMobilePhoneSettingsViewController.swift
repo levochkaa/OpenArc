@@ -112,6 +112,13 @@ final class BrowserMobilePhoneSettingsViewController: UITableViewController {
                     controller.defaults = defaults
                     navigationController?.pushViewController(controller, animated: true)
                 },
+                .init(
+                    title: String(localized: "Extensions", table: "Mobile"),
+                    symbol: "puzzlepiece.extension",
+                    color: .systemTeal,
+                    id: "browser.settings.extensions",
+                    isEnabled: true,
+                ) { [weak self] in self?.showExtensions(animated: true) },
             ],
             [
                 .init(
@@ -215,6 +222,17 @@ final class BrowserMobilePhoneSettingsViewController: UITableViewController {
             rows[index][row].value = BrowserMobileSearchEngineSetting.current(defaults).title
             tableView.reloadRows(at: [IndexPath(row: row, section: index)], with: .none)
         }
+    }
+
+    /// Settings › Extensions; a store link closes Settings and opens in a new tab.
+    func showExtensions(animated: Bool) {
+        let controller = BrowserMobileExtensionsViewController()
+        controller.openURL = { [weak self] url in
+            guard let self else { return }
+            let workspace = workspace
+            dismiss(animated: true) { workspace.openLinkInNewTab(url, inBackground: false) }
+        }
+        navigationController?.pushViewController(controller, animated: animated)
     }
 
     private func autoOpenSwitch() -> UISwitch {

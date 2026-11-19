@@ -7,6 +7,7 @@ import UIKit
         _: UIApplication, didFinishLaunchingWithOptions _: [UIApplication.LaunchOptionsKey: Any]? = nil,
     ) -> Bool {
         BrowserMobileContentBlocking.start()
+        BrowserMobileExtensions.shared.start()
         return true
     }
 

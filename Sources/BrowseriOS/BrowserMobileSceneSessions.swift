@@ -49,7 +49,7 @@ import WebKit
     }
 
     private static func makeComponents(sessionID: String) -> Components {
-        let engine = BrowserWebKitEngine(dataStore: .default())
+        let engine = BrowserWebKitEngine(dataStore: .default(), extensions: .shared)
         return Components(
             workspace: BrowserMobileWorkspace(
                 engine: engine,

@@ -140,6 +140,9 @@ import WebKit
         }
     }
 
+    /// This engine as an extension window, while it runs extensions.
+    private(set) var extensionWindow: BrowserWebKitExtensionWindow?
+
     private let dataStore: WKWebsiteDataStore
     private var records = [String: Record]()
     private var idsByWebView = [ObjectIdentifier: String]()
@@ -156,14 +159,41 @@ import WebKit
     private let actionDownloads = NSMapTable<WKNavigationAction, DownloadHandoff>.weakToStrongObjects()
     private let responseDownloads = NSMapTable<WKNavigationResponse, DownloadHandoff>.weakToStrongObjects()
     private var contentRulesObservation: AnyCancellable?
+    private let extensions: BrowserMobileExtensions?
+    /// Pages in the order they opened, the window's tab order for extensions.
+    private var recordOrder = [String]()
+    private var extensionTabsByID = [String: BrowserWebKitExtensionTab]()
+    private let storeButton = UIButton(configuration: .filled())
+    private var storeButtonBottom: NSLayoutConstraint?
+    private var storeItem: BrowserWebExtensionStoreItem?
+    private var extensionsObservation: AnyCancellable?
 
     var isFindInPageVisible: Bool {
         mountedWebView?.findInteraction?.isFindNavigatorVisible == true
     }
 
-    init(dataStore: WKWebsiteDataStore = .default()) {
+    // MARK: Extensions
+
+    /// Whether the pages keep no website data, which limits them to the
+    /// extensions allowed in private browsing.
+    var isEphemeral: Bool { !dataStore.isPersistent }
+
+    var extensionTabs: [BrowserWebKitExtensionTab] { recordOrder.compactMap { extensionTabsByID[$0] } }
+
+    var selectedExtensionTab: BrowserWebKitExtensionTab? { selectedRuntimeID.flatMap { extensionTabsByID[$0] } }
+
+    /// `extensions` runs the app's extensions in this engine's pages; a
+    /// private store runs only those allowed in private browsing.
+    init(dataStore: WKWebsiteDataStore = .default(), extensions: BrowserMobileExtensions? = nil) {
         self.dataStore = dataStore
+        self.extensions = extensions
         super.init()
+        if let extensions {
+            self.extensionWindow = BrowserWebKitExtensionWindow(engine: self)
+            extensions.register(self)
+            configureStoreButton()
+            self.extensionsObservation = extensions.changes.sink { [weak self] in self?.updateStoreButton() }
+        }
         // The blocker's lists for each tab's site; the next load picks them up.
         self.contentRulesObservation = BrowserWebKitContentRules.shared.changes.sink { [weak self] in
             guard let self else { return }
@@ -252,6 +282,7 @@ import WebKit
         // tab. A selected tab or an explicit navigation creates its view.
         let record = Record(id: id, url: url)
         records[id] = record
+        openExtensionTab(record)
         emit(record)
     }
 
@@ -260,9 +291,16 @@ import WebKit
         let record = id.flatMap { records[$0] }
         if selectedRuntimeID != record?.id {
             dismissFindInPage()
+            let previous = selectedExtensionTab
             selectedRuntimeID = record?.id
             cancelJavaScriptDialog()
             cancelHTTPAuthentication(abort: false)
+            if let extensions, let tab = selectedExtensionTab {
+                extensions.controller.didActivateTab(tab, previousActiveTab: previous)
+                extensions.controller.didSelectTabs([tab])
+                if let previous { extensions.controller.didDeselectTabs([previous]) }
+            }
+            updateStoreButton()
         }
         let startsInitialLoad = record?.webView == nil
         let next = record.map { ensureWebView($0) }
@@ -278,6 +316,7 @@ import WebKit
             next.topAnchor.constraint(equalTo: hostView.topAnchor),
             next.bottomAnchor.constraint(equalTo: hostView.bottomAnchor),
         ])
+        hostView.bringSubviewToFront(storeButton)
         if startsInitialLoad, let record, let url = record.state.url {
             navigate(record: record, url: url)
         }
@@ -335,6 +374,10 @@ import WebKit
         }
         cancelJavaScriptDialog(runtimeID: id)
         cancelHTTPAuthentication(runtimeID: id)
+        recordOrder.removeAll { $0 == id }
+        if let tab = extensionTabsByID.removeValue(forKey: id) {
+            extensions?.controller.didCloseTab(tab, windowIsClosing: isShutDown)
+        }
         if let webView = record.webView {
             idsByWebView.removeValue(forKey: ObjectIdentifier(webView))
         }
@@ -366,6 +409,11 @@ import WebKit
         for id in Array(records.keys) {
             closeTab(id: id)
         }
+        extensionsObservation = nil
+        if extensions != nil {
+            extensions?.unregister(self)
+            extensionWindow = nil
+        }
     }
 
     func snapshot(
@@ -386,6 +434,7 @@ import WebKit
 
     func setObscuredInsets(_ insets: UIEdgeInsets) {
         obscuredInsets = insets
+        storeButtonBottom?.constant = -(insets.bottom + 16)
         for record in records.values {
             record.webView?.obscuredContentInsets = insets
         }
@@ -526,6 +575,9 @@ import WebKit
 
     func setJavaScriptDialogPresentationActive(_ active: Bool) {
         isDialogPresentationActive = active && !isShutDown
+        if isDialogPresentationActive {
+            extensions?.focus(self)
+        }
         if !isDialogPresentationActive {
             dismissFindInPage()
             cancelJavaScriptDialog()
@@ -653,11 +705,28 @@ import WebKit
         let id = UUID().uuidString
         let record = Record(id: id, url: url)
         records[id] = record
+        openExtensionTab(record)
         let webView = ensureWebView(record, configuration: configuration)
         onPopupCreated(id, url)
         // Adoption can synchronously close the popup or shut down this scene.
         guard records[id] === record else { return nil }
         return webView
+    }
+
+    func extensionPageState(id: String) -> BrowserMobilePageState? { records[id]?.state }
+
+    /// An extension asked to show this tab; the workspace selects it.
+    func requestExtensionActivation(id: String) {
+        guard records[id] != nil else { return }
+        onEvent?(.activateRequested(id: id))
+    }
+
+    /// Opens a tab for an extension through the workspace and returns it,
+    /// when the workspace made it at once.
+    func openExtensionTab(url: URL?, active: Bool) -> BrowserWebKitExtensionTab? {
+        let before = Set(records.keys)
+        onEvent?(.openInNewTab(url ?? URL(string: "about:blank")!, inBackground: !active))
+        return recordOrder.last { !before.contains($0) }.flatMap { extensionTabsByID[$0] }
     }
 
     fileprivate func receivePageToolsMessage(_ message: WKScriptMessage) {
@@ -773,6 +842,8 @@ import WebKit
             configuration = WKWebViewConfiguration()
             configuration.websiteDataStore = dataStore
             configuration.allowsInlineMediaPlayback = true
+            // A popup's configuration carries its opener's controller.
+            configuration.webExtensionController = extensions?.controller
             // A popup shares its opener's controller, which has these already.
             if !Self.pageToolsSource.isEmpty {
                 configuration.userContentController.addUserScript(WKUserScript(
@@ -787,6 +858,10 @@ import WebKit
         }
         BrowserWebKitContentRules.shared.apply(to: configuration.userContentController, urlString: nil)
         let webView = WKWebView(frame: .zero, configuration: configuration)
+        #if DEBUG
+            // Web Inspector reaches pages and their extensions' scripts in development builds.
+            webView.isInspectable = true
+        #endif
         webView.isFindInteractionEnabled = false
         webView.obscuredContentInsets = obscuredInsets
         record.webView = webView
@@ -949,8 +1024,67 @@ import WebKit
             cancelHTTPAuthentication(runtimeID: record.id)
         }
         guard records[record.id] === record, record.lastEmitted != record.state else { return }
+        let previous = record.lastEmitted
         record.lastEmitted = record.state
+        if let extensions, let tab = extensionTabsByID[record.id] {
+            var changed = WKWebExtension.TabChangedProperties()
+            if previous?.url != record.state.url { changed.insert(.URL) }
+            if previous?.title != record.state.title { changed.insert(.title) }
+            if previous?.isLoading != record.state.isLoading { changed.insert(.loading) }
+            if previous?.isReading != record.state.isReading { changed.insert(.readerMode) }
+            if !changed.isEmpty {
+                extensions.controller.didChangeTabProperties(changed, for: tab)
+            }
+        }
+        if record.id == selectedRuntimeID, previous?.url != record.state.url {
+            updateStoreButton()
+        }
         onEvent?(.state(id: record.id, record.state))
+    }
+
+    private func openExtensionTab(_ record: Record) {
+        recordOrder.append(record.id)
+        guard let extensions else { return }
+        let tab = BrowserWebKitExtensionTab(engine: self, runtimeID: record.id)
+        extensionTabsByID[record.id] = tab
+        extensions.controller.didOpenTab(tab)
+    }
+
+    private func configureStoreButton() {
+        var configuration = UIButton.Configuration.filled()
+        configuration.cornerStyle = .capsule
+        configuration.image = UIImage(systemName: "puzzlepiece.extension.fill")
+        configuration.imagePadding = 8
+        configuration.contentInsets = .init(top: 12, leading: 18, bottom: 12, trailing: 18)
+        configuration.title = String(localized: "Add to OpenArc", table: "Mobile")
+        storeButton.configuration = configuration
+        storeButton.accessibilityIdentifier = "browser.addExtension"
+        storeButton.isHidden = true
+        storeButton.layer.shadowColor = UIColor.black.cgColor
+        storeButton.layer.shadowOpacity = 0.2
+        storeButton.layer.shadowRadius = 12
+        storeButton.layer.shadowOffset = CGSize(width: 0, height: 4)
+        storeButton.translatesAutoresizingMaskIntoConstraints = false
+        storeButton.addAction(UIAction { [weak self] _ in self?.installStoreItem() }, for: .touchUpInside)
+        hostView.addSubview(storeButton)
+        let bottom = storeButton.bottomAnchor.constraint(equalTo: hostView.bottomAnchor, constant: -16)
+        storeButtonBottom = bottom
+        NSLayoutConstraint.activate([storeButton.centerXAnchor.constraint(equalTo: hostView.centerXAnchor), bottom])
+    }
+
+    /// Shows Add to OpenArc over a store page of an extension that is not installed.
+    private func updateStoreButton() {
+        guard let extensions else { return }
+        let url = selectedRuntimeID.flatMap { records[$0]?.state.url }
+        storeItem = extensions.installableItem(for: url)
+        storeButton.isHidden = storeItem == nil
+        hostView.bringSubviewToFront(storeButton)
+    }
+
+    private func installStoreItem() {
+        guard let extensions, let storeItem else { return }
+        extensions.install(storeItem, from: storeButton) { [weak self] in self?.updateStoreButton() }
+        updateStoreButton()
     }
 
     private func fail(_ error: Error, webView: WKWebView, navigation: WKNavigation?) {

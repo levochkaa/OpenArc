@@ -53,6 +53,7 @@ final class BrowserMobilePagePanel: UIView {
     var onTranslate: (() -> Void)?
     var onReader: (() -> Void)?
     var onSiteSettings: (() -> Void)?
+    var onExtensions: (() -> Void)?
     /// Display Options opened or closed; the owner resizes the panel to
     /// `contentHeight` inside the animation it is given.
     var onContentHeightChange: ((_ animations: @escaping () -> Void) -> Void)?
@@ -90,10 +91,11 @@ final class BrowserMobilePagePanel: UIView {
     private let readerRow = BrowserMobilePagePanelRow()
     private let optionSeparators = [UIView(), UIView(), UIView(), UIView()]
     private let siteSettingsRow = BrowserMobilePagePanelRow()
+    private let extensionsRow = BrowserMobilePagePanelRow()
 
     /// Height of the panel's content above the home indicator.
     var contentHeight: CGFloat {
-        siteSettingsTop + Self.rowHeight
+        extensionsTop + Self.rowHeight
     }
 
     /// The rows Display Options open, top to bottom.
@@ -106,6 +108,7 @@ final class BrowserMobilePagePanel: UIView {
     }
 
     private var siteSettingsTop: CGFloat { displayTop + displayHeight + Self.groupSpacing }
+    private var extensionsTop: CGFloat { siteSettingsTop + Self.rowHeight + 8 }
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -145,6 +148,15 @@ final class BrowserMobilePagePanel: UIView {
         siteSettingsRow.layer.borderWidth = 1 / 3
         siteSettingsRow.addAction(UIAction { [weak self] _ in self?.onSiteSettings?() }, for: .touchUpInside)
         body.addSubview(siteSettingsRow)
+        extensionsRow.configure(
+            title: String(localized: "Extensions", table: "Mobile"), symbol: "puzzlepiece.extension",
+            identifier: "browser.extensions",
+        )
+        extensionsRow.layer.cornerRadius = 16
+        extensionsRow.layer.cornerCurve = .continuous
+        extensionsRow.layer.borderWidth = 1 / 3
+        extensionsRow.addAction(UIAction { [weak self] _ in self?.onExtensions?() }, for: .touchUpInside)
+        body.addSubview(extensionsRow)
     }
 
     @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
@@ -202,6 +214,7 @@ final class BrowserMobilePagePanel: UIView {
         zoomOutButton.frame = CGRect(x: 0, y: 0, width: 44, height: 32)
         zoomInButton.frame = CGRect(x: 44, y: 0, width: 44, height: 32)
         siteSettingsRow.frame = CGRect(x: Self.margin, y: siteSettingsTop, width: width, height: Self.rowHeight)
+        extensionsRow.frame = CGRect(x: Self.margin, y: extensionsTop, width: width, height: Self.rowHeight)
     }
 
     func update(
@@ -266,11 +279,11 @@ final class BrowserMobilePagePanel: UIView {
             label.textColor = glyph.withAlphaComponent(0.7)
             label.alpha = button.alpha
         }
-        for view in [displayGroup, siteSettingsRow] {
+        for view in [displayGroup, siteSettingsRow, extensionsRow] {
             view.backgroundColor = fill
             view.layer.borderColor = border
         }
-        for row in [displayHeader, siteSettingsRow] + optionRows {
+        for row in [displayHeader, siteSettingsRow, extensionsRow] + optionRows {
             row.tintColor = glyph
         }
         displayChevron.tintColor = glyph.withAlphaComponent(0.7)

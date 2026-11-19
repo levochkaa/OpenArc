@@ -775,6 +775,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
             closePanel()
         }
         pagePanel.onSiteSettings = { [weak self] in self?.showSiteSettings() }
+        pagePanel.onExtensions = { [weak self] in self?.showExtensions() }
         pagePanel.onContentHeightChange = { [weak self] layout in self?.resizePagePanel(layout) }
         updatePagePanel()
         openPagePanel(height: pagePanel.contentHeight + safeBottom)
@@ -830,6 +831,14 @@ final class BrowserMobilePhoneViewController: UIViewController {
                 : nil,
             hasSiteSettings: siteHost != nil,
         )
+    }
+
+    /// The extensions' actions for the page, over the page menu.
+    private func showExtensions() {
+        guard let engine = workspace.extensionEngine, presentedViewController == nil else { return }
+        BrowserMobileExtensionActionsViewController.present(engine: engine, from: self, anchor: nil) { [weak self] in
+            self?.closePanel { self?.showSettings(opensExtensions: true) }
+        }
     }
 
     private func showSiteSettings() {
@@ -1308,7 +1317,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
         present(navigation, animated: true)
     }
 
-    private func showSettings() {
+    private func showSettings(opensExtensions: Bool = false) {
         guard presentedViewController == nil else { return }
         let controller = BrowserMobilePhoneSettingsViewController(workspace: workspace)
         controller.didRestoreFromArchive = { [weak self] in
@@ -1319,6 +1328,9 @@ final class BrowserMobilePhoneViewController: UIViewController {
         let navigation = UINavigationController(rootViewController: controller)
         navigation.overrideUserInterfaceStyle = .dark
         navigation.sheetPresentationController?.preferredCornerRadius = 36
+        if opensExtensions {
+            controller.showExtensions(animated: false)
+        }
         present(navigation, animated: true)
     }
 

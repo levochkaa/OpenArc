@@ -44,8 +44,10 @@ enum BrowserMobileEngineEvent {
     case javaScriptDialogFinished(id: UUID)
     case httpAuthenticationRequested(BrowserMobileHTTPAuthentication)
     case httpAuthenticationFinished(id: UUID)
-    /// The link menu asked for a link in another tab.
+    /// The link menu or an extension asked for a link in another tab.
     case openInNewTab(URL, inBackground: Bool)
+    /// An extension asked to show this page's tab.
+    case activateRequested(id: String)
 }
 
 // MARK: - BrowserMobileEngine

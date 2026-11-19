@@ -133,6 +133,9 @@ struct BrowserMobileTab: Identifiable, Equatable {
 
     var isFindInPageVisible: Bool { engine.isFindInPageVisible }
 
+    /// The WebKit engine whose pages run extensions, if this workspace has one.
+    var extensionEngine: BrowserWebKitEngine? { engine as? BrowserWebKitEngine }
+
     var pageZoom: CGFloat {
         get { selectedTab.map { engine.pageZoom(id: $0.runtimeID) } ?? 1 }
         set { selectedTab.map { engine.setPageZoom(id: $0.runtimeID, newValue) } }
@@ -966,6 +969,9 @@ struct BrowserMobileTab: Identifiable, Equatable {
             notify()
         case .openInNewTab(let url, let inBackground):
             openLinkInNewTab(url, inBackground: inBackground)
+        case .activateRequested(let runtimeID):
+            guard let tab = tabs.first(where: { $0.runtimeID == runtimeID }) else { return }
+            selectTab(id: tab.id)
         case .javaScriptDialogFinished(let id):
             guard javaScriptDialog?.id == id else { return }
             javaScriptDialog = nil

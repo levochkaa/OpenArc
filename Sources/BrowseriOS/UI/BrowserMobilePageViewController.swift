@@ -53,6 +53,7 @@ final class BrowserMobilePageViewController: UIViewController, UITextFieldDelega
 
     let workspace: BrowserMobileWorkspace
     var showTabs: (() -> Void)?
+    var showExtensionSettings: (() -> Void)?
     let addressField = UITextField()
     private(set) var chromeIsAtBottom = true
 
@@ -83,6 +84,7 @@ final class BrowserMobilePageViewController: UIViewController, UITextFieldDelega
     private var toolbarRow = UIStackView()
     private var isChromeOneRow: Bool?
     private var downloadsButton = UIButton(type: .system)
+    private var extensionsButton = UIButton(type: .system)
 
     private var canPresentFind: Bool {
         guard workspace.canFindInPage, let window = viewIfLoaded?.window,
@@ -276,6 +278,7 @@ final class BrowserMobilePageViewController: UIViewController, UITextFieldDelega
             emptyAction.setTitle(String(localized: "Search or Enter Address", table: "Mobile"), for: .normal)
         }
         findButton.isEnabled = canPresentFind
+        extensionsButton.isEnabled = workspace.isReady && workspace.extensionEngine != nil
     }
 
     @objc func focusAddress() {
@@ -435,7 +438,10 @@ final class BrowserMobilePageViewController: UIViewController, UITextFieldDelega
         downloadsButton = button("arrow.down.circle", "Downloads", "browser.downloads") { [weak self] in
             self?.showDownloads()
         }
-        let addressRow = UIStackView(arrangedSubviews: [addressField, downloadsButton, reloadButton])
+        extensionsButton = button("puzzlepiece.extension", "Extensions", "browser.extensions") { [weak self] in
+            self?.showExtensions()
+        }
+        let addressRow = UIStackView(arrangedSubviews: [addressField, extensionsButton, downloadsButton, reloadButton])
         addressRow.spacing = 4
         chromeStack.addArrangedSubview(addressRow)
         backButton = button("chevron.backward", "Back", "browser.back") { [weak self] in self?.workspace.goBack() }
@@ -530,6 +536,15 @@ final class BrowserMobilePageViewController: UIViewController, UITextFieldDelega
         ])
         button.addAction(UIAction { _ in action() }, for: .touchUpInside)
         return button
+    }
+
+    /// The extensions' actions for the page, in a popover from the toolbar.
+    private func showExtensions() {
+        guard let engine = workspace.extensionEngine, presentedViewController == nil else { return }
+        workspace.dismissFindInPage()
+        BrowserMobileExtensionActionsViewController.present(
+            engine: engine, from: self, anchor: extensionsButton,
+        ) { [weak self] in self?.showExtensionSettings?() }
     }
 
     private func sharePage() {

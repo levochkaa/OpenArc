@@ -348,7 +348,8 @@ extension BrowserMobileUITests {
             guard let self else { return }
             switch event {
             case .state(let id, let state): states[id] = state
-            case .closed,
+            case .activateRequested,
+                 .closed,
                  .httpAuthenticationFinished,
                  .httpAuthenticationRequested,
                  .openInNewTab: break

@@ -62,6 +62,7 @@ final class BrowserMobileViewController: UISplitViewController, UISplitViewContr
         setViewController(UINavigationController(rootViewController: tabsController), for: .primary)
         setViewController(pageController, for: .secondary)
         pageController.showTabs = { [weak self] in self?.showTabList() }
+        pageController.showExtensionSettings = { [weak self] in self?.showExtensionSettings() }
         tabsController.didSelectTab = { [weak self] in
             guard let self else { return }
             if isCollapsed {
@@ -89,6 +90,17 @@ final class BrowserMobileViewController: UISplitViewController, UISplitViewContr
 
     func splitViewController(_: UISplitViewController, topColumnForCollapsingToProposedTopColumn _: Column) -> Column {
         .secondary
+    }
+
+    /// Settings › Extensions, from the page's extension list.
+    private func showExtensionSettings() {
+        guard presentedViewController == nil else { return }
+        let controller = BrowserMobilePhoneSettingsViewController(workspace: workspace)
+        controller.didRestoreFromArchive = { [weak self] in self?.tabsController.didSelectTab?() }
+        let navigation = UINavigationController(rootViewController: controller)
+        navigation.modalPresentationStyle = .formSheet
+        controller.showExtensions(animated: false)
+        present(navigation, animated: true)
     }
 
     @objc private func findInPage() { pageController.findInPage() }
