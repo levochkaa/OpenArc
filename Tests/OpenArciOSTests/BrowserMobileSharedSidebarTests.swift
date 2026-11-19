@@ -87,6 +87,18 @@ extension BrowserMobileUITests {
         #expect(await f.workspace.shutdown())
     }
 
+    @Test func twoFingersPageBetweenSpacesWhileOneFingerSwipesRows() async throws {
+        let f = try SharedSidebarFixture()
+        defer { f.cleanup() }
+        await f.workspace.restore()
+        f.loadSidebar()
+        let pans = (f.sidebar.tableView.gestureRecognizers ?? []).compactMap { $0 as? UIPanGestureRecognizer }
+        let spacePan = try #require(pans.first { $0.delegate === f.sidebar })
+        #expect(spacePan.minimumNumberOfTouches == 2, "One finger stays with the rows' swipe to close")
+        #expect(spacePan.allowedScrollTypesMask.contains(.continuous), "Two fingers on a trackpad page too")
+        #expect(await f.workspace.shutdown())
+    }
+
     @Test func contextActionsPinFavoriteAndMoveTheSameStableTab() async throws {
         let f = try SharedSidebarFixture()
         defer { f.cleanup() }

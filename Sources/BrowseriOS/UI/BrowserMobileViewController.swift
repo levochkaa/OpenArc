@@ -293,8 +293,9 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
 
     private let phoneTitleButton = UIButton(type: .system)
     private var phoneSpaceItems = [String: UIBarButtonItem]()
-    /// A sideways drag between Spaces in the phone sheet: the neighbor's rows
-    /// slide in beside the current ones.
+    /// A sideways drag between Spaces (one finger in the phone sheet, two
+    /// fingers or the trackpad in the sidebar): the neighbor's rows slide in
+    /// beside the current ones.
     private var phoneSpacePage: (spaceID: String, side: CGFloat, preview: UIView)?
     private weak var phoneSpacePan: UIPanGestureRecognizer?
 
@@ -428,6 +429,15 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         spaceButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
         if isPhoneSheet {
             configurePhoneSheet()
+        } else {
+            // One finger swipes a row to close it; two fingers, or two on the
+            // trackpad, move between Spaces.
+            let pan = UIPanGestureRecognizer(target: self, action: #selector(phoneSpacePanned(_:)))
+            pan.minimumNumberOfTouches = 2
+            pan.allowedScrollTypesMask = .continuous
+            pan.delegate = self
+            tableView.addGestureRecognizer(pan)
+            phoneSpacePan = pan
         }
         render()
     }
@@ -606,23 +616,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         navigationItem.leftBarButtonItem?.isEnabled = canEdit && !isSelectingRows
         updateSelectionButton()
         if let document = workspace.profileDocument {
-            var configuration = UIButton.Configuration.plain()
-            configuration.title = workspace.spaces.first { $0.id == workspace.selectedSpaceID }?.title
-                ?? String(localized: "Spaces", table: "Mobile")
-            configuration.image = UIImage(
-                systemName: "chevron.down",
-                withConfiguration: UIImage.SymbolConfiguration(pointSize: 12, weight: .semibold),
-            )
-            configuration.imagePlacement = .trailing
-            configuration.imagePadding = 5
-            configuration.titleLineBreakMode = .byTruncatingTail
-            configuration.baseForegroundColor = .label
-            configuration.contentInsets = .init(top: 0, leading: 0, bottom: 0, trailing: 0)
-            configuration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer {
-                var attributes = $0
-                attributes.font = UIFont.systemFont(ofSize: 22, weight: .bold)
-                return attributes
-            }
+            let configuration = spaceButtonConfiguration(title: phoneSpaceTitle(workspace.selectedSpaceID))
             spaceButton.configuration = configuration
             spaceButton.isEnabled = workspace.isReady
             spaceButton.menu = spaceMenu(document)
@@ -1139,6 +1133,27 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         selectPhoneSpace(spaces[index + offset].id)
     }
 
+    /// The sidebar's Space name with the menu's chevron.
+    private func spaceButtonConfiguration(title: String) -> UIButton.Configuration {
+        var configuration = UIButton.Configuration.plain()
+        configuration.title = title
+        configuration.image = UIImage(
+            systemName: "chevron.down",
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: 12, weight: .semibold),
+        )
+        configuration.imagePlacement = .trailing
+        configuration.imagePadding = 5
+        configuration.titleLineBreakMode = .byTruncatingTail
+        configuration.baseForegroundColor = .label
+        configuration.contentInsets = .init(top: 0, leading: 0, bottom: 0, trailing: 0)
+        configuration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer {
+            var attributes = $0
+            attributes.font = UIFont.systemFont(ofSize: 22, weight: .bold)
+            return attributes
+        }
+        return configuration
+    }
+
     private func configurePhoneSheet() {
         title = nil
         tableView.backgroundColor = Self.phoneSheetColor
@@ -1187,7 +1202,12 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
 
     private func highlightPhoneSpace(_ id: String?) {
         for (spaceID, item) in phoneSpaceItems {
-            item.tintColor = spaceID == id ? .white : UIColor(white: 1, alpha: 0.3)
+            item.tintColor =
+                if isPhoneSheet {
+                    spaceID == id ? .white : UIColor(white: 1, alpha: 0.3)
+                } else {
+                    spaceID == id ? .label : .tertiaryLabel
+                }
             item.accessibilityTraits = spaceID == id ? [.button, .selected] : [.button]
         }
     }
@@ -1265,15 +1285,18 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         }
         let past = progress > 0.5 && phoneSpacePage != nil
         let shownID = past ? phoneSpacePage?.spaceID : workspace.selectedSpaceID
-        setPhoneTitle(phoneSpaceTitle(shownID))
-        phoneTitleButton.alpha = abs(1 - progress * 2)
+        // The sidebar's name heads the rows and slides with them.
+        if isPhoneSheet {
+            setPhoneTitle(phoneSpaceTitle(shownID))
+            phoneTitleButton.alpha = abs(1 - progress * 2)
+        }
         highlightPhoneSpace(shownID)
     }
 
     /// The rows another Space would show, laid out like the table at its top.
     private func phoneSpacePreview(for spaceID: String) -> UIView {
         let preview = UIView(frame: CGRect(origin: .zero, size: tableView.bounds.size))
-        preview.backgroundColor = Self.phoneSheetColor
+        preview.backgroundColor = isPhoneSheet ? Self.phoneSheetColor : tableView.backgroundColor
         preview.clipsToBounds = true
         preview.isUserInteractionEnabled = false
         guard let document = workspace.profileDocument else { return preview }
@@ -1284,9 +1307,32 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         // Choosing the Space keeps the open tab only when it is in that Space.
         let selected = tabs.contains { $0.id == workspace.selectedTabID } ? workspace.selectedTabID : tabs.first?.id
         let width = tableView.bounds.width
+        // Inset rows in the sidebar.
+        let rowX = tableView.visibleCells.first?.frame.minX ?? 0
+        let rowWidth = tableView.visibleCells.first?.frame.width ?? width
+        let rowHeight = tableView.rowHeight > 0 ? tableView.rowHeight : tableView.visibleCells.first?.frame.height ?? 44
         var y = tableView.adjustedContentInset.top + (rows.isEmpty ? 0 : tableView.rect(forSection: 0).minY)
-        let divides = sections.count > 2 && !sections[2].isEmpty && sections.prefix(2).contains { !$0.isEmpty }
+        if !isPhoneSheet {
+            let name = UIButton(configuration: spaceButtonConfiguration(title: phoneSpaceTitle(spaceID)))
+            name.sizeToFit()
+            name.frame = CGRect(
+                x: spaceHeaderLeading.constant, y: tableView.adjustedContentInset.top + (44 - name.bounds.height) / 2,
+                width: min(name.bounds.width, width - spaceHeaderLeading.constant - 20), height: name.bounds.height,
+            )
+            preview.addSubview(name)
+        }
+        let divides = isPhoneSheet && sections.count > 2 && !sections[2].isEmpty
+            && sections.prefix(2).contains { !$0.isEmpty }
         for (section, sectionRows) in sections.enumerated() {
+            if !isPhoneSheet, section < tableView.numberOfSections {
+                // The sections' titles are the same in every Space.
+                let header = tableView.rectForHeader(inSection: section)
+                if let title = tableView.headerView(forSection: section)?.snapshotView(afterScreenUpdates: false) {
+                    title.frame.origin = CGPoint(x: header.minX, y: y)
+                    preview.addSubview(title)
+                }
+                y += header.height
+            }
             if section == 2, divides {
                 let line = UIView(frame: CGRect(x: 29, y: y + 10, width: width - 58, height: 1))
                 line.backgroundColor = UIColor(white: 1, alpha: 0.14)
@@ -1296,11 +1342,14 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
             for row in sectionRows {
                 guard y < preview.bounds.height else { return preview }
                 let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
-                cell.frame = CGRect(x: 0, y: y, width: width, height: tableView.rowHeight)
+                cell.frame = CGRect(x: rowX, y: y, width: rowWidth, height: rowHeight)
                 configure(cell, row: row, selectedTabID: selected)
                 cell.layoutIfNeeded()
                 preview.addSubview(cell)
-                y += tableView.rowHeight
+                y += rowHeight
+            }
+            if !isPhoneSheet, section < tableView.numberOfSections {
+                y += tableView.rectForFooter(inSection: section).height
             }
         }
         return preview
@@ -1334,7 +1383,9 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
     /// The sidebar's bottom bar: Archive, the Spaces as icons when they fit,
     /// and Settings.
     private func renderSpaceBar() {
+        guard phoneSpacePage == nil else { return }
         var items = [UIBarButtonItem]()
+        phoneSpaceItems.removeAll()
         if workspace.supportsArchive {
             items.append(archiveButton)
         }
@@ -1352,6 +1403,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
                 item.isEnabled = workspace.isReady && !isSelectingRows && !sidebarDragHasNativeHold
                 item.accessibilityIdentifier = "browser.space.\(space.id)"
                 item.accessibilityTraits = selected ? [.button, .selected] : [.button]
+                phoneSpaceItems[space.id] = item
                 items.append(item)
             }
             items.append(.flexibleSpace())
