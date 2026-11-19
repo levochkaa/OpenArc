@@ -4017,6 +4017,9 @@ struct MediaFrameState {
 struct TabRecord {
   // Stays visible under the active tab while its video moves to Picture in Picture.
   bool keptVisibleForPictureInPicture = false;
+  // The page's background as last seen on screen, which fills its area after a
+  // switch until the page draws again.
+  NSColor *pageBackgroundColor = nil;
   // The data store of the tab's profile, fixed while the page lives.
   CefRefPtr<CefRequestContext> requestContext;
   CefRefPtr<CefClient> client;
@@ -4600,6 +4603,7 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
   NSMutableDictionary<NSString *, BrowserScreenSharePicker *> *_screenSharePickers;
   NSString *_lastExtensionTabsJSON;
   NSSet<NSString *> *_warmTabIDs;
+  BrowserPageBackdrop *_pageBackdrop;
   BOOL _lastExtensionTabsFocused;
   int _nextPeekSessionID;
   int _peekCardSessionID;
@@ -4633,6 +4637,7 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
 
   _hostView = hostView;
   _hostView.controller = self;
+  _pageBackdrop = [[BrowserPageBackdrop alloc] init];
   _profileCachePath = [profileCachePath copy];
   _usesEphemeralRequestContext = usesEphemeralRequestContext;
   __weak BrowserTabController *weakSelf = self;
@@ -5702,23 +5707,35 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
   }
   std::map<std::string, NSRect> devToolsPanes;
   if (hostView == nil || keys.empty()) {
+    [_pageBackdrop hide];
     [self layoutDockedDevToolsInPanes:devToolsPanes split:NO];
     return;
   }
   if (keys.size() == 1) {
     auto it = _tabRecords.find(keys.front());
-    if (it != _tabRecords.end()) {
+    NSView *pageView = it != _tabRecords.end() ? PageViewForRecord(it->second) : nil;
+    if (pageView != nil) {
       if ([self showsDockedDevToolsForKey:keys.front()]) {
         const NSRect pane = hostView.bounds;
         devToolsPanes[keys.front()] = pane;
-        SyncPageViewFrameInRect(PageViewForRecord(it->second), [self pageFrameBesideDevToolsInPane:pane]);
+        SyncPageViewFrameInRect(pageView, [self pageFrameBesideDevToolsInPane:pane]);
       } else {
-        SyncPageViewFrame(hostView, PageViewForRecord(it->second));
+        SyncPageViewFrame(hostView, pageView);
       }
+    }
+    if (pageView != nil && !pageView.hidden && pageView.superview == hostView) {
+      [_pageBackdrop showBelowPageView:pageView
+                            inHostView:hostView
+                              tabColor:it->second.pageBackgroundColor
+                             URLString:ToNSString(it->second.latestURL)];
+    } else {
+      [_pageBackdrop hide];
     }
     [self layoutDockedDevToolsInPanes:devToolsPanes split:NO];
     return;
   }
+  // Split View shows the host between its panes; the panes draw their own pages.
+  [_pageBackdrop hide];
   NSMutableArray<NSNumber *> *fractions = [NSMutableArray array];
   if (_visibleLayoutFractions.count == _visibleLayoutTabIDs.count) {
     for (NSUInteger index = 0; index < _visibleLayoutTabIDs.count; index++) {
@@ -9082,6 +9099,18 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
   [self syncPeekCardsWithActiveTab];
   const std::string activeKey = ToStdString(_activeTabID);
   const std::vector<std::string> visibleKeys = [self visiblePaneKeys];
+  // Pages on screen show their background now; the color covers their area on
+  // their next switch, before they draw again.
+  for (auto &entry : _tabRecords) {
+    NSView *pageView = PageViewForRecord(entry.second);
+    if (pageView != nil && !pageView.hidden && pageView.superview == _hostView) {
+      NSColor *color = [_pageBackdrop rememberColorOfPageView:pageView
+                                                    URLString:ToNSString(entry.second.latestURL)];
+      if (color != nil) {
+        entry.second.pageBackgroundColor = color;
+      }
+    }
+  }
   for (auto &entry : _tabRecords) {
     if (std::find(visibleKeys.begin(), visibleKeys.end(), entry.first) !=
         visibleKeys.end()) {
