@@ -4604,6 +4604,14 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
   NSString *_lastExtensionTabsJSON;
   NSSet<NSString *> *_warmTabIDs;
   BrowserPageBackdrop *_pageBackdrop;
+  // The page kept on top of the shown one until that page draws, the page it
+  // covers, and the page last shown alone.
+  BrowserPageFrameWatcher *_pageFrameWatcher;
+  std::string _pageCoverKey;
+  std::string _pageCoverIncomingKey;
+  std::string _shownPageKey;
+  // The cover while it goes transparent before it is hidden.
+  __weak NSView *_fadingPageCover;
   BOOL _lastExtensionTabsFocused;
   int _nextPeekSessionID;
   int _peekCardSessionID;
@@ -4638,6 +4646,7 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
   _hostView = hostView;
   _hostView.controller = self;
   _pageBackdrop = [[BrowserPageBackdrop alloc] init];
+  _pageFrameWatcher = [[BrowserPageFrameWatcher alloc] init];
   _profileCachePath = [profileCachePath copy];
   _usesEphemeralRequestContext = usesEphemeralRequestContext;
   __weak BrowserTabController *weakSelf = self;
@@ -8776,6 +8785,11 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
   _dockedDevTools = nil;
   _dockedDevToolsObservers = nil;
   _pendingDevToolsTabID = nil;
+  [_pageFrameWatcher cancel];
+  [self stopFadingPageCover];
+  _pageCoverKey.clear();
+  _pageCoverIncomingKey.clear();
+  _shownPageKey.clear();
   _hostView.controller = nil;
   _hostView = nil;
   _activeTabID = nil;
@@ -9096,6 +9110,132 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
   return _hostView.window;
 }
 
+// A Chromium page in OpenArc's window drops its compositor when hidden, so a
+// page shown again draws nothing until its new compositor delivers a frame,
+// a frame or two later. The page on screen stays on top of it until then, so
+// a switch goes from one page straight to the other. Returns that page's key,
+// or an empty one.
+- (std::string)pageCoverKeyForVisibleKeys:(const std::vector<std::string> &)visibleKeys {
+  BrowserTabHostView *hostView = _hostView;
+  if (hostView == nil || visibleKeys.size() != 1) {
+    return {};
+  }
+  auto incoming = _tabRecords.find(visibleKeys.front());
+  NSView *incomingView = incoming != _tabRecords.end() ? PageViewForRecord(incoming->second) : nil;
+  if (incomingView == nil || incomingView.superview != hostView) {
+    return {};
+  }
+  // WebKit keeps a hidden page's drawing; Chromium pages wait for a frame.
+  const bool waits = incomingView.hidden && !IsWebKitRecord(incoming->second);
+  NSString *cover = [BrowserPageCover coverKeyForIncoming:ToNSString(incoming->first)
+                                   incomingWaitsForFrame:waits
+                                            pendingCover:ToNSString(_pageCoverKey)
+                                         pendingIncoming:ToNSString(_pageCoverIncomingKey)
+                                               shownPage:ToNSString(_shownPageKey)];
+  auto it = cover != nil ? _tabRecords.find(ToStdString(cover)) : _tabRecords.end();
+  if (it == _tabRecords.end() || it->second.isClosing) {
+    return {};
+  }
+  NSView *coverView = PageViewForRecord(it->second);
+  if (coverView == nil || coverView.hidden || coverView.superview != hostView) {
+    return {};
+  }
+  return it->first;
+}
+
+// Puts the page about to be shown right below the cover while it is still
+// hidden. Moving a shown Chromium page in the view tree takes it out of the
+// window for a moment, which drops its compositor and its drawing.
+- (void)placeIncomingPageBelowCover:(const std::string &)coverKey
+                        visibleKeys:(const std::vector<std::string> &)visibleKeys {
+  BrowserTabHostView *hostView = _hostView;
+  auto cover = coverKey.empty() ? _tabRecords.end() : _tabRecords.find(coverKey);
+  auto incoming = visibleKeys.size() == 1 ? _tabRecords.find(visibleKeys.front()) : _tabRecords.end();
+  if (hostView == nil || cover == _tabRecords.end() || incoming == _tabRecords.end()) {
+    return;
+  }
+  NSView *coverView = PageViewForRecord(cover->second);
+  NSView *incomingView = PageViewForRecord(incoming->second);
+  NSArray<NSView *> *subviews = hostView.subviews;
+  const NSUInteger coverIndex = [subviews indexOfObjectIdenticalTo:coverView];
+  const NSUInteger incomingIndex = [subviews indexOfObjectIdenticalTo:incomingView];
+  if (incomingView.hidden && coverIndex != NSNotFound && incomingIndex != NSNotFound &&
+      incomingIndex > coverIndex) {
+    [hostView addSubview:incomingView positioned:NSWindowBelow relativeTo:coverView];
+  }
+}
+
+// Watches the shown page for its first frame while a cover is on top of it;
+// with no cover, records the page shown alone.
+- (void)updatePageCover:(const std::string &)coverKey
+            visibleKeys:(const std::vector<std::string> &)visibleKeys {
+  auto cover = coverKey.empty() ? _tabRecords.end() : _tabRecords.find(coverKey);
+  auto incoming = visibleKeys.size() == 1 ? _tabRecords.find(visibleKeys.front()) : _tabRecords.end();
+  NSView *coverView = cover != _tabRecords.end() ? PageViewForRecord(cover->second) : nil;
+  NSView *incomingView = incoming != _tabRecords.end() ? PageViewForRecord(incoming->second) : nil;
+  BrowserTabHostView *hostView = _hostView;
+  if (_fadingPageCover != nil) {
+    if (coverView == _fadingPageCover && incoming->first == _pageCoverIncomingKey) {
+      return;
+    }
+    [self stopFadingPageCover];
+  }
+  if (coverView == nil || incomingView == nil || hostView == nil) {
+    [_pageFrameWatcher cancel];
+    _pageCoverKey.clear();
+    _pageCoverIncomingKey.clear();
+    _shownPageKey = visibleKeys.size() == 1 ? visibleKeys.front() : std::string();
+    return;
+  }
+  _pageCoverKey = coverKey;
+  if (_pageCoverIncomingKey == incoming->first && _pageFrameWatcher.watchedPageView == incomingView) {
+    return;
+  }
+  _pageCoverIncomingKey = incoming->first;
+  __weak BrowserTabController *weakSelf = self;
+  [_pageFrameWatcher watchPageView:incomingView
+                           timeout:0.25
+                        completion:^{
+                          [weakSelf finishPageCover];
+                        }];
+}
+
+// The shown page drew: the cover goes transparent and is hidden two frames
+// later. Chromium drops a hidden page's compositor at once, and its drawing
+// can vanish before the window shows the page hidden.
+- (void)finishPageCover {
+  auto cover = _pageCoverKey.empty() ? _tabRecords.end() : _tabRecords.find(_pageCoverKey);
+  NSView *coverView = cover != _tabRecords.end() ? PageViewForRecord(cover->second) : nil;
+  if (coverView == nil || _fadingPageCover != nil) {
+    [self removePageCover];
+    return;
+  }
+  _fadingPageCover = coverView;
+  coverView.alphaValue = 0;
+  __weak BrowserTabController *weakSelf = self;
+  [_pageFrameWatcher waitForFramesOfView:coverView
+                                 timeout:0.1
+                              completion:^{
+                                [weakSelf removePageCover];
+                              }];
+}
+
+- (void)removePageCover {
+  if (_pageCoverKey.empty()) {
+    [self stopFadingPageCover];
+    return;
+  }
+  _shownPageKey = _pageCoverIncomingKey;
+  _pageCoverKey.clear();
+  _pageCoverIncomingKey.clear();
+  [self updateBrowserVisibilityFocusingActiveTab:NO];
+}
+
+- (void)stopFadingPageCover {
+  _fadingPageCover.alphaValue = 1;
+  _fadingPageCover = nil;
+}
+
 - (void)updateBrowserVisibilityFocusingActiveTab:(BOOL)focusActive {
   dispatch_async(dispatch_get_main_queue(), ^{
     [self presentWaitingDialogs];
@@ -9115,9 +9255,11 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
       }
     }
   }
+  const std::string coverKey = [self pageCoverKeyForVisibleKeys:visibleKeys];
   for (auto &entry : _tabRecords) {
     if (std::find(visibleKeys.begin(), visibleKeys.end(), entry.first) !=
-        visibleKeys.end()) {
+            visibleKeys.end() ||
+        entry.first == coverKey) {
       continue;
     }
 
@@ -9140,6 +9282,7 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
     }
   }
 
+  [self placeIncomingPageBelowCover:coverKey visibleKeys:visibleKeys];
   for (const auto &key : visibleKeys) {
     auto it = _tabRecords.find(key);
     if (it == _tabRecords.end()) {
@@ -9151,6 +9294,7 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
     }
   }
   [self layoutVisiblePanes:visibleKeys];
+  [self updatePageCover:coverKey visibleKeys:visibleKeys];
   [self layoutProtectedVideoPrompt];
   [self layoutProtectedVideos];
 
