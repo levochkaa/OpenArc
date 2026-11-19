@@ -5,6 +5,46 @@ import Foundation
 // MARK: - BrowserStrings
 
 enum BrowserStrings {
+    static let menuAddAddonToWebKit = NSLocalizedString(
+        "browser.menu.add_addon_to_webkit",
+        comment: "View menu: install the Firefox add-on the page shows, for pages WebKit draws.",
+    )
+    static let menuWebKitAddons = NSLocalizedString(
+        "browser.menu.webkit_addons",
+        comment: "View menu: the Firefox add-ons WebKit pages run.",
+    )
+    static let menuWebKitAddonsEmpty = NSLocalizedString(
+        "browser.menu.webkit_addons.empty",
+        comment: "View menu: no Firefox add-ons are installed for WebKit pages.",
+    )
+    static let webKitAddonPromptTitle = NSLocalizedString(
+        "browser.webkit_addon.prompt.title",
+        comment: "Alert title before a Firefox add-on installs; %@ is its name.",
+    )
+    static let webKitAddonPartiallyCompatible = NSLocalizedString(
+        "browser.webkit_addon.partially_compatible",
+        comment: "Alert text before a Firefox add-on installs, followed by its permissions.",
+    )
+    static let webKitAddonUnsupported = NSLocalizedString(
+        "browser.webkit_addon.unsupported",
+        comment: "Alert text before the add-on features WebKit does not run.",
+    )
+    static let webKitAddonAdd = NSLocalizedString(
+        "browser.webkit_addon.add",
+        comment: "Alert button that installs a Firefox add-on for WebKit pages.",
+    )
+    static let webKitAddonFailed = NSLocalizedString(
+        "browser.webkit_addon.failed",
+        comment: "Alert title when a Firefox add-on fails to install.",
+    )
+    static let webKitAddonRemoveTitle = NSLocalizedString(
+        "browser.webkit_addon.remove.title",
+        comment: "Alert title before a Firefox add-on is removed; %@ is its name.",
+    )
+    static let webKitAddonRemove = NSLocalizedString(
+        "browser.webkit_addon.remove",
+        comment: "Alert button that removes a Firefox add-on from WebKit pages.",
+    )
     static let menuOpenPageInWebKit = NSLocalizedString(
         "browser.menu.open_page_in_webkit",
         comment: "View menu: show the page in WebKit, which plays protected video.",
@@ -1061,17 +1101,6 @@ enum BrowserStrings {
         "browser.downloads.more_actions",
         comment: "Tooltip and accessibility label of the button that opens a download's menu.",
     )
-
-    /// "Open in Preview": the app that opens the file by default.
-    static func downloadsOpenIn(_ application: String) -> String {
-        String(
-            format: NSLocalizedString(
-                "browser.downloads.open_in_app",
-                comment: "Menu item that opens a downloaded file. %@ is the app's name.",
-            ),
-            application,
-        )
-    }
 
     static let findBarPlaceholder = NSLocalizedString(
         "browser.find_bar.placeholder",
@@ -4204,6 +4233,17 @@ enum BrowserStrings {
         "browser.site_permission.notifications_off.not_now",
         comment: "Button that closes the alert about notifications being off in macOS.",
     )
+
+    /// "Open in Preview": the app that opens the file by default.
+    static func downloadsOpenIn(_ application: String) -> String {
+        String(
+            format: NSLocalizedString(
+                "browser.downloads.open_in_app",
+                comment: "Menu item that opens a downloaded file. %@ is the app's name.",
+            ),
+            application,
+        )
+    }
 
     static func syncAccountLastSynced(_ date: String) -> String {
         String(

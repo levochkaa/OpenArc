@@ -25,6 +25,13 @@ struct BrowserExtension: Identifiable, Equatable {
     }
 }
 
+// MARK: - Notification.Name
+
+extension Notification.Name {
+    /// Chromium's extensions changed: installed, removed, turned on or off.
+    static let browserChromiumExtensionsDidChange = Notification.Name("BrowserChromiumExtensionsDidChange")
+}
+
 // MARK: - BrowserExtensionManaging
 
 @MainActor protocol BrowserExtensionManaging: AnyObject {
@@ -32,6 +39,12 @@ struct BrowserExtension: Identifiable, Equatable {
     func runAction(id: String) -> BrowserExtensionActionResult
     func setExtension(id: String, isEnabled: Bool) -> Bool
     func removeExtension(id: String) -> Bool
+    /// The Chromium profile folder the extensions live in.
+    var profileDirectoryPath: String? { get }
+}
+
+extension BrowserExtensionManaging {
+    var profileDirectoryPath: String? { nil }
 }
 
 // MARK: - BrowserExtensionActionResult
@@ -67,6 +80,46 @@ enum BrowserExtensionActionResult: Equatable {
 
 enum BrowserExtensionProfileSnapshotStore {
     // MARK: Internal
+
+    /// An installed extension's unpacked files and state, for WebKit pages to load.
+    struct Files: Equatable {
+        let id: String
+        let name: String
+        let version: String
+        let directory: URL
+        let isEnabled: Bool
+        /// Chromium's Allow in Incognito.
+        let allowsIncognito: Bool
+    }
+
+    /// The user's extensions in the first candidate profile that has any,
+    /// with their folders under `Extensions/<id>/<version>`. Ones without a
+    /// manifest on disk are left out.
+    static func installedExtensionFiles(profileDirectories: [URL]) -> [Files] {
+        for profileDirectory in uniqueExistingDirectories(profileDirectories) {
+            guard let data = preferencesData(in: profileDirectory),
+                  let snapshot = try? JSONDecoder().decode(BrowserExtensionPreferencesSnapshot.self, from: data),
+                  let settings = snapshot.extensions?.settings else { continue }
+            let files = settings.compactMap { id, entry -> Files? in
+                guard entry.isUserVisible, let manifest = entry.manifest else { return nil }
+                let directory = extensionDirectory(for: id, entry: entry, profileDirectory: profileDirectory)
+                guard FileManager.default.fileExists(atPath: directory.appendingPathComponent("manifest.json").path)
+                else { return nil }
+                return Files(
+                    id: id,
+                    name: extensionName(from: manifest, extensionDirectory: directory) ?? id,
+                    version: manifest.version ?? entry.version ?? "",
+                    directory: directory,
+                    isEnabled: entry.isEnabled,
+                    allowsIncognito: entry.incognito == true,
+                )
+            }
+            if !files.isEmpty {
+                return files.sorted { $0.id < $1.id }
+            }
+        }
+        return []
+    }
 
     static func installedExtensions(profileDirectories: [URL]) -> [BrowserExtension] {
         for profileDirectory in uniqueExistingDirectories(profileDirectories) {
@@ -411,6 +464,7 @@ private struct BrowserExtensionPreferencesContainer: Decodable {
 private struct BrowserExtensionPreferencesEntry: Decodable {
     enum CodingKeys: String, CodingKey {
         case disableReasons = "disable_reasons"
+        case incognito
         case location
         case manifest
         case path
@@ -421,6 +475,7 @@ private struct BrowserExtensionPreferencesEntry: Decodable {
     }
 
     let disableReasons: BrowserExtensionDisableReasons?
+    let incognito: Bool?
     let location: Int?
     let manifest: BrowserExtensionManifest?
     let path: String?

@@ -9,6 +9,8 @@ import Foundation
 
     private let profileDirectoryURL: URL?
 
+    var profileDirectoryPath: String? { profilePath }
+
     private var profilePath: String? {
         if let profileDirectoryURL {
             return profileDirectoryURL.path

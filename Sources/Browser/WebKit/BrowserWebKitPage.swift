@@ -71,6 +71,8 @@ import WebKit
     private var isClosed = false
     private var boostsObservation: AnyCancellable?
     private var contentRulesObservation: AnyCancellable?
+    /// The profile's extensions, which run in this page.
+    private weak var extensionHost: BrowserWebKitExtensionHost?
 
     @objc var view: NSView { webView }
 
@@ -110,11 +112,21 @@ import WebKit
         return chain.map { SecCertificateCopyData($0) as Data }
     }
 
-    /// A page of its own, with the profile's data store.
+    /// Whether the page keeps no website data.
+    var isEphemeral: Bool { !webView.configuration.websiteDataStore.isPersistent }
+
+    /// The web view extensions inject into.
+    var extensionWebView: WKWebView { webView }
+
+    /// A page of its own, with the profile's data store and extensions. A
+    /// private page runs only the extensions allowed in incognito.
     @objc convenience init(profileKey: String?, ephemeral: Bool) {
         let configuration = Self.configuration(
             dataStore: ephemeral ? Self.ephemeralStore : Self.dataStore(forProfileKey: profileKey ?? ""),
         )
+        if let profileKey, !profileKey.isEmpty {
+            configuration.webExtensionController = BrowserWebKitExtensionHost.host(forProfileKey: profileKey).controller
+        }
         self.init(configuration: configuration)
     }
 
@@ -160,6 +172,9 @@ import WebKit
         webView.allowsMagnification = true
         webView.isInspectable = true
         observe()
+        // A popup's configuration carries its opener's controller.
+        self.extensionHost = BrowserWebKitExtensionHost.host(for: configuration.webExtensionController)
+        extensionHost?.register(self)
     }
 
     /// A UUID made from the profile's data path, the same on every launch.
@@ -306,6 +321,16 @@ import WebKit
         return NSBitmapImageRep(cgImage: cgImage).representation(using: .png, properties: [:])
     }
 
+    /// An extension asked for a link in a new tab.
+    func openInNewTab(url: URL, inBackground: Bool) {
+        delegate?.webKitPage(self, openURLStringInNewTab: url.absoluteString, inBackground: inBackground)
+    }
+
+    /// An extension asked to close the page's tab.
+    func requestCloseForExtension() {
+        delegate?.webKitPageDidRequestClose(self)
+    }
+
     @objc func load(urlString: String) {
         guard let url = URL(string: urlString) else { return }
         if url.isFileURL {
@@ -449,6 +474,7 @@ import WebKit
     @objc func close() {
         guard !isClosed else { return }
         isClosed = true
+        extensionHost?.unregister(self)
         observations.removeAll()
         boostsObservation = nil
         webView.stopLoading()
@@ -475,19 +501,35 @@ import WebKit
     }
 
     fileprivate func webViewDidBecomeFirstResponder() {
+        extensionHost?.focus(self)
         delegate?.webKitPageDidBecomeFocused(self)
     }
 
     private func observe() {
         observations = [
             webView.observe(\.title, options: [.new]) { [weak self] _, _ in
-                MainActor.assumeIsolated { self.map { $0.delegate?.webKitPageDidChangeTitle($0) } }
+                MainActor.assumeIsolated {
+                    self.map {
+                        $0.extensionHost?.pageChanged($0, .title)
+                        $0.delegate?.webKitPageDidChangeTitle($0)
+                    }
+                }
             },
             webView.observe(\.url, options: [.new]) { [weak self] _, _ in
-                MainActor.assumeIsolated { self.map { $0.delegate?.webKitPageDidChangeURL($0) } }
+                MainActor.assumeIsolated {
+                    self.map {
+                        $0.extensionHost?.pageChanged($0, .URL)
+                        $0.delegate?.webKitPageDidChangeURL($0)
+                    }
+                }
             },
             webView.observe(\.isLoading, options: [.new]) { [weak self] _, _ in
-                MainActor.assumeIsolated { self.map { $0.delegate?.webKitPageDidChangeLoading($0) } }
+                MainActor.assumeIsolated {
+                    self.map {
+                        $0.extensionHost?.pageChanged($0, .loading)
+                        $0.delegate?.webKitPageDidChangeLoading($0)
+                    }
+                }
             },
             webView.observe(\.canGoBack, options: [.new]) { [weak self] _, _ in
                 MainActor.assumeIsolated { self.map { $0.delegate?.webKitPageDidChangeNavigationState($0) } }

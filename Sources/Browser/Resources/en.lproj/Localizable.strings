@@ -1309,3 +1309,13 @@
 "browser.capture.card.retake" = "Retake";
 "browser.capture.card.new_easel" = "New Easel";
 "browser.capture.area_hint" = "Click or drag to capture a portion of this page";
+"browser.menu.add_addon_to_webkit" = "Add Add-on to WebKit Pages";
+"browser.menu.webkit_addons" = "Add-ons in WebKit Pages";
+"browser.menu.webkit_addons.empty" = "No Add-ons";
+"browser.webkit_addon.prompt.title" = "Add “%@” to WebKit pages?";
+"browser.webkit_addon.partially_compatible" = "Partially compatible: written for Firefox. It runs in pages WebKit draws, such as protected video sites. Standard extension features work; Firefox’s own do not. It can:";
+"browser.webkit_addon.unsupported" = "Not supported here:";
+"browser.webkit_addon.add" = "Add Add-on";
+"browser.webkit_addon.failed" = "The add-on was not added";
+"browser.webkit_addon.remove.title" = "Remove “%@” from WebKit pages?";
+"browser.webkit_addon.remove" = "Remove";

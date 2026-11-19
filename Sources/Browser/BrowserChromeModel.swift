@@ -1016,6 +1016,18 @@ enum BrowserWindowMode: Equatable {
         selectedTabID != nil && tabDriver.activeTabCanSwitchEngine
     }
 
+    /// The Chromium profile whose extensions the selected Space's WebKit pages run.
+    var webKitExtensionProfileKey: String? {
+        profileCachePath(forSpaceID: selectedSpaceID) ?? extensionManager.profileDirectoryPath
+    }
+
+    /// The Firefox add-on the selected tab's AMO page shows, for View › Add to WebKit Pages.
+    var webKitAddonStoreItem: BrowserWebExtensionStoreItem? {
+        guard windowMode == .normal, let url = selectedTab.flatMap({ URL(string: $0.urlString) }),
+              let item = BrowserWebExtensionStoreItem(pageURL: url), item.source == .firefoxAddons else { return nil }
+        return item
+    }
+
     private var canAdmitLocalAutomaticArchive: Bool {
         isContextReady && windowMode.persistsSession && isPersistenceEnabled && !isShuttingDown &&
             !hasDiscardedSessionForClosure && !hasUncommittedSessionWrites && !isRestoringSession &&
@@ -3661,7 +3673,12 @@ enum BrowserWindowMode: Equatable {
     }
 
     func refreshBrowserExtensions() {
+        let previous = browserExtensions
         browserExtensions = extensionManager.installedExtensions()
+        if previous != browserExtensions {
+            // WebKit pages keep Chromium's extensions on or off in step.
+            NotificationCenter.default.post(name: .browserChromiumExtensionsDidChange, object: nil)
+        }
         removeUnavailablePinnedExtensionsIfNeeded()
         closeExtensionSidePanelIfNeeded()
     }
@@ -6748,7 +6765,7 @@ enum BrowserWindowMode: Equatable {
         let candidates = tabs.filter {
             $0.id != selectedTabID && !$0.urlString.isEmpty && !BrowserNoteURL.isNoteURLString($0.urlString)
         }
-            .sorted { activeIDs.contains($0.id) && !activeIDs.contains($1.id) }
+        .sorted { activeIDs.contains($0.id) && !activeIDs.contains($1.id) }
         let index = BrowserSearchIndex(documents: candidates.map {
             .init(title: $0.displayTitle, urlString: $0.urlString)
         })

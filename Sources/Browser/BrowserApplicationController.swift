@@ -38,6 +38,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
         self?.updateExtensionsMenu($0)
     }
 
+    private lazy var webKitAddonsMenuDelegate = BrowserOnOpenMenuDelegate { [weak self] in
+        self?.populateWebKitAddonsMenu($0)
+    }
+
     private let windowCommandTarget = BrowserWindowCommandTarget()
     private let undoCommandTarget = BrowserUndoCommandTarget()
     private var settingsWindowController: SettingsWindowController?
@@ -1086,6 +1090,8 @@ NSMenuDelegate, NSUserInterfaceValidations {
             return activeChromeModel?.canOpenLocation ?? false
         case #selector(createNewWindow(_:)):
             return !isTerminationRequested
+        case #selector(addAddonToWebKitPages(_:)):
+            return activeChromeModel?.webKitAddonStoreItem != nil
         case #selector(openPageInOtherEngine(_:)):
             if let title = activeChromeModel?.otherEngineMenuTitle {
                 (item as? NSMenuItem)?.title = title
@@ -1342,6 +1348,22 @@ NSMenuDelegate, NSUserInterfaceValidations {
         activeChromeModel?.openPageInOtherEngine()
     }
 
+    /// View › Add Add-on to WebKit Pages: installs the add-on an AMO page shows
+    /// for the selected Space's profile.
+    func addAddonToWebKitPages(_: Any?) {
+        guard let model = activeChromeModel, let item = model.webKitAddonStoreItem,
+              let profileKey = model.webKitExtensionProfileKey else { return }
+        let window = NSApp.keyWindow
+        Task { await BrowserWebKitExtensionHost.host(forProfileKey: profileKey).installAddon(item, window: window) }
+    }
+
+    func removeWebKitAddon(_ sender: Any?) {
+        guard let id = (sender as? NSMenuItem)?.representedObject as? String,
+              let profileKey = activeChromeModel?.webKitExtensionProfileKey else { return }
+        let window = NSApp.keyWindow
+        Task { await BrowserWebKitExtensionHost.host(forProfileKey: profileKey).confirmRemoval(id: id, window: window) }
+    }
+
     func dockDeveloperToolsAgain(_: Any?) {
         UserDefaults.standard.set(BrowserDevToolsDockSide.right.rawValue, forKey: BrowserDevToolsDockSide.defaultsKey)
         NotificationCenter.default.post(name: BrowserDevToolsDockSide.didChangeNotification, object: nil)
@@ -1401,6 +1423,26 @@ NSMenuDelegate, NSUserInterfaceValidations {
     func searchSmallWindowAddress(_ sender: Any?) {
         guard let panel = (sender as? BrowserPeekPanel) ?? focusedSmallWindow else { return }
         _ = presentSmallWindowSearch(in: panel, initialQuery: panel.addressForEditing)
+    }
+
+    /// The selected Space's profile's WebKit add-ons, each removable.
+    private func populateWebKitAddonsMenu(_ menu: NSMenu) {
+        menu.removeAllItems()
+        guard let profileKey = activeChromeModel?.webKitExtensionProfileKey else { return }
+        let host = BrowserWebKitExtensionHost.host(forProfileKey: profileKey)
+        guard !host.addons.isEmpty else {
+            menu.addItem(NSMenuItem(title: BrowserStrings.menuWebKitAddonsEmpty, action: nil, keyEquivalent: ""))
+            return
+        }
+        for record in host.addons {
+            let item = NSMenuItem(
+                title: "\(record.name) \(record.version)", action: #selector(removeWebKitAddon(_:)), keyEquivalent: "",
+            )
+            item.representedObject = record.id
+            item.target = self
+            item.toolTip = BrowserStrings.webKitAddonRemove
+            menu.addItem(item)
+        }
     }
 
     /// `openarc://share/<id>`, from a shared page's Add to OpenArc button: asks
@@ -2185,6 +2227,18 @@ NSMenuDelegate, NSUserInterfaceValidations {
         )
         engineItem.target = self
         viewMenu.addItem(engineItem)
+        let addonItem = NSMenuItem(
+            title: BrowserStrings.menuAddAddonToWebKit,
+            action: #selector(addAddonToWebKitPages(_:)),
+            keyEquivalent: "",
+        )
+        addonItem.target = self
+        viewMenu.addItem(addonItem)
+        let addonsItem = NSMenuItem(title: BrowserStrings.menuWebKitAddons, action: nil, keyEquivalent: "")
+        let addonsMenu = NSMenu(title: BrowserStrings.menuWebKitAddons)
+        addonsMenu.delegate = webKitAddonsMenuDelegate
+        addonsItem.submenu = addonsMenu
+        viewMenu.addItem(addonsItem)
         viewMenu.addItem(makeMenuItem(
             descriptor: shortcutStore.descriptor(for: .editBoost),
             action: #selector(editBoost(_:)),
@@ -4408,7 +4462,8 @@ NSMenuDelegate, NSUserInterfaceValidations {
             }
             if let window { alert.beginSheetModal(for: window) } else { alert.runModal() }
         }
-        if let window { panel.beginSheetModal(for: window, completionHandler: finish) } else { finish(panel.runModal()) }
+        if let window { panel.beginSheetModal(for: window, completionHandler: finish) }
+        else { finish(panel.runModal()) }
         return true
     }
 
@@ -4432,7 +4487,9 @@ NSMenuDelegate, NSUserInterfaceValidations {
                 let imported = try BrowserNotesImport.notes(from: panel.urls)
                 let before = Set(model.notesStore.notes.map(\.id))
                 let count = model.notesStore.add(imported)
-                alert.messageText = count == 0 ? BrowserStrings.notesNothingToImport : BrowserStrings.notesImported(count)
+                alert.messageText = count == 0
+                    ? BrowserStrings.notesNothingToImport
+                    : BrowserStrings.notesImported(count)
                 if let first = model.notesStore.notes.first(where: { !before.contains($0.id) }) {
                     model.openNote(id: first.id)
                 }
@@ -4442,7 +4499,8 @@ NSMenuDelegate, NSUserInterfaceValidations {
             }
             if let window { alert.beginSheetModal(for: window) } else { alert.runModal() }
         }
-        if let window { panel.beginSheetModal(for: window, completionHandler: finish) } else { finish(panel.runModal()) }
+        if let window { panel.beginSheetModal(for: window, completionHandler: finish) }
+        else { finish(panel.runModal()) }
         return true
     }
 
