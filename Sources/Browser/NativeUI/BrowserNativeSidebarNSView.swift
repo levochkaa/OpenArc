@@ -2283,7 +2283,9 @@ final class BrowserNativeSidebarNSView: NSView {
             trayTop: pagerClip.isFlipped ? top : pagerClip.bounds.height - top,
             height: pagerClip.bounds.height,
             strength: listFadeStrength,
-            startsAtTop: layer.isGeometryFlipped,
+            // The layer's own flag is relative to its parent's: the sidebar sits in
+            // flipped ancestors, so its layer says false while its contents run top down.
+            startsAtTop: layer.contentsAreFlipped(),
         )
         CATransaction.begin()
         CATransaction.setDisableActions(true)
@@ -3188,8 +3190,8 @@ struct BrowserDownloadsTrayListFade {
     /// Gradient stops in the mask's unit space, ascending, with the mask's opacity at each.
     let locations: [Double]
     let alphas: [Double]
-    /// A mask over a geometry-flipped layer is laid out flipped too: its unit space
-    /// starts at the top edge. Otherwise it starts at the bottom.
+    /// A mask over a layer whose contents are flipped, counting its ancestors, is laid
+    /// out flipped too: its unit space starts at the top edge. Otherwise at the bottom.
     let startsAtTop: Bool
 
     /// `trayTop` is measured from the list's top edge; `strength` runs from 0 (the
