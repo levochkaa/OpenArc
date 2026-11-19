@@ -24,7 +24,7 @@ Apple asks apps to revoke a user's tokens when the account is deleted, with `POS
 
 ### Gap for existing accounts
 
-Accounts that signed in with Apple before migration `009_account_deletion.sql`, or while no key is configured, have no refresh token. Deleting them deletes all their data but cannot revoke at Apple; OpenArc stays listed under the user's Apple Account › Sign in with Apple until they remove it there. The next sign-in after the key is configured stores a token, so the gap closes for every account that signs in again.
+Accounts that signed in with Apple before migration `010_account_deletion.sql`, or while no key is configured, have no refresh token. Deleting them deletes all their data but cannot revoke at Apple; OpenArc stays listed under the user's Apple Account › Sign in with Apple until they remove it there. The next sign-in after the key is configured stores a token, so the gap closes for every account that signs in again.
 
 ## Clients
 
@@ -41,9 +41,9 @@ Tests: `Tests/OpenArcTests/BrowserAccountDeletionTests.swift` (HTTP client again
 
 ## Deploy
 
-Migration `009_account_deletion.sql` adds two nullable columns to `auth_identities` and creates `apple_token_revocations`. Neither rewrites a table, and existing rows stay as they are. The migrate command applies every pending migration in one transaction, so a failure leaves the database as it was. Steps on the services droplet, with the image built and uploaded as `/home/agent/openarc/README.md` describes:
+Migration `010_account_deletion.sql` adds two nullable columns to `auth_identities` and creates `apple_token_revocations`. Neither rewrites a table, and existing rows stay as they are. The migrate command applies every pending migration in one transaction, so a failure leaves the database as it was. Steps on the services droplet, with the image built and uploaded as `/home/agent/openarc/README.md` describes:
 
-1. Back up the database: `docker compose exec -T postgres pg_dump -U openarc openarc | gzip > backup-before-009.sql.gz`.
+1. Back up the database: `docker compose exec -T postgres pg_dump -U openarc openarc | gzip > backup-before-010.sql.gz`.
 2. Create a Sign in with Apple key in the developer account (Keys › +, Sign in with Apple, primary App ID `com.levochkaa.OpenArc`), and add `OPENARC_APPLE_TEAM_ID`, `OPENARC_APPLE_KEY_ID` and `OPENARC_APPLE_PRIVATE_KEY` to `/home/agent/openarc/.env`. Without them the server still deletes accounts, without Apple revocation.
 3. Apply the migrations with `docker compose run --rm api openarc-sync-server migrate` from the new image, then `OPENARC_IMAGE_TAG=<sha> docker compose up -d api`.
 4. Check: `curl -i -X DELETE https://api.openarc.su/v1/account` answers 401, and `/openapi.yaml` lists `deleteAccount`.
