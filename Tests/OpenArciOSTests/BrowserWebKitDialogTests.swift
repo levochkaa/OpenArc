@@ -350,7 +350,8 @@ extension BrowserMobileUITests {
             case .state(let id, let state): states[id] = state
             case .closed,
                  .httpAuthenticationFinished,
-                 .httpAuthenticationRequested: break
+                 .httpAuthenticationRequested,
+                 .openInNewTab: break
             case .javaScriptDialogRequested(let request):
                 requests.append(request)
                 if let answer = response?(request) {

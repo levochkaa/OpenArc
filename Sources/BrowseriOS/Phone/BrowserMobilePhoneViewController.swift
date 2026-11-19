@@ -120,6 +120,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
     /// The last picture of a tab that was switched to while its page still
     /// loads, so a cold tab does not flash blank.
     private var loadingCover: (view: UIView, tabID: String)?
+    private let translator = BrowserMobilePageTranslator()
 
     private var thumbnailWidth: CGFloat { (view.bounds.width * 0.66).rounded() }
     private var safeBottom: CGFloat { view.safeAreaInsets.bottom }
@@ -163,6 +164,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        translator.install(in: self)
         // Shows around the page while it is a card above the search panel.
         view.backgroundColor = UIColor(red: 22 / 255, green: 22 / 255, blue: 37 / 255, alpha: 1)
         pageContainer.backgroundColor = .systemBackground
@@ -279,8 +281,9 @@ final class BrowserMobilePhoneViewController: UIViewController {
         presentedTabs?.render()
         javaScriptDialogPresenter.update(workspace.javaScriptDialog)
         httpAuthenticationPresenter.update(workspace.httpAuthentication)
+        // A launch opens search over the last tab too, unless Settings turn that off.
         if !didAutoOpenSearch, workspace.isReady, mode == .browsing, view.window != nil,
-           tab == nil || tab?.urlString == "about:blank"
+           tab == nil || tab?.urlString == "about:blank" || BrowserMobileAutoOpenKeyboardSetting.isOn()
         {
             didAutoOpenSearch = true
             DispatchQueue.main.async { [weak self] in
@@ -754,6 +757,14 @@ final class BrowserMobilePhoneViewController: UIViewController {
             workspace.prefersDesktopSite.toggle()
             closePanel()
         }
+        pagePanel.onTranslate = { [weak self] in
+            self?.closePanel { self?.toggleTranslation() }
+        }
+        pagePanel.onReader = { [weak self] in
+            guard let self else { return }
+            workspace.isReading.toggle()
+            closePanel()
+        }
         pagePanel.onSiteSettings = { [weak self] in self?.showSiteSettings() }
         pagePanel.onContentHeightChange = { [weak self] layout in self?.resizePagePanel(layout) }
         updatePagePanel()
@@ -803,6 +814,9 @@ final class BrowserMobilePhoneViewController: UIViewController {
                     zoomPercent: Int((zoom * 100).rounded()), canZoomOut: zoom > Self.zoomSteps[0] + 0.001,
                     canZoomIn: zoom < Self.zoomSteps[Self.zoomSteps.count - 1] - 0.001,
                     prefersDesktop: workspace.prefersDesktopSite,
+                    isTranslated: tab?.state.isTranslated == true,
+                    canRead: tab?.state.canRead == true,
+                    isReading: tab?.state.isReading == true,
                 )
                 : nil,
             hasSiteSettings: siteHost != nil,
@@ -1283,6 +1297,45 @@ final class BrowserMobilePhoneViewController: UIViewController {
     @objc private func findInPage() {
         guard mode == .browsing, workspace.canFindInPage else { return }
         workspace.presentFindInPage()
+    }
+
+    /// Translates the page in place, or puts its own text back.
+    private func toggleTranslation() {
+        guard let tab = workspace.selectedTab else { return }
+        if tab.state.isTranslated {
+            workspace.restoreOriginalText()
+            return
+        }
+        let tabID = tab.id
+        workspace.pageText { [weak self] text in
+            guard let self, let text, workspace.selectedTabID == tabID else { return }
+            translator.translate(text) { [weak self] start, texts in
+                self?.workspace.applyTranslatedText(tabID: tabID, start: start, texts: texts)
+            } finish: { [weak self] error in
+                guard let self, let error else { return }
+                showTranslationFailure(error)
+            }
+        }
+    }
+
+    private func showTranslationFailure(_ error: Error) {
+        let message: String =
+            switch error as? BrowserMobilePageTranslator.Failure {
+            case .sameLanguage(let language):
+                String(localized: "This page is already in \(language).", table: "Mobile")
+            case .unsupported:
+                String(localized: "This page's language can't be translated on this device.", table: "Mobile")
+            case nil:
+                error.localizedDescription
+            }
+        // Closing the system's download sheet cancels; that needs no message.
+        if (error as? CancellationError) != nil { return }
+        let alert = UIAlertController(
+            title: String(localized: "Couldn't Translate", table: "Mobile"), message: message, preferredStyle: .alert,
+        )
+        alert.addAction(UIAlertAction(title: String(localized: "OK", table: "Mobile"), style: .default))
+        guard presentedViewController == nil else { return }
+        present(alert, animated: true)
     }
 
     @objc private func editAddress() {

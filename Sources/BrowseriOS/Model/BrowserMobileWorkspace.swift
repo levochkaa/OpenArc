@@ -143,6 +143,12 @@ struct BrowserMobileTab: Identifiable, Equatable {
         set { selectedTab.map { engine.setPrefersDesktopSite(id: $0.runtimeID, newValue) } }
     }
 
+    /// Reader Mode for the selected tab.
+    var isReading: Bool {
+        get { selectedTab?.state.isReading ?? false }
+        set { selectedTab.map { engine.setReading(id: $0.runtimeID, newValue) } }
+    }
+
     private var canEdit: Bool {
         isReady && !isClosed && !isRestoring && (profileDocument?.canEdit ?? true)
     }
@@ -174,6 +180,48 @@ struct BrowserMobileTab: Identifiable, Equatable {
         self.scenePreferences = preferences
         engine.onEvent = { [weak self] event in self?.receive(event) }
         engine.onPopupCreated = { [weak self] runtimeID, url in self?.adoptPopup(runtimeID: runtimeID, url: url) }
+    }
+
+    func pageText(completion: @escaping @MainActor (BrowserMobilePageText?) -> Void) {
+        guard let tab = selectedTab else { return completion(nil) }
+        engine.pageText(id: tab.runtimeID, completion: completion)
+    }
+
+    /// Puts translations into the tab `pageText` was read from, unless it changed since.
+    func applyTranslatedText(tabID: String, start: Int, texts: [String]) {
+        guard let tab = tabs.first(where: { $0.id == tabID }) else { return }
+        engine.applyTranslatedText(id: tab.runtimeID, start: start, texts: texts)
+    }
+
+    func restoreOriginalText() {
+        selectedTab.map { engine.restoreOriginalText(id: $0.runtimeID) }
+    }
+
+    /// Opens a page's link in a new tab next to the current one; in the
+    /// background, the current tab stays selected.
+    func openLinkInNewTab(_ url: URL, inBackground: Bool) {
+        guard canEdit, let url = BrowserMobileSession.allowedURL(url.absoluteString) else { return }
+        guard inBackground else {
+            insertNewTab(url: url)
+            notify()
+            return
+        }
+        if let profileDocument {
+            guard let spaceID = selectedSpaceID ?? spaces.first?.id else { return }
+            _ = profileDocument.createTab(urlString: url.absoluteString, spaceID: spaceID)
+            return
+        }
+        let tab = BrowserMobileTab(
+            id: UUID().uuidString,
+            runtimeID: UUID().uuidString,
+            urlString: url.absoluteString,
+            title: "",
+            state: BrowserMobilePageState(url: url),
+        )
+        tabs.append(tab)
+        enqueueCurrentSession()
+        engine.createTab(id: tab.runtimeID, url: url)
+        notify()
     }
 
     @discardableResult func setAutomaticTabArchival(lifetime: BrowserTemporaryTabLifetime?) -> Bool {
@@ -916,6 +964,8 @@ struct BrowserMobileTab: Identifiable, Equatable {
             }
             javaScriptDialog = dialog
             notify()
+        case .openInNewTab(let url, let inBackground):
+            openLinkInNewTab(url, inBackground: inBackground)
         case .javaScriptDialogFinished(let id):
             guard javaScriptDialog?.id == id else { return }
             javaScriptDialog = nil

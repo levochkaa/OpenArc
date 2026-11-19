@@ -26,6 +26,10 @@ final class BrowserMobilePagePanel: UIView {
         let canZoomOut: Bool
         let canZoomIn: Bool
         let prefersDesktop: Bool
+        var canTranslate = true
+        var isTranslated = false
+        var canRead = false
+        var isReading = false
     }
 
     static let margin: CGFloat = 16
@@ -46,6 +50,8 @@ final class BrowserMobilePagePanel: UIView {
     var onZoomOut: (() -> Void)?
     var onZoomIn: (() -> Void)?
     var onToggleDesktop: (() -> Void)?
+    var onTranslate: (() -> Void)?
+    var onReader: (() -> Void)?
     var onSiteSettings: (() -> Void)?
     /// Display Options opened or closed; the owner resizes the panel to
     /// `contentHeight` inside the animation it is given.
@@ -80,7 +86,9 @@ final class BrowserMobilePagePanel: UIView {
     private let zoomOutButton = UIButton(type: .system)
     private let zoomInButton = UIButton(type: .system)
     private let desktopRow = BrowserMobilePagePanelRow()
-    private let optionSeparators = [UIView(), UIView()]
+    private let translateRow = BrowserMobilePagePanelRow()
+    private let readerRow = BrowserMobilePagePanelRow()
+    private let optionSeparators = [UIView(), UIView(), UIView(), UIView()]
     private let siteSettingsRow = BrowserMobilePagePanelRow()
 
     /// Height of the panel's content above the home indicator.
@@ -88,10 +96,13 @@ final class BrowserMobilePagePanel: UIView {
         siteSettingsTop + Self.rowHeight
     }
 
+    /// The rows Display Options open, top to bottom.
+    private var optionRows: [BrowserMobilePagePanelRow] { [translateRow, readerRow, zoomRow, desktopRow] }
+
     private var tileTop: CGFloat { Self.topInset + Self.rowHeight + 16 }
     private var displayTop: CGFloat { tileTop + Self.tileSide + 38 }
     private var displayHeight: CGFloat {
-        Self.rowHeight + (isDisplayExpanded ? Self.optionHeight * 2 : 0)
+        Self.rowHeight + (isDisplayExpanded ? Self.optionHeight * CGFloat(optionRows.count) : 0)
     }
 
     private var siteSettingsTop: CGFloat { displayTop + displayHeight + Self.groupSpacing }
@@ -176,8 +187,11 @@ final class BrowserMobilePagePanel: UIView {
         displayHeader.frame = CGRect(x: 0, y: 0, width: width, height: Self.rowHeight)
         displayChevron.frame = CGRect(x: width - 16 - 18, y: 0, width: 18, height: Self.rowHeight)
         displayChevron.transform = isDisplayExpanded ? CGAffineTransform(rotationAngle: .pi / 2) : .identity
-        zoomRow.frame = CGRect(x: 0, y: Self.rowHeight, width: width, height: Self.optionHeight)
-        desktopRow.frame = CGRect(x: 0, y: Self.rowHeight + Self.optionHeight, width: width, height: Self.optionHeight)
+        for (index, row) in optionRows.enumerated() {
+            row.frame = CGRect(
+                x: 0, y: Self.rowHeight + Self.optionHeight * CGFloat(index), width: width, height: Self.optionHeight,
+            )
+        }
         let hairline = 1 / max(traitCollection.displayScale, 1)
         for (index, separator) in optionSeparators.enumerated() {
             separator.frame = CGRect(
@@ -256,7 +270,7 @@ final class BrowserMobilePagePanel: UIView {
             view.backgroundColor = fill
             view.layer.borderColor = border
         }
-        for row in [displayHeader, zoomRow, desktopRow, siteSettingsRow] {
+        for row in [displayHeader, siteSettingsRow] + optionRows {
             row.tintColor = glyph
         }
         displayChevron.tintColor = glyph.withAlphaComponent(0.7)
@@ -279,6 +293,22 @@ final class BrowserMobilePagePanel: UIView {
                     : String(localized: "Request Desktop Site", table: "Mobile"),
                 symbol: display.prefersDesktop ? "iphone" : "laptopcomputer", identifier: "browser.desktopSite",
             )
+            translateRow.configure(
+                title: display.isTranslated
+                    ? String(localized: "View Original Site", table: "Mobile")
+                    : String(localized: "Translate", table: "Mobile"),
+                symbol: "globe.americas.fill", identifier: "browser.translate",
+            )
+            translateRow.isEnabled = display.canTranslate || display.isTranslated
+            translateRow.alpha = translateRow.isEnabled ? 1 : 0.45
+            readerRow.configure(
+                title: display.isReading
+                    ? String(localized: "Hide Reader Mode", table: "Mobile")
+                    : String(localized: "Reader Mode", table: "Mobile"),
+                symbol: display.isReading ? "doc.plaintext.fill" : "doc.plaintext", identifier: "browser.readerMode",
+            )
+            readerRow.isEnabled = display.canRead || display.isReading
+            readerRow.alpha = readerRow.isEnabled ? 1 : 0.45
         }
         siteSettingsRow.isEnabled = hasSiteSettings
         siteSettingsRow.alpha = hasSiteSettings ? 1 : 0.45
@@ -371,7 +401,9 @@ final class BrowserMobilePagePanel: UIView {
         zoomStepper.addSubview(divider)
         zoomRow.addSubview(zoomStepper)
         desktopRow.addAction(UIAction { [weak self] _ in self?.onToggleDesktop?() }, for: .touchUpInside)
-        for view in [zoomRow, desktopRow] as [UIView] + optionSeparators {
+        translateRow.addAction(UIAction { [weak self] _ in self?.onTranslate?() }, for: .touchUpInside)
+        readerRow.addAction(UIAction { [weak self] _ in self?.onReader?() }, for: .touchUpInside)
+        for view in optionRows as [UIView] + optionSeparators {
             displayGroup.addSubview(view)
         }
         displayGroup.addSubview(displayHeader)
@@ -402,11 +434,14 @@ final class BrowserMobilePagePanel: UIView {
     }
 
     private func setOptionsVisible(_ visible: Bool) {
-        for view in [zoomRow, desktopRow] as [UIView] + optionSeparators {
+        for view in optionSeparators {
             view.alpha = visible ? 1 : 0
         }
-        zoomRow.isUserInteractionEnabled = visible
-        desktopRow.isUserInteractionEnabled = visible
+        for row in optionRows {
+            // A disabled row keeps its dimmed look once shown.
+            row.alpha = visible ? (row.isEnabled ? 1 : 0.45) : 0
+            row.isUserInteractionEnabled = visible
+        }
     }
 
     private func symbol(_ name: String) -> UIImage? {

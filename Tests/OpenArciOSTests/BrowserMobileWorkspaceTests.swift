@@ -195,6 +195,29 @@ func mobileChangedURLClearsPreviousTitleThroughFailureAndFileReopen(engineReport
     #expect(await reopened.shutdown())
 }
 
+@MainActor @Test func mobileLinkMenuOpensTabsInFrontOrBehind() async throws {
+    let f = MobileWorkspaceFixture()
+    defer { f.cleanup() }
+    let engine = MobileWorkspaceEngine()
+    let workspace = BrowserMobileWorkspace(engine: engine, store: BrowserMobileFileSessionStore(fileURL: f.url))
+    await workspace.restore()
+    workspace.submit("https://example.com/page")
+    let page = try #require(workspace.selectedTab)
+
+    try engine.onEvent?(.openInNewTab(#require(URL(string: "https://example.com/behind")), inBackground: true))
+    #expect(workspace.tabs.count == 2)
+    #expect(workspace.selectedTabID == page.id, "A background tab leaves the page in front")
+    #expect(workspace.tabs.contains { $0.urlString == "https://example.com/behind" })
+
+    try engine.onEvent?(.openInNewTab(#require(URL(string: "https://example.com/front")), inBackground: false))
+    #expect(workspace.tabs.count == 3)
+    #expect(workspace.selectedTab?.urlString == "https://example.com/front")
+
+    try engine.onEvent?(.openInNewTab(#require(URL(string: "javascript:alert(1)")), inBackground: true))
+    #expect(workspace.tabs.count == 3, "Only web addresses open")
+    #expect(await workspace.shutdown())
+}
+
 @MainActor @Test func mobileFailedSaveKeepsLatestEditsAndRetryAtomicallyReplacesOldFile() async throws {
     let f = MobileWorkspaceFixture()
     defer { f.cleanup() }

@@ -18,6 +18,21 @@ enum BrowserMobileSearchEngineSetting {
     }
 }
 
+// MARK: - BrowserMobileAutoOpenKeyboardSetting
+
+/// Whether a launch opens the search field with its keyboard up, over the last tab.
+enum BrowserMobileAutoOpenKeyboardSetting {
+    private static let key = "BrowserMobileSettings.autoOpenKeyboard"
+
+    static func isOn(_ defaults: UserDefaults = .standard) -> Bool {
+        defaults.object(forKey: key) as? Bool ?? true
+    }
+
+    static func set(_ on: Bool, defaults: UserDefaults = .standard) {
+        defaults.set(on, forKey: key)
+    }
+}
+
 // MARK: - BrowserMobilePhoneSettingsViewController
 
 /// Settings from the switcher's gear on iPhone and the sidebar's on iPad:
@@ -34,6 +49,7 @@ final class BrowserMobilePhoneSettingsViewController: UITableViewController {
         let isEnabled: Bool
         var value: String?
         var opensPage = true
+        var toggle: UISwitch?
         let action: () -> Void
     }
 
@@ -108,6 +124,15 @@ final class BrowserMobilePhoneSettingsViewController: UITableViewController {
                 )
                     { [weak self] in self?.showSearchEngines() },
                 .init(
+                    title: String(localized: "Auto-Open Keyboard", table: "Mobile"),
+                    symbol: "keyboard",
+                    color: .systemGray,
+                    id: "browser.settings.autoOpenKeyboard",
+                    isEnabled: true,
+                    opensPage: false,
+                    toggle: autoOpenSwitch(),
+                ) {},
+                .init(
                     title: String(localized: "Clear Website Data", table: "Mobile"),
                     symbol: "trash",
                     color: .systemRed,
@@ -160,8 +185,9 @@ final class BrowserMobilePhoneSettingsViewController: UITableViewController {
         content.textProperties.color = row.isEnabled ? .label : .secondaryLabel
         cell.contentConfiguration = content
         cell.accessoryType = row.opensPage ? .disclosureIndicator : .none
+        cell.accessoryView = row.toggle
         cell.accessibilityIdentifier = row.id
-        cell.selectionStyle = row.isEnabled ? .default : .none
+        cell.selectionStyle = row.isEnabled && row.toggle == nil ? .default : .none
         return cell
     }
 
@@ -189,6 +215,17 @@ final class BrowserMobilePhoneSettingsViewController: UITableViewController {
             rows[index][row].value = BrowserMobileSearchEngineSetting.current(defaults).title
             tableView.reloadRows(at: [IndexPath(row: row, section: index)], with: .none)
         }
+    }
+
+    private func autoOpenSwitch() -> UISwitch {
+        let toggle = UISwitch()
+        toggle.isOn = BrowserMobileAutoOpenKeyboardSetting.isOn(defaults)
+        toggle.accessibilityIdentifier = "browser.settings.autoOpenKeyboard.switch"
+        toggle.addAction(UIAction { [weak self, weak toggle] _ in
+            guard let self, let toggle else { return }
+            BrowserMobileAutoOpenKeyboardSetting.set(toggle.isOn, defaults: defaults)
+        }, for: .valueChanged)
+        return toggle
     }
 
     private func openDownloads() {

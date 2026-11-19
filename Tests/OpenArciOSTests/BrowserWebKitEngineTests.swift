@@ -289,6 +289,43 @@ import WebKit
         #expect(firstView.canGoBack)
     }
 
+    @Test func readerModeAndPageTextLeaveThePageAsItWas() async throws {
+        let fixture = try LocalBrowserHTTPFixture()
+        try await fixture.start()
+        defer { fixture.stop() }
+        let engine = BrowserWebKitEngine(dataStore: .nonPersistent())
+        defer { engine.shutdown() }
+        let recorder = MobileWebKitRecorder(engine: engine)
+        try engine.createTab(id: "one", url: fixture.url(path: "article"))
+        engine.selectTab(id: "one")
+        #expect(await eventually { recorder.finished("one", title: "Linden") && recorder.states["one"]?.canRead == true
+        })
+        let webView = try #require(engine.webView(for: "one"))
+
+        let text = try #require(await pageText(engine, id: "one"))
+        #expect(text.language == "de")
+        #expect(text.texts.contains("Erste Zeile"))
+        #expect(!text.texts.contains("let code = 1"), "Code stays as it is")
+        #expect(!text.texts.contains("OpenArc"), "translate=no stays as it is")
+        let index = try #require(text.texts.firstIndex(of: "Erste Zeile"))
+        engine.applyTranslatedText(id: "one", start: index, texts: ["First line"])
+        #expect(await eventually { recorder.states["one"]?.isTranslated == true })
+        #expect(await bodyText(webView).contains("First line"))
+        engine.restoreOriginalText(id: "one")
+        #expect(await eventually { recorder.states["one"]?.isTranslated == false })
+        #expect(await bodyText(webView).contains("Erste Zeile"))
+
+        engine.setReading(id: "one", true)
+        #expect(await eventually { recorder.states["one"]?.isReading == true })
+        #expect(await bodyText(webView).contains("View Normal Page"))
+        #expect(await !(bodyText(webView).contains("Navigation")), "The reader leaves the page's menus out")
+        engine.setReading(id: "one", false)
+        #expect(await eventually { recorder.states["one"]?.isReading == false })
+        let restored = await bodyText(webView)
+        #expect(restored.contains("Navigation"))
+        #expect(!restored.contains("View Normal Page"))
+    }
+
     @Test func restoringManyTabsCreatesOnlySelectedWebView() throws {
         let engine = BrowserWebKitEngine(dataStore: .nonPersistent())
         defer { engine.shutdown() }
@@ -478,7 +515,8 @@ import WebKit
             case .httpAuthenticationFinished,
                  .httpAuthenticationRequested,
                  .javaScriptDialogFinished,
-                 .javaScriptDialogRequested: break
+                 .javaScriptDialogRequested,
+                 .openInNewTab: break
             }
         }
     }
@@ -501,6 +539,29 @@ import WebKit
     }
     return condition()
 }
+
+@MainActor private func pageText(_ engine: BrowserWebKitEngine, id: String) async -> BrowserMobilePageText? {
+    await withCheckedContinuation { continuation in
+        engine.pageText(id: id) { continuation.resume(returning: $0) }
+    }
+}
+
+@MainActor private func bodyText(_ webView: WKWebView) async -> String {
+    await (try? webView.evaluateJavaScript("document.body.innerText") as? String) ?? ""
+}
+
+/// An article long enough to read in Reader Mode, with code and an untranslatable name.
+private let mobileArticleHTML = """
+<html lang="de"><head><title>Linden</title><meta name="viewport" content="width=device-width"></head>
+<body><nav><a href="/first">Navigation</a></nav><article><h1>Linden</h1>
+<p>Erste Zeile</p>
+<p>Die Linden bilden eine Pflanzengattung in der Unterfamilie der Lindengewächse innerhalb der Familie der Malvengewächse. Die etwa 45 Arten sind in den gemäßigten Gebieten der Nordhalbkugel verbreitet.</p>
+<p>Lindenarten sind sommergrüne Bäume, die Wuchshöhen von bis zu 40 Metern erreichen können. Sie bilden oft eine breite, gewölbte Krone, und ihre Rinde ist in der Jugend glatt und später längsrissig.</p>
+<p>Die wechselständig angeordneten Laubblätter sind meist herzförmig und am Rand gesägt. Die Blüten stehen in Trugdolden, deren Stiel mit einem flügelartigen Hochblatt verwachsen ist, das beim Fruchtflug hilft.</p>
+<p>Lindenholz ist weich und leicht zu bearbeiten, weshalb es seit Jahrhunderten für Schnitzereien verwendet wird. Die Blüten werden als Tee getrunken, und Bienen sammeln von ihnen einen begehrten Honig.</p>
+<pre><code>let code = 1</code></pre><p><span translate="no">OpenArc</span></p>
+</article></body></html>
+"""
 
 // MARK: - LocalBrowserHTTPFixture
 
@@ -545,7 +606,9 @@ import WebKit
                 connection.receive(minimumIncompleteLength: 1, maximumLength: 8192) { data, _, _, _ in
                     let request = data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
                     let title = request.hasPrefix("GET /second ") ? "Second" : "First"
-                    let body = "<html><head><title>\(title)</title></head><body>\(title)<a id='next' href='/second'>Next</a></body></html>"
+                    let body = request.hasPrefix("GET /article ")
+                        ? mobileArticleHTML
+                        : "<html><head><title>\(title)</title></head><body>\(title)<a id='next' href='/second'>Next</a></body></html>"
                     let response = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: \(body.utf8.count)\r\nConnection: close\r\n\r\n\(body)"
                     connection.send(content: Data(response.utf8), completion: .contentProcessed { _ in
                         connection.cancel()

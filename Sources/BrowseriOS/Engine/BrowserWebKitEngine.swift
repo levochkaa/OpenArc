@@ -45,6 +45,17 @@ import WebKit
         }
     }
 
+    /// Hands the page tools' messages to the engine without WebKit retaining it.
+    private final class PageToolsMessageProxy: NSObject, WKScriptMessageHandler {
+        weak var engine: BrowserWebKitEngine?
+
+        init(engine: BrowserWebKitEngine) { self.engine = engine }
+
+        func userContentController(_: WKUserContentController, didReceive message: WKScriptMessage) {
+            engine?.receivePageToolsMessage(message)
+        }
+    }
+
     private final class Record {
         // MARK: Internal
 
@@ -81,6 +92,19 @@ import WebKit
     }
 
     // MARK: Internal
+
+    /// Reader Mode and translation run here, out of the page's sight.
+    static let pageToolsWorld = WKContentWorld.world(name: "OpenArcPageTools")
+    static let pageToolsMessageName = "openArcPageTools"
+
+    /// Readability and the page tools, read once from the app.
+    static let pageToolsSource: String = {
+        let bundle = Bundle(for: BrowserWebKitEngine.self)
+        let parts = ["Readability", "Readability-readerable", "BrowserMobilePageTools"].compactMap { name in
+            bundle.url(forResource: name, withExtension: "js").flatMap { try? String(contentsOf: $0, encoding: .utf8) }
+        }
+        return parts.count == 3 ? parts.joined(separator: "\n;\n") : ""
+    }()
 
     let hostView = UIView(frame: .zero)
     var onPopupCreated: ((String, URL?) -> Void)?
@@ -368,6 +392,75 @@ import WebKit
         record.webView?.reloadFromOrigin()
     }
 
+    func setReading(id: String, _ reading: Bool) {
+        guard !isShutDown, let record = records[id], let webView = record.webView,
+              record.state.isReading != reading, !reading || record.state.canRead else { return }
+        let generation = record.generation
+        let finish: @MainActor (Result<Any, Error>) -> Void = { [weak self, weak record] result in
+            guard let self, let record, records[record.id] === record, record.generation == generation else { return }
+            let isReading = reading && (try? result.get()) as? Bool == true
+            record.state.isReading = isReading
+            record.state.isTranslated = false
+            emit(record)
+        }
+        if reading {
+            var host = webView.url?.host() ?? ""
+            if host.hasPrefix("www.") {
+                host.removeFirst(4)
+            }
+            let size = record.textZoom == 1 ? "100%" : "\(Int((record.textZoom * 100).rounded()))%"
+            webView.callAsyncJavaScript(
+                "__openArcPageTools.restoreText(); return __openArcPageTools.enterReader(title, host, size)",
+                arguments: [
+                    "title": String(localized: "View Normal Page", table: "Mobile"),
+                    "host": host,
+                    "size": size,
+                ],
+                in: nil, in: Self.pageToolsWorld, completionHandler: finish,
+            )
+        } else {
+            webView.callAsyncJavaScript(
+                "__openArcPageTools.restoreText(); __openArcPageTools.exitReader(); return false",
+                arguments: [:], in: nil, in: Self.pageToolsWorld, completionHandler: finish,
+            )
+        }
+    }
+
+    func pageText(id: String, completion: @escaping @MainActor (BrowserMobilePageText?) -> Void) {
+        guard !isShutDown, let record = records[id], let webView = record.webView, record.hasCommittedDialogDocument
+        else { return completion(nil) }
+        webView.callAsyncJavaScript(
+            "return window.__openArcPageTools ? __openArcPageTools.collectText() : null",
+            arguments: [:], in: nil, in: Self.pageToolsWorld,
+        ) { result in
+            guard let value = (try? result.get()) as? [String: Any], let texts = value["texts"] as? [String],
+                  texts.contains(where: { !$0.isEmpty })
+            else { return completion(nil) }
+            completion(BrowserMobilePageText(texts: texts, language: value["lang"] as? String ?? ""))
+        }
+    }
+
+    func applyTranslatedText(id: String, start: Int, texts: [String]) {
+        guard !isShutDown, let record = records[id], let webView = record.webView else { return }
+        webView.callAsyncJavaScript(
+            "__openArcPageTools.applyText(start, texts)", arguments: ["start": start, "texts": texts],
+            in: nil, in: Self.pageToolsWorld,
+        )
+        if !record.state.isTranslated {
+            record.state.isTranslated = true
+            emit(record)
+        }
+    }
+
+    func restoreOriginalText(id: String) {
+        guard !isShutDown, let record = records[id], let webView = record.webView else { return }
+        webView.callAsyncJavaScript(
+            "__openArcPageTools.restoreText()", arguments: [:], in: nil, in: Self.pageToolsWorld,
+        )
+        record.state.isTranslated = false
+        emit(record)
+    }
+
     func scrollView(id: String) -> UIScrollView? {
         isShutDown ? nil : records[id]?.webView?.scrollView
     }
@@ -546,6 +639,29 @@ import WebKit
         return webView
     }
 
+    fileprivate func receivePageToolsMessage(_ message: WKScriptMessage) {
+        guard let webView = message.webView, let record = record(for: webView),
+              let body = message.body as? [String: Any], body["reader"] as? Bool == false else { return }
+        record.state.isReading = false
+        record.state.isTranslated = false
+        emit(record)
+    }
+
+    /// Whether the finished page reads like an article.
+    private func checkReaderable(_ record: Record, webView: WKWebView) {
+        let generation = record.generation
+        webView.callAsyncJavaScript(
+            "return window.__openArcPageTools ? __openArcPageTools.isReaderable() : false",
+            arguments: [:], in: nil, in: Self.pageToolsWorld,
+        ) { [weak self, weak record] result in
+            guard let self, let record, records[record.id] === record, record.generation == generation else { return }
+            let canRead = (try? result.get()) as? Bool == true
+            guard record.state.canRead != canRead else { return }
+            record.state.canRead = canRead
+            emit(record)
+        }
+    }
+
     private func applyTextZoom(_ record: Record) {
         guard let webView = record.webView, record.hasCommittedDialogDocument else { return }
         // A page that never had its size changed keeps the site's own rule.
@@ -636,6 +752,17 @@ import WebKit
             configuration = WKWebViewConfiguration()
             configuration.websiteDataStore = dataStore
             configuration.allowsInlineMediaPlayback = true
+            // A popup shares its opener's controller, which has these already.
+            if !Self.pageToolsSource.isEmpty {
+                configuration.userContentController.addUserScript(WKUserScript(
+                    source: Self.pageToolsSource, injectionTime: .atDocumentEnd, forMainFrameOnly: true,
+                    in: Self.pageToolsWorld,
+                ))
+                configuration.userContentController.add(
+                    PageToolsMessageProxy(engine: self), contentWorld: Self.pageToolsWorld,
+                    name: Self.pageToolsMessageName,
+                )
+            }
         }
         BrowserWebKitContentRules.shared.apply(to: configuration.userContentController, urlString: nil)
         let webView = WKWebView(frame: .zero, configuration: configuration)
@@ -647,6 +774,9 @@ import WebKit
         webView.allowsBackForwardNavigationGestures = true
         webView.navigationDelegate = self
         webView.uiDelegate = self
+        let refreshControl = UIRefreshControl()
+        refreshControl.addAction(UIAction { [weak self] _ in self?.reload(id: id) }, for: .valueChanged)
+        webView.scrollView.refreshControl = refreshControl
         record.observations = [
             observe(\.title, webView: webView, id: id),
             observe(\.url, webView: webView, id: id),
@@ -742,6 +872,9 @@ import WebKit
         }
         if record.state.isLoading, record.hasStartedCurrentNavigation {
             record.state.progress = max(record.state.progress, webView.estimatedProgress)
+        }
+        if !webView.isLoading, let refreshControl = webView.scrollView.refreshControl, refreshControl.isRefreshing {
+            refreshControl.endRefreshing()
         }
         record.state.canGoBack = webView.canGoBack
         record.state.canGoForward = webView.canGoForward
@@ -993,6 +1126,10 @@ extension BrowserWebKitEngine: WKNavigationDelegate {
         }
         record.hasAppliedTextZoom = false
         applyTextZoom(record)
+        // A new document starts as itself: no reader, no translation.
+        record.state.canRead = false
+        record.state.isReading = false
+        record.state.isTranslated = false
         refresh(record)
     }
 
@@ -1002,6 +1139,7 @@ extension BrowserWebKitEngine: WKNavigationDelegate {
         record.state.isLoading = false
         record.state.progress = 1
         refresh(record)
+        checkReaderable(record, webView: webView)
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation?, withError error: Error) {
@@ -1091,5 +1229,76 @@ extension BrowserWebKitEngine: WKUIDelegate {
     func webViewDidClose(_ webView: WKWebView) {
         guard let record = record(for: webView) else { return }
         closeTab(id: record.id)
+    }
+
+    /// A link's menu: open it here or in another tab, copy or share it, under
+    /// WebKit's own preview of the page. Other elements keep WebKit's menu.
+    func webView(
+        _ webView: WKWebView,
+        contextMenuConfigurationForElement elementInfo: WKContextMenuElementInfo,
+        completionHandler: @escaping @MainActor (UIContextMenuConfiguration?) -> Void,
+    ) {
+        guard record(for: webView) != nil, let url = elementInfo.linkURL, Self.isAllowed(url) else {
+            completionHandler(UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { suggested in
+                UIMenu(children: suggested)
+            })
+            return
+        }
+        completionHandler(UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { [
+            weak self,
+            weak webView,
+        ] _ in
+            let open = UIAction(
+                title: String(localized: "Open Link", table: "Mobile"), image: UIImage(systemName: "safari"),
+            ) { _ in webView?.load(URLRequest(url: url)) }
+            let newTab = UIAction(
+                title: String(localized: "Open in New Tab", table: "Mobile"),
+                image: UIImage(systemName: "plus.square.on.square"),
+            ) { _ in self?.onEvent?(.openInNewTab(url, inBackground: false)) }
+            let background = UIAction(
+                title: String(localized: "Open in Background Tab", table: "Mobile"),
+                image: UIImage(systemName: "square.on.square.dashed"),
+            ) { _ in self?.onEvent?(.openInNewTab(url, inBackground: true)) }
+            let copy = UIAction(
+                title: String(localized: "Copy Link", table: "Mobile"), image: UIImage(systemName: "link"),
+            ) { _ in UIPasteboard.general.url = url }
+            let share = UIAction(
+                title: String(localized: "Share Link", table: "Mobile"), image: UIImage(systemName: "paperplane"),
+            ) { _ in
+                guard let webView, var presenter = webView.window?.rootViewController else { return }
+                while let presented = presenter.presentedViewController {
+                    presenter = presented
+                }
+                let sheet = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+                sheet.popoverPresentationController?.sourceView = webView
+                sheet.popoverPresentationController?.sourceRect = CGRect(
+                    x: webView.bounds.midX, y: webView.bounds.midY, width: 1, height: 1,
+                )
+                presenter.present(sheet, animated: true)
+            }
+            return UIMenu(title: Self.menuTitle(for: url), children: [open, newTab, background, copy, share])
+        })
+    }
+
+    /// A tap on the link's preview opens the link here.
+    func webView(
+        _ webView: WKWebView,
+        contextMenuForElement elementInfo: WKContextMenuElementInfo,
+        willCommitWithAnimator animator: any UIContextMenuInteractionCommitAnimating,
+    ) {
+        guard let url = elementInfo.linkURL, Self.isAllowed(url) else { return }
+        animator.addCompletion { [weak webView] in webView?.load(URLRequest(url: url)) }
+    }
+
+    /// The link without its scheme and `www.`, as the menu's title.
+    static func menuTitle(for url: URL) -> String {
+        var text = url.absoluteString
+        for prefix in ["https://", "http://"] where text.hasPrefix(prefix) {
+            text.removeFirst(prefix.count)
+        }
+        if text.hasPrefix("www.") {
+            text.removeFirst(4)
+        }
+        return text
     }
 }

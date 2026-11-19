@@ -18,6 +18,21 @@ struct BrowserMobilePageState: Equatable {
     /// The page's own background color, which decides whether the bar
     /// around it is light or dark.
     var backgroundColor: UIColor?
+    /// The loaded page reads like an article, so Reader Mode can show it.
+    var canRead = false
+    /// Reader Mode shows the page's article in place of the page.
+    var isReading = false
+    /// The page's text shows translated.
+    var isTranslated = false
+}
+
+// MARK: - BrowserMobilePageText
+
+/// The page's text for translation, one string per text node.
+struct BrowserMobilePageText: Equatable {
+    var texts: [String]
+    /// The document's declared language, if any.
+    var language: String
 }
 
 // MARK: - BrowserMobileEngineEvent
@@ -29,6 +44,8 @@ enum BrowserMobileEngineEvent {
     case javaScriptDialogFinished(id: UUID)
     case httpAuthenticationRequested(BrowserMobileHTTPAuthentication)
     case httpAuthenticationFinished(id: UUID)
+    /// The link menu asked for a link in another tab.
+    case openInNewTab(URL, inBackground: Bool)
 }
 
 // MARK: - BrowserMobileEngine
@@ -76,6 +93,14 @@ enum BrowserMobileEngineEvent {
     func prefersDesktopSite(id: String) -> Bool
     /// Switches the layout the tab asks for and reloads the page.
     func setPrefersDesktopSite(id: String, _ prefersDesktop: Bool)
+    /// Shows the page's article in place of the page, or the page again.
+    func setReading(id: String, _ reading: Bool)
+    /// The page's text to translate; nil when the page has none.
+    func pageText(id: String, completion: @escaping @MainActor (BrowserMobilePageText?) -> Void)
+    /// Puts translated strings in place of the text `pageText` returned, from `start` on.
+    func applyTranslatedText(id: String, start: Int, texts: [String])
+    /// Puts the page's own text back.
+    func restoreOriginalText(id: String)
 }
 
 extension BrowserMobileEngine {
@@ -98,4 +123,8 @@ extension BrowserMobileEngine {
     func setPageZoom(id _: String, _: CGFloat) {}
     func prefersDesktopSite(id _: String) -> Bool { false }
     func setPrefersDesktopSite(id _: String, _: Bool) {}
+    func setReading(id _: String, _: Bool) {}
+    func pageText(id _: String, completion: @escaping @MainActor (BrowserMobilePageText?) -> Void) { completion(nil) }
+    func applyTranslatedText(id _: String, start _: Int, texts _: [String]) {}
+    func restoreOriginalText(id _: String) {}
 }

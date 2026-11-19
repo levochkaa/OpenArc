@@ -68,6 +68,51 @@ import UIKit
     #expect(field.completion == nil)
 }
 
+@MainActor @Test func mobileCompletingFieldTypingOverTheCaretDropsTheFilledInPart() throws {
+    let field = BrowserMobileCompletingField()
+    field.showCompletion("hub.com", after: "git")
+    let caret = try #require(field.position(from: field.beginningOfDocument, offset: 3))
+    let range = try #require(field.textRange(from: caret, to: caret))
+    field.replace(range, withText: "l")
+    #expect(field.text == "gitl", "A keystroke sent as a replacement types after the typed part")
+    #expect(field.completion == nil)
+}
+
+@Test func mobileAutoOpenKeyboardIsOnUntilTurnedOff() throws {
+    let suite = "BrowserMobileAutoOpenKeyboardTests.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    #expect(BrowserMobileAutoOpenKeyboardSetting.isOn(defaults))
+    BrowserMobileAutoOpenKeyboardSetting.set(false, defaults: defaults)
+    #expect(!BrowserMobileAutoOpenKeyboardSetting.isOn(defaults))
+    BrowserMobileAutoOpenKeyboardSetting.set(true, defaults: defaults)
+    #expect(BrowserMobileAutoOpenKeyboardSetting.isOn(defaults))
+}
+
+@MainActor @Test func mobileLinkMenuTitleDropsTheSchemeAndWWW() throws {
+    let url = try #require(URL(string: "https://www.example.com/a/b?c=1"))
+    #expect(BrowserWebKitEngine.menuTitle(for: url) == "example.com/a/b?c=1")
+    let plain = try #require(URL(string: "http://wwwexample.org/"))
+    #expect(BrowserWebKitEngine.menuTitle(for: plain) == "wwwexample.org/")
+    let mail = try #require(URL(string: "mailto:someone@example.com"))
+    #expect(BrowserWebKitEngine.menuTitle(for: mail) == "mailto:someone@example.com")
+}
+
+@MainActor @Test func mobileTranslationReadsThePageLanguageFromItsText() {
+    let german = BrowserMobilePageText(
+        texts: [
+            "Die Linden bilden eine Pflanzengattung in der Unterfamilie der Lindengewächse.",
+            "",
+            "Sie sind in den gemäßigten Gebieten der Nordhalbkugel weit verbreitet.",
+        ],
+        language: "en",
+    )
+    #expect(BrowserMobilePageTranslator.sourceLanguage(of: german)?.languageCode == "de")
+    let numbers = BrowserMobilePageText(texts: ["42", "7"], language: "fr")
+    #expect(BrowserMobilePageTranslator.sourceLanguage(of: numbers)?.languageCode == "fr")
+    #expect(BrowserMobilePageTranslator.sourceLanguage(of: .init(texts: ["42"], language: " ")) == nil)
+}
+
 @Test func mobileSiteSettingsKeepTheBarPerSite() throws {
     let suite = "BrowserMobileSiteSettingsTests.\(UUID().uuidString)"
     let defaults = try #require(UserDefaults(suiteName: suite))

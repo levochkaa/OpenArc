@@ -207,3 +207,17 @@
 "Cookie banners allowed" = "Cookie banners allowed";
 "Trackers allowed" = "Trackers allowed";
 "Block" = "Block";
+"Auto-Open Keyboard" = "Auto-Open Keyboard";
+"Translate" = "Translate";
+"View Original Site" = "View Original Site";
+"Reader Mode" = "Reader Mode";
+"Hide Reader Mode" = "Hide Reader Mode";
+"View Normal Page" = "View Normal Page";
+"This page is already in %@." = "This page is already in %@.";
+"This page's language can't be translated on this device." = "This page's language can't be translated on this device.";
+"Couldn't Translate" = "Couldn't Translate";
+"OK" = "OK";
+"Open Link" = "Open Link";
+"Open in New Tab" = "Open in New Tab";
+"Open in Background Tab" = "Open in Background Tab";
+"Share Link" = "Share Link";
