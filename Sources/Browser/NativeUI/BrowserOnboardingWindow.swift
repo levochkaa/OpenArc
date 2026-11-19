@@ -73,6 +73,11 @@ enum BrowserOnboardingImportItem: String, CaseIterable {
     /// The browsers' height when the screen can't show every row; nil shows them all.
     private var tileHeightLimit: CGFloat?
     private var tileHeight: CGFloat = 0
+    /// The browser tiles, kept across redraws of the import step so a pick
+    /// changes only the selection and the tile under the pointer keeps its hover.
+    private var browserTiles: (flow: BrowserOnboardingTileFlow, tiles: [BrowserOnboardingBrowserTile])?
+    /// The step on screen; redrawing the same step swaps it without a fade.
+    private var renderedStepIndex: Int?
     private var importState = ImportState.choosing
     private var unchecked = Set<Item>()
     /// Profile folders of the selected browser the person unticked.
@@ -182,9 +187,13 @@ enum BrowserOnboardingImportItem: String, CaseIterable {
         view.autoresizingMask = [.width, .height]
         let previous = currentStep
         currentStep = view
+        let isSameStep = renderedStepIndex == stepIndex
+        renderedStepIndex = stepIndex
         content.addSubview(view)
         window.recalculateKeyViewLoop()
-        guard previous != nil, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
+        // Only a new step fades in; picking a browser or finishing an import
+        // swaps the step in place, so what stays the same doesn't blink.
+        guard previous != nil, !isSameStep, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
             previous?.removeFromSuperview()
             return
         }
@@ -391,17 +400,24 @@ enum BrowserOnboardingImportItem: String, CaseIterable {
             )
         }
 
-        let tiles = BrowserOnboardingTileFlow(tiles: profiles.map { profile in
-            let tile = BrowserOnboardingBrowserTile(
-                name: profile.source.browserName,
-                detail: profile.lastUsed.map(BrowserStrings.onboardingUsedAgo),
-                icon: profile.applicationURL.map { NSWorkspace.shared.icon(forFile: $0.path) },
-            )
+        let browsers = browserTiles ?? {
+            let tiles = profiles.map { profile in
+                let tile = BrowserOnboardingBrowserTile(
+                    name: profile.source.browserName,
+                    detail: profile.lastUsed.map(BrowserStrings.onboardingUsedAgo),
+                    icon: profile.applicationURL.map { NSWorkspace.shared.icon(forFile: $0.path) },
+                )
+                tile.onPick = { [weak self] in self?.pick(profile) }
+                return tile
+            }
+            return (BrowserOnboardingTileFlow(tiles: tiles), tiles)
+        }()
+        browserTiles = browsers
+        for (profile, tile) in zip(profiles, browsers.tiles) {
             tile.isSelected = profile.source == selectedProfile?.source
             tile.isEnabled = !isImportRunning
-            tile.onPick = { [weak self] in self?.pick(profile) }
-            return tile
-        })
+        }
+        let tiles = browsers.flow
 
         var body: [NSView] = [scrollingIfTall(tiles)]
         if let selectedProfile, let detail = selectedProfileDetail(selectedProfile) {
@@ -476,7 +492,10 @@ enum BrowserOnboardingImportItem: String, CaseIterable {
     private func scrollingIfTall(_ tiles: BrowserOnboardingTileFlow) -> NSView {
         let size = tiles.intrinsicContentSize
         tileHeight = size.height
-        guard let limit = tileHeightLimit, size.height > limit else { return tiles }
+        guard let limit = tileHeightLimit, size.height > limit else {
+            tiles.translatesAutoresizingMaskIntoConstraints = false
+            return tiles
+        }
         let scroll = NSScrollView()
         scroll.drawsBackground = false
         scroll.hasVerticalScroller = true
