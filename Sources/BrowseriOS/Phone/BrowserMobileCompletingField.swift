@@ -27,6 +27,28 @@ final class BrowserMobileCompletingField: UITextField {
         super.insertText(text)
     }
 
+    /// Typing that arrives as a replacement of the caret's empty range, as
+    /// synthesized keystrokes do, also replaces the filled-in part.
+    override func replace(_ range: UITextRange, withText text: String) {
+        guard completion != nil else {
+            super.replace(range, withText: text)
+            return
+        }
+        let start = offset(from: beginningOfDocument, to: range.start)
+        let end = offset(from: beginningOfDocument, to: range.end)
+        lastEditDeleted = false
+        dropCompletion()
+        let length = typedText.count
+        guard let from = position(from: beginningOfDocument, offset: min(start, length)),
+              let to = position(from: beginningOfDocument, offset: min(end, length)),
+              let typedRange = textRange(from: from, to: to)
+        else {
+            super.replace(range, withText: text)
+            return
+        }
+        super.replace(typedRange, withText: text)
+    }
+
     override func deleteBackward() {
         lastEditDeleted = true
         guard completion != nil else {
