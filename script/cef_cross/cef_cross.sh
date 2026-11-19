@@ -158,7 +158,10 @@ apply_overrides() {
 build() {
   [[ -f "$SRC/$OUT/args.gn" ]] || die "no $OUT; run prepare"
   step "build cef_framework"
-  (cd "$SRC" && nice -n 19 autoninja -C "$OUT" cef_framework) || die "build"
+  # Idle CPU and disk priority, so the host stays usable for other work.
+  local idle=(nice -n 19)
+  command -v ionice >/dev/null && idle=(ionice -c3 nice -n 19)
+  (cd "$SRC" && "${idle[@]}" autoninja -C "$OUT" cef_framework) || die "build"
 }
 
 # A minimal binary distribution: include/, libcef_dll/, cmake/, CMakeLists.txt,
