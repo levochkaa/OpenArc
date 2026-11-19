@@ -174,7 +174,13 @@ final class BrowserMobileTabSwitcherView: UIView, UIScrollViewDelegate, UIGestur
             card.bounds = CGRect(origin: .zero, size: frame.size)
             card.center = CGPoint(x: frame.midX, y: frame.midY)
             let offset = CGFloat(index) - position
-            card.titleAlpha = max(0, 1 - abs(offset) * 1.4)
+            // The neighbors keep their icons; only the middle card shows its title,
+            // which ends before the next card's icon.
+            card.titleAlpha = min(1, max(0, 2 - abs(offset)))
+            card.nameAlpha = max(0, 1 - abs(offset) * 1.4)
+            card.titleRoom = index + 1 < entries.count
+                ? cardFrame(index: index + 1, position: position).minX - frame.minX
+                : nil
         }
     }
 
@@ -332,6 +338,11 @@ final class BrowserMobileTabSwitcherView: UIView, UIScrollViewDelegate, UIGestur
 extension BrowserMobileTabSwitcherView {
     /// One tab in the switcher: its picture with the site's icon and title above it.
     final class Card: UIView {
+        // MARK: Private
+
+        /// The icon's distance from the card's left edge.
+        private static let headerInset: CGFloat = 18
+
         // MARK: Internal
 
         var isDetached = false
@@ -355,7 +366,19 @@ extension BrowserMobileTabSwitcherView {
             didSet { header.alpha = titleAlpha }
         }
 
-        // MARK: Private
+        /// The title's alpha within the header; the icon stays.
+        var nameAlpha: CGFloat = 1 {
+            didSet { titleLabel.alpha = nameAlpha }
+        }
+
+        /// How far right of this card the next one starts, if there is one.
+        var titleRoom: CGFloat? {
+            didSet {
+                if titleRoom != oldValue {
+                    setNeedsLayout()
+                }
+            }
+        }
 
         private let clip = UIView()
         private let imageView = UIImageView()
@@ -403,9 +426,14 @@ extension BrowserMobileTabSwitcherView {
                 roundedRect: bounds, cornerRadius: BrowserMobileTabSwitcherView.cornerRadius,
             ).cgPath
             layoutPicture()
-            header.frame = CGRect(x: 6, y: -32, width: bounds.width - 6, height: 24)
-            icon.frame = CGRect(x: 0, y: 2, width: 20, height: 20)
-            titleLabel.frame = CGRect(x: 28, y: 0, width: header.bounds.width - 28, height: 24)
+            header.frame = CGRect(x: Self.headerInset, y: -29, width: bounds.width - Self.headerInset, height: 20)
+            icon.frame = CGRect(x: 0, y: 0, width: 20, height: 20)
+            var titleWidth = header.bounds.width - 26 - 10
+            if let titleRoom {
+                // 4 points short of the next card's icon.
+                titleWidth = min(titleWidth, titleRoom - 26 - 4)
+            }
+            titleLabel.frame = CGRect(x: 26, y: -2, width: max(titleWidth, 0), height: 24)
             placeholderIcon.frame = CGRect(x: bounds.midX - 24, y: bounds.height * 0.32, width: 48, height: 48)
         }
 

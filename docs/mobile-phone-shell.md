@@ -48,7 +48,7 @@ A cold launch opens the search panel over the last tab while Auto-Open Keyboard 
 
 ## Tab switcher
 
-`BrowserMobileTabSwitcherView` lays tabs out oldest to newest, by last selection (`BrowserMobileWorkspace.recentTabIDs`, saved per scene). Cards keep the screen's shape at 0.644 of its width. The focused card's left edge is at 0.211 of the width, the next card 0.495 to its right, and the newest card 0.062 further. Older cards bunch toward the left edge on an exponential curve. A horizontal pan pages the row with a scroll view; after a flick the row settles on a critically damped spring (ω 20) instead of the scroll view's long deceleration.
+`BrowserMobileTabSwitcherView` lays tabs out oldest to newest, by last selection (`BrowserMobileWorkspace.recentTabIDs`, saved per scene). Cards keep the screen's shape at 0.644 of its width. The focused card's left edge is at 0.211 of the width, the next card 0.495 to its right, and the newest card 0.062 further. Older cards bunch toward the left edge on an exponential curve. Over each card sit the site's icon (20 points, 18 in from the card's edge, 9 above it) and, for the middle card only, its title, which ends 4 points before the next card's icon; the neighbors keep their icons. A horizontal pan pages the row with a scroll view; after a flick the row settles on a critically damped spring (ω 20) instead of the scroll view's long deceleration.
 
 - Opening: the live page shrinks into its card while the other cards fly out of the tab stack, landing on the previous tab (spring 0.36 s, bounce 0.1). The dark backdrop and buttons fade in over 0.2 s.
 - Tap a card: the other cards fade in 0.1 s and the card grows to full screen (0.24 s) under the bar, whose controls change back.
