@@ -45,4 +45,26 @@ import Testing
             }
         }
     }
+
+    /// However many browsers this Mac has, a step's controls and text never
+    /// overlap: the window grows instead.
+    @Test func stepsGrowSoTheirControlsNeverOverlap() throws {
+        let defaults = try #require(UserDefaults(suiteName: "BrowserOnboardingWindowTests.\(UUID().uuidString)"))
+        let controller = BrowserOnboardingWindowController(
+            preferences: BrowserUserPreferencesStore(userDefaults: defaults),
+        )
+        for (index, view) in controller.stepViewsForTesting().enumerated() {
+            func leaves(_ view: NSView) -> [NSView] {
+                if view is NSButton || view is NSTextField { return view.isHidden ? [] : [view] }
+                return view.subviews.flatMap(leaves)
+            }
+            let frames = leaves(view).map { $0.convert($0.bounds, to: view) }.filter { $0.width > 0 && $0.height > 0 }
+            for (a, first) in frames.enumerated() {
+                for second in frames[(a + 1)...] {
+                    let overlap = first.intersection(second)
+                    #expect(overlap.width < 1 || overlap.height < 1, "step \(index): \(first) overlaps \(second)")
+                }
+            }
+        }
+    }
 }

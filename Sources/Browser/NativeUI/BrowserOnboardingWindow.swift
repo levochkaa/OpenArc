@@ -53,6 +53,8 @@ enum BrowserOnboardingImportItem: String, CaseIterable {
 
     private typealias Palette = BrowserOnboardingPalette
 
+    static let minimumContentHeight: CGFloat = 560
+
     var onFinish: () -> Void = {}
     var importItems: (_ items: Set<Item>, _ profiles: [BrowserProfileImporter]) async -> String = { _, _ in "" }
     var setAsDefault: () -> Void = {}
@@ -68,6 +70,9 @@ enum BrowserOnboardingImportItem: String, CaseIterable {
     private var selectedProfile: BrowserProfileImporter?
     private var checks = [Item: NSButton]()
     private var currentStep: NSView?
+    /// The browsers' height when the screen can't show every row; nil shows them all.
+    private var tileHeightLimit: CGFloat?
+    private var tileHeight: CGFloat = 0
     private var importState = ImportState.choosing
     private var unchecked = Set<Item>()
     /// Profile folders of the selected browser the person unticked.
@@ -98,11 +103,18 @@ enum BrowserOnboardingImportItem: String, CaseIterable {
         selectedProfile?.profiles.filter { !skippedProfiles.contains($0.directory) } ?? []
     }
 
+    /// The tallest content the window's screen leaves room for.
+    private var maximumContentHeight: CGFloat {
+        guard let visible = (window.screen ?? NSScreen.main)?.visibleFrame else { return .greatestFiniteMagnitude }
+        let chrome = window.frame.height - content.bounds.height
+        return max(visible.height - chrome, Self.minimumContentHeight)
+    }
+
     init(preferences: BrowserUserPreferencesStore, importOnly: Bool = false) {
         self.preferences = preferences
         self.steps = importOnly ? [.importing] : Step.allCases
         self.window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 820, height: 560),
+            contentRect: NSRect(x: 0, y: 0, width: 820, height: Self.minimumContentHeight),
             styleMask: [.titled, .closable, .fullSizeContentView],
             backing: .buffered,
             defer: false,
@@ -123,6 +135,10 @@ enum BrowserOnboardingImportItem: String, CaseIterable {
         window.center()
     }
 
+    static func contentHeight(fitting height: CGFloat) -> CGFloat {
+        max(minimumContentHeight, ceil(height))
+    }
+
     func show() {
         render()
         window.makeKeyAndOrderFront(nil)
@@ -135,15 +151,9 @@ enum BrowserOnboardingImportItem: String, CaseIterable {
     func stepViewsForTesting() -> [NSView] {
         steps.indices.map { index in
             stepIndex = index
-            let view =
-                switch step {
-                case .welcome: welcomeStep()
-                case .importing: importStep()
-                case .look: lookStep()
-                case .defaultBrowser: defaultBrowserStep()
-                case .done: doneStep()
-                }
-            view.frame = content.bounds
+            let view = stepView()
+            view.frame = NSRect(x: 0, y: 0, width: 820, height: Self.contentHeight(fitting: view.fittingSize.height))
+            view.layoutSubtreeIfNeeded()
             return view
         }
     }
@@ -158,14 +168,16 @@ enum BrowserOnboardingImportItem: String, CaseIterable {
     }
 
     private func render() {
-        let view =
-            switch step {
-            case .welcome: welcomeStep()
-            case .importing: importStep()
-            case .look: lookStep()
-            case .defaultBrowser: defaultBrowserStep()
-            case .done: doneStep()
-            }
+        tileHeightLimit = nil
+        var view = stepView()
+        // Every browser shows while the screen has room; past it, the
+        // browsers scroll by just what does not fit.
+        let overflow = Self.contentHeight(fitting: view.fittingSize.height) - maximumContentHeight
+        if step == .importing, overflow > 0, tileHeight > 0 {
+            tileHeightLimit = max(tileHeight - overflow, BrowserOnboardingBrowserTile.size.height)
+            view = stepView()
+        }
+        fitWindow(to: view)
         view.frame = content.bounds
         view.autoresizingMask = [.width, .height]
         let previous = currentStep
@@ -184,6 +196,32 @@ enum BrowserOnboardingImportItem: String, CaseIterable {
         } completionHandler: {
             MainActor.assumeIsolated { previous?.removeFromSuperview() }
         }
+    }
+
+    private func stepView() -> NSView {
+        switch step {
+        case .welcome: welcomeStep()
+        case .importing: importStep()
+        case .look: lookStep()
+        case .defaultBrowser: defaultBrowserStep()
+        case .done: doneStep()
+        }
+    }
+
+    /// The window keeps its width and grows to the step's height, never
+    /// below the first step's, with its top edge in place.
+    private func fitWindow(to view: NSView) {
+        let height = min(Self.contentHeight(fitting: view.fittingSize.height), maximumContentHeight)
+        guard abs(height - content.bounds.height) > 0.5 else { return }
+        var frame = window.frameRect(forContentRect: NSRect(origin: .zero, size: NSSize(
+            width: content.bounds.width,
+            height: height,
+        )))
+        frame.origin = NSPoint(x: window.frame.minX, y: window.frame.maxY - frame.height)
+        if let visible = window.screen?.visibleFrame, frame.minY < visible.minY {
+            frame.origin.y = min(visible.minY, visible.maxY - frame.height)
+        }
+        window.setFrame(frame, display: true, animate: window.isVisible && currentStep != nil)
     }
 
     private func text(
@@ -278,6 +316,8 @@ enum BrowserOnboardingImportItem: String, CaseIterable {
             column.topAnchor.constraint(equalTo: paper.topAnchor, constant: 64),
             bar.trailingAnchor.constraint(equalTo: paper.trailingAnchor, constant: -40),
             bar.bottomAnchor.constraint(equalTo: paper.bottomAnchor, constant: -32),
+            // A tall step pushes the buttons down and the window grows with it.
+            column.bottomAnchor.constraint(lessThanOrEqualTo: bar.topAnchor, constant: -24),
         ]
         if let note {
             let noteLabel = text(note, size: 12, color: Palette.muted, width: 380)
@@ -287,6 +327,7 @@ enum BrowserOnboardingImportItem: String, CaseIterable {
                 noteLabel.leadingAnchor.constraint(equalTo: paper.leadingAnchor, constant: 48),
                 noteLabel.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
                 noteLabel.trailingAnchor.constraint(lessThanOrEqualTo: bar.leadingAnchor, constant: -24),
+                column.bottomAnchor.constraint(lessThanOrEqualTo: noteLabel.topAnchor, constant: -24),
             ]
         }
         NSLayoutConstraint.activate(constraints)
@@ -431,11 +472,11 @@ enum BrowserOnboardingImportItem: String, CaseIterable {
         )
     }
 
-    /// More than two rows of browsers scroll, so the actions stay in the window.
+    /// Browsers taller than the screen allows scroll, so the actions stay in the window.
     private func scrollingIfTall(_ tiles: BrowserOnboardingTileFlow) -> NSView {
         let size = tiles.intrinsicContentSize
-        let limit = BrowserOnboardingBrowserTile.size.height * 2 + 12
-        guard size.height > limit else { return tiles }
+        tileHeight = size.height
+        guard let limit = tileHeightLimit, size.height > limit else { return tiles }
         let scroll = NSScrollView()
         scroll.drawsBackground = false
         scroll.hasVerticalScroller = true
