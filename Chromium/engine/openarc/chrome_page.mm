@@ -78,6 +78,7 @@
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/image/image.h"
 #include "ui/views/controls/webview/openarc_hosted_page.h"
+#include "ui/views/view.h"
 #include "ui/views/widget/widget.h"
 #include "url/gurl.h"
 
@@ -144,6 +145,12 @@ void MakeHostWindow(NSWindow* window) {
   }
   window.alphaValue = 0;
   window.ignoresMouseEvents = YES;
+  // A transparent window that ignores mouse events still gets its tracking areas' moves and enters, so
+  // Chrome's views under the pointer (a tab and its hover card) would react to it over OpenArc's window.
+  NSView* content = window.contentView;
+  for (NSTrackingArea* area in content.trackingAreas) {
+    [content removeTrackingArea:area];
+  }
   window.sharingType = NSWindowSharingNone;
   window.animationBehavior = NSWindowAnimationBehaviorNone;
   // Out of the Window menu, ⌘` and Mission Control: the window is OpenArc's machinery, not a window of its own.
@@ -338,6 +345,9 @@ PageHost* HostFor(Profile* profile) {
   }
   if (views::Widget* widget = views::Widget::GetWidgetForNativeWindow(browser->GetWindow()->GetNativeWindow())) {
     widget->SetNativeWindowProperty(views::kOpenArcPageHostWindow, widget);
+    // Chrome adds the content view's tracking area again when the window moves or changes level; its views
+    // take no mouse event either way, so nothing in the window hovers.
+    widget->GetRootView()->SetCanProcessEventsWithinSubtree(false);
   }
   auto* host = new PageHost(browser);
   Hosts()[profile] = host;

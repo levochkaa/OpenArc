@@ -38,7 +38,9 @@ engine from launch to quit, so the switch takes effect after a relaunch, which t
   - one hidden Chrome `Browser` per profile holds that profile's pages as background tabs behind a blank one;
     its window is invisible, never key, and rides along with the OpenArc window in use as a child of the same
     frame, so what Chrome anchors to it (JavaScript dialogs, permission bubbles, extension popups) shows over
-    OpenArc's window;
+    OpenArc's window. The window and its views take no pointer events, so Chrome's tab strip under the pointer
+    shows no hover or tab hover card: a transparent window that ignores mouse events still gets its tracking
+    areas' moves;
   - each page's view lives in OpenArc's windows; `views::OpenArcHostedPageKey` keeps Chrome's window from
     taking it back (`patches/hosted-pages.patch`);
   - a page Chrome opens (a link in a new tab, `window.open`, an extension's tab) becomes an OpenArc tab through
