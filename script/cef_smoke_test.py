@@ -32,6 +32,15 @@ CRASH_DIRS = [Path.home() / "Library" / "Logs" / "DiagnosticReports"]
 COPY_BUNDLE_ID = "com.levochkaa.OpenArc.smoketest"
 COPY_NAME = "OpenArc Smoke"
 COPY_DIR = Path.home() / "Library" / "Caches" / "OpenArcSmokeTest"
+CHROME_ENGINE_FRAMEWORK = "OpenArc Framework.framework"
+# Checks of features the Chrome engine does not have yet (docs/chrome-engine.md); they skip on it.
+CHROME_ENGINE_GAPS = {
+    "extension-sees-tabs": "extensions also see the blank tab of the engine's hidden window",
+    "screen-share-picker": "OpenArc's screen share picker",
+    "extension-popup": "extension buttons in OpenArc's toolbar",
+    "notification-after-site-permission": "site permission prompts in OpenArc's own card",
+    "translate-in-place": "translation",
+}
 SYSTEM_TCC = Path("/Library/Application Support/com.apple.TCC/TCC.db")
 LSREGISTER = ("/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/"
               "lsregister")
@@ -46,12 +55,14 @@ What it does:
   --use-mock-keychain and the test extension. Fixtures are served from
   127.0.0.1 on random ports. Checks run through the copy's own
   Contents/Resources/bin/openarc; window checks read and press the copy's
-  windows in the background with cua-driver. Afterwards the copy is killed with
+  windows in the background with cua-driver. --engine chrome starts the copy on
+  the Chrome engine (OpenArc Framework.framework, docs/chrome-engine.md) with
+  --openarc-engine=chrome, and checks that its pages run there. Afterwards the copy is killed with
   SIGKILL, and its app copy, CEF- and Session- data and defaults are deleted.
   One run at a time.
 
 Checks:
-  no-notification-request-at-launch, engine-version, page-load-js-navigation,
+  chromium-engine, no-notification-request-at-launch, engine-version, page-load-js-navigation,
   proprietary-codecs, extension-sees-tabs, passkeys, media-devices, history,
   webkit-engine, print-preview, screen-share-picker, extension-popup,
   notification-after-site-permission, translate-in-place, background-launch,
@@ -238,8 +249,9 @@ def find_row(state: dict, *patterns: str) -> tuple[str, str] | None:
 
 
 class Instance:
-    def __init__(self, source_app: Path, out_dir: Path, identity: str | None, extension: Path):
+    def __init__(self, source_app: Path, out_dir: Path, identity: str | None, extension: Path, engine: str):
         self.source_app = source_app
+        self.engine = engine
         self.out_dir = out_dir
         self.identity = identity
         self.extension = extension
@@ -267,7 +279,8 @@ class Instance:
         self._set_identity(contents / "Info.plist", COPY_BUNDLE_ID, COPY_NAME)
         original_id = self._read_plist(self.source_app / "Contents" / "Info.plist").get("CFBundleIdentifier", "")
         helpers = sorted((contents / "Frameworks").glob("*Helper*.app"))
-        for helper in helpers:
+        engine_helpers = sorted(self.engine_framework().glob("Versions/Current/Helpers/*.app"))
+        for helper in [*helpers, *engine_helpers]:
             plist = helper / "Contents" / "Info.plist"
             helper_id = self._read_plist(plist).get("CFBundleIdentifier", "")
             if original_id and helper_id.startswith(original_id):
@@ -276,7 +289,9 @@ class Instance:
         entitlements = self.work_dir / "entitlements.plist"
         entitlements.write_bytes(plistlib.dumps({"com.apple.security.get-task-allow": True}))
         identity = self.identity or "-"
-        for bundle in [*helpers, self.app]:
+        # The Chrome engine's helpers live in its framework, which seals them: helpers first, then the framework.
+        engine_bundles = [*engine_helpers, self.engine_framework()] if engine_helpers else []
+        for bundle in [*engine_bundles, *helpers, self.app]:
             run(["/usr/bin/codesign", "--force", "--sign", identity, "--entitlements", str(entitlements),
                  "--timestamp=none", str(bundle)], timeout=300)
         self._reset_defaults()
@@ -289,6 +304,9 @@ class Instance:
             for site, engine in site_engines.items():
                 args += [site, engine]
             self._write_default("browser.settings.siteEngines", "-dict", *args)
+
+    def engine_framework(self) -> Path:
+        return self.app / "Contents" / "Frameworks" / CHROME_ENGINE_FRAMEWORK
 
     @staticmethod
     def _read_plist(path: Path) -> dict:
@@ -315,6 +333,7 @@ class Instance:
             f"--runtime-suffix={self.suffix}",
             f"--agent-socket={self.socket}",
             "--no-activate",
+            f"--openarc-engine={self.engine}",
             "--use-mock-keychain",
             f"--load-extension={self.extension}",
         ]
@@ -605,7 +624,7 @@ class SmokeTest:
         self.cua = Cua(session=f"oa-smoke-{random_token()}")
         self.server = FixtureServer(FIXTURES)
         self.webkit_server = FixtureServer(FIXTURES)
-        self.instance = Instance(options.app, self.out_dir, options.identity, FIXTURES / "extension")
+        self.instance = Instance(options.app, self.out_dir, options.identity, FIXTURES / "extension", options.engine)
         self.tabs: dict[str, str] = {}
         self.focus = FocusWatch(lambda: self.instance.pid)
         self.banners = BannerWatch(self.cua, self.out_dir)
@@ -616,6 +635,11 @@ class SmokeTest:
     # Recording
 
     def check(self, name: str, function) -> None:
+        if self.options.engine == "chrome" and name in CHROME_ENGINE_GAPS:
+            reason = f"not on the Chrome engine yet: {CHROME_ENGINE_GAPS[name]}"
+            log(f"• {name}: SKIP, {reason}")
+            self.results.append({"name": name, "status": "skip", "evidence": reason, "details": {}})
+            return
         log(f"• {name} …")
         started = time.monotonic()
         entry: dict = {"name": name}
@@ -675,7 +699,8 @@ class SmokeTest:
 
     def run(self) -> int:
         major = self.options.expect_chrome_major or expected_chrome_major()
-        self.facts.update(app=str(self.options.app), expected_chrome_major=major, bundle_id=COPY_BUNDLE_ID,
+        self.facts.update(app=str(self.options.app), engine=self.options.engine, expected_chrome_major=major,
+                          bundle_id=COPY_BUNDLE_ID,
                           fixture_port=self.server.port, webkit_port=self.webkit_server.port,
                           started=dt.datetime.now().isoformat(timespec="seconds"))
         screen_capture_before = tcc_state("kTCCServiceScreenCapture", COPY_BUNDLE_ID)
@@ -698,6 +723,7 @@ class SmokeTest:
             self.finish()
             return 2
 
+        self.check("chromium-engine", self.check_chromium_engine)
         self.check("no-notification-request-at-launch", self.check_notifications_at_launch)
         self.check("engine-version", lambda: self.check_engine(major))
         self.check("page-load-js-navigation", self.check_navigation)
@@ -751,7 +777,8 @@ class SmokeTest:
     def print_report(self, summary: dict) -> None:
         marks = {"pass": "PASS", "warn": "WARN", "fail": "FAIL", "skip": "SKIP"}
         print(f"OpenArc engine smoke test: {self.options.app}")
-        print(f"Expected Chromium {self.facts.get('expected_chrome_major')}, copy {COPY_BUNDLE_ID}, "
+        print(f"Engine {self.options.engine}, expected Chromium {self.facts.get('expected_chrome_major')}, "
+              f"copy {COPY_BUNDLE_ID}, "
               f"report {self.out_dir}")
         print()
         for result in self.results:
@@ -809,6 +836,31 @@ class SmokeTest:
         return {"evidence": f"Notification.permission={permission}, permissions.query={query}; no permission "
                             f"request from the copy in the system log during the first 10 s; {watched}",
                 **details}
+
+    def check_chromium_engine(self) -> dict:
+        """Pages run where --engine says: renderers from the Chrome engine's framework, or CEF's helpers."""
+        frameworks = self.instance.app / "Contents" / "Frameworks"
+        engine_helpers = str(self.instance.engine_framework()) + "/"
+
+        def renderers():
+            lines = run(["/usr/bin/pgrep", "-fl", "--", "--type=renderer"], check=False).stdout.splitlines()
+            ours = [line for line in lines if str(frameworks) in line]
+            return ours or None
+
+        found = wait_until(renderers, 20, 0.5) or []
+        on_chrome = [line for line in found if engine_helpers in line]
+        details = {"renderers": found, "method": "renderer processes of the copy by executable path"}
+        if self.options.engine == "chrome":
+            if not self.instance.engine_framework().exists():
+                raise CheckFailed(f"the app has no {CHROME_ENGINE_FRAMEWORK}", details)
+            if not on_chrome or len(on_chrome) != len(found):
+                raise CheckFailed(f"{len(on_chrome)} of {len(found)} renderers run from the Chrome engine's "
+                                  "framework", details)
+            return {"evidence": f"{len(found)} renderers run from {CHROME_ENGINE_FRAMEWORK}", **details}
+        if not found or on_chrome:
+            raise CheckFailed(f"{len(found)} renderers, {len(on_chrome)} from the Chrome engine's framework",
+                              details)
+        return {"evidence": f"{len(found)} renderers run from CEF's helpers", **details}
 
     def check_engine(self, major: int | None) -> dict:
         tab = self.tabs["start"]
@@ -1346,6 +1398,9 @@ def main() -> int:
                              "for it and no-notification-request-at-launch is conclusive; the screen-share check "
                              "then skips, and macOS keeps a notification settings entry for that id")
     parser.add_argument("--keep", action="store_true", help="leave the copy running and its data in place")
+    parser.add_argument("--engine", choices=("cef", "chrome"), default="cef",
+                        help="the engine the copy runs pages on (default cef); chrome needs a build that "
+                             f"carries {CHROME_ENGINE_FRAMEWORK}")
     options = parser.parse_args()
     options.app = options.app.resolve()
     if not (options.app / "Contents" / "MacOS" / "OpenArc").exists():
@@ -1354,6 +1409,8 @@ def main() -> int:
         stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
         options.out = Path(tempfile.gettempdir()) / f"openarc-cef-smoke-{stamp}"
     options.out = options.out.resolve()
+    if options.engine == "chrome" and not (options.app / "Contents" / "Frameworks" / CHROME_ENGINE_FRAMEWORK).exists():
+        parser.error(f"{options.app} carries no {CHROME_ENGINE_FRAMEWORK}; see docs/chrome-engine.md")
     options.identity = options.identity or find_identity()
     if options.fresh_identity:
         global COPY_BUNDLE_ID

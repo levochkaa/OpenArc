@@ -5,13 +5,18 @@
     ./build.sh build
     script/cef_smoke_test.sh .build/xcode/Build/Products/Debug/OpenArc.app
 
+`--engine chrome` runs the same checks on the Chrome engine ([chrome-engine.md](chrome-engine.md)) for a build that carries `OpenArc Framework.framework`: the copy starts with `--openarc-engine=chrome`, and checks of features the engine does not have yet skip with the reason.
+
+    ./script/chrome_engine.sh pull && ./build.sh build
+    script/cef_smoke_test.sh .build/xcode/Build/Products/Debug/OpenArc.app --engine chrome
+
 It prints a report and a JSON summary, and writes `report.json`, `app.log`, `notification-log.txt` and screenshots to the report folder (`--out DIR`, by default a new folder in `$TMPDIR`). Exit status: 0 when no check failed, 1 when one did, 2 when the copy did not start. A check is PASS, WARN (works, with a note on what it could not prove), FAIL or SKIP (with the reason). `--help` lists the options.
 
 Needs: an Apple Development signing identity, `cua-driver` with Accessibility and Screen Recording (without it, `--no-gui` runs the rest), and the network for translation.
 
 ## The copy
 
-The script copies the app to `~/Library/Caches/OpenArcSmokeTest/OpenArcSmoke.app` and gives it the bundle id `com.levochkaa.OpenArc.smoketest` and the name "OpenArc Smoke", helpers included, so it has defaults, macOS permissions and notification settings of its own, and any prompt it causes names it. It removes `embedded.provisionprofile`, re-signs the helpers and the app with only `get-task-allow`, and presets onboarding as done, agent access on and update checks off.
+The script copies the app to `~/Library/Caches/OpenArcSmokeTest/OpenArcSmoke.app` and gives it the bundle id `com.levochkaa.OpenArc.smoketest` and the name "OpenArc Smoke", helpers included, so it has defaults, macOS permissions and notification settings of its own, and any prompt it causes names it. It removes `embedded.provisionprofile`, re-signs the helpers (the Chrome engine's inside its framework too, then the framework) and the app with only `get-task-allow`, and presets onboarding as done, agent access on and update checks off.
 
 It starts the copy through LaunchServices with `open -g` and `--no-activate`, `--runtime-suffix=cef-smoke-<random>`, `--agent-socket=/tmp/oa-smoke-<random>.sock`, `--use-mock-keychain` (no keychain prompts) and `--load-extension` with the test extension. A copy started from a shell becomes the frontmost app even though it never activates itself; `open -g` keeps it in the background. Apps that LaunchServices starts get launchd's environment, so `OPENARC_SYNC_BASE_URL` never reaches the copy and it does not sync. Afterwards the script kills it with SIGKILL (SIGTERM shows the quit alert) and deletes the app copy, `CEF-<suffix>`, `Session-<suffix>` and the defaults domain.
 
@@ -21,6 +26,7 @@ It starts the copy through LaunchServices with `open -g` and `--no-activate`, `-
 
 | Check | How |
 | --- | --- |
+| chromium-engine | The copy's renderer processes run from the engine `--engine` names: CEF's helpers in `Contents/Frameworks`, or the helpers inside `OpenArc Framework.framework`. |
 | no-notification-request-at-launch | `Notification.permission` is `default` and `permissions.query` is `prompt` on a page; the system log, streamed from before launch, has no `Requesting authorization` from the copy and no `Sending request for permission` from `usernoted` for its bundle ids; no NotificationCenter banner names "OpenArc Smoke" in the first 10 s. |
 | engine-version | `navigator.userAgent` and `userAgentData` report the `CHROME_VERSION_MAJOR` of `ThirdParty/cef/export/include/cef_version.h`. |
 | page-load-js-navigation | A fixture page runs its script; `navigate`, `back` and `forward` land on the right titles. |
