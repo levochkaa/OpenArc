@@ -86,6 +86,7 @@ run_remote() {
   cef_root="$(remote_path_expr "$CEF_REMOTE_ROOT")"
   local env="CHROME_ENGINE_ROOT=\"$root\" CEF_CROSS_ROOT=\"$cef_root\" CHROMIUM_TAG=$CHROMIUM_TAG"
   [[ -n "${EXTRA_GN_ARGS:-}" ]] && env="$env EXTRA_GN_ARGS='$EXTRA_GN_ARGS'"
+  [[ -n "${NINJA_JOBS:-}" ]] && env="$env NINJA_JOBS=$NINJA_JOBS"
   local log="$root/logs/$command.log"
   if remote "tmux has-session -t $TMUX_SESSION 2>/dev/null"; then
     echo "error: tmux session $TMUX_SESSION is still running on $REMOTE_HOST; see $0 status" >&2
@@ -204,6 +205,8 @@ Environment:
   CHROMIUM_TAG                        the Chromium to build; by default the
                                       exported CEF's
   EXTRA_GN_ARGS                       extra lines for args.gn
+  NINJA_JOBS                          parallel build jobs on the host; by
+                                      default autoninja's, one per core
 EOF
     ;;
   *)

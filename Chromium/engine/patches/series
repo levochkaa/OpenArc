@@ -2,3 +2,4 @@
 engine-hooks.patch
 hosted-pages.patch
 browser-delegate.patch
+frame-sink-destruction.patch

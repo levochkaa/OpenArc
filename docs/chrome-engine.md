@@ -54,6 +54,9 @@ engine from launch to quit, so the switch takes effect after a relaunch, which t
   - `hosted-pages.patch`: pages stay in OpenArc's windows;
   - `browser-delegate.patch`: keys (OpenArc's shortcuts before the page, its menus after), element fullscreen in
     OpenArc's window, and the link under the pointer for OpenArc's status line.
+  - `frame-sink-destruction.patch`: a page hidden in OpenArc's window drops its own compositor, and the GPU side of
+    it is destroyed without the synchronous wait Chrome does for a window the GPU process draws into, which a Mac
+    window never is. The wait stalled tab switches.
 - The hooks (`Chromium/engine/hooks/openarc_engine_hooks.h`) are null until `OpenArcChromeEngineMain` sets them,
   so the patched code behaves as Chrome's own otherwise.
 - The layer is based on Cra's engine bridge (github.com/VictorKildahl/cra, MIT License), credited in
@@ -84,7 +87,8 @@ WAIT=1 ./script/chrome_engine.sh package
 
 `OPENARC_CEF_REMOTE_HOST` (default `wsl`) picks the host, `OPENARC_CHROME_ENGINE_REMOTE_ROOT` (default
 `~/chrome-engine`) the engine's build root, and `OPENARC_CEF_REMOTE_ROOT` (default `~/cef-mac`) the CEF build root
-whose checkout, depot_tools and hermetic Xcode the engine uses. The engine builds the Chromium version of
+whose checkout, depot_tools and hermetic Xcode the engine uses. The build runs at idle CPU and disk priority;
+`NINJA_JOBS` caps its jobs, so the host stays usable for other work. The engine builds the Chromium version of
 `ThirdParty/cef/export/include/cef_version.h`; when CEF moves to a new base, run CEF's `fetch` first, then
 `prepare` copies the new checkout. The GN arguments match CEF's (official, PGO, ThinLTO, Chrome's codecs) with
 `target_os="mac" use_system_xcode=false`; like the cross-built CEF, the framework ships `snapshot_blob.bin`

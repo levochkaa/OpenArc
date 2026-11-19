@@ -157,7 +157,12 @@ build() {
   # -k 0 builds everything it can past a failure, so a layer error shows up at
   # the end of a first build together with the rest, and the next run only
   # rebuilds what failed.
-  (cd "$SRC" && nice -n 19 autoninja -C "$OUT" -k 0 chrome_framework) || die "build"
+  # The build yields the host to everything else: idle CPU and disk priority,
+  # and NINJA_JOBS, when set, caps the jobs autoninja would run.
+  local idle=(nice -n 19) jobs=()
+  command -v ionice >/dev/null && idle=(ionice -c3 nice -n 19)
+  [[ -n "${NINJA_JOBS:-}" ]] && jobs=(-j "$NINJA_JOBS")
+  (cd "$SRC" && "${idle[@]}" autoninja -C "$OUT" -k 0 "${jobs[@]}" chrome_framework) || die "build"
   echo "build exit 0"
 }
 

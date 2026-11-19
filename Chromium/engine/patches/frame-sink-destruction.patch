@@ -1,0 +1,19 @@
+diff --git a/content/browser/compositor/viz_process_transport_factory.cc b/content/browser/compositor/viz_process_transport_factory.cc
+index 7ca2539..bc5f830 100644
+--- a/content/browser/compositor/viz_process_transport_factory.cc
++++ b/content/browser/compositor/viz_process_transport_factory.cc
+@@ -454,6 +454,14 @@ void VizProcessTransportFactory::OnEstablishedGpuChannel(
+   // CompositorFrameSink.
+   GetHostFrameSinkManager()->CreateRootCompositorFrameSink(
+       std::move(root_params), !using_direct_composition);
++#elif BUILDFLAG(IS_MAC)
++  // OpenArc: the GPU process never draws into a Mac window; it hands its
++  // frames back as CALayer parameters. Nothing needs the frame sink gone
++  // before the compositor, so InvalidateFrameSinkId() destroys it on the GPU
++  // side without the synchronous wait, which stalled the main thread for tens
++  // to hundreds of milliseconds whenever a hidden page dropped its compositor.
++  GetHostFrameSinkManager()->CreateRootCompositorFrameSink(
++      std::move(root_params), /*maybe_wait_on_destruction=*/false);
+ #else
+   GetHostFrameSinkManager()->CreateRootCompositorFrameSink(
+       std::move(root_params));
