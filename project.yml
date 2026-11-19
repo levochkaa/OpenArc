@@ -87,6 +87,15 @@ targetTemplates:
       - path: Sources/Browser/BrowserFilterEngine.swift
       - path: Sources/Browser/BrowserFilterList.swift
       - path: Sources/Browser/BrowserFilterListUpdater.swift
+  # Extension packages, stores and the installed-extension library, shared by the Mac and iOS apps.
+  BrowserWebExtensionsCore:
+    sources:
+      - path: Sources/Browser/BrowserWebExtensionLibrary.swift
+      - path: Sources/Browser/BrowserWebExtensionManifest.swift
+      - path: Sources/Browser/BrowserWebExtensionPackage.swift
+      - path: Sources/Browser/BrowserWebExtensionStore.swift
+    dependencies:
+      - package: ZIPFoundation
   ChromiumTarget:
     settings:
       base:
@@ -351,6 +360,7 @@ targets:
     templates:
       - BrowserSyncCore
       - BrowserContentBlockingCore
+      - BrowserWebExtensionsCore
     type: application
     platform: iOS
     productName: OpenArc
@@ -403,6 +413,7 @@ targets:
     templates:
       - BrowserSyncCore
       - BrowserContentBlockingCore
+      - BrowserWebExtensionsCore
     type: bundle.unit-test
     platform: iOS
     sources:
@@ -415,6 +426,7 @@ targets:
       - path: Sources/Browser/BrowserStrings.swift
       - path: Sources/Browser/Resources/en.lproj/Localizable.strings
       - path: Tests/OpenArciOSTests
+      - path: Tests/OpenArcTests/BrowserWebExtensionCoreTests.swift
     dependencies:
       - package: DomainParser
       - target: BrowserMobileTestHost
