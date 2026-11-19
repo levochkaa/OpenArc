@@ -84,6 +84,14 @@ import QuartzCore
         /// A mini player growing on hover and shrinking back.
         static let miniPlayerGrow = Curve.easeInOut(0.2)
         static let miniPlayerShrink = Curve.easeOut(0.17)
+        /// The downloads tray's rows rising from the Library button.
+        static let downloadsTrayIn = Curve.bezier(0.19, x1: 0.215, y1: 0.61, x2: 0.355, y2: 1)
+        /// The tray's rows sinking and fading once the pointer leaves.
+        static let downloadsTrayOut = Curve.easeInOut(0.12)
+        /// The list above the tray fading out as the rows come in.
+        static let downloadsTrayListOut = Curve.easeInOut(0.1)
+        /// The list coming back after the tray is gone.
+        static let downloadsTrayListBack = Curve.easeInOut(0.14)
 
         var duration: Double {
             switch self {

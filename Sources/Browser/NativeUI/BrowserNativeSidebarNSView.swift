@@ -53,6 +53,14 @@ final class BrowserNativeSidebarNSView: NSView {
     private var isLibraryButtonHovered = false
     private var downloadsTrayWork: DispatchWorkItem?
     private var downloadsTrayTimer: Timer?
+    /// The tray's rows rising into place or sinking away.
+    private let downloadsTrayMotion = BrowserNativeAnimation()
+    /// The list above the tray fading out or back.
+    private let listFadeMotion = BrowserNativeAnimation()
+    private var isHidingDownloadsTray = false
+    /// How far the list is faded out above the tray, from 0 to 1.
+    private var listFadeStrength: CGFloat = 0
+    private let listFadeMask = CAGradientLayer()
     private let appGrid = BrowserNativeSidebarBackground()
     private let emptyAppGuide = BrowserNativeNoninteractiveSurface()
     private let emptyAppGuideLabel = BrowserNativeControls.label(
@@ -124,7 +132,9 @@ final class BrowserNativeSidebarNSView: NSView {
             self?.scheduleDownloadsTray()
         }
         downloadsTray.onHoverChanged = { [weak self] in self?.scheduleDownloadsTray() }
-        downloadsTray.alphaValue = 0
+        downloadsTray.entrance = 0
+        listFadeMask.startPoint = CGPoint(x: 0.5, y: 0)
+        listFadeMask.endPoint = CGPoint(x: 0.5, y: 1)
         setAccessibilityIdentifier("browser.sidebar")
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
@@ -964,9 +974,6 @@ final class BrowserNativeSidebarNSView: NSView {
             width: width,
             height: footerHeight,
         )
-        if downloadsTray.superview != nil {
-            placeDownloadsTray()
-        }
         // Mini players sit above the dock; the list keeps room for their
         // collapsed rows, and a player growing on hover covers its bottom.
         let playersBottom = footer.frame.minY - BrowserChromeLayout.sidebarBottomChromeTopSpacing
@@ -994,6 +1001,10 @@ final class BrowserNativeSidebarNSView: NSView {
             animated: animated,
         )
         scrollObserver.frame = pagerClip.frame
+        // After the list's frame, which the fade above the tray is measured in.
+        if downloadsTray.superview != nil {
+            placeDownloadsTray()
+        }
         if state.pagerTargetSpaceID == state.snapshot.selectedSpaceID {
             state.pagerTargetSpaceID = nil
         }
@@ -1731,7 +1742,11 @@ final class BrowserNativeSidebarNSView: NSView {
     }
 
     /// An Easel's row: icon, rename, split and move, then remove or delete.
-    private func easelMenu(_ tab: BrowserChromeModel.Tab, easelID: String, row: BrowserNativeSidebarRowNSView) -> NSMenu {
+    private func easelMenu(
+        _ tab: BrowserChromeModel.Tab,
+        easelID: String,
+        row: BrowserNativeSidebarRowNSView,
+    ) -> NSMenu {
         let model = state.model
         let state = state
         let menu = BrowserNativeMenus.menu()
@@ -2118,10 +2133,10 @@ final class BrowserNativeSidebarNSView: NSView {
     private func scheduleDownloadsTray() {
         downloadsTrayWork?.cancel()
         let shows = isLibraryButtonHovered || downloadsTray.isHovered
-        guard shows != (downloadsTray.superview != nil) else { return }
+        guard shows != (downloadsTray.superview != nil && !isHidingDownloadsTray) else { return }
         let work = DispatchWorkItem { [weak self] in self?.setDownloadsTrayShown(shows) }
         downloadsTrayWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + (shows ? 0.3 : 0.2), execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + (shows ? 0.15 : 0.1), execute: work)
     }
 
     /// The folder's newest items, then the downloads still running, newest last.
@@ -2164,20 +2179,24 @@ final class BrowserNativeSidebarNSView: NSView {
         return BrowserDownloadsTrayView.merged(files: files, canceled: canceled + failed, running: running)
     }
 
+    /// The rows rise from the Library button and fade in while the list above fades
+    /// out; on the way out they sink and fade first, then the list comes back.
     private func setDownloadsTrayShown(_ shown: Bool) {
         let entries = shown && !state.isDraggingSidebarItem ? downloadsTrayEntries() : []
         guard !entries.isEmpty else {
             downloadsTrayTimer?.invalidate()
             downloadsTrayTimer = nil
-            guard downloadsTray.superview != nil else { return }
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.15
-                downloadsTray.animator().alphaValue = 0
-            } completionHandler: { [weak self] in
-                MainActor.assumeIsolated {
-                    guard let self, self.downloadsTray.alphaValue == 0 else { return }
-                    self.downloadsTray.removeFromSuperview()
-                    self.pagerClip.layer?.mask = nil
+            guard downloadsTray.superview != nil, !isHidingDownloadsTray else { return }
+            isHidingDownloadsTray = true
+            if downloadsTray.entrance >= 1 {
+                downloadsTray.gatherSpread = BrowserDownloadsTrayView.hideSpread
+            }
+            animateDownloadsTray(to: 0, curve: .downloadsTrayOut) { [weak self] in
+                self?.animateListFade(to: 0, curve: .downloadsTrayListBack) { [weak self] in
+                    guard let self, isHidingDownloadsTray else { return }
+                    isHidingDownloadsTray = false
+                    downloadsTray.removeFromSuperview()
+                    pagerClip.layer?.mask = nil
                 }
             }
             return
@@ -2185,17 +2204,52 @@ final class BrowserNativeSidebarNSView: NSView {
         downloadsTray.show(entries)
         if downloadsTray.superview == nil {
             content.addSubview(downloadsTray, positioned: .above, relativeTo: miniPlayers)
+            downloadsTray.entrance = 0
+            downloadsTray.gatherSpread = BrowserDownloadsTrayView.showSpread
         }
+        isHidingDownloadsTray = false
         placeDownloadsTray()
         // Tracking areas miss fast exits and window changes; the pointer is checked too.
         downloadsTrayTimer?.invalidate()
         downloadsTrayTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.checkDownloadsTrayPointer() }
         }
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.15
-            downloadsTray.animator().alphaValue = 1
+        animateDownloadsTray(to: 1, curve: .downloadsTrayIn)
+        animateListFade(to: 1, curve: .downloadsTrayListOut)
+    }
+
+    private func animateDownloadsTray(
+        to target: CGFloat,
+        curve: BrowserNativeAnimation.Curve,
+        completion: @escaping @MainActor () -> Void = {},
+    ) {
+        let from = downloadsTray.entrance
+        guard from != target else {
+            downloadsTrayMotion.cancel()
+            completion()
+            return
         }
+        downloadsTrayMotion.start(curve) { [weak self] progress in
+            self?.downloadsTray.entrance = from + (target - from) * progress
+        } completion: { completion() }
+    }
+
+    private func animateListFade(
+        to target: CGFloat,
+        curve: BrowserNativeAnimation.Curve,
+        completion: @escaping @MainActor () -> Void = {},
+    ) {
+        let from = listFadeStrength
+        guard from != target else {
+            listFadeMotion.cancel()
+            completion()
+            return
+        }
+        listFadeMotion.start(curve) { [weak self] progress in
+            guard let self else { return }
+            listFadeStrength = from + (target - from) * progress
+            fadeListAbove(trayTop: downloadsTray.frame.minY)
+        } completion: { completion() }
     }
 
     private func placeDownloadsTray() {
@@ -2220,29 +2274,26 @@ final class BrowserNativeSidebarNSView: NSView {
         setDownloadsTrayShown(false)
     }
 
-    /// The list fades out over 40 pt above the tray and is hidden behind it.
+    /// The list is hidden behind the tray and fades in over the band above it.
     private func fadeListAbove(trayTop: CGFloat) {
         pagerClip.wantsLayer = true
         guard let layer = pagerClip.layer, pagerClip.bounds.height > 0 else { return }
         let top = pagerClip.convert(NSPoint(x: 0, y: trayTop), from: content).y
-        let fadeStart = top - 40
-        let height = pagerClip.bounds.height
-        // Unit positions run from the layer's bottom unless its geometry is flipped.
-        func unit(_ y: CGFloat) -> NSNumber {
-            let fromTop = pagerClip.isFlipped ? y : height - y
-            let fraction = min(max(fromTop / height, 0), 1)
-            return NSNumber(value: Double(layer.isGeometryFlipped ? fraction : 1 - fraction))
+        let fade = BrowserDownloadsTrayListFade(
+            trayTop: pagerClip.isFlipped ? top : pagerClip.bounds.height - top,
+            height: pagerClip.bounds.height,
+            strength: listFadeStrength,
+            startsAtTop: layer.isGeometryFlipped,
+        )
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        listFadeMask.frame = layer.bounds
+        listFadeMask.locations = fade.locations.map { NSNumber(value: $0) }
+        listFadeMask.colors = fade.alphas.map { NSColor.black.withAlphaComponent($0).cgColor }
+        if layer.mask !== listFadeMask {
+            layer.mask = listFadeMask
         }
-        let mask = CAGradientLayer()
-        mask.frame = layer.bounds
-        mask.startPoint = CGPoint(x: 0.5, y: 0)
-        mask.endPoint = CGPoint(x: 0.5, y: 1)
-        // Visible above the fade, gone from the tray's top down, in either unit direction.
-        let fade = unit(fadeStart).doubleValue, gone = unit(top).doubleValue
-        mask.locations = [0, NSNumber(value: min(fade, gone)), NSNumber(value: max(fade, gone)), 1]
-        let shown = NSColor.black.cgColor, hidden = NSColor.clear.cgColor
-        mask.colors = fade > gone ? [shown, shown, hidden, hidden] : [hidden, hidden, shown, shown]
-        layer.mask = mask
+        CATransaction.commit()
     }
 
     private func updateOutsidePreview() {
@@ -2974,6 +3025,12 @@ final class BrowserDownloadsTrayView: NSView {
 
     static let rowHeight: CGFloat = 56
     static let maximumEntries = 4
+    /// How far the rows gather toward the Library button as they come in, and as they
+    /// leave, as a share of their distance from it.
+    static let showSpread: CGFloat = 0.46
+    static let hideSpread: CGFloat = 0.1
+    /// The point the rows gather toward, below the tray's bottom edge.
+    static let gatherPointBelow: CGFloat = 55
 
     override var isFlipped: Bool { true }
 
@@ -2982,6 +3039,21 @@ final class BrowserDownloadsTrayView: NSView {
 
     private(set) var rows = [BrowserDownloadsTrayRow]()
 
+    /// 0 while the rows are gathered toward the Library button and transparent, 1 in place.
+    var entrance: CGFloat = 1 {
+        didSet {
+            guard entrance != oldValue else { return }
+            needsLayout = true
+        }
+    }
+
+    var gatherSpread = showSpread {
+        didSet {
+            guard gatherSpread != oldValue else { return }
+            needsLayout = true
+        }
+    }
+
     private var tracking: NSTrackingArea?
 
     var preferredHeight: CGFloat { CGFloat(rows.count) * Self.rowHeight }
@@ -2989,7 +3061,15 @@ final class BrowserDownloadsTrayView: NSView {
     override func layout() {
         super.layout()
         for (index, row) in rows.enumerated() {
-            row.frame = NSRect(x: 0, y: CGFloat(index) * Self.rowHeight, width: bounds.width, height: Self.rowHeight)
+            let y = CGFloat(index) * Self.rowHeight
+            let offset = Self.entranceOffset(
+                rowMidY: y + Self.rowHeight / 2,
+                trayHeight: preferredHeight,
+                entrance: entrance,
+                spread: gatherSpread,
+            )
+            row.frame = NSRect(x: 0, y: y + offset, width: bounds.width, height: Self.rowHeight)
+            row.alphaValue = min(max(entrance, 0), 1)
         }
     }
 
@@ -3013,6 +3093,17 @@ final class BrowserDownloadsTrayView: NSView {
     override func mouseExited(with _: NSEvent) {
         isHovered = false
         onHoverChanged()
+    }
+
+    /// How far below its place a row sits: rows farther from the button travel farther,
+    /// so the stack opens upward from it.
+    static func entranceOffset(
+        rowMidY: CGFloat,
+        trayHeight: CGFloat,
+        entrance: CGFloat,
+        spread: CGFloat,
+    ) -> CGFloat {
+        (1 - min(max(entrance, 0), 1)) * spread * (trayHeight + gatherPointBelow - rowMidY)
     }
 
     /// Whether the pointer still holds the tray open: over it, over the Library button,
@@ -3084,6 +3175,48 @@ final class BrowserDownloadsTrayView: NSView {
         for row in rows {
             row.syncHoverWithPointer()
         }
+    }
+}
+
+// MARK: - BrowserDownloadsTrayListFade
+
+/// The sidebar list under the downloads tray: hidden from the tray's top down and fading
+/// in over `band` points above it, as a vertical gradient mask over the list.
+struct BrowserDownloadsTrayListFade {
+    static let band: CGFloat = 155
+
+    /// Gradient stops in the mask's unit space, ascending, with the mask's opacity at each.
+    let locations: [Double]
+    let alphas: [Double]
+    /// A mask over a geometry-flipped layer is laid out flipped too: its unit space
+    /// starts at the top edge. Otherwise it starts at the bottom.
+    let startsAtTop: Bool
+
+    /// `trayTop` is measured from the list's top edge; `strength` runs from 0 (the
+    /// list fully shown) to 1 (faded out).
+    init(trayTop: CGFloat, height: CGFloat, strength: CGFloat, startsAtTop: Bool) {
+        self.startsAtTop = startsAtTop
+        func fromTop(_ y: CGFloat) -> Double { Double(min(max(y / max(height, 1), 0), 1)) }
+        let hidden = Double(1 - min(max(strength, 0), 1))
+        let bandTop = fromTop(trayTop - Self.band), gone = fromTop(trayTop)
+        if startsAtTop {
+            self.locations = [0, bandTop, gone, 1]
+            self.alphas = [1, 1, hidden, hidden]
+        } else {
+            self.locations = [0, 1 - gone, 1 - bandTop, 1]
+            self.alphas = [hidden, hidden, 1, 1]
+        }
+    }
+
+    /// The mask's opacity at `fromTop` points below the list's top edge.
+    func alpha(atFromTop fromTop: CGFloat, height: CGFloat) -> Double {
+        let unit = Double(fromTop / height)
+        let position = startsAtTop ? unit : 1 - unit
+        guard let upper = locations.firstIndex(where: { $0 >= position }) else { return alphas.last ?? 1 }
+        guard upper > 0 else { return alphas[0] }
+        let low = locations[upper - 1], high = locations[upper]
+        let fraction = high > low ? (position - low) / (high - low) : 1
+        return alphas[upper - 1] + (alphas[upper] - alphas[upper - 1]) * fraction
     }
 }
 

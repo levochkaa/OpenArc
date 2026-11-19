@@ -92,6 +92,50 @@ import Testing
         #expect(!Tray.keepsOpen(at: NSPoint(x: 300, y: 450), tray: tray, button: button))
     }
 
+    @Test func theListIsHiddenBehindTheTrayAndFadesAboveIt() {
+        // A list 600 pt tall whose tray starts 400 pt below its top, in either mask orientation.
+        for startsAtTop in [true, false] {
+            let fade = BrowserDownloadsTrayListFade(trayTop: 400, height: 600, strength: 1, startsAtTop: startsAtTop)
+            #expect(fade.locations == fade.locations.sorted(), "Gradient stops must ascend")
+            #expect(fade.alpha(atFromTop: 500, height: 600) == 0, "Behind the tray the list is gone")
+            #expect(fade.alpha(atFromTop: 401, height: 600) == 0)
+            #expect(fade.alpha(atFromTop: 100, height: 600) == 1, "Well above the tray the list is untouched")
+            let middle = fade.alpha(atFromTop: 400 - BrowserDownloadsTrayListFade.band / 2, height: 600)
+            #expect(abs(middle - 0.5) < 0.01, "Halfway up the band the list is half faded")
+        }
+        let halfway = BrowserDownloadsTrayListFade(trayTop: 400, height: 600, strength: 0.5, startsAtTop: true)
+        #expect(halfway.alpha(atFromTop: 500, height: 600) == 0.5, "Mid-fade the list behind the tray is dimmed")
+        let shown = BrowserDownloadsTrayListFade(trayTop: 400, height: 600, strength: 0, startsAtTop: false)
+        #expect(shown.alphas.allSatisfy { $0 == 1 }, "With the tray gone the list is whole")
+    }
+
+    @Test func trayRowsRiseFromTheLibraryButtonAndFadeIn() throws {
+        let folder = try temporaryFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let entries = try ["a.zip", "b.zip", "c.zip", "d.zip"].map {
+            try BrowserDownloadsTrayView.Entry(url: write($0, in: folder), date: Date())
+        }
+        let tray = BrowserDownloadsTrayView(frame: NSRect(x: 0, y: 0, width: 240, height: 224))
+        tray.show(entries)
+        tray.entrance = 0
+        tray.layoutSubtreeIfNeeded()
+        let offsets = tray.rows.enumerated().map { index, row in row.frame.minY - CGFloat(index) * 56 }
+        #expect(offsets == offsets.sorted(by: >), "Rows farther from the button travel farther")
+        #expect(abs(offsets[3] - 38.2) < 0.1, "The newest row starts 38 pt below its place")
+        #expect(abs(offsets[0] - 115.5) < 0.1)
+        #expect(tray.rows.allSatisfy { $0.alphaValue == 0 })
+        tray.entrance = 1
+        tray.layoutSubtreeIfNeeded()
+        #expect(tray.rows.enumerated().allSatisfy { index, row in row.frame.minY == CGFloat(index) * 56 })
+        #expect(tray.rows.allSatisfy { $0.alphaValue == 1 })
+        #expect(BrowserDownloadsTrayView.entranceOffset(
+            rowMidY: 28,
+            trayHeight: 224,
+            entrance: 0,
+            spread: BrowserDownloadsTrayView.hideSpread,
+        ) < 26, "On the way out the rows mostly fade and sink only a little")
+    }
+
     @Test func trayRowsAreKeptWhenTheListShiftsUnderThem() throws {
         let folder = try temporaryFolder()
         defer { try? FileManager.default.removeItem(at: folder) }
