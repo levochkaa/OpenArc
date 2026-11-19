@@ -4860,6 +4860,10 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
     id<BrowserPeerPage> page = record.peerPage;
     record.peerPage = nil;
     [(id)page setDelegate:nil];
+    // A Chrome engine page's view is a container that outlives its contents. Left in the host, the
+    // shown page's container stays unhidden above every page added later, which sit below it, and takes
+    // their clicks.
+    [page.view removeFromSuperview];
     [page close];
     return;
   }
