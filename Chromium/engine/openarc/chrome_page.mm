@@ -139,6 +139,19 @@ void Later(base::OnceClosure task) {
 // JavaScript dialog, an extension's popup, a permission bubble) shows over OpenArc's window.
 NSHashTable<NSWindow*>* g_host_windows = nil;
 
+// Gives a window class its own implementation of a method, built from the one it answers with now. A method the
+// class only inherits is added to it, so NSWindow and Chrome's other window classes keep theirs.
+void ReplaceWindowMethod(Class cls, SEL selector, id (^make)(IMP original, SEL selector)) {
+  Method method = class_getInstanceMethod(cls, selector);
+  if (!method) {
+    return;
+  }
+  IMP replacement = imp_implementationWithBlock(make(method_getImplementation(method), selector));
+  if (!class_addMethod(cls, selector, replacement, method_getTypeEncoding(method))) {
+    method_setImplementation(method, replacement);
+  }
+}
+
 void MakeHostWindow(NSWindow* window) {
   if (!window) {
     return;
@@ -163,23 +176,29 @@ void MakeHostWindow(NSWindow* window) {
   if (!g_host_windows) {
     g_host_windows = [NSHashTable weakObjectsHashTable];
   }
-  // Once per class: Chrome's window class answers NO for the host windows.
+  // Once per class: Chrome's window class answers NO for the host windows, and they ignore mouse events for good,
+  // whatever Chrome sets later.
   static NSMutableSet<NSString*>* patched = [NSMutableSet set];
   Class cls = [window class];
   if (![patched containsObject:NSStringFromClass(cls)]) {
     [patched addObject:NSStringFromClass(cls)];
+    using BoolIMP = BOOL (*)(id, SEL);
     for (NSString* name in @[ @"canBecomeKeyWindow", @"canBecomeMainWindow" ]) {
-      SEL selector = NSSelectorFromString(name);
-      Method method = class_getInstanceMethod(cls, selector);
-      if (!method) {
-        continue;
-      }
-      using BoolIMP = BOOL (*)(id, SEL);
-      BoolIMP original = reinterpret_cast<BoolIMP>(method_getImplementation(method));
-      method_setImplementation(method, imp_implementationWithBlock(^BOOL(id me) {
-                                 return [g_host_windows containsObject:me] ? NO : original(me, selector);
-                               }));
+      ReplaceWindowMethod(cls, NSSelectorFromString(name), ^id(IMP imp, SEL selector) {
+        BoolIMP original = reinterpret_cast<BoolIMP>(imp);
+        return ^BOOL(id me) {
+          return [g_host_windows containsObject:me] ? NO : original(me, selector);
+        };
+      });
     }
+    // Only the setter: the getter keeps reporting the window's real state.
+    ReplaceWindowMethod(cls, @selector(setIgnoresMouseEvents:), ^id(IMP imp, SEL selector) {
+      using SetIMP = void (*)(id, SEL, BOOL);
+      SetIMP original = reinterpret_cast<SetIMP>(imp);
+      return ^(id me, BOOL ignores) {
+        original(me, selector, [g_host_windows containsObject:me] ? YES : ignores);
+      };
+    });
   }
   [g_host_windows addObject:window];
 }
