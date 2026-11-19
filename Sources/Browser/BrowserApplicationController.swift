@@ -4969,13 +4969,12 @@ NSMenuDelegate, NSUserInterfaceValidations {
            ["http", "https"].contains(url.scheme?.lowercased() ?? "")
         {
             model.openInLittleWindow(url)
-            NSApp.activate(ignoringOtherApps: true)
+            activateApplication()
             return
         }
         if targetSession?.chromeModel.canCreateTab == true {
             targetSession?.chromeModel.openURLInNewTab(url)
-            targetSession?.window.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
+            targetSession.map { bringLinkWindowForward($0.window) }
             return
         }
 
@@ -4996,14 +4995,15 @@ NSMenuDelegate, NSUserInterfaceValidations {
             guard let session = profileWindowSessions.first(where: { $0.profile.id == profileID }),
                   session.chromeModel.openURL(url, inSpaceWithID: spaceID)
             else { return false }
-            session.window.makeKeyAndOrderFront(nil)
+            bringLinkWindowForward(session.window)
+            return true
         case .littleWindow:
             guard let model = (activeProfileWindowSession ?? profileWindowSessions.first)?.chromeModel,
                   model.canOpenLittleWindow
             else { return false }
             model.openInLittleWindow(url)
+            activateApplication()
         }
-        NSApp.activate(ignoringOtherApps: true)
         return true
     }
 
@@ -5043,7 +5043,14 @@ NSMenuDelegate, NSUserInterfaceValidations {
             targetSession?.chromeModel.openURLInNewTab(url)
         }
 
-        targetSession?.window.makeKeyAndOrderFront(nil)
+        targetSession.map { bringLinkWindowForward($0.window) }
+    }
+
+    /// The window a link from another app opened in comes to the front with the keyboard, except after
+    /// `--no-activate`, where it stays where it is.
+    private func bringLinkWindowForward(_ window: NSWindow) {
+        guard BrowserWindowPresentation.current.activatesApplication else { return }
+        window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 
