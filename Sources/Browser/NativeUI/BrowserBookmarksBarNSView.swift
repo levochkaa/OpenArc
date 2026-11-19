@@ -168,12 +168,12 @@ final class BrowserBookmarksBarNSView: NSView {
                 document.addSubview(button)
             }
             button.update(item)
-            button.onClick = { [weak self, weak button] _ in
+            button.onClick = { [weak self, weak button] event in
                 guard let self else { return }
                 if item.isFolder, let button {
                     toggleFolder(item, from: button)
                 } else if let url = item.urlString {
-                    model.openBookmark(urlString: url)
+                    model.openBookmark(urlString: url, modifiers: event?.modifierFlags ?? [])
                 }
             }
             button.onHoverChanged = { [weak self, weak button] hovering in

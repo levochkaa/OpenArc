@@ -1,5 +1,6 @@
 // BrowserChromeModelTests.swift
 
+import AppKit
 import Foundation
 import Testing
 
@@ -3275,6 +3276,34 @@ import Testing
     model.openBookmarksManager()
 
     #expect(driver.createdTabRequests.last?.urlString == "openarc://bookmarks/")
+}
+
+@Test
+@MainActor func commandClickedBookmarkOpensInANewTabBehindTheSelectedOne() throws {
+    let driver = FakeBrowserTabDriver()
+    let model = makeModel(
+        driver: driver,
+        snapshotStore: InMemorySessionSnapshotStore(),
+        preferencesStore: InMemorySessionPreferencesStore(),
+    )
+    model.handleContextReady()
+    driver.flushPendingCreateEvents()
+    let selected = try #require(model.selectedTabID)
+    let tabCount = model.tabs.count
+
+    model.openBookmark(urlString: "https://a.example/", modifiers: .command)
+    driver.flushPendingCreateEvents()
+
+    #expect(driver.createdTabRequests.last?.urlString == "https://a.example/")
+    #expect(driver.createdTabRequests.last?.makeActive == false)
+    #expect(model.tabs.count == tabCount + 1)
+    #expect(model.selectedTabID == selected)
+
+    model.openBookmark(urlString: "https://b.example/", modifiers: [.command, .shift])
+    driver.flushPendingCreateEvents()
+
+    #expect(driver.createdTabRequests.last?.urlString == "https://b.example/")
+    #expect(model.selectedTabID == driver.createdTabRequests.last?.id)
 }
 
 @Test

@@ -186,12 +186,12 @@ final class BrowserBookmarkFolderListView: NSView {
     private func configure(_ row: BrowserNativeBookmarkButton, for item: BrowserBookmarkItem) {
         let interactions = interactions
         let level = level
-        row.onClick = { [weak self, weak row] _ in
+        row.onClick = { [weak self, weak row] event in
             if item.isFolder {
                 if let row { self?.openFolder(item, from: row) }
             } else if let url = item.urlString {
                 interactions.dismissPanels()
-                interactions.model.openBookmark(urlString: url)
+                interactions.model.openBookmark(urlString: url, modifiers: event?.modifierFlags ?? [])
             }
         }
         row.onHoverChanged = { [weak self, weak row] hovering in

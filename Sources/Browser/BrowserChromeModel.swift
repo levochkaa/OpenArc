@@ -1685,9 +1685,15 @@ enum BrowserWindowMode: Equatable {
         return true
     }
 
-    func openBookmark(urlString: String) {
+    /// A plain click opens the bookmark in place; with Command it opens a new tab in the
+    /// background, and with Command-Shift a new tab that takes the selection, as links do.
+    func openBookmark(urlString: String, modifiers: NSEvent.ModifierFlags = []) {
         BrowserTelemetry.captureUsage(.bookmarkOpened, properties: telemetryProperties)
-        navigateSelectedTabOrOpenNewTab(toURLString: urlString)
+        if modifiers.contains(.command) {
+            createTab(withURLString: urlString, makeActive: modifiers.contains(.shift))
+        } else {
+            navigateSelectedTabOrOpenNewTab(toURLString: urlString)
+        }
     }
 
     @discardableResult func addSelectedTabBookmark() -> Bool {
