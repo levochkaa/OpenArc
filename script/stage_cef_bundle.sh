@@ -262,6 +262,8 @@ create_versioned_cef_framework "$CEF_FRAMEWORK_DEST"
 /usr/bin/python3 "$(dirname "$0")/brand_cef_resources.py" "$CEF_FRAMEWORK_DEST" OpenArc
 ditto "$HELPER_BUNDLE" "$HELPER_DEST"
 ditto "$CEF_ROOT/CREDITS.html" "$APP_RESOURCES_DIR/CEFCredits.html"
+# The export comes from the build host with group write; Sparkle warns on irregular modes.
+chmod 644 "$APP_RESOURCES_DIR/CEFCredits.html"
 
 create_helper_variant " (Alerts)" ".alerts"
 create_helper_variant " (GPU)" ".gpu"
