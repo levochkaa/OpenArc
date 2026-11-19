@@ -471,13 +471,13 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
 
     override func tableView(_: UITableView, heightForHeaderInSection section: Int) -> CGFloat {
         if isPhoneSheet {
-            return section == 2 && showsPhoneDivider ? 21 : .leastNonzeroMagnitude
+            return section == 2 && showsPhoneDivider ? 21 : .leastNormalMagnitude
         }
         return workspace.profileDocument == nil ? UITableView.automaticDimension : 44
     }
 
     override func tableView(_: UITableView, heightForFooterInSection _: Int) -> CGFloat {
-        isPhoneSheet ? .leastNonzeroMagnitude : UITableView.automaticDimension
+        isPhoneSheet ? .leastNormalMagnitude : UITableView.automaticDimension
     }
 
     override func tableView(_: UITableView, viewForHeaderInSection section: Int) -> UIView? {
@@ -1161,6 +1161,10 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         tableView.rowHeight = 56
         tableView.estimatedRowHeight = 56
         tableView.sectionHeaderTopPadding = 0
+        tableView.estimatedSectionHeaderHeight = 0
+        tableView.estimatedSectionFooterHeight = 0
+        // A grouped table leaves room above its first section without a header view.
+        tableView.tableHeaderView = UIView(frame: CGRect(x: 0, y: 0, width: 0, height: CGFloat.leastNormalMagnitude))
         tableView.showsVerticalScrollIndicator = false
         let bar = UINavigationBarAppearance()
         bar.configureWithTransparentBackground()
@@ -1438,9 +1442,10 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         selectionButton
             .isEnabled = !isHoldingRows &&
             (isSelectingRows || (workspace.isReady && workspace.profileDocument?.canEdit == true))
-        navigationItem.rightBarButtonItems = isSelectingRows
-            ? [selectionButton]
-            : nonSelectionRightButtons + [selectionButton]
+        // The phone sheet closes tabs from each row's menu and has no Select.
+        navigationItem.rightBarButtonItems = isPhoneSheet
+            ? nonSelectionRightButtons
+            : isSelectingRows ? [selectionButton] : nonSelectionRightButtons + [selectionButton]
     }
 
     private func restoreRowSelection() {
@@ -1553,8 +1558,8 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         content.imageProperties.reservedLayoutSize = CGSize(width: 24, height: 24)
         content.imageProperties.cornerRadius = 4
         content.imageProperties.tintColor = .white
-        content.imageToTextPadding = 14
-        content.directionalLayoutMargins.leading = 29
+        content.imageToTextPadding = 10
+        content.directionalLayoutMargins.leading = 28
         var background = UIBackgroundConfiguration.clear()
         switch row {
         case .tab(let id, _):

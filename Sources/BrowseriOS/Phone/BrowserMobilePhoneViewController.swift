@@ -121,6 +121,8 @@ final class BrowserMobilePhoneViewController: UIViewController {
     /// loads, so a cold tab does not flash blank.
     private var loadingCover: (view: UIView, tabID: String)?
     private let translator = BrowserMobilePageTranslator()
+    /// The translation filling in a tab, if one is.
+    private var translationRun: (id: UUID, tabID: String)?
 
     private var thumbnailWidth: CGFloat { (view.bounds.width * 0.66).rounded() }
     private var safeBottom: CGFloat { view.safeAreaInsets.bottom }
@@ -165,6 +167,9 @@ final class BrowserMobilePhoneViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         translator.install(in: self)
+        registerForTraitChanges([UITraitUserInterfaceStyle.self]) { (self: Self, _) in
+            if self.contentView.isHidden { self.setBackdropDark(self.traitCollection.userInterfaceStyle == .dark) }
+        }
         // Shows around the page while it is a card above the search panel.
         view.backgroundColor = UIColor(red: 22 / 255, green: 22 / 255, blue: 37 / 255, alpha: 1)
         pageContainer.backgroundColor = .systemBackground
@@ -475,6 +480,10 @@ final class BrowserMobilePhoneViewController: UIViewController {
         let isBlank = tab == nil || tab?.urlString == "about:blank"
         emptyState.isHidden = workspace.isReady && error == nil && !isBlank
         contentView.isHidden = !workspace.isReady || tab?.state.error != nil || isBlank
+        if contentView.isHidden {
+            // The bar sits over this view, not the page it last matched.
+            setBackdropDark(traitCollection.userInterfaceStyle == .dark)
+        }
         if !workspace.isReady {
             emptyTitle.text = String(localized: "Opening your tabs", table: "Mobile")
             emptyMessage.text = workspace.sessionError ?? String(
@@ -814,7 +823,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
                     zoomPercent: Int((zoom * 100).rounded()), canZoomOut: zoom > Self.zoomSteps[0] + 0.001,
                     canZoomIn: zoom < Self.zoomSteps[Self.zoomSteps.count - 1] - 0.001,
                     prefersDesktop: workspace.prefersDesktopSite,
-                    isTranslated: tab?.state.isTranslated == true,
+                    isTranslated: tab?.state.isTranslated == true || (tab != nil && translationRun?.tabID == tab?.id),
                     canRead: tab?.state.canRead == true,
                     isReading: tab?.state.isReading == true,
                 )
@@ -1268,9 +1277,28 @@ final class BrowserMobilePhoneViewController: UIViewController {
             refreshSwitcherEntries()
             closeSwitcher(opening: id)
         }
-        controller.navigationItem.rightBarButtonItem = UIBarButtonItem(
-            systemItem: .close, primaryAction: UIAction { [weak controller] _ in controller?.dismiss(animated: true) },
+        // A small filled circle with the sheet's color showing through the cross.
+        let close = UIButton(type: .system)
+        close.setImage(
+            UIImage(systemName: "xmark.circle.fill", withConfiguration: UIImage.SymbolConfiguration(pointSize: 24)),
+            for: .normal,
         )
+        close.tintColor = UIColor(white: 1, alpha: 0.25)
+        close.accessibilityLabel = String(localized: "Close", table: "Mobile")
+        close.accessibilityIdentifier = "browser.spaces.close"
+        // The circle sits at the button's leading edge, 31 points in from the sheet's.
+        close.contentHorizontalAlignment = .leading
+        close.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            close.widthAnchor.constraint(equalToConstant: 40), close.heightAnchor.constraint(equalToConstant: 36),
+        ])
+        close.addAction(
+            UIAction { [weak controller] _ in controller?.dismiss(animated: true) },
+            for: .primaryActionTriggered,
+        )
+        let closeItem = UIBarButtonItem(customView: close)
+        closeItem.hidesSharedBackground = true
+        controller.navigationItem.rightBarButtonItem = closeItem
         let navigation = UINavigationController(rootViewController: controller)
         navigation.overrideUserInterfaceStyle = .dark
         navigation.sheetPresentationController?.detents = [.large()]
@@ -1302,18 +1330,40 @@ final class BrowserMobilePhoneViewController: UIViewController {
     /// Translates the page in place, or puts its own text back.
     private func toggleTranslation() {
         guard let tab = workspace.selectedTab else { return }
-        if tab.state.isTranslated {
+        if tab.state.isTranslated || translationRun?.tabID == tab.id {
+            translationRun = nil
             workspace.restoreOriginalText()
             return
         }
         let tabID = tab.id
+        let url = tab.state.url
+        let run = UUID()
+        translationRun = (run, tabID)
+        // Translations arrive one by one; they stop when the page changes or
+        // the original comes back.
+        let isCurrent: @MainActor () -> Bool = { [weak self] in
+            guard let self, translationRun?.id == run else { return false }
+            guard workspace.tabs.first(where: { $0.id == tabID })?.state.url == url else {
+                translationRun = nil
+                return false
+            }
+            return true
+        }
         workspace.pageText { [weak self] text in
-            guard let self, let text, workspace.selectedTabID == tabID else { return }
+            guard let self, isCurrent() else { return }
+            guard let text else {
+                translationRun = nil
+                return
+            }
             translator.translate(text) { [weak self] start, texts in
+                guard isCurrent() else { return }
                 self?.workspace.applyTranslatedText(tabID: tabID, start: start, texts: texts)
             } finish: { [weak self] error in
-                guard let self, let error else { return }
-                showTranslationFailure(error)
+                guard let self, translationRun?.id == run else { return }
+                translationRun = nil
+                if let error {
+                    showTranslationFailure(error)
+                }
             }
         }
     }

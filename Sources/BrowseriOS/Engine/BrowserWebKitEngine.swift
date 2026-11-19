@@ -46,6 +46,27 @@ import WebKit
     }
 
     /// Hands the page tools' messages to the engine without WebKit retaining it.
+    /// The page behind a link, loading while the link's menu is open.
+    private final class LinkPreviewController: UIViewController {
+        private let url: URL
+        private let configuration: WKWebViewConfiguration
+
+        init(url: URL, configuration: WKWebViewConfiguration) {
+            self.url = url
+            self.configuration = configuration
+            super.init(nibName: nil, bundle: nil)
+        }
+
+        @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
+
+        override func loadView() {
+            let webView = WKWebView(frame: .zero, configuration: configuration)
+            webView.allowsLinkPreview = false
+            webView.load(URLRequest(url: url))
+            view = webView
+        }
+    }
+
     private final class PageToolsMessageProxy: NSObject, WKScriptMessageHandler {
         weak var engine: BrowserWebKitEngine?
 
@@ -1232,7 +1253,7 @@ extension BrowserWebKitEngine: WKUIDelegate {
     }
 
     /// A link's menu: open it here or in another tab, copy or share it, under
-    /// WebKit's own preview of the page. Other elements keep WebKit's menu.
+    /// a live preview of the page. Other elements keep WebKit's menu.
     func webView(
         _ webView: WKWebView,
         contextMenuConfigurationForElement elementInfo: WKContextMenuElementInfo,
@@ -1244,7 +1265,12 @@ extension BrowserWebKitEngine: WKUIDelegate {
             })
             return
         }
-        completionHandler(UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { [
+        // The tab's settings, so the preview has the same cookies and blocker.
+        let configuration = webView.configuration
+        let preview: UIContextMenuContentPreviewProvider = {
+            LinkPreviewController(url: url, configuration: configuration)
+        }
+        completionHandler(UIContextMenuConfiguration(identifier: nil, previewProvider: preview) { [
             weak self,
             weak webView,
         ] _ in

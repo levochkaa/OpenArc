@@ -99,6 +99,21 @@ extension BrowserMobileUITests {
         #expect(await f.workspace.shutdown())
     }
 
+    @Test func phoneSheetHasNoSelectButtonAndStartsRowsUnderTheName() async throws {
+        let f = try SharedSidebarFixture()
+        defer { f.cleanup() }
+        await f.workspace.restore()
+        let sheet = BrowserMobileTabsViewController(workspace: f.workspace, isPhoneSheet: true)
+        let close = UIBarButtonItem(systemItem: .close)
+        sheet.navigationItem.rightBarButtonItem = close
+        sheet.loadViewIfNeeded()
+        sheet.render()
+        #expect(sheet.navigationItem.rightBarButtonItems == [close], "Rows close from their own menu")
+        #expect((sheet.tableView.tableHeaderView?.bounds.height ?? 1) < 1)
+        #expect(sheet.tableView.estimatedSectionHeaderHeight == 0)
+        #expect(await f.workspace.shutdown())
+    }
+
     @Test func contextActionsPinFavoriteAndMoveTheSameStableTab() async throws {
         let f = try SharedSidebarFixture()
         defer { f.cleanup() }

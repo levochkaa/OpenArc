@@ -450,8 +450,9 @@ extension BrowserMobileTabSwitcherView {
 
         func reloadIcon() {
             let image = BrowserMobileFavicons.shared.iconOnDark(forPage: entry?.urlString)
-            icon.image = image ?? UIImage(systemName: "globe")
-            icon.tintColor = .white
+            // A site without an icon gets a faint square in its place.
+            icon.image = image
+            icon.backgroundColor = image == nil ? UIColor(white: 1, alpha: 0.15) : .clear
             placeholderIcon.image = image ?? UIImage(systemName: "globe")
         }
 

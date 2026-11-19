@@ -53,9 +53,6 @@ import UIKit
         }
     }
 
-    /// Strings translated in one request; the page fills in batch by batch, from the top.
-    nonisolated static let batchSize = 48
-
     private let model = Model()
     private lazy var host = UIHostingController(rootView: HostView(model: model))
 
@@ -78,30 +75,21 @@ import UIKit
         return declared.isEmpty ? nil : Locale.Language(identifier: declared)
     }
 
-    /// Translates the texts batch by batch, handing each batch to the job as it comes.
+    /// Translates the texts, handing each one to the job as soon as it is
+    /// done: on-device models take up to a second a paragraph, so the page
+    /// fills in from the top instead of all at once.
     private nonisolated static func run(_ box: SessionBox, model: Model) async {
         guard let job = await model.takeJob() else { return }
         do {
             try await box.session.prepareTranslation()
-            var start = 0
-            while start < job.texts.count {
-                let end = min(start + batchSize, job.texts.count)
-                let requests = (start..<end).compactMap { index -> TranslationSession.Request? in
-                    job.texts[index].isEmpty
-                        ? nil
-                        : TranslationSession.Request(sourceText: job.texts[index], clientIdentifier: String(index))
-                }
-                var translated = Array(job.texts[start..<end])
-                if !requests.isEmpty {
-                    for response in try await box.session.translations(from: requests) {
-                        guard let id = response.clientIdentifier, let index = Int(id) else { continue }
-                        translated[index - start] = response.targetText
-                    }
-                }
-                let batch = translated
-                let batchStart = start
-                await job.deliver(batchStart, batch)
-                start = end
+            let requests = job.texts.indices.compactMap { index -> TranslationSession.Request? in
+                job.texts[index].isEmpty
+                    ? nil
+                    : TranslationSession.Request(sourceText: job.texts[index], clientIdentifier: String(index))
+            }
+            for try await response in box.session.translate(batch: requests) {
+                guard let id = response.clientIdentifier, let index = Int(id) else { continue }
+                await job.deliver(index, [response.targetText])
             }
             await job.finish(nil)
         } catch {
