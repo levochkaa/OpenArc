@@ -44,6 +44,16 @@ enum BrowserFilterListKind: String, CaseIterable, Codable {
 
 /// What the built-in blocker blocks, and the sites where it stays out.
 struct BrowserContentBlockingSettings: Codable, Equatable {
+    // MARK: Private
+
+    private enum CodingKeys: String, CodingKey {
+        case blocksAds
+        case blocksTrackers
+        case blocksCookieBanners
+        case allowedSites
+        case allowedSitesByKind
+    }
+
     // MARK: Internal
 
     var blocksAds = true
@@ -51,6 +61,8 @@ struct BrowserContentBlockingSettings: Codable, Equatable {
     var blocksCookieBanners = true
     /// Sites allowed to show ads, by host without `www.`; each covers its subdomains.
     private(set) var allowedSites = [String]()
+    /// Sites where one list stays out, by list; each site covers its subdomains.
+    private(set) var allowedSitesByKind = [String: [String]]()
 
     var enabledKinds: [BrowserFilterListKind] {
         BrowserFilterListKind.allCases.filter(blocks)
@@ -66,6 +78,9 @@ struct BrowserContentBlockingSettings: Codable, Equatable {
         self.blocksTrackers = try container.decodeIfPresent(Bool.self, forKey: .blocksTrackers) ?? true
         self.blocksCookieBanners = try container.decodeIfPresent(Bool.self, forKey: .blocksCookieBanners) ?? true
         self.allowedSites = try container.decodeIfPresent([String].self, forKey: .allowedSites) ?? []
+        self.allowedSitesByKind = try container.decodeIfPresent(
+            [String: [String]].self, forKey: .allowedSitesByKind,
+        ) ?? [:]
     }
 
     /// The site a page's allowance is kept under: its host without `www.`.
@@ -96,6 +111,40 @@ struct BrowserContentBlockingSettings: Codable, Equatable {
         }
     }
 
+    /// The lists that apply to a page: the ones turned on, less those its site allows.
+    func enabledKinds(forURLString urlString: String) -> [BrowserFilterListKind] {
+        guard !isAllowed(urlString: urlString) else { return [] }
+        return enabledKinds.filter { !isAllowed($0, urlString: urlString) }
+    }
+
+    /// Whether a list stays out of the page's site, by itself; `isAllowed(urlString:)` covers all lists.
+    func isAllowed(_ kind: BrowserFilterListKind, urlString: String) -> Bool {
+        guard let sites = allowedSitesByKind[kind.rawValue], !sites.isEmpty,
+              let host = BrowserFilterRequest.host(ofURLString: urlString)?.lowercased() else { return false }
+        return sites.contains { BrowserFilterDomains.host(host, isOrIsSubdomainOf: $0) }
+    }
+
+    /// Lets one list block on the page's site again, or keeps it out there.
+    mutating func setAllowed(_ allowed: Bool, kind: BrowserFilterListKind, urlString: String) {
+        guard let site = Self.siteKey(forURLString: urlString) else { return }
+        var sites = allowedSitesByKind[kind.rawValue] ?? []
+        if allowed {
+            guard !sites.contains(where: { BrowserFilterDomains.host(site, isOrIsSubdomainOf: $0) }) else { return }
+            sites.append(site)
+            sites.sort()
+        } else {
+            sites.removeAll { BrowserFilterDomains.host(site, isOrIsSubdomainOf: $0) }
+            // An allowance for every list turns into allowances for the others.
+            if allowedSite(coveringHost: site) != nil {
+                setAllowed(false, urlString: urlString)
+                for other in BrowserFilterListKind.allCases where other != kind {
+                    setAllowed(true, kind: other, urlString: urlString)
+                }
+            }
+        }
+        allowedSitesByKind[kind.rawValue] = sites.isEmpty ? nil : sites
+    }
+
     /// The allowed site that covers the host, if any.
     func allowedSite(coveringHost host: String) -> String? {
         let host = host.lowercased()
@@ -118,20 +167,19 @@ struct BrowserContentBlockingSettings: Codable, Equatable {
             allowedSites.sort()
         } else {
             allowedSites.removeAll { BrowserFilterDomains.host(site, isOrIsSubdomainOf: $0) }
+            for (kind, sites) in allowedSitesByKind {
+                let left = sites.filter { !BrowserFilterDomains.host(site, isOrIsSubdomainOf: $0) }
+                allowedSitesByKind[kind] = left.isEmpty ? nil : left
+            }
         }
     }
 
     mutating func removeAllowedSite(_ site: String) {
         allowedSites.removeAll { $0 == site }
-    }
-
-    // MARK: Private
-
-    private enum CodingKeys: String, CodingKey {
-        case blocksAds
-        case blocksTrackers
-        case blocksCookieBanners
-        case allowedSites
+        for (kind, sites) in allowedSitesByKind {
+            let left = sites.filter { $0 != site }
+            allowedSitesByKind[kind] = left.isEmpty ? nil : left
+        }
     }
 }
 
@@ -140,12 +188,39 @@ struct BrowserContentBlockingSettings: Codable, Equatable {
 /// The blocker both page engines ask: the settings and a ready engine per
 /// filter list. Chromium asks from its network thread, so it is safe from any thread.
 final class BrowserContentBlocker: Sendable {
+    // MARK: Private
+
+    private struct State {
+        var settings = BrowserContentBlockingSettings()
+        var engines = [BrowserFilterListKind: BrowserFilterEngine]()
+        /// Recent hiding scripts by frame; an empty one hides nothing.
+        var hidingScripts = [String: String]()
+    }
+
     // MARK: Internal
 
     static let shared = BrowserContentBlocker()
 
+    private let state = Mutex(State())
+
     var settings: BrowserContentBlockingSettings {
         state.withLock(\.settings)
+    }
+
+    /// Adds the CSS as an adopted style sheet, which the page's own markup
+    /// and content security policy leave alone.
+    static func script(addingStyleSheet css: String) -> String {
+        let data = (try? JSONSerialization.data(withJSONObject: css, options: [.fragmentsAllowed])) ?? Data("\"\"".utf8)
+        let literal = String(decoding: data, as: UTF8.self)
+            .replacingOccurrences(of: "\u{2028}", with: "\\u2028")
+            .replacingOccurrences(of: "\u{2029}", with: "\\u2029")
+        return """
+        (function(){var css=\(literal);try{var sheet=new CSSStyleSheet();sheet.replaceSync(css);\
+        document.adoptedStyleSheets=document.adoptedStyleSheets.concat([sheet]);}catch(e){\
+        var add=function(){var style=document.createElement('style');style.textContent=css;\
+        (document.head||document.documentElement).appendChild(style);};\
+        if(document.documentElement)add();else document.addEventListener('readystatechange',add,{once:true});}})();
+        """
     }
 
     func update(settings: BrowserContentBlockingSettings) {
@@ -176,12 +251,11 @@ final class BrowserContentBlocker: Sendable {
         documentURLString: String,
         type: BrowserFilterResourceTypes,
     ) -> Bool {
-        let (settings, engines) = state.withLock { state in
-            (state.settings, state.settings.enabledKinds.compactMap { state.engines[$0] })
+        let engines = state.withLock { state in
+            state.settings.enabledKinds(forURLString: documentURLString).compactMap { state.engines[$0] }
         }
         guard !engines.isEmpty,
               BrowserFilterRequest.host(ofURLString: documentURLString) != nil,
-              !settings.isAllowed(urlString: documentURLString),
               let request = BrowserFilterRequest(urlString: urlString, sourceURLString: sourceURLString, type: type)
         else { return false }
         return engines.contains { $0.blocks(request, documentURLString: documentURLString) }
@@ -190,21 +264,22 @@ final class BrowserContentBlocker: Sendable {
     /// CSS that hides the lists' elements in a frame. A frame inside a page
     /// gets only the rules written for its site.
     func hidingStyleSheet(frameURLString: String, documentURLString: String, isMainFrame: Bool) -> String {
-        let (settings, engines) = state.withLock { state in
-            (state.settings, state.settings.enabledKinds.compactMap { state.engines[$0] })
+        let engines = state.withLock { state in
+            state.settings.enabledKinds(forURLString: documentURLString).compactMap { state.engines[$0] }
         }
-        guard !engines.isEmpty, !settings.isAllowed(urlString: documentURLString) else { return "" }
+        guard !engines.isEmpty else { return "" }
         return engines.map {
             $0.hidingStyleSheet(forDocumentURLString: frameURLString, includesGeneric: isMainFrame)
-        }.joined()
+        }
+        .joined()
     }
 
     /// A script that adds the hiding CSS to a new document, or nil when it hides nothing.
     func hidingScript(frameURLString: String, documentURLString: String, isMainFrame: Bool) -> String? {
-        guard let host = BrowserFilterRequest.host(ofURLString: frameURLString),
-              !settings.isAllowed(urlString: documentURLString) else { return nil }
+        let kinds = settings.enabledKinds(forURLString: documentURLString)
+        guard let host = BrowserFilterRequest.host(ofURLString: frameURLString), !kinds.isEmpty else { return nil }
         // The lists name sites, so pages of one host share their CSS.
-        let key = "\(isMainFrame ? "main" : "frame") \(host)"
+        let key = "\(isMainFrame ? "main" : "frame") \(host) \(kinds.map(\.rawValue).joined(separator: ","))"
         if let cached = state.withLock({ $0.hidingScripts[key] }) {
             return cached.isEmpty ? nil : cached
         }
@@ -222,33 +297,6 @@ final class BrowserContentBlocker: Sendable {
         }
         return script.isEmpty ? nil : script
     }
-
-    /// Adds the CSS as an adopted style sheet, which the page's own markup
-    /// and content security policy leave alone.
-    static func script(addingStyleSheet css: String) -> String {
-        let data = (try? JSONSerialization.data(withJSONObject: css, options: [.fragmentsAllowed])) ?? Data("\"\"".utf8)
-        let literal = String(decoding: data, as: UTF8.self)
-            .replacingOccurrences(of: "\u{2028}", with: "\\u2028")
-            .replacingOccurrences(of: "\u{2029}", with: "\\u2029")
-        return """
-        (function(){var css=\(literal);try{var sheet=new CSSStyleSheet();sheet.replaceSync(css);\
-        document.adoptedStyleSheets=document.adoptedStyleSheets.concat([sheet]);}catch(e){\
-        var add=function(){var style=document.createElement('style');style.textContent=css;\
-        (document.head||document.documentElement).appendChild(style);};\
-        if(document.documentElement)add();else document.addEventListener('readystatechange',add,{once:true});}})();
-        """
-    }
-
-    // MARK: Private
-
-    private struct State {
-        var settings = BrowserContentBlockingSettings()
-        var engines = [BrowserFilterListKind: BrowserFilterEngine]()
-        /// Recent hiding scripts by frame; an empty one hides nothing.
-        var hidingScripts = [String: String]()
-    }
-
-    private let state = Mutex(State())
 }
 
 // MARK: - BrowserContentBlockingBridge

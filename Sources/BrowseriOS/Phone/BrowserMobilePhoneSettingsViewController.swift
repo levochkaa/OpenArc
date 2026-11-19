@@ -21,8 +21,8 @@ enum BrowserMobileSearchEngineSetting {
 // MARK: - BrowserMobilePhoneSettingsViewController
 
 /// Settings from the switcher's gear on iPhone and the sidebar's on iPad:
-/// Downloads and Archive, the search engine and website data, then the
-/// account and the licenses.
+/// Downloads and Archive, the blocker, the search engine and website data,
+/// then the account and the licenses.
 final class BrowserMobilePhoneSettingsViewController: UITableViewController {
     // MARK: Private
 
@@ -82,6 +82,20 @@ final class BrowserMobilePhoneSettingsViewController: UITableViewController {
                     isEnabled: workspace.supportsArchive,
                 )
                     { [weak self] in self?.openArchive() },
+            ],
+            [
+                .init(
+                    title: String(localized: "Global Site Settings", table: "Mobile"),
+                    symbol: "hand.raised",
+                    color: .systemRed,
+                    id: "browser.settings.globalSiteSettings",
+                    isEnabled: true,
+                ) { [weak self] in
+                    guard let self else { return }
+                    let controller = BrowserMobileContentBlockingViewController()
+                    controller.defaults = defaults
+                    navigationController?.pushViewController(controller, animated: true)
+                },
             ],
             [
                 .init(

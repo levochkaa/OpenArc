@@ -34,9 +34,29 @@ struct BrowserFilterListMetadata: Codable, Equatable {
 
     static let updateInterval: TimeInterval = 4 * 24 * 60 * 60
 
+    // MARK: Private
+
+    private static let logger = Logger(subsystem: "com.levochkaa.OpenArc", category: "content-blocking")
+
     let changes = PassthroughSubject<Void, Never>()
 
     private(set) var isUpdating = false
+
+    private let directory: URL = {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        return base.appendingPathComponent("OpenArc/Filter Lists", isDirectory: true)
+    }()
+
+    private let session: URLSession = {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.httpCookieAcceptPolicy = .never
+        configuration.httpShouldSetCookies = false
+        return URLSession(configuration: configuration)
+    }()
+
+    private var timer: Timer?
+    private var loading = Set<BrowserFilterListKind>()
+    private var loaded = Set<BrowserFilterListKind>()
 
     /// The latest download of a list in use; nil while the app's own copies are in use.
     var lastDownloaded: Date? {
@@ -79,7 +99,7 @@ struct BrowserFilterListMetadata: Codable, Equatable {
 
     func apply(_ settings: BrowserContentBlockingSettings) {
         BrowserContentBlocker.shared.update(settings: settings)
-        for kind in settings.enabledKinds where !BrowserContentBlocker.shared.hasEngine(for: kind) {
+        for kind in settings.enabledKinds where !loaded.contains(kind) {
             load(kind)
         }
         BrowserWebKitContentRules.shared.changes.send()
@@ -111,7 +131,8 @@ struct BrowserFilterListMetadata: Codable, Equatable {
                 request.setValue(metadata.lastModified, forHTTPHeaderField: "If-Modified-Since")
             }
             guard let result = try? await session.data(for: request),
-                  let http = result.1 as? HTTPURLResponse else {
+                  let http = result.1 as? HTTPURLResponse
+            else {
                 Self.logger.error("filter list \(kind.rawValue, privacy: .public) download failed")
                 continue
             }
@@ -145,25 +166,6 @@ struct BrowserFilterListMetadata: Codable, Equatable {
         }
     }
 
-    // MARK: Private
-
-    private static let logger = Logger(subsystem: "com.levochkaa.OpenArc", category: "content-blocking")
-
-    private let directory: URL = {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return base.appendingPathComponent("OpenArc/Filter Lists", isDirectory: true)
-    }()
-
-    private let session: URLSession = {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.httpCookieAcceptPolicy = .never
-        configuration.httpShouldSetCookies = false
-        return URLSession(configuration: configuration)
-    }()
-
-    private var timer: Timer?
-    private var loading = Set<BrowserFilterListKind>()
-
     private func metadataURL(for kind: BrowserFilterListKind) -> URL {
         directory.appendingPathComponent("\(kind.rawValue).json", isDirectory: false)
     }
@@ -178,23 +180,29 @@ struct BrowserFilterListMetadata: Codable, Equatable {
         try? JSONEncoder().encode(metadata).write(to: metadataURL(for: kind), options: .atomic)
     }
 
-    /// Reads and indexes a list away from the main thread, then hands it to both engines.
+    /// Reads and indexes a list away from the main thread, then hands it to
+    /// both engines; iOS has only WebKit, which needs no index of its own.
     private func load(_ kind: BrowserFilterListKind) {
         guard loading.insert(kind).inserted else { return }
+        loaded.insert(kind)
         let directory = directory
         Task.detached(priority: .utility) {
             let text = Self.listText(for: kind, directory: directory)
             let list = text.map(BrowserFilterListParser.parse)
-            if let list {
-                BrowserContentBlocker.shared.install(BrowserFilterEngine(list), for: kind)
-            }
-            let digest = text.map { SHA256.hash(data: Data($0.utf8)).prefix(8).map { String(format: "%02x", $0) }.joined() }
+            #if os(macOS)
+                if let list {
+                    BrowserContentBlocker.shared.install(BrowserFilterEngine(list), for: kind)
+                }
+            #endif
+            let digest = text
+                .map { SHA256.hash(data: Data($0.utf8)).prefix(8).map { String(format: "%02x", $0) }.joined() }
             await MainActor.run {
                 BrowserFilterListUpdater.shared.loading.remove(kind)
                 BrowserFilterListUpdater.shared.changes.send()
                 if let list, let digest {
                     BrowserWebKitContentRules.shared.prepare(kind, list: list, digest: digest)
                 } else {
+                    BrowserFilterListUpdater.shared.loaded.remove(kind)
                     Self.logger.error("filter list \(kind.rawValue, privacy: .public) missing")
                 }
             }
@@ -211,16 +219,22 @@ struct BrowserFilterListMetadata: Codable, Equatable {
 
     static let shared = BrowserWebKitContentRules()
 
+    // MARK: Private
+
+    /// Raised when the compiler's output changes, so stored lists compile again.
+    private static let compilerVersion = 1
+    private static let logger = Logger(subsystem: "com.levochkaa.OpenArc", category: "content-blocking")
+
     /// Sends when a list or the settings change, so pages pick the lists again.
     let changes = PassthroughSubject<Void, Never>()
+
+    private var lists = [BrowserFilterListKind: WKContentRuleList]()
 
     /// Puts the lists the settings turn on into a page's controller, none on an allowed site.
     func apply(to controller: WKUserContentController, urlString: String?) {
         let settings = BrowserContentBlocker.shared.settings
-        let allowed = urlString.map(settings.isAllowed(urlString:)) ?? false
         controller.removeAllContentRuleLists()
-        guard !allowed else { return }
-        for kind in settings.enabledKinds {
+        for kind in urlString.map(settings.enabledKinds(forURLString:)) ?? settings.enabledKinds {
             if let list = lists[kind] {
                 controller.add(list)
             }
@@ -250,14 +264,6 @@ struct BrowserFilterListMetadata: Codable, Equatable {
             }
         }
     }
-
-    // MARK: Private
-
-    /// Raised when the compiler's output changes, so stored lists compile again.
-    private static let compilerVersion = 1
-    private static let logger = Logger(subsystem: "com.levochkaa.OpenArc", category: "content-blocking")
-
-    private var lists = [BrowserFilterListKind: WKContentRuleList]()
 
     private func install(_ list: WKContentRuleList, for kind: BrowserFilterListKind, store: WKContentRuleListStore) {
         lists[kind] = list

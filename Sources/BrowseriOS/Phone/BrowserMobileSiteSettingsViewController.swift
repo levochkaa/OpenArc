@@ -21,6 +21,31 @@ enum BrowserMobileSiteSettings {
     }
 }
 
+// MARK: - BrowserFilterListKind + Mobile
+
+extension BrowserFilterListKind {
+    /// The order the phone lists the blocker's switches in.
+    static let mobileOrder: [Self] = [.ads, .cookieBanners, .trackers]
+
+    var mobileTitle: String {
+        switch self {
+        case .ads: String(localized: "Block Ads", table: "Mobile")
+        case .cookieBanners: String(localized: "Block Cookie Banners", table: "Mobile")
+        case .trackers: String(localized: "Block Trackers", table: "Mobile")
+        }
+    }
+
+    @MainActor var mobileTile: UIImage {
+        switch self {
+        case .ads: BrowserMobileSiteSettingsViewController.tile("hand.raised.fill", color: .systemRed)
+        case .cookieBanners: BrowserMobileSiteSettingsViewController.tile(
+                "rectangle.bottomthird.inset.filled", color: .systemOrange,
+            )
+        case .trackers: BrowserMobileSiteSettingsViewController.tile("eyeglasses", color: .systemYellow)
+        }
+    }
+}
+
 // MARK: - BrowserMobileSiteSettingsViewController
 
 /// Settings for the site of the open page, from the page menu.
@@ -32,11 +57,18 @@ final class BrowserMobileSiteSettingsViewController: UITableViewController {
     // MARK: Internal
 
     var showAppSettings: (() -> Void)?
+    /// Called once the sheet goes away after a blocker switch changed, so the page loads again with it.
+    var didChangeBlocking: (() -> Void)?
+
+    private var changedBlocking = false
 
     // MARK: Private
 
     private let host: String
     private let collapseSwitch = UISwitch()
+    private var blockingSwitches = [BrowserFilterListKind: UISwitch]()
+
+    private var pageURLString: String { "https://\(host)/" }
 
     init(host: String) {
         self.host = host
@@ -59,11 +91,27 @@ final class BrowserMobileSiteSettingsViewController: UITableViewController {
             guard let self else { return }
             BrowserMobileSiteSettings.setCollapsesBar(collapseSwitch.isOn, host: host)
         }, for: .valueChanged)
+        let settings = BrowserMobileContentBlocking.settings()
+        for kind in BrowserFilterListKind.mobileOrder {
+            let toggle = UISwitch()
+            toggle.isOn = settings.enabledKinds(forURLString: pageURLString).contains(kind)
+            // A list turned off in Settings stays off everywhere.
+            toggle.isEnabled = settings.blocks(kind)
+            toggle.accessibilityIdentifier = "browser.siteSettings.block.\(kind.rawValue)"
+            toggle.addAction(UIAction { [weak self, weak toggle] _ in
+                guard let self, let toggle else { return }
+                BrowserMobileContentBlocking.setBlocks(kind, toggle.isOn, onPage: pageURLString)
+                changedBlocking = true
+            }, for: .valueChanged)
+            blockingSwitches[kind] = toggle
+        }
     }
 
-    override func numberOfSections(in _: UITableView) -> Int { 2 }
+    override func numberOfSections(in _: UITableView) -> Int { 3 }
 
-    override func tableView(_: UITableView, numberOfRowsInSection _: Int) -> Int { 1 }
+    override func tableView(_: UITableView, numberOfRowsInSection section: Int) -> Int {
+        section == 0 ? BrowserFilterListKind.mobileOrder.count : 1
+    }
 
     override func tableView(_: UITableView, titleForHeaderInSection section: Int) -> String? {
         section == 0 ? String(localized: "\(host) Settings", table: "Mobile").uppercased() : nil
@@ -73,6 +121,13 @@ final class BrowserMobileSiteSettingsViewController: UITableViewController {
         let cell = tableView.dequeueReusableCell(withIdentifier: "cell", for: indexPath)
         var content = UIListContentConfiguration.cell()
         if indexPath.section == 0 {
+            let kind = BrowserFilterListKind.mobileOrder[indexPath.row]
+            content.text = kind.mobileTitle
+            content.image = kind.mobileTile
+            cell.accessoryView = blockingSwitches[kind]
+            cell.accessoryType = .none
+            cell.selectionStyle = .none
+        } else if indexPath.section == 1 {
             content.text = String(localized: "Collapse Bottom Bar", table: "Mobile")
             content.image = Self.tile("iphone.gen3", color: .systemPurple)
             cell.accessoryView = collapseSwitch
@@ -93,8 +148,15 @@ final class BrowserMobileSiteSettingsViewController: UITableViewController {
 
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
-        guard indexPath.section == 1 else { return }
+        guard indexPath.section == 2 else { return }
         showAppSettings?()
+    }
+
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        guard changedBlocking else { return }
+        changedBlocking = false
+        didChangeBlocking?()
     }
 
     /// A white symbol on a colored rounded square, as in the system's Settings.

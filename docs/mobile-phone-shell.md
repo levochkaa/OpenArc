@@ -35,7 +35,7 @@ New Tab's capsule becomes the panel's top row: it widens into the search field o
 The page menu dims the page under it (black, 0.18, over 0.25 s). A drag down on an open panel follows the finger, and the page grows back from its search card along with it; letting go after 80 points (or a flick) closes the panel, less springs back. Up, it gives only a little. Over the suggestions, a drag scrolls them unless they are at the top and the drag goes down.
 
 - **Page menu** (`BrowserMobilePagePanel`): an address capsule with Back, Forward, the host (tap to edit), Copy Link and Reload/Stop; tiles for Find on Page, Pin/Unpin, Downloads and Share; Display Options, which folds open in place (0.3 s spring, the panel growing with it; the choice is remembered) with Page Zoom −/+ and Request Desktop or Mobile Site; and Site Settings. Page Zoom sets `-webkit-text-size-adjust` on the page so text reflows; `pageZoom` would keep the mobile layout's width and push text past the screen edge. It is reapplied on every committed navigation. The desktop request sets `WKWebpagePreferences.preferredContentMode` for main-frame navigations and reloads.
-- **Site Settings** (`BrowserMobileSiteSettingsViewController`): a sheet for the page's site (`www.` is the same site) with Collapse Bottom Bar, which keeps the bar expanded while scrolling that site when off, and App Settings.
+- **Site Settings** (`BrowserMobileSiteSettingsViewController`): a sheet for the page's site (`www.` is the same site) with Block Ads, Block Cookie Banners and Block Trackers for that site (the page reloads when the sheet closes after a change), Collapse Bottom Bar, which keeps the bar expanded while scrolling that site when off, and App Settings.
 - **Search** (`BrowserMobileSearchPanel`): the page shrinks into a card, dimmed by 0.2, over a dark backdrop, above a thin dark material panel and the keyboard. Suggestions (`BrowserMobileSearchSuggestions`) list open tabs for an empty query; for typed text, the site it completes to (with an inline completion), a web search, then matching tabs. The completed part shows highlighted with no caret or selection handles (`BrowserMobileCompletingField`): the next keystroke replaces it, Delete removes it, Go or a tap keeps it. Go stays off while the field is empty. New Tab opens results in a new tab, or in the current one while it is blank.
 
 ## Tab switcher
@@ -48,13 +48,17 @@ The page menu dims the page under it (black, 0.18, over 0.25 s). A drag down on 
 - Flick a card up: it keeps the flick's speed off the top (0.12–0.25 s, linear) and its tab closes; the neighbors close the gap (spring 0.32 s).
 - The bar opens the Spaces sheet, New Tab and Settings.
 
-Settings (`BrowserMobilePhoneSettingsViewController`, also behind the iPad sidebar's gear) lists Downloads and Archive; Search Engine, a choice of the engines the Mac offers, kept in `BrowserMobileSearchEngineSetting` and read by the scene's `BrowserNavigationResolver` on every search; Clear Website Data, which empties the default `WKWebsiteDataStore` after a confirmation and keeps tabs; Account; and the licenses.
+Settings (`BrowserMobilePhoneSettingsViewController`, also behind the iPad sidebar's gear) lists Downloads and Archive; Global Site Settings (`BrowserMobileContentBlockingViewController`), the blocker's switches for every site, Update Filter Lists and the sites with exceptions; Search Engine, a choice of the engines the Mac offers, kept in `BrowserMobileSearchEngineSetting` and read by the scene's `BrowserNavigationResolver` on every search; Clear Website Data, which empties the default `WKWebsiteDataStore` after a confirmation and keeps tabs; Account; and the licenses.
 
 The Spaces sheet is `BrowserMobileTabsViewController` with `isPhoneSheet`: the Space's name (with the Space menu), plain rows with site icons, a line before Today, and the Spaces as icons in the toolbar. A sideways drag pages between Spaces: the rows follow the finger with the next Space's rows beside them, the name crossfades and the toolbar's Space changes at the halfway point; letting go past half the width (counting the flick) switches Spaces. Rows have no swipe actions there; their context menu closes tabs.
 
 ## Moving between tabs
 
 A horizontal pan on the bar goes to the previous tab: it grows out of the tab stack while the current page slides right and shrinks (spring 0.3 s). The bar's tint changes when the finger lifts, from the incoming tab's picture. On the newest tab, a pan left rubber-bands. A tab whose page is not loaded yet keeps its last picture over the page until it loads, for up to 3 seconds.
+
+## Content blocking
+
+The Mac's blocker runs on iOS through the same files (the `BrowserContentBlockingCore` template in `project.yml`): EasyList, EasyPrivacy and EasyList Cookie List ship in the app, `BrowserFilterListUpdater` downloads fresh copies every four days, and `BrowserWebKitContentRules` compiles each list into a `WKContentRuleList` once per version. iOS skips the Mac's request-level index, which only Chromium needs. `BrowserMobileContentBlocking` keeps the settings under the Mac's key; besides allowing every list on a site, a site can let one list through (`allowedSitesByKind`). The engine puts the lists into each tab's controller for the site it navigates to.
 
 ## Pictures and icons
 

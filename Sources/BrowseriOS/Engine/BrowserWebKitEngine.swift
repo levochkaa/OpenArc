@@ -1,5 +1,6 @@
 // BrowserWebKitEngine.swift
 
+import Combine
 import Foundation
 import UIKit
 import WebKit
@@ -109,6 +110,7 @@ import WebKit
     private var obscuredInsets = UIEdgeInsets.zero
     private let actionDownloads = NSMapTable<WKNavigationAction, DownloadHandoff>.weakToStrongObjects()
     private let responseDownloads = NSMapTable<WKNavigationResponse, DownloadHandoff>.weakToStrongObjects()
+    private var contentRulesObservation: AnyCancellable?
 
     var isFindInPageVisible: Bool {
         mountedWebView?.findInteraction?.isFindNavigatorVisible == true
@@ -117,6 +119,16 @@ import WebKit
     init(dataStore: WKWebsiteDataStore = .default()) {
         self.dataStore = dataStore
         super.init()
+        // The blocker's lists for each tab's site; the next load picks them up.
+        self.contentRulesObservation = BrowserWebKitContentRules.shared.changes.sink { [weak self] in
+            guard let self else { return }
+            for record in records.values {
+                guard let webView = record.webView else { continue }
+                BrowserWebKitContentRules.shared.apply(
+                    to: webView.configuration.userContentController, urlString: webView.url?.absoluteString,
+                )
+            }
+        }
     }
 
     private static func authenticationOrigin(_ space: URLProtectionSpace) -> String? {
@@ -625,6 +637,7 @@ import WebKit
             configuration.websiteDataStore = dataStore
             configuration.allowsInlineMediaPlayback = true
         }
+        BrowserWebKitContentRules.shared.apply(to: configuration.userContentController, urlString: nil)
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.isFindInteractionEnabled = false
         webView.obscuredContentInsets = obscuredInsets
@@ -871,6 +884,10 @@ extension BrowserWebKitEngine: WKNavigationDelegate {
             return
         }
         if let frame = navigationAction.targetFrame, frame.isMainFrame {
+            BrowserWebKitContentRules.shared.apply(
+                to: webView.configuration.userContentController,
+                urlString: navigationAction.request.url?.absoluteString,
+            )
             record.isReplacingDialogDocument = !Self.isFragmentNavigation(
                 from: record.dialogDocumentURL, to: navigationAction.request.url,
             )

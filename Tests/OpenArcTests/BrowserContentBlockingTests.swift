@@ -282,6 +282,32 @@ struct BrowserContentBlockingTests {
         #expect(settings.allowedSites == ["b.example"])
     }
 
+    @Test func aSiteCanLetOneListThrough() throws {
+        var settings = BrowserContentBlockingSettings()
+        settings.setAllowed(true, kind: .ads, urlString: "https://www.news.example/a")
+        #expect(settings.enabledKinds(forURLString: "https://sports.news.example/") == [.trackers, .cookieBanners])
+        #expect(settings.enabledKinds(forURLString: "https://other.example/") == [.ads, .trackers, .cookieBanners])
+        settings.setAllowed(false, kind: .ads, urlString: "https://news.example/")
+        #expect(settings.allowedSitesByKind.isEmpty)
+
+        // Blocking one list where every list was allowed keeps the others allowed.
+        settings.setAllowed(true, urlString: "https://news.example/")
+        settings.setAllowed(false, kind: .trackers, urlString: "https://news.example/")
+        #expect(settings.allowedSites.isEmpty)
+        #expect(settings.enabledKinds(forURLString: "https://news.example/") == [.trackers])
+        // Blocking every list again clears the site's allowances.
+        settings.setAllowed(false, urlString: "https://news.example/")
+        #expect(settings.allowedSitesByKind.isEmpty)
+
+        settings.setAllowed(true, kind: .cookieBanners, urlString: "https://a.example/")
+        let decoded = try JSONDecoder().decode(
+            BrowserContentBlockingSettings.self, from: JSONEncoder().encode(settings),
+        )
+        #expect(decoded == settings)
+        settings.removeAllowedSite("a.example")
+        #expect(settings.allowedSitesByKind.isEmpty)
+    }
+
     @Test func theBlockerFollowsItsSettingsAndAllowedSites() {
         let blocker = BrowserContentBlocker()
         blocker.install(ContentBlockingFixture.engine, for: .ads)
@@ -307,6 +333,10 @@ struct BrowserContentBlockingTests {
             isMainFrame: true,
         ) == nil)
         #expect(blocks("https://other.example/"))
+
+        settings.setAllowed(true, kind: .ads, urlString: "https://third.example/")
+        blocker.update(settings: settings)
+        #expect(!blocks("https://third.example/"))
 
         settings.blocksAds = false
         blocker.update(settings: settings)
@@ -461,5 +491,7 @@ private func shippedList(_ kind: BrowserFilterListKind) throws -> String {
         .url(forResource: kind.bundledResourceName, withExtension: "txt"))
     return try String(contentsOf: url, encoding: .utf8)
 }
+
+// MARK: - ShippedListsBundleToken
 
 private final class ShippedListsBundleToken {}

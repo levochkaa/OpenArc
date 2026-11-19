@@ -256,3 +256,22 @@ import UIKit
     let resolver = BrowserNavigationResolver { BrowserMobileSearchEngineSetting.current(defaults) }
     #expect(resolver.resolve("open arc")?.resolvedURLString.hasPrefix("https://duckduckgo.com/") == true)
 }
+
+// MARK: - Content blocking
+
+@MainActor @Test func mobileContentBlockingKeepsPerSiteListsUnderTheSharedKey() throws {
+    let name = "BrowserMobileContentBlockingTests.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: name))
+    defer { defaults.removePersistentDomain(forName: name) }
+    let page = "https://www.news.example/story"
+    #expect(BrowserMobileContentBlocking.blocks(.ads, onPage: page, defaults: defaults))
+
+    BrowserMobileContentBlocking.setBlocks(.ads, false, onPage: page, defaults: defaults, applies: false)
+    #expect(!BrowserMobileContentBlocking.blocks(.ads, onPage: "https://news.example/", defaults: defaults))
+    #expect(BrowserMobileContentBlocking.blocks(.trackers, onPage: page, defaults: defaults))
+    #expect(BrowserMobileContentBlocking.blocks(.ads, onPage: "https://other.example/", defaults: defaults))
+    #expect(defaults.data(forKey: "browser.settings.contentBlocking") != nil)
+
+    BrowserMobileContentBlocking.update(defaults, applies: false) { $0.blocksTrackers = false }
+    #expect(!BrowserMobileContentBlocking.blocks(.trackers, onPage: "https://other.example/", defaults: defaults))
+}

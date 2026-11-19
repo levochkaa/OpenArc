@@ -812,6 +812,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
     private func showSiteSettings() {
         guard let host = siteHost, presentedViewController == nil else { return }
         let controller = BrowserMobileSiteSettingsViewController(host: host)
+        controller.didChangeBlocking = { [weak self] in self?.workspace.reload() }
         controller.showAppSettings = { [weak self, weak controller] in
             controller?.dismiss(animated: true) {
                 self?.closePanel { self?.showSettings() }
