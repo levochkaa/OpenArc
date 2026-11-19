@@ -1,0 +1,39 @@
+# OpenArc's layer in Chrome's framework (Chromium/engine in the OpenArc repository). Linked into
+# //chrome:chrome_dll by Chromium/engine/patches/engine-hooks.patch.
+
+source_set("core") {
+  sources = [
+    "BrowserChromeEngine.h",
+    "chrome_page.h",
+    "chrome_page.mm",
+    "engine_main.mm",
+    "page_session.h",
+    "page_session.mm",
+  ]
+  frameworks = [ "Cocoa.framework" ]
+  deps = [
+    "//chrome/browser:browser_process",
+    "//base",
+    "//chrome/browser",
+    "//chrome/browser/devtools",
+    "//chrome/browser/printing",
+    "//chrome/browser/profiles:profile",
+    "//chrome/browser/ui",
+    "//chrome/browser/ui/browser_window",
+    "//chrome/browser/ui/browser_window:create_browser_window",
+    "//chrome/browser/ui/tabs:tab_strip",
+    "//chrome/common",
+    "//components/download/public/common:public",
+    "//components/favicon/content",
+    "//components/find_in_page",
+    "//components/keep_alive_registry",
+    "//components/zoom",
+    "//content/public/browser",
+    "//net",
+    "//skia",
+    "//ui/base",
+    "//ui/gfx",
+    "//ui/views",
+    "//url",
+  ]
+}

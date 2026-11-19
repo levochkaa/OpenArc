@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Local edits so a mac/arm64 CEF tree generates and builds on a Linux x64 host.
+"""Local edits so a mac/arm64 CEF or Chrome engine tree generates and builds on a
+Linux x64 host.
 
 Usage: crossfix.py CHROMIUM_SRC
 
-Idempotent. Run after CEF is copied into src/cef and before CEF's hook.
+Idempotent. Run after CEF is copied into src/cef and before CEF's hook, or on
+the Chrome engine's tree before gn gen.
 These edits only make the cross build possible; they are not OpenArc changes,
 so they stay out of Chromium/chromium_src.
 """
@@ -16,6 +18,10 @@ src = pathlib.Path(sys.argv[1])
 
 def edit(relative, old, new, marker, count=1):
     path = src / relative
+    if not path.exists():
+        # The Chrome engine's tree has no src/cef.
+        print(f"{relative}: not in this tree")
+        return
     text = path.read_text()
     if marker in text:
         print(f"{relative}: already fixed")

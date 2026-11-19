@@ -96,6 +96,27 @@ for library in "$cef/Versions/A/Libraries/"*.dylib; do
 done
 sign "$cef"
 
+# The Chrome engine (script/chrome_engine.sh), when the build carries it: its libraries and helpers
+# first, the renderer and GPU helpers with the same entitlements as CEF's, then the framework.
+engine="$frameworks/OpenArc Framework.framework"
+if [[ -d "$engine" ]]; then
+  engine_version="$engine/Versions/Current"
+  for library in "$engine_version/Libraries/"*.dylib; do
+    [[ -e "$library" ]] && sign "$library"
+  done
+  for helper in "$engine_version/Helpers/"*.app; do
+    case "$(basename "$helper")" in
+      *" Renderer).app" | *"(Renderer).app") sign --entitlements "$ROOT_DIR/Support/OpenArcHelper-Renderer.entitlements" "$helper" ;;
+      *" GPU).app" | *"(GPU).app") sign --entitlements "$ROOT_DIR/Support/OpenArcHelper-GPU.entitlements" "$helper" ;;
+      *) sign "$helper" ;;
+    esac
+  done
+  for tool in "$engine_version/Helpers/"*; do
+    [[ -f "$tool" && -x "$tool" ]] && sign "$tool"
+  done
+  sign "$engine"
+fi
+
 # Sparkle's documented order; Downloader keeps its own entitlements.
 sparkle="$frameworks/Sparkle.framework"
 if [[ -d "$sparkle" ]]; then

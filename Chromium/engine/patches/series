@@ -1,0 +1,4 @@
+# OpenArc's changes to Chrome's own code, applied in this order by Chromium/engine/apply.sh.
+engine-hooks.patch
+hosted-pages.patch
+browser-delegate.patch

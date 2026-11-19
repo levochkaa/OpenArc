@@ -2,6 +2,7 @@
 #include "Shared/ClientManager.h"
 #include "Shared/Main.h"
 
+#import "Browser/ChromeEngine/BrowserChromeEngineMain.h"
 #import "Browser/SwiftBridge.h"
 #import <Cocoa/Cocoa.h>
 
@@ -85,9 +86,25 @@ static void BrowserNameDefaultProfile(NSString* cache_root) {
   [output writeToFile:path atomically:YES];
 }
 
+/// The Chrome engine runs the whole process on Chrome's framework; CEF is never loaded then.
+static int BrowserRunOnChromeEngine(int argc, char* argv[]) {
+  @autoreleasepool {
+    NSString* cache_root = nil;
+    if (!BrowserLoadRuntimeConfiguration(nullptr, nullptr, nullptr, &cache_root, nullptr)) {
+      return 1;
+    }
+    BrowserRemoveDefaultExtensionManifests(cache_root);
+    BrowserNameDefaultProfile(cache_root);
+    return BrowserRunChromeEngine(argc, argv, cache_root);
+  }
+}
+
 int main(int argc, char* argv[]) {
   // Runs while the engine loads, before a restored page can ask for the same.
   BrowserStartLaunchWarmup();
+  if (BrowserShouldRunChromeEngine()) {
+    return BrowserRunOnChromeEngine(argc, argv);
+  }
   CefScopedLibraryLoader library_loader;
   if (!library_loader.LoadInMain()) {
     return 1;

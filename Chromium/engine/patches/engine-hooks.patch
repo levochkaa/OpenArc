@@ -1,0 +1,125 @@
+diff --git a/chrome/BUILD.gn b/chrome/BUILD.gn
+index cc98a1463c..a7b8f5ddbe 100644
+--- a/chrome/BUILD.gn
++++ b/chrome/BUILD.gn
+@@ -1130,6 +1130,7 @@ if (is_win) {
+       "//chrome/common:buildflags",
+       "//chrome/common:version_header",
+       "//chrome/common/profiler",
++      "//openarc:core",
+       "//components/crash/core/app",
+       "//components/memory_system",
+       "//components/policy:generated",
+diff --git a/chrome/app/framework.exports b/chrome/app/framework.exports
+index 37c881f5d2..9f8b61d3d6 100644
+--- a/chrome/app/framework.exports
++++ b/chrome/app/framework.exports
+@@ -18,4 +18,11 @@
+ 
+ _ChromeAppModeStart_v8
+ _ChromeMain
++_OpenArcChromeEngineMain
++_OBJC_CLASS_$_OpenArcChromeEngine
++_OBJC_METACLASS_$_OpenArcChromeEngine
++_OBJC_CLASS_$_OpenArcChromePage
++_OBJC_METACLASS_$_OpenArcChromePage
++_OBJC_CLASS_$_OpenArcChromeApplication
++_OBJC_METACLASS_$_OpenArcChromeApplication
+ _ChromeWebAppShortcutCopierMain
+diff --git a/chrome/app/framework.order b/chrome/app/framework.order
+index 6dbc3aeff3..542d92f4dd 100644
+--- a/chrome/app/framework.order
++++ b/chrome/app/framework.order
+@@ -30,4 +30,11 @@ _ChromeAppModeStart_v8
+ _ChromeWebAppShortcutCopierMain
+ 
+ # _ChromeMain must be listed last.  That's the whole point of this file.
++_OpenArcChromeEngineMain
+ _ChromeMain
++_OBJC_CLASS_$_OpenArcChromeEngine
++_OBJC_METACLASS_$_OpenArcChromeEngine
++_OBJC_CLASS_$_OpenArcChromePage
++_OBJC_METACLASS_$_OpenArcChromePage
++_OBJC_CLASS_$_OpenArcChromeApplication
++_OBJC_METACLASS_$_OpenArcChromeApplication
+diff --git a/chrome/browser/app_controller_mac.mm b/chrome/browser/app_controller_mac.mm
+index 210308ebaa..5160df1b04 100644
+--- a/chrome/browser/app_controller_mac.mm
++++ b/chrome/browser/app_controller_mac.mm
+@@ -4,6 +4,8 @@
+ 
+ #import "chrome/browser/app_controller_mac.h"
+ 
++#include "chrome/browser/openarc_engine_hooks.h"
++
+ #include <AppKit/AppKit.h>
+ #include <dispatch/dispatch.h>
+ #include <stddef.h>
+@@ -747,6 +749,10 @@ @implementation AppController {
+ @synthesize startupComplete = _startupComplete;
+ 
+ + (AppController*)sharedController {
++  // OpenArc's app is NSApp's delegate: there is no AppController, and its callers get nil.
++  if (openarc::g_embedder_owns_app) {
++    return nil;
++  }
+   static AppController* sharedController = [] {
+     AppController* sharedController = [[AppController alloc] init];
+     NSApp.delegate = sharedController;
+diff --git a/chrome/browser/chrome_browser_main.cc b/chrome/browser/chrome_browser_main.cc
+index a8ebab6e15..91f3d2e4b1 100644
+--- a/chrome/browser/chrome_browser_main.cc
++++ b/chrome/browser/chrome_browser_main.cc
+@@ -4,6 +4,8 @@
+ 
+ #include "chrome/browser/chrome_browser_main.h"
+ 
++#include "chrome/browser/openarc_engine_hooks.h"
++
+ #include <memory>
+ #include <string>
+ #include <tuple>
+@@ -752,6 +754,9 @@ std::unique_ptr<content::BrowserMainParts> ChromeBrowserMainParts::Create(
+   main_parts->AddParts(
+       std::make_unique<ChromeBrowserMainExtraPartsThreadNotifier>(
+           std::move(threads_ready_closure)));
++  if (openarc::g_extra_parts_factory) {
++    main_parts->AddParts(openarc::g_extra_parts_factory());
++  }
+ 
+   bool add_profiles_extra_parts = true;
+ #if BUILDFLAG(IS_ANDROID)
+diff --git a/chrome/browser/chrome_browser_main_mac.mm b/chrome/browser/chrome_browser_main_mac.mm
+index f0ffab0667..971ca9f8cb 100644
+--- a/chrome/browser/chrome_browser_main_mac.mm
++++ b/chrome/browser/chrome_browser_main_mac.mm
+@@ -4,6 +4,8 @@
+ 
+ #include "chrome/browser/chrome_browser_main_mac.h"
+ 
++#include "chrome/browser/openarc_engine_hooks.h"
++
+ #import <Cocoa/Cocoa.h>
+ 
+ #include <memory>
+@@ -155,6 +157,11 @@
+     return ret;
+   }
+ 
++  // OpenArc's app keeps its own delegate and main menu.
++  if (openarc::g_embedder_owns_app) {
++    return content::RESULT_CODE_NORMAL_EXIT;
++  }
++
+   // Create the app delegate by requesting the shared AppController.
+   CHECK_EQ(nil, NSApp.delegate);
+   AppController* app_controller = AppController.sharedController;
+@@ -183,5 +190,8 @@
+ }
+ 
+ void ChromeBrowserMainPartsMac::DidEndMainMessageLoop() {
++  if (openarc::g_embedder_owns_app) {
++    return;
++  }
+   [AppController.sharedController didEndMainMessageLoop];
+ }

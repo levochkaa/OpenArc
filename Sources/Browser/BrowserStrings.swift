@@ -13,6 +13,38 @@ enum BrowserStrings {
         "browser.menu.open_page_in_chromium",
         comment: "View menu: show a WebKit page in Chromium again.",
     )
+    static let settingsEngineSection = NSLocalizedString(
+        "browser.settings.engine.section",
+        comment: "Settings section about the engine that draws Chromium pages.",
+    )
+    static let settingsChromeEngine = NSLocalizedString(
+        "browser.settings.engine.chrome",
+        comment: "Settings toggle: draw pages with Chrome's own engine instead of CEF.",
+    )
+    static let settingsChromeEngineDetail = NSLocalizedString(
+        "browser.settings.engine.chrome.detail",
+        comment: "Explains the Chrome engine toggle.",
+    )
+    static let settingsChromeEngineMissing = NSLocalizedString(
+        "browser.settings.engine.chrome.missing",
+        comment: "Shown under the Chrome engine toggle in a build without the engine.",
+    )
+    static let settingsChromeEngineRelaunchTitle = NSLocalizedString(
+        "browser.settings.engine.relaunch.title",
+        comment: "Alert title after the engine setting changed.",
+    )
+    static let settingsChromeEngineRelaunchMessage = NSLocalizedString(
+        "browser.settings.engine.relaunch.message",
+        comment: "Alert text after the engine setting changed.",
+    )
+    static let settingsChromeEngineRelaunch = NSLocalizedString(
+        "browser.settings.engine.relaunch",
+        comment: "Alert button: relaunch now with the new engine.",
+    )
+    static let settingsChromeEngineLater = NSLocalizedString(
+        "browser.settings.engine.later",
+        comment: "Alert button: keep the current engine until the next launch.",
+    )
     static let settingsProtectedVideoSection = NSLocalizedString(
         "browser.settings.protected_video.section",
         comment: "Settings section about DRM video.",

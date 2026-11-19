@@ -92,11 +92,21 @@ Fix every error and every warning in OpenArc's code (`Sources/`, the CEF bridge)
 ./build.sh ios-build     # the iOS app shares the sync core; it must still build
 ```
 
+The Chrome engine (`docs/chrome-engine.md`) must move with CEF: the app build leaves out an engine whose
+Chromium differs from CEF's. Rebuild it from the new base on the build host once CEF's `fetch` is done; the
+first build of a base takes about 80 minutes, so start it early and fix the layer's API errors as they come:
+
+```bash
+WAIT=1 ./script/chrome_engine.sh all    # copies the new checkout, applies Chromium/engine, builds, packages
+./script/chrome_engine.sh pull
+```
+
 ## 6. Smoke test the engine
 
 ```bash
 script/cef_smoke_test.sh .build/xcode/Build/Products/Debug/OpenArc.app
 script/cef_smoke_test.sh .build/xcode/Build/Products/Debug/OpenArc.app --fresh-identity
+script/cef_smoke_test.sh .build/xcode/Build/Products/Debug/OpenArc.app --engine chrome
 ```
 
 Every FAIL is yours to fix before a release. Keep each WARN and SKIP with its reason for the message in step 10. Do not launch OpenArc itself.

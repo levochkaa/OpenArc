@@ -80,6 +80,10 @@ void ApplyBatterySaverModeOnUI(bool enabled) {
 }  // namespace
 
 void BrowserSetBatterySaverModeEnabled(BOOL enabled) {
+  // Chrome's framework throttles its own pages; CEF's task runner is not there.
+  if (BrowserUsesChromeEngine()) {
+    return;
+  }
   const bool is_enabled = enabled == YES;
   if (CefCurrentlyOn(TID_UI)) {
     ApplyBatterySaverModeOnUI(is_enabled);

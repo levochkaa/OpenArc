@@ -1037,6 +1037,14 @@
 "browser.webkit.dialog.title" = "This page says";
 "browser.menu.open_page_in_webkit" = "Open Page in WebKit";
 "browser.menu.open_page_in_chromium" = "Open Page in Chromium";
+"browser.settings.engine.section" = "Engine";
+"browser.settings.engine.chrome" = "Use Chrome's engine";
+"browser.settings.engine.chrome.detail" = "Pages run on Chrome's own framework instead of CEF, with the same profile, so tabs, sign-ins and extensions stay. Experimental: Peek cards, small windows and some page features still need CEF. Takes effect after a relaunch.";
+"browser.settings.engine.chrome.missing" = "This build doesn't include Chrome's engine.";
+"browser.settings.engine.relaunch.title" = "Relaunch to change the engine?";
+"browser.settings.engine.relaunch.message" = "OpenArc switches engines when it starts. Your windows and tabs open again after the relaunch.";
+"browser.settings.engine.relaunch" = "Relaunch Now";
+"browser.settings.engine.later" = "Later";
 "browser.settings.protected_video.section" = "Protected Video";
 "browser.settings.protected_video.webkit" = "Move protected video to WebKit";
 "browser.settings.protected_video.webkit.detail" = "A page whose protected video Chromium can't play reopens in WebKit, which plays it with Apple's FairPlay, and its site keeps opening there. Netflix, Disney+, Prime Video and other streaming sites open there right away. The site's cookies come along, so you stay signed in; WebKit pages have no extensions. Off, such a page offers WebKit instead.";

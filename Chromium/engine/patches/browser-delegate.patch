@@ -1,0 +1,112 @@
+diff --git a/chrome/browser/ui/browser_web_contents_delegate/browser_web_contents_delegate.cc b/chrome/browser/ui/browser_web_contents_delegate/browser_web_contents_delegate.cc
+index 3bc40bcc91..3d54497ef8 100644
+--- a/chrome/browser/ui/browser_web_contents_delegate/browser_web_contents_delegate.cc
++++ b/chrome/browser/ui/browser_web_contents_delegate/browser_web_contents_delegate.cc
+@@ -4,6 +4,8 @@
+ 
+ #include "chrome/browser/ui/browser_web_contents_delegate/browser_web_contents_delegate.h"
+ 
++#include "chrome/browser/openarc_engine_hooks.h"
++
+ #include "base/check_deref.h"
+ #include "base/metrics/histogram_macros.h"
+ #include "base/notimplemented.h"
+@@ -319,6 +321,15 @@ BrowserWebContentsDelegate::PreHandleKeyboardEvent(
+     return content::KeyboardEventProcessingResult::HANDLED;
+   }
+ 
++  // OpenArc: its pages' keys go to OpenArc, never to Chrome's shortcuts.
++  if (openarc::g_key_event) {
++    int handled = openarc::g_key_event(source, event, /*unhandled=*/false);
++    if (handled >= 0) {
++      return handled ? content::KeyboardEventProcessingResult::HANDLED
++                     : content::KeyboardEventProcessingResult::NOT_HANDLED;
++    }
++  }
++
+   return window_->PreHandleKeyboardEvent(event);
+ }
+ 
+@@ -327,8 +338,17 @@ bool BrowserWebContentsDelegate::HandleKeyboardEvent(
+     const input::NativeWebKeyboardEvent& event) {
+   DevToolsWindow* devtools_window =
+       DevToolsWindow::GetInstanceForInspectedWebContents(source);
+-  return (devtools_window && devtools_window->ForwardKeyboardEvent(event)) ||
+-         window_->HandleKeyboardEvent(event);
++  if (devtools_window && devtools_window->ForwardKeyboardEvent(event)) {
++    return true;
++  }
++  // OpenArc: keys its pages left alone go to OpenArc, then its menu bar.
++  if (openarc::g_key_event) {
++    int handled = openarc::g_key_event(source, event, /*unhandled=*/true);
++    if (handled >= 0) {
++      return handled;
++    }
++  }
++  return window_->HandleKeyboardEvent(event);
+ }
+ 
+ void BrowserWebContentsDelegate::RequestPointerLock(
+@@ -796,6 +816,10 @@ void BrowserWebContentsDelegate::SetContentsBounds(content::WebContents* source,
+ 
+ void BrowserWebContentsDelegate::UpdateTargetURL(content::WebContents* source,
+                                                  const GURL& url) {
++  // OpenArc shows the link under the pointer itself.
++  if (openarc::g_target_url && openarc::g_target_url(source, url)) {
++    return;
++  }
+   std::vector<StatusBubble*> status_bubbles =
+       browser_ui_controller_->GetStatusBubbles();
+   for (StatusBubble* status_bubble : status_bubbles) {
+@@ -1185,6 +1209,12 @@ ui::mojom::WindowShowState BrowserWebContentsDelegate::GetWindowShowState()
+ 
+ bool BrowserWebContentsDelegate::CanEnterFullscreenModeForTab(
+     content::RenderFrameHost* requesting_frame) {
++  // OpenArc: its pages go fullscreen in OpenArc's window (openarc::g_page_fullscreen).
++  if (openarc::g_page_is_fullscreen &&
++      openarc::g_page_is_fullscreen(
++          content::WebContents::FromRenderFrameHost(requesting_frame)) >= 0) {
++    return true;
++  }
+   // If the tab strip isn't editable then a drag session is in progress, and it
+   // is not safe to enter fullscreen. https://crbug.com/40059349
+   if (!browser_->GetTabStripModel()->delegate()->IsTabStripEditable()) {
+@@ -1198,12 +1228,21 @@ bool BrowserWebContentsDelegate::CanEnterFullscreenModeForTab(
+ void BrowserWebContentsDelegate::EnterFullscreenModeForTab(
+     content::RenderFrameHost* requesting_frame,
+     const blink::mojom::FullscreenOptions& options) {
++  if (openarc::g_page_fullscreen &&
++      openarc::g_page_fullscreen(
++          content::WebContents::FromRenderFrameHost(requesting_frame), true)) {
++    return;
++  }
+   exclusive_access_manager_->fullscreen_controller()->EnterFullscreenModeForTab(
+       requesting_frame, FullscreenTabParams{options.display_id});
+ }
+ 
+ void BrowserWebContentsDelegate::ExitFullscreenModeForTab(
+     content::WebContents* web_contents) {
++  if (openarc::g_page_fullscreen &&
++      openarc::g_page_fullscreen(web_contents, false)) {
++    return;
++  }
+   exclusive_access_manager_->fullscreen_controller()->ExitFullscreenModeForTab(
+       web_contents);
+ }
+@@ -1217,6 +1256,16 @@ bool BrowserWebContentsDelegate::IsFullscreenForTabOrPending(
+ 
+ content::FullscreenState BrowserWebContentsDelegate::GetFullscreenState(
+     const content::WebContents* web_contents) const {
++  if (int openarc_fullscreen = openarc::g_page_is_fullscreen
++                                   ? openarc::g_page_is_fullscreen(web_contents)
++                                   : -1;
++      openarc_fullscreen >= 0) {
++    content::FullscreenState state;
++    state.target_mode = openarc_fullscreen
++                            ? content::FullscreenMode::kContent
++                            : content::FullscreenMode::kWindowed;
++    return state;
++  }
+   return exclusive_access_manager_->fullscreen_controller()->GetFullscreenState(
+       web_contents);
+ }

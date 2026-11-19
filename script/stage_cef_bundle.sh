@@ -24,6 +24,8 @@ CEF_FRAMEWORK_DEST="$APP_FRAMEWORKS_DIR/Chromium Embedded Framework.framework"
 SPARKLE_FRAMEWORK_DEST="$APP_FRAMEWORKS_DIR/Sparkle.framework"
 SENTRY_FRAMEWORK_DEST="$APP_FRAMEWORKS_DIR/Sentry.framework"
 HELPER_DEST="$APP_FRAMEWORKS_DIR/OpenArc Helper.app"
+CHROME_ENGINE_NAME="OpenArc Framework.framework"
+CHROME_ENGINE_DEST="$APP_FRAMEWORKS_DIR/$CHROME_ENGINE_NAME"
 RESOURCE_HELPER_DEST="$APP_RESOURCES_DIR/OpenArc Helper.app"
 
 validate_cef_configuration() {
@@ -109,6 +111,51 @@ create_helper_variant() {
   fi
 }
 
+# The Chrome engine's framework (script/chrome_engine.sh export), from this checkout or the primary one.
+# A build without it runs on CEF only, and Settings shows the engine as missing.
+chrome_engine_export() {
+  if [[ -n "${OPENARC_CHROME_ENGINE_EXPORT:-}" ]]; then
+    printf '%s\n' "$OPENARC_CHROME_ENGINE_EXPORT"
+    return
+  fi
+  local candidate="$ROOT_DIR/ThirdParty/chrome-engine/export"
+  if [[ ! -d "$candidate/$CHROME_ENGINE_NAME" ]]; then
+    local common_git_dir
+    common_git_dir="$(git -C "$ROOT_DIR" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
+    if [[ -n "$common_git_dir" && "$(basename "$common_git_dir")" == ".git" ]]; then
+      candidate="$(dirname "$common_git_dir")/ThirdParty/chrome-engine/export"
+    fi
+  fi
+  printf '%s\n' "$candidate"
+}
+
+stage_chrome_engine() {
+  rm -rf "$CHROME_ENGINE_DEST"
+  if [[ "${OPENARC_STAGE_CHROME_ENGINE:-1}" == "0" ]]; then
+    return
+  fi
+  local source
+  source="$(chrome_engine_export)/$CHROME_ENGINE_NAME"
+  if [[ ! -d "$source" ]]; then
+    echo "note: no Chrome engine at $source; this build runs on CEF only"
+    return
+  fi
+  # Both engines open one profile, so the engine never runs a Chromium other than CEF's: an older one would
+  # open a profile a newer Chromium wrote. script/chrome_engine.sh pull records the version it built.
+  local engine_version cef_version header="$CEF_ROOT/include/cef_version.h"
+  engine_version="$(cat "$(dirname "$source")/.chromium-version" 2>/dev/null || true)"
+  cef_version="$(for part in MAJOR MINOR BUILD PATCH; do
+    sed -n "s/^#define CHROME_VERSION_$part \([0-9]*\).*/\1/p" "$header" | head -n 1
+  done | paste -sd. -)"
+  if [[ -z "$engine_version" || "$engine_version" != "$cef_version" ]]; then
+    echo "note: the Chrome engine is Chromium ${engine_version:-unknown}, CEF is $cef_version; this build runs on" \
+      "CEF only until ./script/chrome_engine.sh rebuilds it"
+    return
+  fi
+  # A clone on APFS: the framework is several hundred megabytes.
+  cp -cR "$source" "$CHROME_ENGINE_DEST" 2>/dev/null || ditto "$source" "$CHROME_ENGINE_DEST"
+}
+
 signing_identity() {
   if [[ "${CODE_SIGNING_ALLOWED:-NO}" == "YES" ]]; then
     if [[ -n "${EXPANDED_CODE_SIGN_IDENTITY:-}" && "${EXPANDED_CODE_SIGN_IDENTITY:-}" != "-" ]]; then
@@ -137,6 +184,9 @@ sign_app_bundle() {
   # The CEF runtime is copied after Xcode's normal dependency processing, so
   # seal nested code here using the active Xcode identity when available.
   /usr/bin/codesign --force --deep --sign "$identity" --timestamp=none "$CEF_FRAMEWORK_DEST"
+  if [[ -d "$CHROME_ENGINE_DEST" ]]; then
+    /usr/bin/codesign --force --deep --sign "$identity" --timestamp=none "$CHROME_ENGINE_DEST"
+  fi
   /usr/bin/codesign --force --deep --sign "$identity" --timestamp=none "$HELPER_DEST"
   /usr/bin/codesign --force --deep --sign "$identity" --timestamp=none "$APP_FRAMEWORKS_DIR/OpenArc Helper (Alerts).app"
   /usr/bin/codesign --force --deep --sign "$identity" --timestamp=none "$APP_FRAMEWORKS_DIR/OpenArc Helper (GPU).app"
@@ -218,4 +268,5 @@ create_helper_variant " (GPU)" ".gpu"
 create_helper_variant " (Plugin)" ".plugin"
 create_helper_variant " (Renderer)" ".renderer"
 
+stage_chrome_engine
 sign_app_bundle

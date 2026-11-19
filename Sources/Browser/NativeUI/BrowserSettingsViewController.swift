@@ -92,6 +92,7 @@ struct BrowserSettingsIcon {
         "streaming-in-webkit": .init("play.tv.fill", .systemRed),
         "fairplay-in-chromium": .init("lock.shield.fill", .systemIndigo),
         "site-engines-reset": .init("arrow.uturn.backward", .systemGray),
+        "chrome-engine": .init("cpu.fill", .systemOrange),
         "share-theme-with-websites": .init("paintpalette.fill", .systemPurple),
         "agent-access": .init("terminal.fill", .systemGray),
         // Accounts
@@ -1665,6 +1666,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                     },
                 ),
             ]),
+            section(BrowserStrings.settingsEngineSection, rows: [engineRow()]),
             section(BrowserStrings.settingsSitePermissionsTitle, body: sitePermissionsBody),
             section(BrowserStrings.settingsBoostsTitle, rows: [
                 toggle(
@@ -1700,6 +1702,38 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                 row(BrowserStrings.settingsExportDataDetail, control: exportData),
             ]),
         ])
+    }
+
+    /// The Chrome engine instead of CEF, from the next launch. Off and dimmed in a build without its framework.
+    private func engineRow() -> NSView {
+        let available = BrowserEngineChoice.isChromeEngineAvailable
+        let control = BrowserActionToggle()
+        control.setAccessibilityLabel(BrowserStrings.settingsChromeEngine)
+        control.setAccessibilityIdentifier("browser.settings.chrome-engine")
+        control.isEnabled = available
+        control.onChange = { [weak self] isOn in
+            BrowserEngineChoice.setPreferredEngine(isOn ? .chrome : .cef)
+            self?.offerRelaunchForEngineChange()
+        }
+        updateBindings.append { [weak control] in
+            control?.state = available && BrowserEngineChoice.preferredEngine() == .chrome ? .on : .off
+        }
+        let detail = available ? BrowserStrings.settingsChromeEngineDetail : BrowserStrings.settingsChromeEngineMissing
+        return row(BrowserStrings.settingsChromeEngine, detail: detail, icon: "chrome-engine", control: control)
+    }
+
+    /// The engine changes only at launch, so the setting offers to relaunch now.
+    private func offerRelaunchForEngineChange() {
+        guard let window = view.window else { return }
+        let alert = NSAlert()
+        alert.messageText = BrowserStrings.settingsChromeEngineRelaunchTitle
+        alert.informativeText = BrowserStrings.settingsChromeEngineRelaunchMessage
+        alert.addButton(withTitle: BrowserStrings.settingsChromeEngineRelaunch)
+        alert.addButton(withTitle: BrowserStrings.settingsChromeEngineLater)
+        alert.beginSheetModal(for: window) { response in
+            guard response == .alertFirstButtonReturn else { return }
+            NotificationCenter.default.post(name: BrowserEngineChoice.relaunchRequestedNotification, object: nil)
+        }
     }
 
     /// Arc's sidebar import, reported in an alert because it adds Spaces.

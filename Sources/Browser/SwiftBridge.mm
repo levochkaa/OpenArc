@@ -53,6 +53,10 @@ void BrowserContextInitialized(void) {
 }
 
 int BrowserHasOpenBrowsers(void) {
+  // Chrome engine pages are not CEF browsers; Chrome closes them as it quits.
+  if (BrowserUsesChromeEngine()) {
+    return 0;
+  }
   return shared::ClientManager::GetInstance()->HasBrowsers() ? 1 : 0;
 }
 
@@ -76,6 +80,9 @@ class BrowserTraceEnd final : public CefEndTracingCallback {
 }  // namespace
 
 int BrowserBeginTrace(void) {
+  if (BrowserUsesChromeEngine()) {
+    return 0;
+  }
   return CefBeginTracing("toplevel,benchmark,blink,cc,gpu,renderer.scheduler,v8,viz,disabled-by-default-devtools.timeline",
                          nullptr)
              ? 1
@@ -83,10 +90,16 @@ int BrowserBeginTrace(void) {
 }
 
 int BrowserEndTrace(const char* path, void (^completion)(void)) {
+  if (BrowserUsesChromeEngine()) {
+    return 0;
+  }
   return CefEndTracing(path, new BrowserTraceEnd([completion copy])) ? 1 : 0;
 }
 
 void BrowserCloseAllBrowsers(void) {
+  if (BrowserUsesChromeEngine()) {
+    return;
+  }
   shared::ClientManager::GetInstance()->CloseAllBrowsers(false);
 }
 

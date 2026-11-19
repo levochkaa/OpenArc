@@ -12,6 +12,7 @@ Website/node_modules/
 OpenArc.xcodeproj/
 ThirdParty/cef/*
 !ThirdParty/cef/.gitkeep
+ThirdParty/chrome-engine/
 
 # Local notes, kept out of the repository
 research/

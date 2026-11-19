@@ -1,0 +1,8 @@
+# Files of Chromium/chromium_src the Chrome engine takes too, applied by Chromium/engine/apply.sh.
+# Only full copies with OpenArc's own changes to Chromium; the rest of Chromium/chromium_src carries CEF's
+# patches. The history database is listed because both engines open one profile.
+chrome/browser/notifications/mac/notification_dispatcher_mojo.cc
+chrome/browser/ui/webui/help/version_updater_mac.mm
+chrome/browser/webauthn/chrome_web_authentication_delegate.cc
+chrome/services/mac_notifications/mac_notification_provider_impl.mm
+components/history/core/browser/history_database.cc

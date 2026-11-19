@@ -263,6 +263,13 @@ NSMenuDelegate, NSUserInterfaceValidations {
 
     public func createApplication() {
         BrowserTelemetry.startIfConfigured()
+        NotificationCenter.default.addObserver(
+            forName: BrowserEngineChoice.relaunchRequestedNotification,
+            object: nil,
+            queue: .main,
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.relaunchApplication() }
+        }
         let app = NSApplication.shared
         app.setActivationPolicy(.regular)
         if webAppConfiguration == nil {
@@ -1683,7 +1690,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
                 return
             }
 
-            NSApp.stop(nil)
+            BrowserStopApplicationLoop()
         }
     }
 

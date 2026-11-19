@@ -14,6 +14,10 @@ int BrowserBeginTrace(void);
 /// Writes the trace to `path`; `completion` runs on the main thread.
 int BrowserEndTrace(const char* path, void (^completion)(void));
 void BrowserPrepareApplicationForCefShutdown(void);
+/// 1 when this process runs on the Chrome engine (Chrome's own framework), 0 on CEF. Fixed at launch.
+int BrowserUsesChromeEngine(void);
+/// Ends the app's run loop: CEF's, or Chrome's orderly quit on the Chrome engine.
+void BrowserStopApplicationLoop(void);
 
 #ifdef __OBJC__
 

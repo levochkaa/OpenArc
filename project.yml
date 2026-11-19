@@ -312,6 +312,7 @@ targets:
           - Browser*.swift
           - Downloads/*.swift
           - NativeUI/*.swift
+          - ChromeEngine/*.swift
           - Chrome/BrowserChromeColors.swift
           - Chrome/BrowserChromeLayout.swift
           - BrowserWindowGeometry.swift
