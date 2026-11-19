@@ -130,7 +130,15 @@ if [[ -d "$frameworks/Sentry.framework" ]]; then
   sign "$frameworks/Sentry.framework"
 fi
 
-sign "$frameworks/OpenArc Helper.app"
+# The app sets CEF's browser_subprocess_path to this helper, so renderers run in it rather
+# than in the Renderer variant, and V8 needs JIT memory there: without allow-jit every page
+# fails at start with "Failed to reserve virtual memory for CodeRange".
+sign --entitlements "$ROOT_DIR/Support/OpenArcHelper-Renderer.entitlements" "$frameworks/OpenArc Helper.app"
+if ! codesign -d --entitlements - --xml "$frameworks/OpenArc Helper.app" 2>/dev/null \
+  | grep -q "com.apple.security.cs.allow-jit"; then
+  echo "error: OpenArc Helper.app is signed without allow-jit; pages would crash" >&2
+  exit 1
+fi
 sign "$frameworks/OpenArc Helper (Alerts).app"
 sign "$frameworks/OpenArc Helper (Plugin).app"
 sign --entitlements "$ROOT_DIR/Support/OpenArcHelper-GPU.entitlements" "$frameworks/OpenArc Helper (GPU).app"
