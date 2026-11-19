@@ -144,6 +144,13 @@ enum BrowserOnboardingImportItem: String, CaseIterable {
         max(minimumContentHeight, ceil(height))
     }
 
+    /// A tall step's height comes from these, and the window grows to it in an
+    /// animation; required, they would make AppKit resize the window at once.
+    private static func belowWindowSize(_ constraint: NSLayoutConstraint) -> NSLayoutConstraint {
+        constraint.priority = NSLayoutConstraint.Priority(NSLayoutConstraint.Priority.windowSizeStayPut.rawValue - 1)
+        return constraint
+    }
+
     func show() {
         render()
         window.makeKeyAndOrderFront(nil)
@@ -182,22 +189,25 @@ enum BrowserOnboardingImportItem: String, CaseIterable {
             tileHeightLimit = max(tileHeight - overflow, BrowserOnboardingBrowserTile.size.height)
             view = stepView()
         }
-        fitWindow(to: view)
         view.frame = content.bounds
         view.autoresizingMask = [.width, .height]
         let previous = currentStep
         currentStep = view
         let isSameStep = renderedStepIndex == stepIndex
         renderedStepIndex = stepIndex
-        content.addSubview(view)
-        window.recalculateKeyViewLoop()
         // Only a new step fades in; picking a browser or finishing an import
         // swaps the step in place, so what stays the same doesn't blink.
-        guard previous != nil, !isSameStep, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
+        let fades = previous != nil && !isSameStep && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        view.alphaValue = fades ? 0 : 1
+        content.addSubview(view)
+        window.recalculateKeyViewLoop()
+        // The new view goes up before the window resizes: the resize animates
+        // and redraws, and the browser tiles have already left the old view.
+        if !fades {
             previous?.removeFromSuperview()
-            return
         }
-        view.alphaValue = 0
+        fitWindow(to: view)
+        guard fades else { return }
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.25
             view.animator().alphaValue = 1
@@ -325,8 +335,7 @@ enum BrowserOnboardingImportItem: String, CaseIterable {
             column.topAnchor.constraint(equalTo: paper.topAnchor, constant: 64),
             bar.trailingAnchor.constraint(equalTo: paper.trailingAnchor, constant: -40),
             bar.bottomAnchor.constraint(equalTo: paper.bottomAnchor, constant: -32),
-            // A tall step pushes the buttons down and the window grows with it.
-            column.bottomAnchor.constraint(lessThanOrEqualTo: bar.topAnchor, constant: -24),
+            Self.belowWindowSize(column.bottomAnchor.constraint(lessThanOrEqualTo: bar.topAnchor, constant: -24)),
         ]
         if let note {
             let noteLabel = text(note, size: 12, color: Palette.muted, width: 380)
@@ -336,7 +345,10 @@ enum BrowserOnboardingImportItem: String, CaseIterable {
                 noteLabel.leadingAnchor.constraint(equalTo: paper.leadingAnchor, constant: 48),
                 noteLabel.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
                 noteLabel.trailingAnchor.constraint(lessThanOrEqualTo: bar.leadingAnchor, constant: -24),
-                column.bottomAnchor.constraint(lessThanOrEqualTo: noteLabel.topAnchor, constant: -24),
+                Self.belowWindowSize(column.bottomAnchor.constraint(
+                    lessThanOrEqualTo: noteLabel.topAnchor,
+                    constant: -24,
+                )),
             ]
         }
         NSLayoutConstraint.activate(constraints)
