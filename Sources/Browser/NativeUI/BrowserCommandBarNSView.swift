@@ -397,6 +397,9 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
         if let image = faviconCache.image(for: faviconCandidate?.faviconURL(for: model.selectedSuggestion)) {
             symbol.image = image
             symbol.contentTintColor = nil
+        } else if !model.query.isEmpty, let logo = model.selectedSuggestion?.aiSearchProvider?.commandBarLogo {
+            symbol.image = logo
+            symbol.contentTintColor = BrowserChromeColors.primaryText
         } else {
             symbol.image = NSImage(
                 systemSymbolName: model.query.isEmpty
@@ -469,7 +472,9 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
             suggestion: suggestion,
             selected: model.selectedSuggestionID == suggestion.id,
             favicon: faviconCache.image(for: faviconCandidate?.faviconURL(for: suggestion) ?? suggestion.faviconURL),
-            selectionColor: model.activeSiteSearch?.chipColor ?? themeSelectionColor,
+            selectionColor: model.activeSiteSearch?.chipColor
+                ?? suggestion.aiSearchProvider?.commandBarColor
+                ?? themeSelectionColor,
         )
         view.onPress = { [weak model] in model?.submitSuggestion(id: suggestion.id) }
     }

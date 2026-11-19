@@ -166,6 +166,8 @@ final class BrowserCommandSuggestionNSView: NSButton {
         let tinted = selected && selectionColor != nil
         let isCommand = suggestion.kind == .command
         let isPage = [.openTab, .history, .bookmark].contains(suggestion.kind)
+        // An Ask row shows the text it sends, and the provider at its end.
+        let isAsk = suggestion.kind == .aiSearch
         let pageIcon = favicon ?? suggestion.iconData.flatMap(NSImage.init(data:))
         // Commands sit on a tile; the selected page's icon too, on a white one.
         let tiled = isCommand || selected && isPage && pageIcon != nil
@@ -178,21 +180,28 @@ final class BrowserCommandSuggestionNSView: NSButton {
             : selected ? BrowserChromeColors.commandBarRowSelectedText : BrowserChromeColors.commandBarRowText
         detail.textColor = tinted ? NSColor.white.withAlphaComponent(0.75) : BrowserChromeColors.commandBarRowDetail
         title = suggestion.displayText
-        primary.stringValue = suggestion.displayText
+        primary.stringValue = isAsk ? suggestion.detailText ?? "" : suggestion.displayText
         // "Title — address", the address after a dash.
-        detail.stringValue = suggestion.detailText.map { "— " + $0 } ?? ""
+        detail.stringValue = isAsk ? "" : suggestion.detailText.map { "— " + $0 } ?? ""
         badgeLabel.stringValue = suggestion.shortcut?.displayText ?? ""
         badge.isHidden = suggestion.shortcut == nil
         let isTab = suggestion.kind == .openTab
-        switchLabel.stringValue = suggestion.spaceTitle ?? BrowserStrings.commandBarSwitchToTab
-        switchLabel.isHidden = !isTab
-        switchTile.isHidden = !isTab
+        switchLabel.stringValue = isAsk
+            ? suggestion.displayText
+            : suggestion.spaceTitle ?? BrowserStrings.commandBarSwitchToTab
+        switchLabel.isHidden = !isTab && !isAsk
+        switchTile.isHidden = !isTab && !isAsk
         switchLabel.textColor = tinted ? .white : BrowserChromeColors.secondaryText
         switchTile.fillColor = tinted ? .white : BrowserCommandSuggestionNSView.badgeFill
         switchArrow.contentTintColor = tinted ? selectionColor : BrowserChromeColors.primaryText
         if let image = pageIcon {
             icon.image = image
             icon.contentTintColor = nil
+        } else if isAsk, let logo = suggestion.aiSearchProvider?.commandBarLogo {
+            icon.image = logo
+            icon.contentTintColor = tinted
+                ? .white
+                : selected ? BrowserChromeColors.commandBarRowSelectedText : BrowserChromeColors.commandBarRowIcon
         } else {
             icon.image = NSImage(systemSymbolName: suggestion.systemImageName, accessibilityDescription: nil)?
                 .withSymbolConfiguration(.init(pointSize: BrowserChromeLayout.commandBarSymbolSize, weight: .regular))
