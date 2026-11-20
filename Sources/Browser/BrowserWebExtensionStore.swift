@@ -19,7 +19,7 @@ enum BrowserWebExtensionSource: String, Codable {
 struct BrowserWebExtensionStoreItem: Equatable {
     /// The Chromium version WebKit pages name to Google's update service,
     /// which serves only packages that run on it.
-    static let chromiumVersion = "156.0.8078.100"
+    static let chromiumVersion = "158.0.8127.18"
 
     let source: BrowserWebExtensionSource
     let identifier: String

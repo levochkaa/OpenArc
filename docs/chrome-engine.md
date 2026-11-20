@@ -20,7 +20,7 @@ engine from launch to quit, so the switch takes effect after a relaunch, which t
   app never links either: `main()` (`Sources/Browser/BrowserMain.mm`) asks `BrowserEngineChoice` which engine
   this launch runs on, then loads CEF as before or `dlopen`s Chrome's framework and hands the process to
   `OpenArcChromeEngineMain`, which runs `ChromeMain` start to quit. CEF is never loaded on the Chrome engine.
-- **Same Chromium, same profile.** The engine builds from the Chromium tag of the exported CEF (156.0.8078.100
+- **Same Chromium, same profile.** The engine builds from the Chromium tag of the exported CEF (158.0.8127.18
   now), and Chrome gets OpenArc's data folder (`~/Library/Application Support/OpenArc/CEF`, profile `Default`)
   as its user data. Cookies, passwords, history and extensions open on either engine, and switching back is safe:
   neither engine meets a profile written by a newer Chromium. Both use the "Chromium Safe Storage" Keychain item.
@@ -73,7 +73,7 @@ finished framework. `script/chrome_engine.sh` drives it over ssh from the Mac; t
 | Configure | `./script/chrome_engine.sh prepare` | Copies the CEF build root's Chromium checkout without `src/cef` and `src/out` (once per base), reverts CEF's patches and OpenArc's CEF overrides in every repository, applies the cross-build fixes and OpenArc's layer, runs `gn gen out/OpenArc_arm64`. |
 | Build | `./script/chrome_engine.sh build` | Applies the layer again and builds `chrome_framework`. Incremental. |
 | Package | `./script/chrome_engine.sh package` | Puts `OpenArc Framework.framework` in the host's `artifacts/dist`. |
-| Copy | `./script/chrome_engine.sh pull` | rsyncs the framework to `ThirdParty/chrome-engine/export` in the primary checkout and strips local symbols with Xcode 26.6's `strip -x`. Refuses a framework whose Chromium differs from the exported CEF's. |
+| Copy | `./script/chrome_engine.sh pull` | rsyncs the framework to `ThirdParty/chrome-engine/export` in the primary checkout (in this checkout while it uses a CEF export other than the shared one, `cef_remote_build.sh use`) and strips local symbols with Xcode 26.6's `strip -x`. Refuses a framework whose Chromium differs from the exported CEF's. |
 
 `all` runs prepare, build and package. As with CEF, remote steps run in a tmux session on the host (`status`,
 `wait`, `WAIT=1`). After a layer change:

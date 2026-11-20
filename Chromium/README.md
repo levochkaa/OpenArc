@@ -3,7 +3,7 @@
 `Chromium/chromium_src` contains Brave-style upstream WebUI overrides for the
 project-local Chromium checkout.
 
-Each file is a full copy of a CEF 156.0.31+ge603d97 / Chromium 156.0.8078.100
+Each file is a full copy of a CEF 158.0.3+g8c29be2 / Chromium 158.0.8127.18
 source with OpenArc's changes. `cef/patch/patches` holds CEF's own patches with
 OpenArc's changes folded in, applied before CEF's project generation.
 

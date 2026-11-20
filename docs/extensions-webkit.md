@@ -16,7 +16,7 @@ Installs start only from the user: a tap on Add to OpenArc over an extension's s
 ### Chrome Web Store
 
 1. `BrowserWebExtensionStoreItem(pageURL:)` takes the 32-letter ID (`a`–`p`) from `chromewebstore.google.com/detail/<slug>/<id>` or the older `chrome.google.com/webstore/detail/…`.
-2. The package comes from Google's update service: `https://clients2.google.com/service/update2/crx?response=redirect&prodversion=156.0.8078.100&acceptformat=crx2,crx3&x=id%3D<id>%26uc`. `prodversion` is the Chromium version of the exported CEF, so the store serves packages that run there.
+2. The package comes from Google's update service: `https://clients2.google.com/service/update2/crx?response=redirect&prodversion=158.0.8127.18&acceptformat=crx2,crx3&x=id%3D<id>%26uc`. `prodversion` is the Chromium version of the exported CEF, so the store serves packages that run there.
 3. `BrowserCRXPackage.verify` checks the CRX3:
    - magic `Cr24`, version 3, and a protobuf header that fits the file;
    - the signed header data's 16-byte ID equals the page's ID;
