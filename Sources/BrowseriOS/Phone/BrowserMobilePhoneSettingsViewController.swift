@@ -33,11 +33,33 @@ enum BrowserMobileAutoOpenKeyboardSetting {
     }
 }
 
-// MARK: - BrowserMobilePhoneSettingsViewController
-
 /// Settings from the switcher's gear on iPhone and the sidebar's on iPad:
 /// Downloads and Archive, the blocker, the search engine and website data,
 /// then the account and the licenses.
+// MARK: - BrowserMobileDefaultBrowser
+
+/// OpenArc as the system's default browser, which needs Apple's
+/// `com.apple.developer.web-browser` entitlement; `OPENARC_DEFAULT_BROWSER`
+/// says the build has it.
+enum BrowserMobileDefaultBrowser {
+    static var isAvailable: Bool {
+        Bundle.main.object(forInfoDictionaryKey: "OpenArcDefaultBrowser") as? String == "YES"
+    }
+
+    /// Whether OpenArc opens the web links of other apps. The system limits how
+    /// often an app may ask; a refused check reads as no.
+    @MainActor static func isDefault() -> Bool {
+        (try? UIApplication.shared.isDefault(.webBrowser)) ?? false
+    }
+
+    @MainActor static func openSystemSettings() {
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        UIApplication.shared.open(url)
+    }
+}
+
+// MARK: - BrowserMobilePhoneSettingsViewController
+
 final class BrowserMobilePhoneSettingsViewController: UITableViewController {
     // MARK: Private
 
@@ -52,6 +74,8 @@ final class BrowserMobilePhoneSettingsViewController: UITableViewController {
         var toggle: UISwitch?
         let action: () -> Void
     }
+
+    private static let defaultBrowserRowID = "browser.settings.defaultBrowser"
 
     // MARK: Internal
 
@@ -150,6 +174,22 @@ final class BrowserMobilePhoneSettingsViewController: UITableViewController {
                     { [weak self] in self?.confirmClearWebsiteData() },
             ],
         ]
+        if BrowserMobileDefaultBrowser.isAvailable {
+            rows.insert([
+                .init(
+                    title: String(localized: "Default Browser", table: "Mobile"),
+                    symbol: "safari",
+                    color: .systemBlue,
+                    id: Self.defaultBrowserRowID,
+                    isEnabled: true,
+                    value: BrowserMobileDefaultBrowser.isDefault() ? "OpenArc" : nil,
+                ) { BrowserMobileDefaultBrowser.openSystemSettings() },
+            ], at: 0)
+            NotificationCenter.default.addObserver(
+                self, selector: #selector(refreshDefaultBrowser),
+                name: UIApplication.didBecomeActiveNotification, object: nil,
+            )
+        }
         if let session = workspace.syncSession {
             rows.append([
                 .init(
@@ -215,6 +255,7 @@ final class BrowserMobilePhoneSettingsViewController: UITableViewController {
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
+        refreshDefaultBrowser()
         // The search engine may have changed on its page.
         if let index = rows.indices.first(where: { rows[$0].contains { $0.id == "browser.settings.searchEngine" } }),
            let row = rows[index].firstIndex(where: { $0.id == "browser.settings.searchEngine" })
@@ -233,6 +274,18 @@ final class BrowserMobilePhoneSettingsViewController: UITableViewController {
             dismiss(animated: true) { workspace.openLinkInNewTab(url, inBackground: false) }
         }
         navigationController?.pushViewController(controller, animated: animated)
+    }
+
+    /// The system's Default Apps page is where OpenArc becomes the browser;
+    /// coming back from it shows whether it did.
+    @objc private func refreshDefaultBrowser() {
+        guard let section = rows.indices.first(where: { rows[$0].contains { $0.id == Self.defaultBrowserRowID } }),
+              let row = rows[section].firstIndex(where: { $0.id == Self.defaultBrowserRowID })
+        else { return }
+        let value: String? = BrowserMobileDefaultBrowser.isDefault() ? "OpenArc" : nil
+        guard rows[section][row].value != value else { return }
+        rows[section][row].value = value
+        tableView.reloadRows(at: [IndexPath(row: row, section: section)], with: .none)
     }
 
     private func autoOpenSwitch() -> UISwitch {

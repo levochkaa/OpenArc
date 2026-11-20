@@ -218,6 +218,30 @@ func mobileChangedURLClearsPreviousTitleThroughFailureAndFileReopen(engineReport
     #expect(await workspace.shutdown())
 }
 
+@MainActor @Test func mobileLinksFromOtherAppsOpenInFrontAndWaitForRestore() async throws {
+    let f = MobileWorkspaceFixture()
+    defer { f.cleanup() }
+    let engine = MobileWorkspaceEngine()
+    let workspace = BrowserMobileWorkspace(engine: engine, store: BrowserMobileFileSessionStore(fileURL: f.url))
+    try workspace.openLinkFromAnotherApp(#require(URL(string: "https://example.com/launch")))
+    #expect(workspace.tabs.isEmpty && workspace.openedLinkCount == 0, "A launch link waits for the tabs")
+
+    await workspace.restore()
+    #expect(workspace.tabs.count == 1, "The launch link fills the empty tab")
+    #expect(workspace.selectedTab?.urlString == "https://example.com/launch")
+    #expect(workspace.openedLinkCount == 1)
+
+    try workspace.openLinkFromAnotherApp(#require(URL(string: "https://example.com/next")))
+    #expect(workspace.tabs.count == 2)
+    #expect(workspace.selectedTab?.urlString == "https://example.com/next")
+    #expect(workspace.openedLinkCount == 2)
+
+    try workspace.openLinkFromAnotherApp(#require(URL(string: "about:blank")))
+    try workspace.openLinkFromAnotherApp(#require(URL(string: "file:///etc/hosts")))
+    #expect(workspace.tabs.count == 2 && workspace.openedLinkCount == 2, "Only web addresses open")
+    #expect(await workspace.shutdown())
+}
+
 @MainActor @Test func mobileFailedSaveKeepsLatestEditsAndRetryAtomicallyReplacesOldFile() async throws {
     let f = MobileWorkspaceFixture()
     defer { f.cleanup() }

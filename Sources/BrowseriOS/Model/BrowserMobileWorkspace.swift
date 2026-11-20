@@ -47,6 +47,9 @@ struct BrowserMobileTab: Identifiable, Equatable {
     private(set) var httpAuthentication: BrowserMobileHTTPAuthentication?
     private(set) var profileDocument: BrowserMobileProfileDocument?
     private(set) var selectedSpaceID: String?
+    /// Counts links that other apps opened here, so the UI shows each page
+    /// instead of the search it opens on launch.
+    private(set) var openedLinkCount = 0
 
     private let engine: any BrowserMobileEngine
     private let store: (any BrowserMobileSessionStoring)?
@@ -72,6 +75,8 @@ struct BrowserMobileTab: Identifiable, Equatable {
     private var registeredRuntimeIDs = Set<String>()
     private var adoptedPopupRuntimeID: String?
     private var unloadedPersistentIDs = Set<String>()
+    /// Links from other apps that arrived before the tabs were restored.
+    private var pendingOpenedLinks = [URL]()
 
     var syncSession: BrowserMobileSyncSession? { profileDocument?.syncSession }
     var downloads: BrowserMobileDownloads? { profileDocument?.downloads }
@@ -326,6 +331,7 @@ struct BrowserMobileTab: Identifiable, Equatable {
             }
             enqueueCurrentSession()
             notify()
+            openPendingLinks()
         } catch {
             guard !isClosed else { isRestoring = false
                 return
@@ -335,6 +341,24 @@ struct BrowserMobileTab: Identifiable, Equatable {
             sessionError = error.localizedDescription
             notify()
         }
+    }
+
+    /// Opens a link that another app handed over, as the default browser
+    /// does: in a new tab that takes the selection, or in an empty one.
+    func openLinkFromAnotherApp(_ url: URL) {
+        guard let url = BrowserMobileSession.allowedURL(url.absoluteString), url.scheme != "about" else { return }
+        guard canEdit else {
+            if !isReady, !isClosed { pendingOpenedLinks.append(url) }
+            return
+        }
+        openedLinkCount += 1
+        if let tab = selectedTab, tab.urlString == "about:blank", tab.state.error == nil {
+            submit(url.absoluteString)
+            return
+        }
+        navigationError = nil
+        insertNewTab(url: url)
+        notify()
     }
 
     func newTab() {
@@ -646,6 +670,12 @@ struct BrowserMobileTab: Identifiable, Equatable {
         return await flushPersistence()
     }
 
+    private func openPendingLinks() {
+        let links = pendingOpenedLinks
+        pendingOpenedLinks = []
+        links.forEach(openLinkFromAnotherApp)
+    }
+
     private func restoreProfile() async {
         guard let profileLoader else { return }
         isRestoring = true
@@ -679,6 +709,7 @@ struct BrowserMobileTab: Identifiable, Equatable {
             documentObserver = document.observe { [weak self] snapshot in self?.applyProfile(snapshot) }
             recordSelectionActivity()
             syncSession?.setSceneActive(isSyncActive, sceneID: sceneID)
+            openPendingLinks()
         } catch {
             isRestoring = false
             guard !isClosed else { return }

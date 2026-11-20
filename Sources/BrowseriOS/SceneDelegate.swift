@@ -12,9 +12,12 @@ final class BrowserSceneDelegate: UIResponder, UIWindowSceneDelegate {
     private var connection: BrowserMobileSceneSessions.Connection?
     private var connectionTask: Task<Void, Never>?
     private weak var connectionScene: UIWindowScene?
+    /// Links handed over while the scene's workspace is still connecting.
+    private var pendingLinks = [URL]()
 
-    func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options _: UIScene.ConnectionOptions) {
+    func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options: UIScene.ConnectionOptions) {
         guard let windowScene = scene as? UIWindowScene else { return }
+        pendingLinks = options.urlContexts.map(\.url)
         connectionTask?.cancel()
         if let connection {
             BrowserMobileSceneSessions.shared.disconnect(connection)
@@ -47,7 +50,21 @@ final class BrowserSceneDelegate: UIResponder, UIWindowSceneDelegate {
                 for: connection,
             )
             connectionTask = nil
+            let links = pendingLinks
+            pendingLinks = []
+            links.forEach(connection.workspace.openLinkFromAnotherApp)
         }
+    }
+
+    /// As the default browser, OpenArc receives the http and https links other apps open.
+    func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
+        guard connectionScene === scene else { return }
+        let links = URLContexts.map(\.url)
+        guard let connection else {
+            pendingLinks += links
+            return
+        }
+        links.forEach(connection.workspace.openLinkFromAnotherApp)
     }
 
     func sceneDidBecomeActive(_ scene: UIScene) {
@@ -75,6 +92,7 @@ final class BrowserSceneDelegate: UIResponder, UIWindowSceneDelegate {
         }
         connection = nil
         connectionScene = nil
+        pendingLinks = []
         window = nil
     }
 }

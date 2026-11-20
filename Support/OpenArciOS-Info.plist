@@ -20,6 +20,20 @@
   <string>$(MARKETING_VERSION)</string>
   <key>CFBundleVersion</key>
   <string>$(CURRENT_PROJECT_VERSION)</string>
+  <key>CFBundleURLTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleURLName</key>
+      <string>Web Page</string>
+      <key>CFBundleURLSchemes</key>
+      <array>
+        <string>http</string>
+        <string>https</string>
+      </array>
+    </dict>
+  </array>
+  <key>OpenArcDefaultBrowser</key>
+  <string>$(OPENARC_DEFAULT_BROWSER)</string>
   <key>OpenArcSyncBaseURL</key>
   <string>$(OPENARC_SYNC_BASE_URL)</string>
   <key>ITSAppUsesNonExemptEncryption</key>

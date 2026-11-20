@@ -90,6 +90,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
     private var renderedTabID: String?
     private var wasLoading = [String: Bool]()
     private var didAutoOpenSearch = false
+    private var shownOpenedLinkCount: Int
     private var iconRequests = Set<String>()
 
     // Bar collapse while scrolling.
@@ -158,6 +159,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
     init(workspace: BrowserMobileWorkspace, contentView: UIView) {
         self.workspace = workspace
         self.contentView = contentView
+        self.shownOpenedLinkCount = workspace.openedLinkCount
         super.init(nibName: nil, bundle: nil)
         workspace.onChange = { [weak self] in self?.render() }
     }
@@ -286,13 +288,23 @@ final class BrowserMobilePhoneViewController: UIViewController {
         presentedTabs?.render()
         javaScriptDialogPresenter.update(workspace.javaScriptDialog)
         httpAuthenticationPresenter.update(workspace.httpAuthentication)
+        // A link from another app shows its page, not search, the switcher or a panel.
+        if shownOpenedLinkCount != workspace.openedLinkCount {
+            shownOpenedLinkCount = workspace.openedLinkCount
+            didAutoOpenSearch = true
+            showOpenedLink()
+        }
         // A launch opens search over the last tab too, unless Settings turn that off.
         if !didAutoOpenSearch, workspace.isReady, mode == .browsing, view.window != nil,
            tab == nil || tab?.urlString == "about:blank" || BrowserMobileAutoOpenKeyboardSetting.isOn()
         {
             didAutoOpenSearch = true
+            let openedLinkCount = workspace.openedLinkCount
             DispatchQueue.main.async { [weak self] in
-                guard let self, mode == .browsing, presentedViewController == nil else { return }
+                // A link that launched the app may open right after the tabs restore.
+                guard let self, mode == .browsing, presentedViewController == nil,
+                      workspace.openedLinkCount == openedLinkCount
+                else { return }
                 openSearch(text: "", replacesPage: false)
             }
         }
@@ -904,6 +916,15 @@ final class BrowserMobilePhoneViewController: UIViewController {
             ),
         )
         updatePagePanel()
+    }
+
+    private func showOpenedLink() {
+        presentedViewController?.dismiss(animated: true)
+        switch mode {
+        case .browsing: break
+        case .switcher: closeSwitcherInstantly()
+        case .pageMenu, .search: closePanel()
+        }
     }
 
     // MARK: Search
