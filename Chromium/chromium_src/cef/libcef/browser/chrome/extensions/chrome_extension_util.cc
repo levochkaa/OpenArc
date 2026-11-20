@@ -20,6 +20,7 @@
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/memory/raw_ptr.h"
+#include "base/memory/scoped_refptr.h"
 #include "base/no_destructor.h"
 #include "base/values.h"
 #include "cef/libcef/browser/browser_info_manager.h"
@@ -52,6 +53,7 @@
 #include "extensions/browser/extension_registrar.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/uninstall_reason.h"
+#include "extensions/common/event_args.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/icons/extension_icon_set.h"
 #include "extensions/common/manifest.h"
@@ -275,7 +277,8 @@ void BroadcastTabEvent(content::BrowserContext* context,
     return;
   }
   router->BroadcastEvent(std::make_unique<extensions::Event>(
-      histogram_value, event_name, std::move(args), context));
+      histogram_value, event_name,
+      base::MakeRefCounted<extensions::EventArgs>(std::move(args)), context));
 }
 
 void DispatchTabUpdated(content::WebContents* contents,
@@ -287,7 +290,10 @@ void DispatchTabUpdated(content::WebContents* contents,
   }
   auto event = std::make_unique<extensions::Event>(
       extensions::events::TABS_ON_UPDATED,
-      extensions::api::tabs::OnUpdated::kEventName, base::ListValue(), context);
+      extensions::api::tabs::OnUpdated::kEventName,
+      // The arguments depend on the extension's permissions; the
+      // will-dispatch callback sets them.
+      nullptr, context);
   event->user_gesture = extensions::EventRouter::UserGestureState::kNotEnabled;
   event->will_dispatch_callback =
       base::BindRepeating(&WillDispatchAlloyTabUpdated, contents,
@@ -303,7 +309,7 @@ void DispatchTabCreated(content::WebContents* contents) {
   }
   auto event = std::make_unique<extensions::Event>(
       extensions::events::TABS_ON_CREATED,
-      extensions::api::tabs::OnCreated::kEventName, base::ListValue(), context);
+      extensions::api::tabs::OnCreated::kEventName, nullptr, context);
   event->user_gesture = extensions::EventRouter::UserGestureState::kNotEnabled;
   event->will_dispatch_callback =
       base::BindRepeating(&WillDispatchAlloyTabCreated, contents);
