@@ -152,6 +152,9 @@ pull() {
     exit 1
   fi
   DEVELOPER_DIR="$CEF_XCODE/Contents/Developer" strip_framework "$tmp/$FRAMEWORK"
+  # The host's umask leaves group-writable files, which Sparkle's appcast
+  # tool flags in a release.
+  chmod -R go-w "$tmp/$FRAMEWORK"
   mkdir -p "$EXPORT_DIR"
   rm -rf "$EXPORT_DIR/$FRAMEWORK"
   mv "$tmp/$FRAMEWORK" "$EXPORT_DIR/$FRAMEWORK"
