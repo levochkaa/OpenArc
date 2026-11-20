@@ -16,7 +16,7 @@ import sys
 src = pathlib.Path(sys.argv[1])
 
 
-def edit(relative, old, new, marker, count=1):
+def edit(relative, old, new, marker, count=1, needed_while=None):
     path = src / relative
     if not path.exists():
         # The Chrome engine's tree has no src/cef.
@@ -25,6 +25,9 @@ def edit(relative, old, new, marker, count=1):
     text = path.read_text()
     if marker in text:
         print(f"{relative}: already fixed")
+        return
+    if needed_while is not None and needed_while not in text:
+        print(f"{relative}: fixed upstream")
         return
     found = text.count(old)
     if found < count:
@@ -49,12 +52,13 @@ assert(!enable_cdm_host_verification || is_mac || is_win,""",
 )
 
 # 2. cef/BUILD.gn names hermetic_xcode_path, which Chromium made private. Only
-#    the sample apps' .xib files use it.
+#    the sample apps' .xib files use it. CEF fixed it itself from branch 8127.
 edit(
     "cef/BUILD.gn",
     "\n          hermetic_xcode_path,\n",
     '\n          rebase_path("//build/mac_files/xcode_binaries", root_build_dir),\n',
     'rebase_path("//build/mac_files/xcode_binaries"',
+    needed_while="hermetic_xcode_path",
 )
 
 # 3. A cross build ships snapshot_blob.bin instead of the context snapshot,
