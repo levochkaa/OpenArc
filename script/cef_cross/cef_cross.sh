@@ -38,7 +38,10 @@ CEF_BRANCH="${CEF_BRANCH:-}"
 CEF_COMMIT="${CEF_COMMIT:-}"
 CHROMIUM_TAG="${CHROMIUM_TAG:-}"
 DEPOT_TOOLS_REF="${DEPOT_TOOLS_REF:-}"
-GCLIENT_JOBS="${GCLIENT_JOBS:-16}"
+# chromium.googlesource.com answers 429 (anonymous short-term quota) when many
+# DEPS repositories fetch at once; fewer jobs and a retry with a pause get past it.
+GCLIENT_JOBS="${GCLIENT_JOBS:-8}"
+GCLIENT_ATTEMPTS="${GCLIENT_ATTEMPTS:-6}"
 
 # The Mac build's runtime shape (see DEFAULT_CHROMIUM_GN_DEFINES in
 # script/chromium_source.sh), cross-compiled against the hermetic SDK.
@@ -63,6 +66,20 @@ ensure_depot_tools() {
     git -C "$DEPOT_TOOLS" checkout -q "$DEPOT_TOOLS_REF"
   fi
   (cd "$DEPOT_TOOLS" && ./ensure_bootstrap >/dev/null)
+}
+
+# gclient sync resumes where it stopped, so a failed run is retried with a
+# growing pause (1, 2, 4, 8, 15 min) and half the jobs each time, down to 2.
+gclient_sync() {
+  local attempt=1 jobs="$GCLIENT_JOBS" pause=60
+  until (cd "$CHROMIUM_ROOT" && gclient sync --reset --nohooks --no-history --jobs="$jobs"); do
+    ((attempt < GCLIENT_ATTEMPTS)) || die "gclient sync failed $attempt times"
+    echo "=== $(date '+%F %T') gclient sync failed (attempt $attempt of $GCLIENT_ATTEMPTS); retrying in ${pause}s"
+    sleep "$pause"
+    attempt=$((attempt + 1))
+    jobs=$((jobs > 3 ? jobs / 2 : 2))
+    pause=$((pause * 2 > 900 ? 900 : pause * 2))
+  done
 }
 
 # CEF and Chromium sources at the requested versions, with macOS dependencies.
@@ -93,7 +110,7 @@ GCLIENT
     git -C "$SRC" fetch -q origin "refs/tags/$CHROMIUM_TAG" --no-tags --depth=1
     git -C "$SRC" checkout -q --force FETCH_HEAD
   fi
-  (cd "$CHROMIUM_ROOT" && gclient sync --reset --nohooks --no-history --jobs="$GCLIENT_JOBS")
+  gclient_sync
   if [[ -f "$CEF_CHECKOUT_DIR/patch/patches/runhooks.patch" ]]; then
     python3 "$CEF_CHECKOUT_DIR/tools/patcher.py" \
       --patch-file "$CEF_CHECKOUT_DIR/patch/patches/runhooks" \
