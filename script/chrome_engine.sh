@@ -25,9 +25,17 @@ primary_checkout_root() {
 }
 
 PRIMARY_ROOT="$(primary_checkout_root)"
-CEF_HEADER="$PRIMARY_ROOT/ThirdParty/cef/export/include/cef_version.h"
-# The app build stages the framework from here (script/stage_cef_bundle.sh).
+# This checkout's CEF export: the shared one, or the one `cef_remote_build.sh
+# use` picked while a new base is tried here.
+CEF_HEADER="$ROOT_DIR/ThirdParty/cef/export/include/cef_version.h"
+# The app build stages the framework from the checkout's own export when it
+# has one, else the primary checkout's (script/stage_cef_bundle.sh). An engine
+# for a CEF other than the shared one stays in this checkout, so the others
+# keep theirs.
 EXPORT_DIR="$PRIMARY_ROOT/ThirdParty/chrome-engine/export"
+if ! cmp -s "$CEF_HEADER" "$PRIMARY_ROOT/ThirdParty/cef/export/include/cef_version.h"; then
+  EXPORT_DIR="$ROOT_DIR/ThirdParty/chrome-engine/export"
+fi
 
 remote_path_expr() {
   if [[ "$1" == /* ]]; then
@@ -130,7 +138,8 @@ strip_framework() {
 # Copies the host's framework into ThirdParty/chrome-engine/export in the
 # primary checkout. It must match the exported CEF's Chromium version.
 pull() {
-  local tmp="$PRIMARY_ROOT/ThirdParty/chrome-engine/.export-pull.tmp"
+  local tmp
+  tmp="$(dirname "$EXPORT_DIR")/.export-pull.tmp"
   rm -rf "$tmp"
   mkdir -p "$tmp"
   rsync -a "$REMOTE_HOST:$REMOTE_ROOT/artifacts/dist/" "$tmp/"
