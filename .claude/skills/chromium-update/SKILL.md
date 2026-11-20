@@ -102,8 +102,10 @@ Chromium differs from CEF's. Rebuild it from the new base on the build host once
 first build of a base takes about 80 minutes, so start it early and fix the layer's API errors as they come:
 
 ```bash
-WAIT=1 ./script/chrome_engine.sh all    # copies the new checkout, applies Chromium/engine, builds, packages
-./script/chrome_engine.sh pull
+# copies the new checkout, applies Chromium/engine, builds, packages; CHROMIUM_TAG
+# until step 4's `use`, as the engine otherwise builds the export's Chromium
+CHROMIUM_TAG=<chromium tag> WAIT=1 ./script/chrome_engine.sh all
+./script/chrome_engine.sh pull          # after `use`: into this worktree, next to its export
 ```
 
 ## 6. Smoke test the engine
@@ -137,7 +139,7 @@ SPARKLE_UPDATES_DIR="$MAIN/.build/releases/sparkle-updates" \
 
 `SPARKLE_UPDATES_DIR` keeps the earlier archives, so the appcast gets deltas. `--prerelease` reaches only the Beta channel. Never publish without it here.
 
-Land on `main`: rebase this branch onto `main`, fast-forward `main` in the main checkout (it stays checked out on `main`; `git -C "$MAIN" merge --ff-only <branch>`), point this worktree back at the shared export (`ln -sfn "$MAIN/ThirdParty/cef/export" ThirdParty/cef/export`), then make the new export the shared one: `"$MAIN/script/cef_remote_build.sh" install <version>` (the old export stays as `export-<old version>`). Do not push unless the owner asked.
+Land on `main`: rebase this branch onto `main`, fast-forward `main` in the main checkout (it stays checked out on `main`; `git -C "$MAIN" merge --ff-only <branch>`), point this worktree back at the shared export (`ln -sfn "$MAIN/ThirdParty/cef/export" ThirdParty/cef/export`), then make the new export the shared one: `"$MAIN/script/cef_remote_build.sh" install <version>` (the old export stays as `export-<old version>`). `chrome_engine.sh pull` put the new engine in this worktree's `ThirdParty/chrome-engine/export`, since its CEF was not the shared one; move it to `$MAIN/ThirdParty/chrome-engine/export` in place of the old engine. Do not push unless the owner asked.
 
 Release the watcher's hold so a newer version can start: `script/chromium_watch.sh done --result released --note "<tag>"`.
 
