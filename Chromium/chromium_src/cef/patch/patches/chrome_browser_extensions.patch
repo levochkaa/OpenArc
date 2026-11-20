@@ -34,7 +34,7 @@ index 28532d6e0da81831cf9da5f4e9dd40ca3ed91208..1469887ffc201ec6262530dd4e8fdd08
  #endif
  
 diff --git chrome/browser/extensions/api/tabs/tabs_api.cc chrome/browser/extensions/api/tabs/tabs_api.cc
-index de78a212cda49cdaedb23674e30ceec3db56807f..bc0dc8a245bb586dcebf6a1e2f688292524965ae 100644
+index de78a212cda49cdaedb23674e30ceec3db56807f..083ce06068d148b62733810d6aa93f147a0f4cfe 100644
 --- chrome/browser/extensions/api/tabs/tabs_api.cc
 +++ chrome/browser/extensions/api/tabs/tabs_api.cc
 @@ -56,6 +56,7 @@
@@ -170,8 +170,8 @@ index de78a212cda49cdaedb23674e30ceec3db56807f..bc0dc8a245bb586dcebf6a1e2f688292
 +#if BUILDFLAG(ENABLE_CEF)
 +  Profile* cef_profile = Profile::FromBrowserContext(browser_context());
 +  WindowOpenDisposition cef_disposition =
-+      active_.value_or(true) ? WindowOpenDisposition::NEW_FOREGROUND_TAB
-+                             : WindowOpenDisposition::NEW_BACKGROUND_TAB;
++      active_.value_or(true) ? WindowOpenDisposition::kNewForegroundTab
++                             : WindowOpenDisposition::kNewBackgroundTab;
 +  if (cef_profile &&
 +      cef::OpenURLInAlloyBrowser(cef_profile, validated_url_, cef_disposition,
 +                                 user_gesture())) {

@@ -1008,8 +1008,8 @@ ExtensionFunction::ResponseAction TabsCreateFunction::Run() {
 #if BUILDFLAG(ENABLE_CEF)
   Profile* cef_profile = Profile::FromBrowserContext(browser_context());
   WindowOpenDisposition cef_disposition =
-      active_.value_or(true) ? WindowOpenDisposition::NEW_FOREGROUND_TAB
-                             : WindowOpenDisposition::NEW_BACKGROUND_TAB;
+      active_.value_or(true) ? WindowOpenDisposition::kNewForegroundTab
+                             : WindowOpenDisposition::kNewBackgroundTab;
   if (cef_profile &&
       cef::OpenURLInAlloyBrowser(cef_profile, validated_url_, cef_disposition,
                                  user_gesture())) {
