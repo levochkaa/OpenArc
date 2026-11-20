@@ -1,5 +1,5 @@
 diff --git a/chrome/browser/ui/browser_web_contents_delegate/browser_web_contents_delegate.cc b/chrome/browser/ui/browser_web_contents_delegate/browser_web_contents_delegate.cc
-index 3bc40bcc91..3d54497ef8 100644
+index 3c3aaff4f95..8a3dacc9fe3 100644
 --- a/chrome/browser/ui/browser_web_contents_delegate/browser_web_contents_delegate.cc
 +++ b/chrome/browser/ui/browser_web_contents_delegate/browser_web_contents_delegate.cc
 @@ -4,6 +4,8 @@
@@ -9,9 +9,9 @@ index 3bc40bcc91..3d54497ef8 100644
 +#include "chrome/browser/openarc_engine_hooks.h"
 +
  #include "base/check_deref.h"
+ #include "base/feature_list.h"
  #include "base/metrics/histogram_macros.h"
- #include "base/notimplemented.h"
-@@ -319,6 +321,15 @@ BrowserWebContentsDelegate::PreHandleKeyboardEvent(
+@@ -358,6 +360,15 @@ BrowserWebContentsDelegate::PreHandleKeyboardEvent(
      return content::KeyboardEventProcessingResult::HANDLED;
    }
  
@@ -27,7 +27,7 @@ index 3bc40bcc91..3d54497ef8 100644
    return window_->PreHandleKeyboardEvent(event);
  }
  
-@@ -327,8 +338,17 @@ bool BrowserWebContentsDelegate::HandleKeyboardEvent(
+@@ -366,8 +377,17 @@ bool BrowserWebContentsDelegate::HandleKeyboardEvent(
      const input::NativeWebKeyboardEvent& event) {
    DevToolsWindow* devtools_window =
        DevToolsWindow::GetInstanceForInspectedWebContents(source);
@@ -47,7 +47,7 @@ index 3bc40bcc91..3d54497ef8 100644
  }
  
  void BrowserWebContentsDelegate::RequestPointerLock(
-@@ -796,6 +816,10 @@ void BrowserWebContentsDelegate::SetContentsBounds(content::WebContents* source,
+@@ -843,6 +863,10 @@ void BrowserWebContentsDelegate::SetContentsBounds(content::WebContents* source,
  
  void BrowserWebContentsDelegate::UpdateTargetURL(content::WebContents* source,
                                                   const GURL& url) {
@@ -58,7 +58,7 @@ index 3bc40bcc91..3d54497ef8 100644
    std::vector<StatusBubble*> status_bubbles =
        browser_ui_controller_->GetStatusBubbles();
    for (StatusBubble* status_bubble : status_bubbles) {
-@@ -1185,6 +1209,12 @@ ui::mojom::WindowShowState BrowserWebContentsDelegate::GetWindowShowState()
+@@ -1232,6 +1256,12 @@ ui::mojom::WindowShowState BrowserWebContentsDelegate::GetWindowShowState()
  
  bool BrowserWebContentsDelegate::CanEnterFullscreenModeForTab(
      content::RenderFrameHost* requesting_frame) {
@@ -71,7 +71,7 @@ index 3bc40bcc91..3d54497ef8 100644
    // If the tab strip isn't editable then a drag session is in progress, and it
    // is not safe to enter fullscreen. https://crbug.com/40059349
    if (!browser_->GetTabStripModel()->delegate()->IsTabStripEditable()) {
-@@ -1198,12 +1228,21 @@ bool BrowserWebContentsDelegate::CanEnterFullscreenModeForTab(
+@@ -1245,12 +1275,21 @@ bool BrowserWebContentsDelegate::CanEnterFullscreenModeForTab(
  void BrowserWebContentsDelegate::EnterFullscreenModeForTab(
      content::RenderFrameHost* requesting_frame,
      const blink::mojom::FullscreenOptions& options) {
@@ -93,7 +93,7 @@ index 3bc40bcc91..3d54497ef8 100644
    exclusive_access_manager_->fullscreen_controller()->ExitFullscreenModeForTab(
        web_contents);
  }
-@@ -1217,6 +1256,16 @@ bool BrowserWebContentsDelegate::IsFullscreenForTabOrPending(
+@@ -1264,6 +1303,16 @@ bool BrowserWebContentsDelegate::IsFullscreenForTabOrPending(
  
  content::FullscreenState BrowserWebContentsDelegate::GetFullscreenState(
      const content::WebContents* web_contents) const {
