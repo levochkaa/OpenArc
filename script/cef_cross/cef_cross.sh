@@ -127,6 +127,28 @@ require_xcode() {
     die "no MacOSX.sdk in $XCODE_DIR"
 }
 
+# CEF's patcher skips a patch whose old version is still in the tree, and a
+# changed version then neither applies nor reverts. Before a prepare, restores
+# the files of every CEF patch override that differs from the version the last
+# prepare applied, so CEF's hook applies the new one. Patch overrides patch the
+# Chromium src repository.
+revert_changed_patch_overrides() {
+  [[ -d "$OVERRIDES/cef/patch/patches" && -d "$CEF_SRC/patch/patches" ]] || return 0
+  local new old
+  local -a files
+  for new in "$OVERRIDES"/cef/patch/patches/*.patch; do
+    old="$CEF_SRC/patch/patches/$(basename "$new")"
+    [[ -f "$old" ]] && ! cmp -s "$new" "$old" || continue
+    mapfile -t files < <(sed -n 's|^diff --git \([^ ]*\) .*|\1|p' "$old")
+    ((${#files[@]})) || continue
+    if git -C "$SRC" checkout -- "${files[@]}"; then
+      echo "restored ${#files[@]} files of $(basename "$new" .patch) for its new version"
+    else
+      echo "warning: could not restore the files of $(basename "$new" .patch)"
+    fi
+  done
+}
+
 # Copies CEF into src/cef with OpenArc's CEF patch overrides, applies the
 # cross-build fixes, then runs CEF's hook (version headers, patches, gn gen)
 # as if on an arm64 Mac.
@@ -135,6 +157,8 @@ prepare() {
   require_xcode
   mkdir -p "$SRC/build/mac_files"
   ln -sfn "$XCODE_DIR" "$SRC/build/mac_files/xcode_binaries"
+
+  revert_changed_patch_overrides
 
   step "copy CEF into src/cef"
   rsync -a --delete --exclude binary_distrib "$CEF_CHECKOUT_DIR/" "$CEF_SRC/"
