@@ -1,14 +1,14 @@
 # Chromium updates
 
-OpenArc follows stable Chromium as closely as the build allows. A watcher on the Linux build host starts the CEF build as soon as a new stable appears; when it finishes, the Mac starts an agent thread that adapts OpenArc, verifies it and publishes a Beta. The stable channel gets the release only after the owner checks the Beta and says OK.
+OpenArc follows stable Chromium as closely as the build allows. A watcher on the Linux build host starts the CEF build as soon as a new stable appears, and the Mac opens an agent thread for it right away. The agent resolves override conflicts while the host builds, fixes the pipeline when it fails, then adapts OpenArc, verifies it and publishes a Beta. The stable channel gets the release only after the owner checks the Beta and says OK.
 
 ```text
 Linux build host, every 30 min              Mac, every 5 min                     Agent thread
 check: newer stable?  ── yes ──> pipeline   mac-tick: push main's tools,         chromium-update skill:
-  (CEF builds index,             snapshot     read host status ── built ──>      merge overrides, rebuild,
-   CEF branch head)              fetch        start one thread per version       pull, build, test, smoke,
-                                 merge                                           Beta, Telegram, stop
-                                 prepare
+  (CEF builds index,             snapshot     read host status ── started ──>    resolve conflicts during the build,
+   CEF branch head)              fetch        start one thread per version,      fix failures, retry, rebuild,
+                                 merge        send it the milestones:            pull, build, test, smoke,
+                                 prepare        conflicts, failed, built         Beta, Telegram, stop
                                  build, package ── status.json
 ```
 
@@ -21,7 +21,7 @@ check: newer stable?  ── yes ──> pipeline   mac-tick: push main's tools,
 
 CEF beta branches are never built. `status` shows Chrome's own stable version for reference.
 
-Each version is attempted once. While an update waits for its agent (`hold`), the watcher starts nothing newer; it sends one message that a newer version is waiting. `done` releases the hold.
+Each version is attempted once; the agent starts it again with `retry` and `check`. While an update waits for its agent (`hold`: built, conflicts or failed), the watcher starts nothing newer and logs that a newer version waits. `done` or `retry` releases the hold.
 
 ## The pipeline on the host
 
@@ -44,13 +44,16 @@ The LaunchAgent runs `chromium_watch.py mac-tick` from the main checkout:
 
 1. When the host is idle, pushes `main`'s committed `script/cef_cross` and `Chromium/chromium_src` and the export's version to `~/cef-mac/openarc/main` on the host. The watcher and its timer run from that copy, so uncommitted work never reaches an automatic build. Manual `cef_remote_build.sh` steps keep using `openarc/tools` and `openarc/chromium_src`.
 2. Reads the host's status over ssh.
-3. For a `built` or `conflicts` result it has not seen, starts one T3 thread in this project, in a new worktree on `tech/chromium-<version>` from `main`, told to follow the `chromium-update` skill (`.claude/skills/chromium-update/SKILL.md`). Its state is `~/Library/Application Support/OpenArc-Automation/chromium-update.json`; a lock keeps two ticks from starting two threads.
+3. For an update it has no thread for (running, built, conflicts or failed), starts one T3 thread in this project, in a new worktree on `tech/chromium-<version>` from `main`, told to follow the `chromium-update` skill (`.claude/skills/chromium-update/SKILL.md`), and sends the owner the "started" message with its link.
+4. For an update that has a thread, sends it each milestone of the host's current run once, with `t3 thread send`: the conflicts the merge left, a failure (phase and error), the end of the build. A busy thread gets the message as its next turn; a finished one wakes up. A retried run reports its milestones again.
+
+Its state, with each update's thread and the milestones sent, is `~/Library/Application Support/OpenArc-Automation/chromium-update.json`; a lock keeps two ticks from starting two threads.
 
 Its log is `~/Library/Logs/OpenArc-Automation/chromium-update.log`.
 
 ## Messages
 
-Telegram messages go through the bot in `KODYA_BOT_TOKEN` to `KODYA_CHAT_ID`, read from the environment or `~/.env` on each machine and never printed: the build starts, a build fails (with the end of the log), the agent thread starts (with its link), a newer version waits behind an open update, and the agent's Beta message with the checks to do by hand. `OPENARC_AUTOMATION_NO_NOTIFY=1` turns them off.
+Telegram messages go through the bot in `KODYA_BOT_TOKEN` to `KODYA_CHAT_ID`, read from the environment or `~/.env` on each machine and never printed. An update sends at most three kinds: "started" with the agent thread's link (the Mac, when the thread starts), "finished" (the agent's Beta message with the checks to do by hand), and "blocked" (the agent, when only the owner can go on, or the Mac, when the thread fails to start three times). Failures and conflicts go to the agent thread, not to Telegram. `OPENARC_AUTOMATION_NO_NOTIFY=1` turns them off.
 
 ## Install
 

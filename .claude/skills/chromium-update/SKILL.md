@@ -1,11 +1,15 @@
 ---
 name: chromium-update
-description: Move OpenArc to a new CEF/Chromium release that the automation built on the Linux build host - merge the Chromium/chromium_src overrides, pull the export, fix API changes, verify, publish a Beta and report to the owner. Use when a thread says a new Chromium build is ready, or when asked to update Chromium or CEF.
+description: Move OpenArc to a new CEF/Chromium release that the automation builds on the Linux build host - resolve the Chromium/chromium_src overrides while it builds, fix pipeline and build failures, pull the export, fix API changes, verify, publish a Beta and report to the owner. Use when a thread says a Chromium update started or is ready, or when asked to update Chromium or CEF.
 ---
 
 # Chromium update
 
-The automation (`docs/chromium-updates.md`) found a new stable CEF, built it on the Linux build host and started this thread in a worktree on `tech/chromium-<version>`, based on `main`. Your job ends with a Beta release and a Telegram message to the owner. The stable channel waits for the owner's OK.
+The automation (`docs/chromium-updates.md`) found a new stable CEF, started its pipeline on the Linux build host and, as soon as it started, opened this thread in a worktree on `tech/chromium-<version>`, based on `main`. You own the update from there: resolve conflicts while the host builds, fix every pipeline or build failure, and finish with a Beta release and a Telegram message to the owner. The stable channel waits for the owner's OK.
+
+The Mac's `mac-tick` sends the pipeline's milestones to this thread as `[chromium-watch]` messages: the conflicts the merge left, a failure, the end of the build. Between them, wait in the turn on the host status (a background `until` loop on `script/chromium_watch.sh status`) instead of polling by hand; a message arrives even when your turn has ended.
+
+Telegram is for the owner's attention only: the Mac already sent "started" with this thread's link. Send `notify` once at the end (step 10) and otherwise only when you are blocked on something only the owner can do or decide.
 
 Read first: `docs/chromium-updates.md`, `docs/cef-build.md`, `docs/cef-smoke-test.md`, `docs/releasing.md`, `AGENTS.md`, and `LOCAL.md` in the main checkout when it exists (`$(git rev-parse --git-common-dir)/../LOCAL.md`); its rules apply to every file, commit and release text you write.
 
@@ -18,7 +22,8 @@ script/chromium_watch.sh status          # --json for every field
 script/chromium_watch.sh log             # end of the host log
 ```
 
-- `result: failed`: read the log (`LINES_SHOWN=200 script/chromium_watch.sh log`). Fix the cause in `script/cef_cross` (a cross-build fix in `crossfix.py`, a changed CEF flag), commit it, land it on `main` (step 9 says how), then `script/chromium_watch.sh retry` and stop: the next check builds again. Tell the owner what failed and what you changed (step 10's `notify`).
+- `result: running`: the pipeline still runs (`phase` says where). Once `phase` is past `merge`, `merge` and `conflicts` are filled: do step 2 now, while the host builds.
+- `result: failed`: read the log (`LINES_SHOWN=200 script/chromium_watch.sh log`; `failed_phase` and `error` in `--json`). Fix the cause in `script/cef_cross` (a network retry in `cef_cross.sh`, a cross-build fix in `crossfix.py`, a changed CEF flag); a compile error in an override is fixed in the override. Commit it on a branch of its own, land it on `main` (step 9 says how), push the tools with `script/chromium_watch.sh sync`, then `script/chromium_watch.sh retry` and `script/chromium_watch.sh check` to start the run again now, and keep going in this thread. A failed run holds newer versions until `retry` or `done`.
 - `result: built`: every override merged cleanly; go to step 2 and only review.
 - `result: conflicts`: the build used the upstream file for each path in `conflicts`, so those OpenArc changes are missing from it until you rebuild.
 
@@ -142,7 +147,7 @@ Release the watcher's hold so a newer version can start: `script/chromium_watch.
 script/chromium_watch.sh notify "<message>"
 ```
 
-Write the message in the owner's language from the thread's instructions. Include: the old and new CEF/Chromium versions, the release tag and that it is on Beta only, which overrides needed hand merges and what changed in them, the API fixes, the smoke test's WARN/SKIP lines, and what to check by hand:
+This is the "finished" message; the owner gets no other one from the update unless you are blocked. Write it in the owner's language from the thread's instructions. Include: the old and new CEF/Chromium versions, the release tag and that it is on Beta only, which overrides needed hand merges and what changed in them, the API fixes, the smoke test's WARN/SKIP lines, and what to check by hand:
 
 - passkeys sign in with Touch ID (only a Developer ID build has the keychain group);
 - a site's notification prompt, then macOS's own prompt, and a delivered notification;

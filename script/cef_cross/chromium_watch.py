@@ -15,7 +15,8 @@ On the Linux build host (a systemd user timer runs `check`):
 
 On the Mac (a LaunchAgent runs `mac-tick`):
   mac-tick  push main's build tools, overrides and the export's version to the
-            host, read its status and start one agent thread per finished build
+            host, read its status, start one agent thread per update as soon
+            as it starts and pass the pipeline's milestones to that thread
   sync      only the push part of mac-tick
 
 Both:
@@ -61,9 +62,11 @@ REMOTE_HOST = os.environ.get("OPENARC_CEF_REMOTE_HOST", "wsl")
 # Relative to the host's home directory unless absolute.
 REMOTE_ROOT = os.environ.get("OPENARC_CEF_REMOTE_ROOT", "cef-mac")
 # Results the pipeline leaves for an agent; the watcher holds further builds
-# until `done` releases them.
-AGENT_RESULTS = ("built", "conflicts")
-FINAL_RESULTS = AGENT_RESULTS + ("failed", "released", "abandoned")
+# until `done` or `retry` releases them.
+AGENT_RESULTS = ("built", "conflicts", "failed")
+FINAL_RESULTS = AGENT_RESULTS + ("released", "abandoned")
+# Results whose update still has an agent working on it.
+OPEN_RESULTS = ("running",) + AGENT_RESULTS
 
 
 # --- paths and small helpers -------------------------------------------------
@@ -398,15 +401,8 @@ def cmd_check(args) -> int:
         key = update_key(target)
         attempts = state.setdefault("attempts", {})
         if status.get("hold") and status.get("key") != key:
+            # The agent's thread reads this in `status`; no message of its own.
             log(f"{target['cef_version']} is newer, but {status.get('key')} waits for its agent (hold)")
-            if not args.dry_run and state.get("hold_notified") != key:
-                notify(
-                    f"OpenArc: CEF {target['cef_version']} is out, but the update to "
-                    f"{status.get('cef_version')} is still open ({status.get('result')}). It starts after "
-                    "`script/chromium_watch.sh done`."
-                )
-                state["hold_notified"] = key
-                write_json(state_dir() / "state.json", state)
             return 0
         if key in attempts and not args.force:
             log(f"{key} was already attempted ({attempts[key].get('result', 'started')}); `retry` builds it again")
@@ -678,11 +674,6 @@ def run_pipeline(work: Path, dry_run: bool) -> int:
         status["timings"][name] = round(time.time() - started)
         save()
 
-    if not dry_run:
-        notify(
-            f"OpenArc: CEF {target['cef_version']} (Chromium {target['chromium_tag']}) found via "
-            f"{target.get('source')}. Building on the Linux host, about 2 hours. Current: {baseline['cef_version']}."
-        )
     try:
         with phase("snapshot-base"):
             src, cef_repo = root / "chromium/src", root / "cef"
@@ -747,18 +738,16 @@ def run_pipeline(work: Path, dry_run: bool) -> int:
         if dry_run:
             log(f"dry run failed in {failed_phase}: {error}")
             return 1
-        save(result="failed", error=str(error)[-1500:], finished_at=now(), hold=False)
+        # The agent's thread fixes the cause and runs `retry`; until then no
+        # newer update starts over this one.
+        save(result="failed", error=str(error)[-1500:], failed_phase=failed_phase, finished_at=now(), hold=True)
         mark_attempt(status["key"], "failed")
-        tail = tail_log(status.get("log"), 15)
-        notify(
-            f"OpenArc: the CEF {target['cef_version']} update failed in {failed_phase} on the Linux host.\n"
-            f"Log: {status.get('log')}\n\n{tail}"
-        )
+        log(f"failed in {failed_phase}; the Mac passes it to the agent thread")
         return 1
     result = "conflicts" if status.get("conflicts") else "built"
     save(result=result, phase="waiting-for-agent", hold=True, finished_at=now())
     mark_attempt(status["key"], result)
-    log(f"done: {result}; the Mac starts an agent thread")
+    log(f"done: {result}; the Mac passes it to the agent thread")
     return 0
 
 
@@ -910,18 +899,21 @@ def sync_main(checkout: Path, dry_run: bool) -> bool:
 
 
 THREAD_PROMPT = """\
-A new Chromium build for OpenArc is ready on the Linux build host.
+OpenArc's Chromium update started on the Linux build host.
 
 - Update: CEF {base} -> {cef_version} (Chromium {chromium_tag}), found via {source}
-- Build result: {result}
-- Override conflicts: {conflicts}
+- Host now: phase {phase}, result {result}
+- Override conflicts so far: {conflicts}
 - Host log: {log}
 
-Follow the chromium-update skill (.claude/skills/chromium-update/SKILL.md) from
-start to finish: read `script/chromium_watch.sh status`, merge the overrides,
-pull and use the new export, fix API changes, verify, publish a Beta release
-and message the owner on Telegram. Never promote it to the stable channel
-without the owner's OK.
+You own this update from start to finish. Follow the chromium-update skill
+(.claude/skills/chromium-update/SKILL.md): resolve the override conflicts as
+soon as the merge phase lists them, while the host keeps building; fix every
+failure of the host pipeline (fetch, prepare, build) and of the app build;
+then verify, publish a Beta release and message the owner. The Mac sends the
+pipeline's milestones (merge done, build failed, build finished) to this
+thread. Message the owner on Telegram only when the Beta is out or when you
+are blocked. Never promote it to the stable channel without the owner's OK.
 """
 
 
@@ -933,6 +925,7 @@ def start_thread(checkout: Path, status: dict, dry_run: bool) -> dict | None:
         cef_version=version,
         chromium_tag=status.get("chromium_tag"),
         source=status.get("source"),
+        phase=status.get("phase"),
         result=status.get("result"),
         conflicts=", ".join(status.get("conflicts") or []) or "none",
         log=status.get("log"),
@@ -956,6 +949,47 @@ def start_thread(checkout: Path, status: dict, dry_run: bool) -> dict | None:
     return info
 
 
+def pipeline_events(status: dict) -> list[tuple[str, str]]:
+    """The milestones of the host's current run the agent acts on, as (id, message).
+    Ids carry the run's start, so a retried run reports again."""
+    run_id = status.get("started_at", "")
+    events = []
+    conflicts = status.get("conflicts") or []
+    if conflicts:
+        events.append((
+            f"{run_id} conflicts {','.join(sorted(conflicts))}",
+            "The host's merge left these overrides for you; resolve them now, the host keeps "
+            f"building with the upstream files: {', '.join(conflicts)}. "
+            "`script/chromium_watch.sh merged` brings the merged set here.",
+        ))
+    result = status.get("result")
+    if result == "failed":
+        events.append((
+            f"{run_id} failed",
+            f"The host pipeline failed in {status.get('failed_phase') or status.get('phase')}: "
+            f"{(status.get('error') or '').strip()[-300:]}\n"
+            "Read `LINES_SHOWN=200 script/chromium_watch.sh log`, fix the cause, land it on main, "
+            "`script/chromium_watch.sh sync`, `retry` and `check`.",
+        ))
+    elif result in ("built", "conflicts"):
+        events.append((
+            f"{run_id} {result}",
+            f"The host finished: {result}"
+            f"{' (conflicting overrides were built from upstream)' if result == 'conflicts' else ''}. "
+            "Continue with the skill: rebuild if you changed overrides, then pull, build, test, smoke, Beta.",
+        ))
+    return events
+
+
+def send_to_thread(thread_id: str, message: str, dry_run: bool) -> None:
+    t3 = os.environ.get("OPENARC_T3_BIN") or shutil.which("t3") or "t3"
+    cmd = [t3, "thread", "send", thread_id, "-"]
+    if dry_run:
+        log(f"dry run: would run {shlex.join(cmd)}: {message}")
+        return
+    run(cmd, input=f"[chromium-watch] {message}".encode(), timeout=120)
+
+
 def cmd_mac_tick(args) -> int:
     with locked("mac-tick") as ok:
         if not ok:
@@ -974,37 +1008,60 @@ def cmd_mac_tick(args) -> int:
                 sync_main(checkout, args.dry_run)
             except (RuntimeError, subprocess.TimeoutExpired) as error:
                 log(f"sync failed: {str(error)[:300]}")
-        if not status or status.get("result") not in AGENT_RESULTS or not status.get("hold"):
+        if not status or not status.get("key") or status.get("result") not in OPEN_RESULTS:
             if status:
                 log(f"host: {status.get('key') or 'no update'} {status.get('phase') or ''} {status.get('result') or ''}")
             return 0
         state = read_json(mac_state_file(), {})
         threads = state.setdefault("threads", {})
         key = status["key"]
-        if key in threads:
-            return 0
-        try:
-            info = start_thread(checkout, status, args.dry_run)
-        except (RuntimeError, subprocess.TimeoutExpired) as error:
-            failures = state.get("thread_failures", 0) + 1
-            state["thread_failures"] = failures
+        if key not in threads:
+            try:
+                info = start_thread(checkout, status, args.dry_run)
+            except (RuntimeError, subprocess.TimeoutExpired) as error:
+                failures = state.get("thread_failures", 0) + 1
+                state["thread_failures"] = failures
+                write_json(mac_state_file(), state)
+                log(f"t3 thread start failed ({failures}): {str(error)[:500]}")
+                if failures == 3:
+                    notify(
+                        f"OpenArc: the update to CEF {status.get('cef_version')} started, but its agent "
+                        f"thread failed to start 3 times: {str(error)[:300]}"
+                    )
+                return 1
+            if args.dry_run:
+                return 0
+            link = info.get("link") or info.get("threadId") or info.get("output", "")
+            # What the prompt already told the thread is not sent again.
+            sent = [event_id for event_id, _ in pipeline_events(status)]
+            threads[key] = {"started_at": now(), "thread": info, "sent": sent}
+            state["thread_failures"] = 0
             write_json(mac_state_file(), state)
-            log(f"t3 thread start failed ({failures}): {str(error)[:500]}")
-            if failures == 3:
-                notify(f"OpenArc: CEF {status.get('cef_version')} is built, but starting the agent thread failed 3 times: {str(error)[:300]}")
-            return 1
-        if args.dry_run:
+            notify(
+                f"OpenArc: started the update to CEF {status.get('cef_version')} "
+                f"(Chromium {status.get('chromium_tag')}) from {status.get('base', {}).get('cef_version')}. "
+                f"Agent thread: {link}"
+            )
+            log(f"started agent thread for {key}: {link}")
             return 0
-        link = info.get("link") or info.get("threadId") or info.get("output", "")
-        threads[key] = {"started_at": now(), "thread": info}
-        state["thread_failures"] = 0
-        write_json(mac_state_file(), state)
-        notify(
-            f"OpenArc: CEF {status.get('cef_version')} is built ({status.get('result')}"
-            f"{', conflicts: ' + ', '.join(status['conflicts']) if status.get('conflicts') else ''}). "
-            f"Agent thread: {link}"
-        )
-        log(f"started agent thread for {key}: {link}")
+        entry = threads[key]
+        thread_id = entry.get("thread", {}).get("threadId")
+        if not thread_id:
+            return 0
+        sent = entry.setdefault("sent", [])
+        for event_id, message in pipeline_events(status):
+            if event_id in sent:
+                continue
+            try:
+                send_to_thread(thread_id, message, args.dry_run)
+            except (RuntimeError, subprocess.TimeoutExpired) as error:
+                log(f"t3 thread send failed: {str(error)[:300]}")
+                return 1
+            if args.dry_run:
+                continue
+            sent.append(event_id)
+            write_json(mac_state_file(), state)
+            log(f"sent to {thread_id}: {event_id}")
         return 0
 
 
