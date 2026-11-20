@@ -1,5 +1,5 @@
 diff --git chrome/browser/extensions/api/chrome_extensions_api_client.cc chrome/browser/extensions/api/chrome_extensions_api_client.cc
-index e875b597230e0626c036797971fd06b3b6dc8061..567580698f9ce55f094ff1967ef6df14e21cd3a6 100644
+index 28532d6e0da81831cf9da5f4e9dd40ca3ed91208..1469887ffc201ec6262530dd4e8fdd084fc13bfd 100644
 --- chrome/browser/extensions/api/chrome_extensions_api_client.cc
 +++ chrome/browser/extensions/api/chrome_extensions_api_client.cc
 @@ -16,6 +16,7 @@
@@ -8,9 +8,9 @@ index e875b597230e0626c036797971fd06b3b6dc8061..567580698f9ce55f094ff1967ef6df14
  #include "build/chromeos_buildflags.h"
 +#include "cef/libcef/features/features.h"
  #include "chrome/browser/extensions/api/automation_internal/chrome_automation_internal_api_delegate.h"
+ #include "chrome/browser/extensions/api/cookies/chrome_cookies_api_delegate.h"
  #include "chrome/browser/extensions/api/declarative_content/chrome_content_rules_registry.h"
- #include "chrome/browser/extensions/api/declarative_content/default_content_predicate_evaluators.h"
-@@ -102,6 +103,10 @@
+@@ -103,6 +104,10 @@
  #include "chromeos/ash/components/settings/cros_settings.h"
  #endif
  
@@ -21,7 +21,7 @@ index e875b597230e0626c036797971fd06b3b6dc8061..567580698f9ce55f094ff1967ef6df14
  #if BUILDFLAG(ENABLE_PRINTING)
  #include "chrome/browser/printing/printing_init.h"
  #endif
-@@ -368,7 +373,11 @@ ChromeExtensionsAPIClient::CreateGuestViewManagerDelegate() const {
+@@ -373,7 +378,11 @@ ChromeExtensionsAPIClient::CreateGuestViewManagerDelegate() const {
  std::unique_ptr<MimeHandlerViewGuestDelegate>
  ChromeExtensionsAPIClient::CreateMimeHandlerViewGuestDelegate(
      MimeHandlerViewGuest* guest) const {
@@ -34,10 +34,10 @@ index e875b597230e0626c036797971fd06b3b6dc8061..567580698f9ce55f094ff1967ef6df14
  #endif
  
 diff --git chrome/browser/extensions/api/tabs/tabs_api.cc chrome/browser/extensions/api/tabs/tabs_api.cc
-index 439a86f1b0f71eeb7b5286794bc43c8075971317..ff7960b9b5158762294fbb05fd864585cf93ed92 100644
+index de78a212cda49cdaedb23674e30ceec3db56807f..bc0dc8a245bb586dcebf6a1e2f688292524965ae 100644
 --- chrome/browser/extensions/api/tabs/tabs_api.cc
 +++ chrome/browser/extensions/api/tabs/tabs_api.cc
-@@ -58,6 +58,7 @@
+@@ -56,6 +56,7 @@
  #include "components/zoom/zoom_controller.h"
  #include "content/public/browser/navigation_controller.h"
  #include "content/public/browser/navigation_entry.h"
@@ -45,7 +45,7 @@ index 439a86f1b0f71eeb7b5286794bc43c8075971317..ff7960b9b5158762294fbb05fd864585
  #include "content/public/browser/navigation_handle.h"
  #include "extensions/browser/api/constants.h"
  #include "extensions/browser/extension_user_activation_service.h"
-@@ -85,6 +86,10 @@
+@@ -80,6 +81,10 @@
  #include "chrome/browser/resource_coordinator/tab_lifecycle_unit_external.h"
  #endif
  
@@ -54,12 +54,12 @@ index 439a86f1b0f71eeb7b5286794bc43c8075971317..ff7960b9b5158762294fbb05fd864585
 +#endif
 +
  #if !BUILDFLAG(IS_ANDROID)
- #include "base/strings/stringprintf.h"
- #include "chrome/browser/platform_util.h"
-@@ -327,6 +332,84 @@ class ScopedPinBrowserAtFront {
- // Returns true if either |boolean| is disengaged, or if |boolean| and
- // |value| are equal. This function is used to check if a tab's parameters match
- // those of the browser.
+ #include "chrome/browser/ui/browser_commands.h"
+ #include "chrome/browser/ui/unload_controller.h"
+@@ -164,6 +169,34 @@ bool SetOpenerOfTab(Profile& profile,
+   return true;
+ }
+ 
 +#if BUILDFLAG(ENABLE_CEF)
 +// The Alloy window an API call acts on: the caller's own window when it runs in
 +// a reported tab, otherwise the last focused one, as a popup or service worker
@@ -86,142 +86,12 @@ index 439a86f1b0f71eeb7b5286794bc43c8075971317..ff7960b9b5158762294fbb05fd864585
 +  }
 +  return nullptr;
 +}
-+
-+// Same shape as WindowController::CreateWindowValueForExtension for a window
-+// the embedder owns. Returns nullopt when no reported tab belongs to it.
-+std::optional<base::DictValue> CreateAlloyWindowValue(
-+    Profile* profile,
-+    bool include_incognito,
-+    int window_id,
-+    bool populate_tabs,
-+    const Extension* extension,
-+    mojom::ContextType context_type) {
-+  base::ListValue tabs_value;
-+  content::WebContents* bounds_contents = nullptr;
-+  bool incognito = false;
-+  for (const auto& tab :
-+       cef::GetAlloyExtensionTabs(profile, include_incognito)) {
-+    if (tab.window_id != window_id) {
-+      continue;
-+    }
-+    if (!bounds_contents || tab.active) {
-+      bounds_contents = tab.contents;
-+    }
-+    incognito = tab.contents->GetBrowserContext()->IsOffTheRecord();
-+    if (populate_tabs) {
-+      tabs_value.Append(tabs_internal::CreateTabObjectHelper(
-+                            tab.contents, extension, context_type,
-+                            /*browser=*/nullptr, tab.index)
-+                            .ToValue());
-+    }
-+  }
-+  if (!bounds_contents) {
-+    return std::nullopt;
-+  }
-+
-+  base::DictValue value;
-+  value.Set("id", window_id);
-+  value.Set("focused", cef::IsAlloyWindowFocused(window_id));
-+  value.Set("incognito", incognito);
-+  value.Set("alwaysOnTop", false);
-+  value.Set("type", "normal");
-+  value.Set("state", "normal");
-+  const gfx::Rect bounds = bounds_contents->GetContainerBounds();
-+  value.Set("left", bounds.x());
-+  value.Set("top", bounds.y());
-+  value.Set("width", bounds.width());
-+  value.Set("height", bounds.height());
-+  if (populate_tabs) {
-+    value.Set("tabs", std::move(tabs_value));
-+  }
-+  return value;
-+}
 +#endif  // BUILDFLAG(ENABLE_CEF)
 +
- bool MatchesBool(const std::optional<bool>& boolean, bool value) {
-   return !boolean || *boolean == value;
- }
-@@ -895,6 +978,20 @@ ExtensionFunction::ResponseAction WindowsGetFunction::Run() {
-   if (!windows_util::GetControllerFromWindowID(this, params->window_id,
-                                                extractor.type_filters(),
-                                                &window_controller, &error)) {
-+#if BUILDFLAG(ENABLE_CEF)
-+    Profile* alloy_profile = Profile::FromBrowserContext(browser_context());
-+    const bool alloy_incognito = include_incognito_information();
-+    const int alloy_window_id =
-+        params->window_id == extension_misc::kCurrentWindowId
-+            ? CurrentAlloyWindowId(alloy_profile, alloy_incognito,
-+                                   GetSenderWebContents())
-+            : params->window_id;
-+    if (auto alloy_window = CreateAlloyWindowValue(
-+            alloy_profile, alloy_incognito, alloy_window_id,
-+            extractor.populate_tabs(), extension(), source_context_type())) {
-+      return RespondNow(WithArguments(std::move(*alloy_window)));
-+    }
-+#endif
-     return RespondNow(Error(std::move(error)));
-   }
- 
-@@ -918,6 +1015,17 @@ ExtensionFunction::ResponseAction WindowsGetCurrentFunction::Run() {
-   if (!windows_util::GetControllerFromWindowID(
-           this, extension_misc::kCurrentWindowId, extractor.type_filters(),
-           &window_controller, &error)) {
-+#if BUILDFLAG(ENABLE_CEF)
-+    Profile* alloy_profile = Profile::FromBrowserContext(browser_context());
-+    const bool alloy_incognito = include_incognito_information();
-+    if (auto alloy_window = CreateAlloyWindowValue(
-+            alloy_profile, alloy_incognito,
-+            CurrentAlloyWindowId(alloy_profile, alloy_incognito,
-+                                 GetSenderWebContents()),
-+            extractor.populate_tabs(), extension(), source_context_type())) {
-+      return RespondNow(WithArguments(std::move(*alloy_window)));
-+    }
-+#endif
-     return RespondNow(Error(std::move(error)));
-   }
- 
-@@ -949,6 +1057,16 @@ ExtensionFunction::ResponseAction WindowsGetLastFocusedFunction::Run() {
-         return true;  // Continue iterating.
-       });
-   if (!last_focused_browser) {
-+#if BUILDFLAG(ENABLE_CEF)
-+    Profile* alloy_profile = Profile::FromBrowserContext(browser_context());
-+    const bool alloy_incognito = include_incognito_information();
-+    if (auto alloy_window = CreateAlloyWindowValue(
-+            alloy_profile, alloy_incognito,
-+            cef::GetLastFocusedAlloyWindowId(alloy_profile, alloy_incognito),
-+            extractor.populate_tabs(), extension(), source_context_type())) {
-+      return RespondNow(WithArguments(std::move(*alloy_window)));
-+    }
-+#endif
-     return RespondNow(Error(tabs_constants::kNoLastFocusedWindowError));
-   }
- 
-@@ -983,6 +1101,23 @@ ExtensionFunction::ResponseAction WindowsGetAllFunction::Run() {
-         populate_tab_behavior, source_context_type()));
-   }
- 
-+#if BUILDFLAG(ENABLE_CEF)
-+  Profile* alloy_profile = Profile::FromBrowserContext(browser_context());
-+  const bool alloy_incognito = include_incognito_information();
-+  std::set<int> alloy_window_ids;
-+  for (const auto& tab :
-+       cef::GetAlloyExtensionTabs(alloy_profile, alloy_incognito)) {
-+    alloy_window_ids.insert(tab.window_id);
-+  }
-+  for (int alloy_window_id : alloy_window_ids) {
-+    if (auto alloy_window = CreateAlloyWindowValue(
-+            alloy_profile, alloy_incognito, alloy_window_id,
-+            extractor.populate_tabs(), extension(), source_context_type())) {
-+      window_list.Append(std::move(*alloy_window));
-+    }
-+  }
-+#endif
-+
-   return RespondNow(WithArguments(std::move(window_list)));
- }
- 
-@@ -1982,6 +2117,71 @@ base::ListValue TabsQueryFunction::BuildTabList(
+ // Returns true if either |boolean| is disengaged, or if |boolean| and
+ // |value| are equal. This function is used to check if a tab's parameters match
+ // those of the browser.
+@@ -654,6 +687,71 @@ base::ListValue TabsQueryFunction::BuildTabList(
                          .ToValue());
      }
    }
@@ -282,7 +152,7 @@ index 439a86f1b0f71eeb7b5286794bc43c8075971317..ff7960b9b5158762294fbb05fd864585
 +          continue;
 +        }
 +      }
-+      result.Append(tabs_internal::CreateTabObjectHelper(
++      result.Append(CreateTabObjectHelper(
 +                        contents, extension(), source_context_type(),
 +                        /*browser=*/nullptr, tab.index)
 +                        .ToValue());
@@ -293,7 +163,7 @@ index 439a86f1b0f71eeb7b5286794bc43c8075971317..ff7960b9b5158762294fbb05fd864585
    return result;
  }
  
-@@ -2233,6 +2433,40 @@ ExtensionFunction::ResponseAction TabsCreateFunction::Run() {
+@@ -907,6 +1005,40 @@ ExtensionFunction::ResponseAction TabsCreateFunction::Run() {
      }
    }
  
@@ -334,7 +204,7 @@ index 439a86f1b0f71eeb7b5286794bc43c8075971317..ff7960b9b5158762294fbb05fd864585
    // Try to find a suitable browser.
    // TODO(https://crbug.com/468223125): This is a wild set of tangle
    // conditions, most of which are inconsistent.
-@@ -2404,6 +2638,7 @@ ExtensionFunction::ResponseAction TabsCreateFunction::Run() {
+@@ -1087,6 +1219,7 @@ ExtensionFunction::ResponseAction TabsCreateFunction::Run() {
        std::move(create_params),
        base::BindOnce(&TabsCreateFunction::OnBrowserWindowCreated, this));
    return RespondLater();
@@ -342,38 +212,25 @@ index 439a86f1b0f71eeb7b5286794bc43c8075971317..ff7960b9b5158762294fbb05fd864585
  }
  
  void TabsCreateFunction::OnBrowserWindowCreated(
-@@ -2712,31 +2947,38 @@ ExtensionFunction::ResponseAction TabsUpdateFunction::Run() {
+@@ -1398,31 +1531,36 @@ ExtensionFunction::ResponseAction TabsUpdateFunction::Run() {
    }
  
-   // tabs_internal::GetTabById may return a null window for prerender tabs.
+   // GetTabById may return a null window for prerender tabs.
 -  if (!window || !ExtensionTabUtil::BrowserSupportsTabs(
 -                     window->GetBrowserWindowInterface())) {
 -    return RespondNow(Error(ExtensionTabUtil::kNoCurrentWindowError));
--  }
 +  TabListInterface* tab_list = nullptr;
 +  ::tabs::TabInterface* target_tab = nullptr;
 +  if (window && ExtensionTabUtil::BrowserSupportsTabs(
 +                    window->GetBrowserWindowInterface())) {
 +    tab_list = TabListInterface::From(window->GetBrowserWindowInterface());
 +    CHECK(tab_list);
- 
--  // Cache the original web contents.
--  content::WebContents* original_contents = contents;
 +    // Update the active (aka selected) tab.
 +    if (!UpdateActiveTab(*params, *window->profile(),
 +                         *window->GetBrowserWindowInterface(), *tab_list,
 +                         tab_index, error)) {
 +      return RespondNow(Error(std::move(error)));
 +    }
- 
--  // Update the active (aka selected) tab.
--  TabListInterface* tab_list =
--      TabListInterface::From(window->GetBrowserWindowInterface());
--  CHECK(tab_list);
--  if (!UpdateActiveTab(*params, *window->profile(),
--                       *window->GetBrowserWindowInterface(), *tab_list,
--                       tab_index, error)) {
--    return RespondNow(Error(std::move(error)));
 +    // Update the highlighted tab.
 +    target_tab = tab_list->GetTab(tab_index);
 +    CHECK(target_tab);
@@ -383,11 +240,16 @@ index 439a86f1b0f71eeb7b5286794bc43c8075971317..ff7960b9b5158762294fbb05fd864585
 +    }
    }
  
--  // Update the highlighted tab.
--  ::tabs::TabInterface* target_tab = tab_list->GetTab(tab_index);
--  CHECK(target_tab);
--  if (!UpdateHighlightedTab(*params, *window->profile(), *tab_list, *target_tab,
--                            error)) {
+-  // Cache the original web contents.
+-  content::WebContents* original_contents = contents;
+-
+-  // Update the active (aka selected) tab.
+-  TabListInterface* tab_list =
+-      TabListInterface::From(window->GetBrowserWindowInterface());
+-  CHECK(tab_list);
+-  if (!UpdateActiveTab(*params, *window->profile(),
+-                       *window->GetBrowserWindowInterface(), *tab_list,
+-                       tab_index, error)) {
 -    return RespondNow(Error(std::move(error)));
 +#if BUILDFLAG(ENABLE_CEF)
 +  if (!window && (params->update_properties.active.value_or(false) ||
@@ -395,13 +257,20 @@ index 439a86f1b0f71eeb7b5286794bc43c8075971317..ff7960b9b5158762294fbb05fd864585
 +    cef::ActivateAlloyExtensionTab(contents);
    }
 +#endif
-+
+ 
+-  // Update the highlighted tab.
+-  ::tabs::TabInterface* target_tab = tab_list->GetTab(tab_index);
+-  CHECK(target_tab);
+-  if (!UpdateHighlightedTab(*params, *window->profile(), *tab_list, *target_tab,
+-                            error)) {
+-    return RespondNow(Error(std::move(error)));
+-  }
 +  // Cache the original web contents.
 +  content::WebContents* original_contents = contents;
  
    if (params->update_properties.muted &&
        !SetTabAudioMuted(contents, *params->update_properties.muted,
-@@ -2745,7 +2987,9 @@ ExtensionFunction::ResponseAction TabsUpdateFunction::Run() {
+@@ -1431,7 +1569,9 @@ ExtensionFunction::ResponseAction TabsUpdateFunction::Run() {
          kCannotUpdateMuteCaptured, base::NumberToString(tab_id))));
    }
  
@@ -412,23 +281,17 @@ index 439a86f1b0f71eeb7b5286794bc43c8075971317..ff7960b9b5158762294fbb05fd864585
      int opener_id = *params->update_properties.opener_tab_id;
      content::WebContents* opener_contents = nullptr;
      if (opener_id == tab_id) {
-@@ -2760,8 +3004,13 @@ ExtensionFunction::ResponseAction TabsUpdateFunction::Run() {
- 
-     ::tabs::TabInterface* opener_tab =
-         ::tabs::TabInterface::GetFromContents(opener_contents);
--    CHECK(opener_tab);
+@@ -1449,7 +1589,8 @@ ExtensionFunction::ResponseAction TabsUpdateFunction::Run() {
+     if (!opener_tab) {
+       return RespondNow(Error(kTabOpenerMustBeInSameWindowError));
+     }
 -    if (!SetOpenerOfTab(*window->profile(), *target_tab, *opener_tab, error)) {
-+    if (!opener_tab) {
-+      return RespondNow(
-+          Error("Tab opener must be in the same window as the updated tab."));
-+    }
-+
 +    auto* profile = Profile::FromBrowserContext(browser_context());
 +    if (!SetOpenerOfTab(*profile, *target_tab, *opener_tab, error)) {
        return RespondNow(Error(std::move(error)));
      }
    }
-@@ -2769,14 +3018,19 @@ ExtensionFunction::ResponseAction TabsUpdateFunction::Run() {
+@@ -1457,14 +1598,19 @@ ExtensionFunction::ResponseAction TabsUpdateFunction::Run() {
    // TODO(https://crbug.com/505306735): Support on desktop android.
  #if !BUILDFLAG(IS_ANDROID)
    if (params->update_properties.auto_discardable) {
@@ -453,17 +316,17 @@ index 439a86f1b0f71eeb7b5286794bc43c8075971317..ff7960b9b5158762294fbb05fd864585
      bool pinned = *params->update_properties.pinned;
  
      if (target_tab->IsPinned() != pinned) {
-@@ -2806,7 +3060,8 @@ ExtensionFunction::ResponseAction TabsUpdateFunction::Run() {
+@@ -1494,7 +1640,8 @@ ExtensionFunction::ResponseAction TabsUpdateFunction::Run() {
    // Navigate the tab to a new location if the url is different.
    if (params->update_properties.url) {
      std::string updated_url = *params->update_properties.url;
--    if (window->profile()->IsIncognitoProfile() &&
+-    if (window->profile()->IsPrimaryOTRProfileWithRegularParent() &&
 +    auto* profile = Profile::FromBrowserContext(browser_context());
-+    if (profile->IsIncognitoProfile() &&
++    if (profile->IsPrimaryOTRProfileWithRegularParent() &&
          !IsURLAllowedInIncognito(GURL(updated_url))) {
        return RespondNow(Error(ErrorUtils::FormatErrorMessage(
            tabs_constants::kURLsNotAllowedInIncognitoError, updated_url)));
-@@ -2838,6 +3093,18 @@ bool TabsUpdateFunction::ComputeDefaultTabId(int& tab_id,
+@@ -1525,6 +1672,18 @@ bool TabsUpdateFunction::ComputeDefaultTabId(int& tab_id,
    const auto* window_controller =
        ChromeExtensionFunctionDetails(this).GetCurrentWindowController();
    if (!window_controller) {
@@ -482,7 +345,7 @@ index 439a86f1b0f71eeb7b5286794bc43c8075971317..ff7960b9b5158762294fbb05fd864585
      error = ExtensionTabUtil::kNoCurrentWindowError;
      return false;
    }
-@@ -3263,7 +3530,17 @@ ExtensionFunction::ResponseAction TabsReloadFunction::Run() {
+@@ -1959,7 +2118,17 @@ ExtensionFunction::ResponseAction TabsReloadFunction::Run() {
          return RespondNow(Error(tabs_constants::kNoSelectedTabError));
        }
      } else {
@@ -501,13 +364,13 @@ index 439a86f1b0f71eeb7b5286794bc43c8075971317..ff7960b9b5158762294fbb05fd864585
      }
    } else {
      int tab_id = *params->tab_id;
-@@ -3343,8 +3620,19 @@ bool TabsRemoveFunction::RemoveTab(int tab_id, std::string* error) {
+@@ -2044,8 +2213,19 @@ bool TabsRemoveFunction::RemoveTab(int tab_id, std::string* error) {
    content::WebContents* contents = nullptr;
-   if (!tabs_internal::GetTabById(tab_id, browser_context(),
-                                  include_incognito_information(), &window,
--                                 &contents, nullptr, error) ||
+   if (!tabs_util::GetTabById(tab_id, browser_context(),
+                              include_incognito_information(), &window,
+-                             &contents, nullptr, error) ||
 -      !window) {
-+                                 &contents, nullptr, error)) {
++                             &contents, nullptr, error)) {
 +    return false;
 +  }
 +
@@ -523,7 +386,7 @@ index 439a86f1b0f71eeb7b5286794bc43c8075971317..ff7960b9b5158762294fbb05fd864585
      return false;
    }
  
-@@ -3881,6 +4169,24 @@ content::WebContents* TabsCaptureVisibleTabFunction::GetWebContentsForID(
+@@ -2592,6 +2772,24 @@ content::WebContents* TabsCaptureVisibleTabFunction::GetWebContentsForID(
        ExtensionTabUtil::GetControllerFromWindowID(chrome_details_, window_id,
                                                    error);
    if (!window_controller) {
@@ -549,7 +412,7 @@ index 439a86f1b0f71eeb7b5286794bc43c8075971317..ff7960b9b5158762294fbb05fd864585
    }
  
 diff --git chrome/browser/extensions/extension_tab_util.cc chrome/browser/extensions/extension_tab_util.cc
-index dd919b9675f64712572b162ee15e23680edbbee2..f1fb4783a34576a503f702a767cc98d9282c31e6 100644
+index aeb80f6bc0ae2b70cfaafa2cf6bb1c470f6c72ec..c7b3ea20fa3ebe8c60e84dece4944f048dfad0b5 100644
 --- chrome/browser/extensions/extension_tab_util.cc
 +++ chrome/browser/extensions/extension_tab_util.cc
 @@ -73,6 +73,7 @@
@@ -612,37 +475,3 @@ index dd919b9675f64712572b162ee15e23680edbbee2..f1fb4783a34576a503f702a767cc98d9
    // Prerendering tab is not visible and it cannot be in `TabStripModel`, if the
    // tab id exists as a prerendering tab, and the API will returns
    // `api::tabs::TAB_INDEX_NONE` for `out_tab_index` and a valid `WebContents`.
-diff --git chrome/browser/ui/tab_helpers.h chrome/browser/ui/tab_helpers.h
-index c6e05eb620dd216529c32d6b3660fc44c8b47baf..99b20faea5b8b70d0720ccca1a6aaf92bb3637c5 100644
---- chrome/browser/ui/tab_helpers.h
-+++ chrome/browser/ui/tab_helpers.h
-@@ -6,6 +6,7 @@
- #define CHROME_BROWSER_UI_TAB_HELPERS_H_
- 
- #include "build/build_config.h"
-+#include "cef/libcef/features/features.h"
- 
- #if BUILDFLAG(IS_ANDROID)
- 
-@@ -41,6 +42,10 @@ namespace tabs {
- class TabModel;
- }  // namespace tabs
- 
-+#if BUILDFLAG(ENABLE_CEF)
-+class CefBrowserPlatformDelegateAlloy;
-+#endif
-+
- // A "tab contents" is a WebContents that is used as a tab in a browser window
- // (or the equivalent on Android). The TabHelpers class allows specific classes
- // to attach the set of tab helpers that is used for tab contents.
-@@ -79,6 +84,10 @@ class TabHelpers {
-   // Link Preview shows a preview of a page, then promote it as a new tab.
-   friend class PreviewTab;
- 
-+#if BUILDFLAG(ENABLE_CEF)
-+  friend class CefBrowserPlatformDelegateAlloy;
-+#endif
-+
-   // FYI: Do NOT add any more friends here. The functions above are the ONLY
-   // ones that need to call AttachTabHelpers; if you think you do, re-read the
-   // design document linked above, especially the section "Reusing tab helpers".

@@ -9,12 +9,15 @@
 
 #include "base/apple/owned_objc.h"
 #include "base/apple/scoped_nsautorelease_pool.h"
+#include "base/logging.h"
 #include "base/memory/ptr_util.h"
 #include "base/notimplemented.h"
 #include "base/threading/thread_restrictions.h"
 #include "cef/include/internal/cef_types_mac.h"
 #include "cef/libcef/browser/alloy/alloy_browser_host_impl.h"
+#include "cef/libcef/browser/browser_event_util.h"
 #include "cef/libcef/browser/context.h"
+#include "cef/libcef/browser/key_event_util.h"
 #include "cef/libcef/browser/native/javascript_dialog_runner_mac.h"
 #include "cef/libcef/browser/native/menu_runner_mac.h"
 #include "cef/libcef/browser/thread_util.h"
@@ -62,6 +65,7 @@
   NSWindow* __strong window_;
 }
 - (id)initWithWindow:(NSWindow*)window andBrowser:(CefBrowserHostBase*)browser;
+- (void)browserDestroyed;
 @end
 
 @implementation CefWindowDelegate
@@ -78,29 +82,48 @@
   [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
 
+- (void)browserDestroyed {
+  browser_ = nullptr;
+}
+
 - (BOOL)windowShouldClose:(id)window {
   if (browser_ && !browser_->TryCloseBrowser()) {
     // Cancel the close.
     return NO;
   }
 
-  // For an NSWindow object, the default is to be released on |close|. We
-  // instead want it to remain valid until all strong references are released
-  // via |cleanup:| and |BrowserDestroyed|.
-  ((NSWindow*)window).releasedWhenClosed = NO;
-
-  // Clean ourselves up after clearing the stack of anything that might have the
-  // window on it.
-  [self performSelectorOnMainThread:@selector(cleanup:)
-                         withObject:window
-                      waitUntilDone:NO];
-
   // Allow the close.
   return YES;
 }
 
+- (void)windowWillClose:(NSNotification*)notification {
+  // For an NSWindow object, the default is to be released on |close|. We
+  // instead want it to remain valid until all strong references are released
+  // via |cleanup:| and |BrowserDestroyed|.
+  window_.releasedWhenClosed = NO;
+
+  // Clean ourselves up after clearing the stack of anything that might have the
+  // window on it.
+  [self performSelectorOnMainThread:@selector(cleanup:)
+                         withObject:notification.object
+                      waitUntilDone:NO];
+}
+
 - (void)cleanup:(id)window {
   [window_ setDelegate:nil];
+  if (browser_) {
+    CefRefPtr<AlloyBrowserHostImpl> browser =
+        AlloyBrowserHostImpl::FromBaseChecked(browser_);
+    CefBrowserHostView* browser_view =
+        (CefBrowserHostView*)CAST_CEF_WINDOW_HANDLE_TO_NSVIEW(
+            browser->GetWindowHandle());
+    // AppKit or the embedder may retain the view after the window closes.
+    // Destroy the browser now instead of waiting for the view to deallocate,
+    // and prevent the view from notifying the destroyed browser again later.
+    browser_view.browser = nullptr;
+    browser_ = nullptr;
+    browser->WindowDestroyed();
+  }
   window_ = nil;
 }
 
@@ -120,30 +143,6 @@ NSTimeInterval currentEventTimestamp() {
     // and let the client provide it.
     return 0;
   }
-}
-
-NSUInteger NativeModifiers(int cef_modifiers) {
-  NSUInteger native_modifiers = 0;
-  if (cef_modifiers & EVENTFLAG_SHIFT_DOWN) {
-    native_modifiers |= NSEventModifierFlagShift;
-  }
-  if (cef_modifiers & EVENTFLAG_CONTROL_DOWN) {
-    native_modifiers |= NSEventModifierFlagControl;
-  }
-  if (cef_modifiers & EVENTFLAG_ALT_DOWN) {
-    native_modifiers |= NSEventModifierFlagOption;
-  }
-  if (cef_modifiers & EVENTFLAG_COMMAND_DOWN) {
-    native_modifiers |= NSEventModifierFlagCommand;
-  }
-  if (cef_modifiers & EVENTFLAG_CAPS_LOCK_ON) {
-    native_modifiers |= NSEventModifierFlagCapsLock;
-  }
-  if (cef_modifiers & EVENTFLAG_NUM_LOCK_ON) {
-    native_modifiers |= NSEventModifierFlagNumericPad;
-  }
-
-  return native_modifiers;
 }
 
 constexpr int kDefaultHeight = 750;
@@ -248,6 +247,7 @@ void CefBrowserPlatformDelegateNativeMac::BrowserDestroyed(
   if (host_window_created_) {
     // Release the references added in CreateHostWindow().
     browser->Release();
+    [window_delegate_ browserDestroyed];
     window_delegate_ = nil;
   }
 }
@@ -391,6 +391,22 @@ void CefBrowserPlatformDelegateNativeMac::SendMouseMoveEvent(
   view->RouteOrProcessMouseEvent(web_event);
 }
 
+void CefBrowserPlatformDelegateNativeMac::SendWheelEvent(
+    const CefWheelInputEvent& event) {
+  auto* view = GetHostView();
+  if (!view || view->destroy_pending()) {
+    return;
+  }
+  blink::WebMouseWheelEvent web_event;
+  if (!GetWebWheelInputEvent(event, web_event)) {
+    LOG(WARNING) << "SendWheelEvent: Invalid input event";
+    return;
+  }
+  // Preserve Chromium's phase synthesis and momentum handoff without
+  // reconstructing a native event or losing the portable snapshot fields.
+  view->RouteOrProcessWheelEvent(web_event);
+}
+
 void CefBrowserPlatformDelegateNativeMac::SendMouseWheelEvent(
     const CefMouseEvent& event,
     int deltaX,
@@ -402,12 +418,14 @@ void CefBrowserPlatformDelegateNativeMac::SendMouseWheelEvent(
 
   blink::WebMouseWheelEvent web_event =
       TranslateWebWheelEvent(event, deltaX, deltaY);
-  view->RouteOrProcessMouseEvent(web_event);
+  view->RouteOrProcessWheelEvent(web_event);
 }
 
-void CefBrowserPlatformDelegateNativeMac::SendTouchEvent(
-    const CefTouchEvent& event) {
-  NOTIMPLEMENTED();
+void CefBrowserPlatformDelegateNativeMac::SendWebTouchEvent(
+    const blink::WebTouchEvent& event) {
+  if (auto* view = GetHostView(); view && !view->destroy_pending()) {
+    view->RouteOrProcessTouchEvent(event);
+  }
 }
 
 void CefBrowserPlatformDelegateNativeMac::SetFocus(bool setFocus) {
@@ -482,66 +500,19 @@ bool CefBrowserPlatformDelegateNativeMac::IsPrintPreviewSupported() const {
 }
 
 input::NativeWebKeyboardEvent
+CefBrowserPlatformDelegateNativeMac::TranslateWebKeyboardInputEvent(
+    const blink::WebKeyboardEvent& event) const {
+  return CreateNativeKeyboardInputEvent(
+      event,
+      gfx::NativeView(CAST_CEF_WINDOW_HANDLE_TO_NSVIEW(GetHostWindowHandle())));
+}
+
+// DEPRECATED: Legacy SendKeyEvent conversion; use
+// TranslateWebKeyboardInputEvent for unified keyboard input.
+input::NativeWebKeyboardEvent
 CefBrowserPlatformDelegateNativeMac::TranslateWebKeyEvent(
     const CefKeyEvent& key_event) const {
-  input::NativeWebKeyboardEvent result(
-      blink::WebInputEvent::Type::kUndefined,
-      blink::WebInputEvent::Modifiers::kNoModifiers, ui::EventTimeForNow());
-
-  // Use a synthetic NSEvent in order to obtain the windowsKeyCode member from
-  // the NativeWebKeyboardEvent constructor. This is the only member which can
-  // not be easily translated (without hardcoding keyCodes)
-  // Determining whether a modifier key is left or right seems to be done
-  // through the key code as well.
-  NSEventType event_type;
-  if (key_event.character == 0 && key_event.unmodified_character == 0) {
-    // Check if both character and unmodified_characther are empty to determine
-    // if this was a NSEventTypeFlagsChanged event.
-    // A dead key will have an empty character, but a non-empty unmodified
-    // character
-    event_type = NSEventTypeFlagsChanged;
-  } else {
-    switch (key_event.type) {
-      case KEYEVENT_RAWKEYDOWN:
-      case KEYEVENT_KEYDOWN:
-      case KEYEVENT_CHAR:
-        event_type = NSEventTypeKeyDown;
-        break;
-      case KEYEVENT_KEYUP:
-        event_type = NSEventTypeKeyUp;
-        break;
-    }
-  }
-
-  NSString* charactersIgnoringModifiers =
-      [[NSString alloc] initWithCharacters:reinterpret_cast<const unichar*>(
-                                               &key_event.unmodified_character)
-                                    length:1];
-  NSString* characters = [[NSString alloc]
-      initWithCharacters:reinterpret_cast<const unichar*>(&key_event.character)
-                  length:1];
-
-  NSEvent* synthetic_event =
-      [NSEvent keyEventWithType:event_type
-                             location:NSMakePoint(0, 0)
-                        modifierFlags:NativeModifiers(key_event.modifiers)
-                            timestamp:currentEventTimestamp()
-                         windowNumber:0
-                              context:nil
-                           characters:characters
-          charactersIgnoringModifiers:charactersIgnoringModifiers
-                            isARepeat:NO
-                              keyCode:key_event.native_key_code];
-
-  result =
-      input::NativeWebKeyboardEvent(base::apple::OwnedNSEvent(synthetic_event));
-  if (key_event.type == KEYEVENT_CHAR) {
-    result.SetType(blink::WebInputEvent::Type::kChar);
-  }
-
-  result.is_system_key = key_event.is_system_key;
-
-  return result;
+  return GetLegacyWebKeyEvent(key_event, currentEventTimestamp());
 }
 
 blink::WebMouseEvent
@@ -554,20 +525,30 @@ CefBrowserPlatformDelegateNativeMac::TranslateWebClickEvent(
   TranslateWebMouseEvent(result, mouse_event);
 
   switch (type) {
-    case MBT_LEFT:
+    case CEF_MOUSE_BUTTON_LEFT:
       result.SetType(mouseUp ? blink::WebInputEvent::Type::kMouseUp
                              : blink::WebInputEvent::Type::kMouseDown);
       result.button = blink::WebMouseEvent::Button::kLeft;
       break;
-    case MBT_MIDDLE:
+    case CEF_MOUSE_BUTTON_MIDDLE:
       result.SetType(mouseUp ? blink::WebInputEvent::Type::kMouseUp
                              : blink::WebInputEvent::Type::kMouseDown);
       result.button = blink::WebMouseEvent::Button::kMiddle;
       break;
-    case MBT_RIGHT:
+    case CEF_MOUSE_BUTTON_RIGHT:
       result.SetType(mouseUp ? blink::WebInputEvent::Type::kMouseUp
                              : blink::WebInputEvent::Type::kMouseDown);
       result.button = blink::WebMouseEvent::Button::kRight;
+      break;
+    case CEF_MOUSE_BUTTON_BACK:
+      result.SetType(mouseUp ? blink::WebInputEvent::Type::kMouseUp
+                             : blink::WebInputEvent::Type::kMouseDown);
+      result.button = blink::WebMouseEvent::Button::kBack;
+      break;
+    case CEF_MOUSE_BUTTON_FORWARD:
+      result.SetType(mouseUp ? blink::WebInputEvent::Type::kMouseUp
+                             : blink::WebInputEvent::Type::kMouseDown);
+      result.button = blink::WebMouseEvent::Button::kForward;
       break;
     default:
       DCHECK(false);
@@ -586,12 +567,16 @@ blink::WebMouseEvent CefBrowserPlatformDelegateNativeMac::TranslateWebMoveEvent(
 
   if (!mouseLeave) {
     result.SetType(blink::WebInputEvent::Type::kMouseMove);
-    if (mouse_event.modifiers & EVENTFLAG_LEFT_MOUSE_BUTTON) {
+    if (mouse_event.modifiers & CEF_EVENTFLAG_LEFT_MOUSE_BUTTON) {
       result.button = blink::WebMouseEvent::Button::kLeft;
-    } else if (mouse_event.modifiers & EVENTFLAG_MIDDLE_MOUSE_BUTTON) {
+    } else if (mouse_event.modifiers & CEF_EVENTFLAG_MIDDLE_MOUSE_BUTTON) {
       result.button = blink::WebMouseEvent::Button::kMiddle;
-    } else if (mouse_event.modifiers & EVENTFLAG_RIGHT_MOUSE_BUTTON) {
+    } else if (mouse_event.modifiers & CEF_EVENTFLAG_RIGHT_MOUSE_BUTTON) {
       result.button = blink::WebMouseEvent::Button::kRight;
+    } else if (mouse_event.modifiers & CEF_EVENTFLAG_BACK_MOUSE_BUTTON) {
+      result.button = blink::WebMouseEvent::Button::kBack;
+    } else if (mouse_event.modifiers & CEF_EVENTFLAG_FORWARD_MOUSE_BUTTON) {
+      result.button = blink::WebMouseEvent::Button::kForward;
     } else {
       result.button = blink::WebMouseEvent::Button::kNoButton;
     }
@@ -622,12 +607,16 @@ CefBrowserPlatformDelegateNativeMac::TranslateWebWheelEvent(
   result.wheel_ticks_y = deltaY / scrollbarPixelsPerCocoaTick;
   result.delta_units = ui::ScrollGranularity::kScrollByPrecisePixel;
 
-  if (mouse_event.modifiers & EVENTFLAG_LEFT_MOUSE_BUTTON) {
+  if (mouse_event.modifiers & CEF_EVENTFLAG_LEFT_MOUSE_BUTTON) {
     result.button = blink::WebMouseEvent::Button::kLeft;
-  } else if (mouse_event.modifiers & EVENTFLAG_MIDDLE_MOUSE_BUTTON) {
+  } else if (mouse_event.modifiers & CEF_EVENTFLAG_MIDDLE_MOUSE_BUTTON) {
     result.button = blink::WebMouseEvent::Button::kMiddle;
-  } else if (mouse_event.modifiers & EVENTFLAG_RIGHT_MOUSE_BUTTON) {
+  } else if (mouse_event.modifiers & CEF_EVENTFLAG_RIGHT_MOUSE_BUTTON) {
     result.button = blink::WebMouseEvent::Button::kRight;
+  } else if (mouse_event.modifiers & CEF_EVENTFLAG_BACK_MOUSE_BUTTON) {
+    result.button = blink::WebMouseEvent::Button::kBack;
+  } else if (mouse_event.modifiers & CEF_EVENTFLAG_FORWARD_MOUSE_BUTTON) {
+    result.button = blink::WebMouseEvent::Button::kForward;
   } else {
     result.button = blink::WebMouseEvent::Button::kNoButton;
   }
