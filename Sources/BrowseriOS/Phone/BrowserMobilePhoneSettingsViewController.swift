@@ -373,7 +373,7 @@ final class BrowserMobilePhoneSettingsViewController: UITableViewController {
         func button(_ title: String, _ symbol: String, _ id: String, enabled: Bool, _ action: @escaping () -> Void)
             -> UIButton
         {
-            // Plain: a press dims the title and glyph while the capsule keeps its fill.
+            // A press dims the title and glyph while the capsule keeps its fill.
             var configuration = UIButton.Configuration.plain()
             configuration.title = title
             configuration.image = UIImage(
@@ -384,6 +384,9 @@ final class BrowserMobilePhoneSettingsViewController: UITableViewController {
             configuration.baseForegroundColor = .label
             configuration.cornerStyle = .capsule
             let button = UIButton(configuration: configuration, primaryAction: UIAction { _ in action() })
+            button.configurationUpdateHandler = { button in
+                button.configuration?.baseForegroundColor = button.isHighlighted ? .tertiaryLabel : .label
+            }
             button.isEnabled = enabled
             button.accessibilityIdentifier = id
             return button
