@@ -1414,9 +1414,10 @@ final class BrowserMobilePhoneViewController: UIViewController {
         self.switcher = switcher
         isAnimatingSwitcher = true
         setNeedsStatusBarAppearanceUpdate()
-        // The tabs' cards take the stack's place; hidden before the bar's
-        // crossfade pictures it.
-        bar.tabStack.alpha = 0
+        // The tabs' cards take the place of the stack's pictures, hidden
+        // before the bar's crossfade pictures it; a blank card fades with the bar.
+        let slots = stackSlots(around: currentID, in: entries.map(\.id))
+        hideStackCards(under: Set(slots.values))
         setBackdropDark(true)
 
         let chrome = [switcher.backdrop]
@@ -1428,7 +1429,6 @@ final class BrowserMobilePhoneViewController: UIViewController {
         switcher.subviews
             .filter { $0 is UIVisualEffectView || $0.backgroundColor != nil && !($0 is UIButton) }
             .forEach { $0.alpha = 0 }
-        let slots = stackSlots(around: currentID, in: entries.map(\.id))
         var flying = [(card: BrowserMobileTabSwitcherView.Card, slot: Int)]()
         for (index, entry) in entries.enumerated() {
             guard let card = switcher.card(for: entry.id) else { continue }
@@ -1472,6 +1472,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
             }
         } completion: { _ in
             switcher.restoreLiftedCards()
+            self.hideStackCards(under: [])
             self.removeSwitcherFlight()
             self.isAnimatingSwitcher = false
             self.refreshSwitcherEntries()
@@ -1513,8 +1514,6 @@ final class BrowserMobilePhoneViewController: UIViewController {
         let others = liftIntoStackFlight(switcher, keeping: id)
         UIView.animate(withDuration: 0.1) {
             self.bar.setShowsSwitcherControls(false)
-            // The cards flying in stand for it until they land.
-            self.bar.tabStack.alpha = 0
         }
         UIView.animate(springDuration: 0.26, bounce: 0, initialSpringVelocity: 0, delay: 0, options: []) {
             card.bounds.size = self.view.bounds.size
@@ -1522,7 +1521,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
             card.layoutIfNeeded()
             self.flyIntoStack(others)
         } completion: { _ in
-            self.finishSwitcher()
+            self.landInStack()
         }
         fadeHiddenStackCards(others)
     }
@@ -1550,12 +1549,11 @@ final class BrowserMobilePhoneViewController: UIViewController {
             card.layoutIfNeeded()
             self.flyIntoStack(others)
         } completion: { _ in
-            self.finishSwitcher()
+            self.landInStack()
         }
         fadeHiddenStackCards(others)
         UIView.animate(withDuration: 0.15) {
             self.bar.setShowsSwitcherControls(false)
-            self.bar.tabStack.alpha = 0
         }
     }
 
@@ -1600,11 +1598,14 @@ final class BrowserMobilePhoneViewController: UIViewController {
         switcherFlight = nil
     }
 
-    /// Lifts the cards other than `id`'s over the bar for their flight into the stack.
+    /// Lifts the cards other than `id`'s over the bar for their flight into
+    /// the stack, which shows the tabs it will have, but not where they land.
     private func liftIntoStackFlight(
         _ switcher: BrowserMobileTabSwitcherView, keeping id: String,
     ) -> [(card: BrowserMobileTabSwitcherView.Card, slot: Int)] {
         let slots = stackSlots(around: id, in: switcher.entries.map(\.id))
+        updateTabStack()
+        hideStackCards(under: Set(slots.values))
         let others = switcher.entries
             .compactMap { entry in
                 slots[entry.id].flatMap { slot in switcher.card(for: entry.id).map { (card: $0, slot: slot) } }
@@ -1612,6 +1613,24 @@ final class BrowserMobilePhoneViewController: UIViewController {
             .sorted { $0.slot > $1.slot }
         switcher.lift(others.map(\.card), into: makeSwitcherFlight())
         return others
+    }
+
+    /// Hides the stack's pictures that switcher cards stand in for.
+    private func hideStackCards(under slots: Set<Int>) {
+        bar.tabStack.front.alpha = slots.contains(0) ? 0 : 1
+        bar.tabStack.back.alpha = slots.contains(1) ? 0 : 1
+    }
+
+    /// The flown cards have landed: the stack shows its pictures under them,
+    /// and once it has drawn so, the switcher goes. A crossfade of the bar
+    /// starting then pictures the stack whole.
+    private func landInStack() {
+        hideStackCards(under: [])
+        let landing = switcher
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let landing, switcher === landing else { return }
+            finishSwitcher()
+        }
     }
 
     /// Call inside an animation: each card shrinks onto its card of the stack.
@@ -1642,6 +1661,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
         switcher?.removeFromSuperview()
         switcher = nil
         removeSwitcherFlight()
+        hideStackCards(under: [])
         isAnimatingSwitcher = false
         mode = .browsing
         bar.setShowsSwitcherControls(false)
