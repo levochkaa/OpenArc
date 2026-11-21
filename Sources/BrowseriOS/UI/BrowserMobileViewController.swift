@@ -234,6 +234,8 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
     /// icons, a line before Today, and the Spaces as icons along the bottom.
     let isPhoneSheet: Bool
 
+    private var renderedSideInsets: (CGFloat, CGFloat) = (0, 0)
+
     private let hoverScheduler: any BrowserMobileSidebarHoverScheduling
     private let suppliedTableView: UITableView?
     private var folderHoverCandidate: FolderHoverCandidate?
@@ -464,6 +466,12 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         super.viewSafeAreaInsetsDidChange()
         spaceDropTopConstraint?.constant = tableView.safeAreaInsets.top + 8
         spaceDropBottomConstraint?.constant = -tableView.safeAreaInsets.bottom - 8
+        let sides = (tableView.safeAreaInsets.left, tableView.safeAreaInsets.right)
+        if isPhoneSheet, sides != renderedSideInsets {
+            renderedSideInsets = sides
+            // The selected row's highlight keeps clear of the sides.
+            tableView.reconfigureRows(at: tableView.indexPathsForVisibleRows ?? [])
+        }
     }
 
     override func numberOfSections(in _: UITableView) -> Int { rows.count }
@@ -1585,7 +1593,11 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
                 if selectedTabID == id {
                     background.backgroundColor = UIColor(white: 1, alpha: 0.08)
                     background.cornerRadius = 12
-                    background.backgroundInsets = .init(top: 2, leading: 12, bottom: 2, trailing: 12)
+                    // Clear of a status column at the side (iPhone Duo), as the rows' text is.
+                    let safe = tableView.safeAreaInsets
+                    background.backgroundInsets = .init(
+                        top: 2, leading: 12 + safe.left, bottom: 2, trailing: 12 + safe.right,
+                    )
                 }
             }
         case .folder(let id, _):
