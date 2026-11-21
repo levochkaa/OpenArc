@@ -33,6 +33,31 @@ enum BrowserMobileAutoOpenKeyboardSetting {
     }
 }
 
+// MARK: - BrowserMobileAppLinksSetting
+
+/// Whether a tapped link to another site opens in the app that claims it
+/// (a universal link) instead of the tab.
+enum BrowserMobileAppLinksSetting {
+    private static let key = "BrowserMobileSettings.opensAppLinksInApps"
+
+    static func opensInApps(_ defaults: UserDefaults = .standard) -> Bool {
+        defaults.object(forKey: key) as? Bool ?? true
+    }
+
+    static func set(_ inApps: Bool, defaults: UserDefaults = .standard) {
+        defaults.set(inApps, forKey: key)
+    }
+
+    /// A tap on a web link that leaves the page's site; navigation within a
+    /// site, typed addresses and redirects stay in the tab.
+    static func mayOpenInApp(_ url: URL?, from page: URL?, isLinkTap: Bool, isMainFrame: Bool) -> Bool {
+        guard isLinkTap, isMainFrame, let url, url.scheme?.lowercased() == "https",
+              let host = url.host()?.lowercased() else { return false }
+        let pageHost = page?.host()?.lowercased()
+        return host != pageHost
+    }
+}
+
 /// Settings from the switcher's gear on iPhone and the sidebar's on iPad:
 /// Downloads and Archive, the blocker, the search engine and website data,
 /// then the account and the licenses.
@@ -81,6 +106,7 @@ final class BrowserMobilePhoneSettingsViewController: UITableViewController {
     private static let defaultBrowserRowID = "browser.settings.defaultBrowser"
     private static let archivalRowID = "browser.settings.archiveInactiveTabs"
     private static let exportRowID = "browser.settings.exportData"
+    private static let appLinksRowID = "browser.settings.appLinks"
     private static let menuButtonTag = 0x0A4C
 
     // MARK: Internal
@@ -163,6 +189,7 @@ final class BrowserMobilePhoneSettingsViewController: UITableViewController {
                     toggle: autoOpenSwitch(),
                 ) {},
             ] + archivalRows() + [
+                appLinksRow(),
                 .init(
                     title: String(localized: "Clear Website Data", table: "Mobile"),
                     symbol: "trash.fill",
@@ -332,6 +359,10 @@ final class BrowserMobilePhoneSettingsViewController: UITableViewController {
         }
     }
 
+    private static func appLinksTitle(inApps: Bool) -> String {
+        inApps ? String(localized: "Native App", table: "Mobile") : "OpenArc"
+    }
+
     /// Settings › Extensions; a store link closes Settings and opens in a new tab.
     func showExtensions(animated: Bool) {
         let controller = BrowserMobileExtensionsViewController()
@@ -383,13 +414,47 @@ final class BrowserMobilePhoneSettingsViewController: UITableViewController {
         })
     }
 
-    private func refreshArchival() {
-        guard let section = rows.firstIndex(where: { $0.contains { $0.id == Self.archivalRowID } }),
-              let row = rows[section].firstIndex(where: { $0.id == Self.archivalRowID }) else { return }
-        let value = Self.archivalTitle(archivalLifetime)
-        guard rows[section][row].value != value || !isViewLoaded else { return }
+    /// Where a tapped link to a site with its own app opens, picked in place.
+    private func appLinksRow() -> Row {
+        .init(
+            title: String(localized: "Open App Links in…", table: "Mobile"),
+            symbol: "arrow.up.forward.app.fill",
+            color: .systemBlue,
+            id: Self.appLinksRowID,
+            isEnabled: true,
+            value: Self.appLinksTitle(inApps: BrowserMobileAppLinksSetting.opensInApps(defaults)),
+            opensPage: false,
+            menu: { [weak self] in self?.appLinksMenu() ?? UIMenu(children: []) },
+        ) {}
+    }
+
+    private func appLinksMenu() -> UIMenu {
+        let current = BrowserMobileAppLinksSetting.opensInApps(defaults)
+        return UIMenu(children: [true, false].map { inApps in
+            UIAction(
+                title: Self.appLinksTitle(inApps: inApps),
+                identifier: .init("browser.settings.appLinks." + (inApps ? "app" : "browser")),
+                state: inApps == current ? .on : .off,
+            ) { [weak self] _ in
+                guard let self else { return }
+                BrowserMobileAppLinksSetting.set(inApps, defaults: defaults)
+                updateValue(Self.appLinksTitle(inApps: inApps), ofRow: Self.appLinksRowID)
+            }
+        })
+    }
+
+    private func updateValue(_ value: String, ofRow id: String) {
+        guard let section = rows.firstIndex(where: { $0.contains { $0.id == id } }),
+              let row = rows[section].firstIndex(where: { $0.id == id }),
+              rows[section][row].value != value else { return }
         rows[section][row].value = value
-        tableView.reloadRows(at: [IndexPath(row: row, section: section)], with: .none)
+        if isViewLoaded {
+            tableView.reloadRows(at: [IndexPath(row: row, section: section)], with: .none)
+        }
+    }
+
+    private func refreshArchival() {
+        updateValue(Self.archivalTitle(archivalLifetime), ofRow: Self.archivalRowID)
     }
 
     /// Downloads and Archive side by side above the list.

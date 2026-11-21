@@ -482,3 +482,21 @@ import UIKit
     ]) == "https://example.com/\nhttps://en.wikipedia.org/")
     #expect(BrowserMobilePhoneSettingsViewController.exportedURLs([tab("b", "about:blank")]) == nil)
 }
+
+@Test func mobileAppLinksOpenOnlyFromATapThatLeavesTheSite() throws {
+    let page = URL(string: "https://news.example/story")
+    let other = URL(string: "https://www.youtube.com/watch?v=1")
+    #expect(BrowserMobileAppLinksSetting.mayOpenInApp(other, from: page, isLinkTap: true, isMainFrame: true))
+    #expect(!BrowserMobileAppLinksSetting.mayOpenInApp(other, from: page, isLinkTap: false, isMainFrame: true))
+    #expect(!BrowserMobileAppLinksSetting.mayOpenInApp(other, from: page, isLinkTap: true, isMainFrame: false))
+    #expect(!BrowserMobileAppLinksSetting.mayOpenInApp(
+        URL(string: "https://news.example/next"), from: page, isLinkTap: true, isMainFrame: true,
+    ))
+    #expect(!BrowserMobileAppLinksSetting.mayOpenInApp(
+        URL(string: "http://plain.example/"), from: page, isLinkTap: true, isMainFrame: true,
+    ))
+    let defaults = try #require(UserDefaults(suiteName: "app-links-\(UUID())"))
+    #expect(BrowserMobileAppLinksSetting.opensInApps(defaults))
+    BrowserMobileAppLinksSetting.set(false, defaults: defaults)
+    #expect(!BrowserMobileAppLinksSetting.opensInApps(defaults))
+}

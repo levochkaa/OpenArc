@@ -1240,6 +1240,20 @@ extension BrowserWebKitEngine: WKNavigationDelegate {
             cancelJavaScriptDialog(runtimeID: record.id)
             cancelHTTPAuthentication(runtimeID: record.id)
         }
+        // A tapped link to another site opens in the app that claims it, if
+        // one does; the tab follows the link only when none does.
+        if !record.isPrivate, BrowserMobileAppLinksSetting.opensInApps(),
+           let url = navigationAction.request.url,
+           BrowserMobileAppLinksSetting.mayOpenInApp(
+               url, from: webView.url, isLinkTap: navigationAction.navigationType == .linkActivated,
+               isMainFrame: navigationAction.targetFrame?.isMainFrame != false,
+           )
+        {
+            UIApplication.shared.open(url, options: [.universalLinksOnly: true]) { opened in
+                decisionHandler(opened ? .cancel : .allow)
+            }
+            return
+        }
         decisionHandler(.allow)
     }
 
