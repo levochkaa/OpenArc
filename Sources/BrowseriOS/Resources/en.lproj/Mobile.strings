@@ -182,6 +182,11 @@
 "Open Source Licenses" = "Open Source Licenses";
 "Page Menu" = "Page Menu";
 "Search…" = "Search…";
+"Dictate" = "Dictate";
+"Stop Dictation" = "Stop Dictation";
+"Incognito" = "Incognito";
+"You’re browsing Incognito" = "You’re browsing Incognito";
+"%@, Incognito" = "%@, Incognito";
 "Settings" = "Settings";
 "Search Engine" = "Search Engine";
 "Clear Website Data" = "Clear Website Data";

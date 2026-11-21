@@ -478,7 +478,8 @@ final class BrowserMobilePhoneViewController: UIViewController {
     }
 
     private func requestIcons() {
-        for tab in workspace.switcherTabs {
+        // A private tab's site is not saved among the icons.
+        for tab in workspace.switcherTabs where !tab.isPrivate {
             // The shown page lists its own icons once it has loaded; other
             // tabs, which may have no page yet, get the site's /favicon.ico.
             let fromPage = tab.id == workspace.selectedTabID
@@ -800,6 +801,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
         let closingMode = mode
         mode = .browsing
         if closingMode == .search {
+            searchPanel.stopDictation()
             searchPanel.field.resignFirstResponder()
         }
         if let catcher = dismissCatcher {
@@ -1044,6 +1046,9 @@ final class BrowserMobilePhoneViewController: UIViewController {
         searchPanel.candidates = searchCandidates()
         searchPanel.onSubmit = { [weak self] text in self?.submitSearch(text) }
         searchPanel.onSelect = { [weak self] item in self?.selectSuggestion(item) }
+        // Editing a private tab's address stays private.
+        searchPanel.isIncognito = workspace.isIncognito || (replacesPage && workspace.selectedTab?.isPrivate == true)
+        searchPanel.onIncognitoChange = { [weak self] isOn in self?.workspace.isIncognito = isOn }
         searchPanel.prepare(text: text)
         let top = searchPanelTop(keyboardTop: keyboardTop ?? view.bounds.height * 0.655)
         guard let surface = makeSurface(
@@ -1125,7 +1130,8 @@ final class BrowserMobilePhoneViewController: UIViewController {
     }
 
     private func searchCandidates() -> [BrowserMobileSearchSuggestions.Candidate] {
-        var result = workspace.switcherTabs.reversed().map { tab in
+        // Private tabs are not suggested.
+        var result = workspace.switcherTabs.reversed().filter { !$0.isPrivate }.map { tab in
             BrowserMobileSearchSuggestions.Candidate(
                 tabID: tab.id, title: tab.userTitleOverride ?? tab.title, urlString: tab.urlString,
                 location: location(of: tab),
@@ -1153,10 +1159,15 @@ final class BrowserMobilePhoneViewController: UIViewController {
     }
 
     private func submitSearch(_ text: String) {
-        let replaces = searchReplacesPage
+        let isPrivate = searchPanel.isIncognito
+        // A page loads in the current tab only when that keeps it as private
+        // as the search asked; otherwise it gets a tab of its own.
+        let replaces = searchReplacesPage && workspace.selectedTab?.isPrivate == isPrivate
         closePanel()
         if replaces {
             workspace.submit(text)
+        } else if isPrivate {
+            workspace.submitInNewPrivateTab(text)
         } else {
             workspace.submitInNewTab(text)
         }
@@ -1191,7 +1202,9 @@ final class BrowserMobilePhoneViewController: UIViewController {
 
     private func switcherEntries() -> [BrowserMobileTabSwitcherView.Entry] {
         workspace.switcherTabs.map {
-            .init(id: $0.id, title: $0.userTitleOverride ?? $0.title, urlString: $0.urlString)
+            .init(
+                id: $0.id, title: $0.userTitleOverride ?? $0.title, urlString: $0.urlString, isPrivate: $0.isPrivate,
+            )
         }
     }
 

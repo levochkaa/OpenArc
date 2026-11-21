@@ -15,6 +15,9 @@ struct BrowserMobileTab: Identifiable, Equatable {
     var placement = BrowserTabPlacement.temporary
     var pinnedFolderID: String?
     var userTitleOverride: String?
+    /// A private tab lives only in this window's memory: it is never saved,
+    /// synced or archived, and its page keeps website data in memory only.
+    var isPrivate = false
 }
 
 // MARK: - BrowserMobileWorkspace
@@ -33,7 +36,8 @@ struct BrowserMobileTab: Identifiable, Equatable {
             guard let selectedTabID, recentTabIDs.first != selectedTabID else { return }
             recentTabIDs.removeAll { $0 == selectedTabID }
             recentTabIDs.insert(selectedTabID, at: 0)
-            scenePreferences?.set(recentTabIDs, forKey: selectionKey + ".recent")
+            let privateIDs = Set(tabs.filter(\.isPrivate).map(\.id))
+            scenePreferences?.set(recentTabIDs.filter { !privateIDs.contains($0) }, forKey: selectionKey + ".recent")
         }
     }
 
@@ -50,6 +54,8 @@ struct BrowserMobileTab: Identifiable, Equatable {
     /// Counts links that other apps opened here, so the UI shows each page
     /// instead of the search it opens on launch.
     private(set) var openedLinkCount = 0
+    /// Search opens pages in private tabs. It lasts while the window is open.
+    var isIncognito = false
 
     private let engine: any BrowserMobileEngine
     private let store: (any BrowserMobileSessionStoring)?
@@ -209,6 +215,12 @@ struct BrowserMobileTab: Identifiable, Equatable {
     /// background, the current tab stays selected.
     func openLinkInNewTab(_ url: URL, inBackground: Bool) {
         guard canEdit, let url = BrowserMobileSession.allowedURL(url.absoluteString) else { return }
+        // A link from a private page stays private.
+        if selectedTab?.isPrivate == true {
+            insertPrivateTab(url: url, selects: !inBackground)
+            notify()
+            return
+        }
         guard inBackground else {
             insertNewTab(url: url)
             notify()
@@ -352,7 +364,7 @@ struct BrowserMobileTab: Identifiable, Equatable {
             return
         }
         openedLinkCount += 1
-        if let tab = selectedTab, tab.urlString == "about:blank", tab.state.error == nil {
+        if let tab = selectedTab, !tab.isPrivate, tab.urlString == "about:blank", tab.state.error == nil {
             submit(url.absoluteString)
             return
         }
@@ -379,11 +391,26 @@ struct BrowserMobileTab: Identifiable, Equatable {
             return
         }
         navigationError = nil
-        if let tab = selectedTab, tab.urlString == "about:blank", tab.state.error == nil {
+        if let tab = selectedTab, !tab.isPrivate, tab.urlString == "about:blank", tab.state.error == nil {
             submit(input)
             return
         }
         insertNewTab(url: url)
+        notify()
+    }
+
+    /// Opens what the user typed in a new private tab.
+    func submitInNewPrivateTab(_ input: String) {
+        guard canEdit else { return }
+        guard let resolution = navigationResolver.resolve(input),
+              let url = BrowserMobileSession.allowedURL(resolution.resolvedURLString)
+        else {
+            navigationError = "This address cannot be opened in this browser. Use an HTTP or HTTPS address."
+            notify()
+            return
+        }
+        navigationError = nil
+        insertPrivateTab(url: url, selects: true)
         notify()
     }
 
@@ -424,6 +451,18 @@ struct BrowserMobileTab: Identifiable, Equatable {
             return
         }
         navigationError = nil
+        if let index = tabs.firstIndex(where: { $0.id == selectedTabID }), tabs[index].isPrivate {
+            if tabs[index].urlString != url.absoluteString {
+                tabs[index].title = ""
+                tabs[index].state.title = ""
+            }
+            tabs[index].urlString = url.absoluteString
+            tabs[index].state.url = url
+            tabs[index].state.error = nil
+            engine.navigate(id: tabs[index].runtimeID, url: url)
+            notify()
+            return
+        }
         if let profileDocument {
             guard let tab = selectedTab else {
                 insertNewTab(url: url)
@@ -495,6 +534,12 @@ struct BrowserMobileTab: Identifiable, Equatable {
             if selectedTabID != previousID {
                 recordSelectionActivity(previousID: previousID)
             }
+        }
+        if tab.isPrivate {
+            // Closing discards it: nothing is archived or saved.
+            removePrivateTab(tab)
+            engine.closeTab(id: tab.runtimeID)
+            return
         }
         if let profileDocument {
             if tab.placement == .temporary {
@@ -724,6 +769,7 @@ struct BrowserMobileTab: Identifiable, Equatable {
         applyingDocument = true
         defer { applyingDocument = false }
         let previous = Dictionary(uniqueKeysWithValues: tabs.map { ($0.id, $0) })
+        let privateTabs = tabs.filter(\.isPrivate)
         let oldSelectionIndex = visibleTabs.firstIndex { $0.id == selectedTabID } ?? 0
         tabs = snapshot.tabs.compactMap { record in
             guard let id = record.id else { return nil }
@@ -751,6 +797,8 @@ struct BrowserMobileTab: Identifiable, Equatable {
             }
             return tab
         }
+        // Private tabs are not in the document; they stay as they are.
+        tabs += privateTabs
         let surviving = Set(tabs.map(\.id))
         unloadedPersistentIDs.formIntersection(surviving)
         for tab in previous.values where !surviving.contains(tab.id) {
@@ -804,7 +852,9 @@ struct BrowserMobileTab: Identifiable, Equatable {
 
     private func saveSceneSelection() {
         scenePreferences?.set(selectedSpaceID, forKey: selectionKey + ".space")
-        scenePreferences?.set(selectedTabID, forKey: selectionKey + ".tab")
+        if selectedTab?.isPrivate != true {
+            scenePreferences?.set(selectedTabID, forKey: selectionKey + ".tab")
+        }
         updateSelectionLease()
     }
 
@@ -904,6 +954,58 @@ struct BrowserMobileTab: Identifiable, Equatable {
         }
     }
 
+    private func insertPrivateTab(url: URL, selects: Bool) {
+        let runtimeID = UUID().uuidString
+        appendPrivateTab(runtimeID: runtimeID, url: url, selects: selects)
+        engine.createPrivateTab(id: runtimeID, url: url)
+        if selects, selectedTab?.runtimeID == runtimeID {
+            engine.selectTab(id: runtimeID)
+        }
+    }
+
+    /// Adds a private tab to this window only; the profile document and the
+    /// saved session never hear of it.
+    private func appendPrivateTab(runtimeID: String, url: URL, selects: Bool) {
+        let tab = BrowserMobileTab(
+            id: UUID().uuidString,
+            runtimeID: runtimeID,
+            urlString: url.absoluteString,
+            title: "",
+            state: BrowserMobilePageState(url: url),
+            spaceID: profileDocument == nil ? nil : selectedSpaceID,
+            isPrivate: true,
+        )
+        tabs.append(tab)
+        registeredRuntimeIDs.insert(runtimeID)
+        guard selects else { return }
+        let previousID = selectedTabID
+        selectedTabID = tab.id
+        cancelJavaScriptDialogIfSelectionChanged()
+        recordSelectionActivity(previousID: previousID)
+    }
+
+    private func removePrivateTab(_ tab: BrowserMobileTab) {
+        guard let index = tabs.firstIndex(where: { $0.id == tab.id }) else { return }
+        tabs.remove(at: index)
+        registeredRuntimeIDs.remove(tab.runtimeID)
+        recentTabIDs.removeAll { $0 == tab.id }
+        if selectedTabID == tab.id {
+            let candidates = profileDocument == nil
+                ? tabs
+                : visibleTabs.filter { !unloadedPersistentIDs.contains($0.id) }
+            let recent = recentTabIDs.first { id in candidates.contains { $0.id == id } }
+            selectedTabID = recent ?? candidates.last?.id
+        }
+        cancelJavaScriptDialogIfSelectionChanged()
+        if profileDocument == nil, tabs.isEmpty, canEdit {
+            insertNewTab(url: Self.blankURL)
+        } else {
+            enqueueCurrentSession()
+            selectCurrentRuntime()
+        }
+        notify()
+    }
+
     private func adoptPopup(runtimeID: String, url: URL?) {
         guard !tabs.contains(where: { $0.runtimeID == runtimeID }) else { return }
         guard canEdit else { engine.closeTab(id: runtimeID)
@@ -912,6 +1014,12 @@ struct BrowserMobileTab: Identifiable, Equatable {
         guard let url = BrowserMobileSession.allowedURL((url ?? Self.blankURL).absoluteString) else {
             navigationError = "This popup address cannot be opened in this browser."
             engine.closeTab(id: runtimeID)
+            notify()
+            return
+        }
+        if engine.isPrivateTab(id: runtimeID) {
+            appendPrivateTab(runtimeID: runtimeID, url: url, selects: true)
+            engine.selectTab(id: runtimeID)
             notify()
             return
         }
@@ -961,7 +1069,7 @@ struct BrowserMobileTab: Identifiable, Equatable {
             if !state.title.isEmpty {
                 tabs[index].title = state.title
             }
-            if previousURL != tabs[index].urlString || previousTitle != tabs[index].title {
+            if !tabs[index].isPrivate, previousURL != tabs[index].urlString || previousTitle != tabs[index].title {
                 if let profileDocument {
                     if !applyingDocument, previousURL != tabs[index].urlString {
                         profileDocument.updateURL(tabID: tabs[index].id, urlString: tabs[index].urlString)
@@ -972,7 +1080,9 @@ struct BrowserMobileTab: Identifiable, Equatable {
             }
             notify()
         case .closed(let runtimeID):
-            if let profileDocument {
+            if let tab = tabs.first(where: { $0.runtimeID == runtimeID && $0.isPrivate }) {
+                removePrivateTab(tab)
+            } else if let profileDocument {
                 guard registeredRuntimeIDs.remove(runtimeID) != nil,
                       let tab = tabs.first(where: { $0.runtimeID == runtimeID }) else { return }
                 if tab.placement == .temporary {
@@ -1063,9 +1173,14 @@ struct BrowserMobileTab: Identifiable, Equatable {
     }
 
     private func snapshot() -> BrowserMobileSession {
-        BrowserMobileSession(
-            tabs: tabs.map { .init(id: $0.id, urlString: $0.urlString, title: $0.title) },
-            selectedTabID: selectedTabID,
+        let saved = tabs.filter { !$0.isPrivate }
+        let savedIDs = Set(saved.map(\.id))
+        // While a private tab shows, the saved selection is the saved tab shown last.
+        let selected = selectedTabID.flatMap { savedIDs.contains($0) ? $0 : nil }
+            ?? recentTabIDs.first { savedIDs.contains($0) } ?? saved.last?.id
+        return BrowserMobileSession(
+            tabs: saved.map { .init(id: $0.id, urlString: $0.urlString, title: $0.title) },
+            selectedTabID: selected,
         )
     }
 
@@ -1073,7 +1188,7 @@ struct BrowserMobileTab: Identifiable, Equatable {
         guard hasRestored, !isRestoring else { return }
         if let profileDocument {
             saveSceneSelection()
-            if !applyingDocument, let tab = selectedTab {
+            if !applyingDocument, let tab = selectedTab, !tab.isPrivate {
                 profileDocument.updateURL(tabID: tab.id, urlString: tab.urlString)
             }
             return

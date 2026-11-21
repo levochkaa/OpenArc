@@ -63,6 +63,12 @@ enum BrowserMobileEngineEvent {
     var onPopupCreated: ((String, URL?) -> Void)? { get set }
     func setDownloads(_ downloads: BrowserMobileDownloads?)
     func createTab(id: String, url: URL)
+    /// Creates a private tab: its page keeps cookies and other website data
+    /// only in memory, in one store shared by this engine's private tabs.
+    func createPrivateTab(id: String, url: URL)
+    /// Whether the tab's page keeps its website data only in memory. A popup
+    /// is private when the page that opened it is.
+    func isPrivateTab(id: String) -> Bool
     func selectTab(id: String?)
     func navigate(id: String, url: URL)
     func goBack(id: String)
@@ -106,6 +112,8 @@ enum BrowserMobileEngineEvent {
 }
 
 extension BrowserMobileEngine {
+    func createPrivateTab(id: String, url: URL) { createTab(id: id, url: url) }
+    func isPrivateTab(id _: String) -> Bool { false }
     func setDownloads(_: BrowserMobileDownloads?) {}
     func resolveHTTPAuthentication(id _: UUID, response _: BrowserMobileHTTPAuthenticationResponse) {}
     func canFindInPage(id _: String) -> Bool { false }

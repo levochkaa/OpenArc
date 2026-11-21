@@ -15,6 +15,8 @@ final class BrowserMobileTabSwitcherView: UIView, UIScrollViewDelegate, UIGestur
         let id: String
         let title: String
         let urlString: String
+        /// A private tab, which shows eyes before its title.
+        var isPrivate = false
     }
 
     /// Room between neighbors to the right of the focused card, as a share of the width.
@@ -379,6 +381,9 @@ extension BrowserMobileTabSwitcherView {
         private let placeholderIcon = UIImageView()
         private let header = UIView()
         private let icon = UIImageView()
+        private let privateGlyph = UIImageView(image: UIImage(
+            systemName: "eyes.inverse", withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .medium),
+        ))
         private let titleLabel = UILabel()
         private var entry: Entry?
 
@@ -404,7 +409,11 @@ extension BrowserMobileTabSwitcherView {
             icon.clipsToBounds = true
             titleLabel.font = .systemFont(ofSize: 15, weight: .medium)
             titleLabel.textColor = .white
+            privateGlyph.tintColor = UIColor(white: 1, alpha: 0.75)
+            privateGlyph.contentMode = .center
+            privateGlyph.isHidden = true
             header.addSubview(icon)
+            header.addSubview(privateGlyph)
             header.addSubview(titleLabel)
             addSubview(header)
             isAccessibilityElement = true
@@ -422,12 +431,15 @@ extension BrowserMobileTabSwitcherView {
             layoutPicture()
             header.frame = CGRect(x: Self.headerInset, y: -29, width: bounds.width - Self.headerInset, height: 20)
             icon.frame = CGRect(x: 0, y: 0, width: 20, height: 20)
-            var titleWidth = header.bounds.width - 26 - 10
+            // A private tab's eyes sit between the icon and the title.
+            let titleX: CGFloat = privateGlyph.isHidden ? 26 : 26 + 24
+            privateGlyph.frame = CGRect(x: 26, y: 0, width: 20, height: 20)
+            var titleWidth = header.bounds.width - titleX - 10
             if let titleRoom {
                 // 4 points short of the next card's icon.
-                titleWidth = min(titleWidth, titleRoom - 26 - 4)
+                titleWidth = min(titleWidth, titleRoom - titleX - 4)
             }
-            titleLabel.frame = CGRect(x: 26, y: -2, width: max(titleWidth, 0), height: 24)
+            titleLabel.frame = CGRect(x: titleX, y: -2, width: max(titleWidth, 0), height: 24)
             placeholderIcon.frame = CGRect(x: bounds.midX - 24, y: bounds.height * 0.32, width: 48, height: 48)
         }
 
@@ -437,8 +449,12 @@ extension BrowserMobileTabSwitcherView {
                 ? BrowserMobileFavicons.host(forPage: entry.urlString) ?? String(localized: "New Tab", table: "Mobile")
                 : entry.title
             titleLabel.text = title
-            accessibilityLabel = title
+            privateGlyph.isHidden = !entry.isPrivate
+            accessibilityLabel = entry.isPrivate
+                ? String(localized: "\(title), Incognito", table: "Mobile")
+                : title
             accessibilityIdentifier = "browser.tabCard." + entry.id
+            setNeedsLayout()
             reloadIcon()
         }
 

@@ -46,11 +46,13 @@ import UIKit
         return image
     }
 
-    func store(_ image: UIImage, for tabID: String) {
+    /// Keeps the picture; `persist` also writes it to Caches, which a
+    /// private tab's picture never is.
+    func store(_ image: UIImage, for tabID: String, persist: Bool = true) {
         missing.remove(tabID)
         cache.setObject(image, forKey: tabID as NSString, cost: Self.cost(image))
         NotificationCenter.default.post(name: Self.didChange, object: self, userInfo: ["tabID": tabID])
-        guard let directory, let url = fileURL(tabID) else { return }
+        guard persist, let directory, let url = fileURL(tabID) else { return }
         Task.detached(priority: .utility) {
             guard let data = image.jpegData(compressionQuality: 0.7) else { return }
             try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -66,9 +68,10 @@ import UIKit
 
     /// Captures the tab's page as it draws now.
     func capture(_ tabID: String, workspace: BrowserMobileWorkspace, width: CGFloat) {
+        let persist = workspace.tabs.first { $0.id == tabID }?.isPrivate != true
         workspace.snapshot(tabID: tabID, width: width) { [weak self] image in
             guard let image else { return }
-            self?.store(image, for: tabID)
+            self?.store(image, for: tabID, persist: persist)
         }
     }
 

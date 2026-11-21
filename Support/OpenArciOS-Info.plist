@@ -45,7 +45,9 @@
   <key>NSLocationWhenInUseUsageDescription</key>
   <string>Websites you allow can know your location.</string>
   <key>NSMicrophoneUsageDescription</key>
-  <string>Websites you allow can use your microphone.</string>
+  <string>Dictation in search, and websites you allow, can use your microphone.</string>
+  <key>NSSpeechRecognitionUsageDescription</key>
+  <string>Dictation in search turns what you say into text.</string>
   <key>NSPhotoLibraryAddUsageDescription</key>
   <string>Images you save from websites go to your photo library.</string>
   <key>NSAppTransportSecurity</key>

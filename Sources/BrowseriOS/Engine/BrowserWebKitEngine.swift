@@ -81,6 +81,8 @@ import WebKit
         // MARK: Internal
 
         let id: String
+        /// The page keeps its website data in the engine's private store.
+        let isPrivate: Bool
         var webView: WKWebView?
         var state: BrowserMobilePageState
         var lastEmitted: BrowserMobilePageState?
@@ -105,8 +107,9 @@ import WebKit
         // WKFrameInfo, which can already report a fragment target before policy.
         var dialogDocumentURL: URL?
 
-        init(id: String, url: URL?) {
+        init(id: String, url: URL?, isPrivate: Bool = false) {
             self.id = id
+            self.isPrivate = isPrivate
             self.state = BrowserMobilePageState(url: url)
             self.retryLoad = .url(url ?? URL(string: "about:blank")!)
         }
@@ -144,6 +147,8 @@ import WebKit
     private(set) var extensionWindow: BrowserWebKitExtensionWindow?
 
     private let dataStore: WKWebsiteDataStore
+    /// The in-memory store all private tabs share; it goes with the last of them.
+    private var privateDataStore: WKWebsiteDataStore?
     private var records = [String: Record]()
     private var idsByWebView = [ObjectIdentifier: String]()
     private weak var mountedWebView: WKWebView?
@@ -277,13 +282,22 @@ import WebKit
     }
 
     func createTab(id: String, url: URL) {
-        guard !isShutDown, records[id] == nil else { return }
-        // Restoring a workspace must not launch a WebKit page for every saved
-        // tab. A selected tab or an explicit navigation creates its view.
-        let record = Record(id: id, url: url)
-        records[id] = record
-        openExtensionTab(record)
-        emit(record)
+        createTab(id: id, url: url, isPrivate: false)
+    }
+
+    func createPrivateTab(id: String, url: URL) {
+        createTab(id: id, url: url, isPrivate: true)
+    }
+
+    func isPrivateTab(id: String) -> Bool { records[id]?.isPrivate == true }
+
+    /// The store a new private page uses: the one the open private tabs
+    /// share, or a fresh in-memory one.
+    func currentPrivateDataStore() -> WKWebsiteDataStore {
+        if let privateDataStore { return privateDataStore }
+        let store = WKWebsiteDataStore.nonPersistent()
+        privateDataStore = store
+        return store
     }
 
     func selectTab(id: String?) {
@@ -389,6 +403,9 @@ import WebKit
         record.webView?.removeFromSuperview()
         if mountedWebView === record.webView {
             mountedWebView = nil
+        }
+        if record.isPrivate, !records.values.contains(where: \.isPrivate) {
+            privateDataStore = nil
         }
         onEvent?(.closed(id: id))
     }
@@ -703,7 +720,10 @@ import WebKit
     func adoptPopup(configuration: WKWebViewConfiguration, url: URL?) -> WKWebView? {
         guard !isShutDown, let onPopupCreated, url.map(Self.isAllowed) ?? true else { return nil }
         let id = UUID().uuidString
-        let record = Record(id: id, url: url)
+        // WebKit hands a popup its opener's configuration, and with it the
+        // opener's website data store.
+        let isPrivate = privateDataStore.map { configuration.websiteDataStore === $0 } ?? false
+        let record = Record(id: id, url: url, isPrivate: isPrivate)
         records[id] = record
         openExtensionTab(record)
         let webView = ensureWebView(record, configuration: configuration)
@@ -734,6 +754,16 @@ import WebKit
               let body = message.body as? [String: Any], body["reader"] as? Bool == false else { return }
         record.state.isReading = false
         record.state.isTranslated = false
+        emit(record)
+    }
+
+    private func createTab(id: String, url: URL, isPrivate: Bool) {
+        guard !isShutDown, records[id] == nil else { return }
+        // Restoring a workspace must not launch a WebKit page for every saved
+        // tab. A selected tab or an explicit navigation creates its view.
+        let record = Record(id: id, url: url, isPrivate: isPrivate)
+        records[id] = record
+        openExtensionTab(record)
         emit(record)
     }
 
@@ -840,10 +870,11 @@ import WebKit
             configuration = suppliedConfiguration
         } else {
             configuration = WKWebViewConfiguration()
-            configuration.websiteDataStore = dataStore
+            configuration.websiteDataStore = record.isPrivate ? currentPrivateDataStore() : dataStore
             configuration.allowsInlineMediaPlayback = true
-            // A popup's configuration carries its opener's controller.
-            configuration.webExtensionController = extensions?.controller
+            // A popup's configuration carries its opener's controller. Private
+            // pages run no extensions.
+            configuration.webExtensionController = record.isPrivate ? nil : extensions?.controller
             // A popup shares its opener's controller, which has these already.
             if !Self.pageToolsSource.isEmpty {
                 configuration.userContentController.addUserScript(WKUserScript(
@@ -1043,6 +1074,8 @@ import WebKit
     }
 
     private func openExtensionTab(_ record: Record) {
+        // Extensions never see private pages.
+        guard !record.isPrivate else { return }
         recordOrder.append(record.id)
         guard let extensions else { return }
         let tab = BrowserWebKitExtensionTab(engine: self, runtimeID: record.id)

@@ -4,7 +4,8 @@ import UIKit
 
 /// The search sheet that grows out of the bar for New Tab: a field over a
 /// dark glass panel, with suggestions under it. The field starts as the
-/// bar's New Tab capsule and widens once the panel is up.
+/// bar's New Tab capsule and widens once the panel is up. At the field's end,
+/// the microphone dictates into it and the eyes turn Incognito on.
 final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDataSource, UITableViewDelegate {
     // MARK: Private
 
@@ -85,6 +86,10 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
     static let fieldTop: CGFloat = 17
     static let fieldHeight: CGFloat = 46
     static let rowHeight: CGFloat = 56
+    /// The eyes' center, from the field's trailing edge.
+    static let eyesInset: CGFloat = 29
+    /// The distance between the microphone's and the eyes' centers.
+    static let accessorySpacing: CGFloat = 44
 
     let field = BrowserMobileCompletingField()
     var candidates = [BrowserMobileSearchSuggestions.Candidate]() {
@@ -93,6 +98,17 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
 
     var onSubmit: ((String) -> Void)?
     var onSelect: ((BrowserMobileSearchSuggestions.Item) -> Void)?
+    /// The eyes were tapped; the new value is already shown.
+    var onIncognitoChange: ((Bool) -> Void)?
+
+    /// Pages open in private tabs; the suggestions give way to a note.
+    var isIncognito = false {
+        didSet {
+            guard isIncognito != oldValue else { return }
+            if isIncognito { dictation.stop() }
+            updateAccessories()
+        }
+    }
 
     /// Whether the field is full width, or still the bar's New Tab capsule.
     private(set) var isFieldExpanded = true
@@ -103,6 +119,15 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
     ))
     private let table = UITableView(frame: .zero, style: .plain)
     private var suggestions = BrowserMobileSearchSuggestions(query: "", candidates: [])
+    /// The microphone and the eyes, which fade in with the field.
+    private let accessories = UIView()
+    private let micButton = UIButton(type: .system)
+    private let eyesButton = UIButton(type: .system)
+    private let incognitoLabel = UILabel()
+    private let incognitoNote = UILabel()
+    private let dictation = BrowserMobileDictation()
+    /// The text before dictation started; what is heard goes after it.
+    private var dictationPrefix = ""
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -139,6 +164,7 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
         plusGlyph.contentMode = .center
         plusGlyph.alpha = 0
         fieldBackground.addSubview(plusGlyph)
+        configureAccessories()
         table.backgroundColor = .clear
         table.separatorStyle = .none
         table.rowHeight = Self.rowHeight
@@ -149,6 +175,16 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
         table.register(Cell.self, forCellReuseIdentifier: "Suggestion")
         table.accessibilityIdentifier = "browser.searchSuggestions"
         addSubview(table)
+        incognitoNote.text = String(localized: "You’re browsing Incognito", table: "Mobile")
+        incognitoNote.font = .systemFont(ofSize: 20, weight: .medium)
+        incognitoNote.textColor = UIColor(white: 1, alpha: 0.5)
+        incognitoNote.textAlignment = .center
+        incognitoNote.accessibilityIdentifier = "browser.searchIncognitoNote"
+        addSubview(incognitoNote)
+        updateAccessories()
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(stopDictation), name: UIApplication.didEnterBackgroundNotification, object: nil,
+        )
     }
 
     @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
@@ -165,9 +201,19 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
         let frame = isFieldExpanded ? full : capsule
         fieldBackground.frame = frame
         fieldBackground.layer.cornerRadius = frame.height / 2
-        // The text keeps its full width, so it does not reflow while the
-        // capsule widens; the capsule clips it.
-        field.frame = CGRect(x: 24, y: 0, width: full.width - 26, height: frame.height)
+        // The text and the icons at its end keep the full width, so they do
+        // not reflow while the capsule widens; the capsule clips them.
+        accessories.frame = CGRect(x: 0, y: 0, width: full.width, height: frame.height)
+        let eyesX = full.width - Self.eyesInset
+        eyesButton.frame = CGRect(x: eyesX - 22, y: (frame.height - 44) / 2, width: 44, height: 44)
+        micButton.frame = eyesButton.frame.offsetBy(dx: -Self.accessorySpacing, dy: 0)
+        incognitoLabel.sizeToFit()
+        incognitoLabel.frame = CGRect(
+            x: eyesX - 12 - 8 - incognitoLabel.bounds.width, y: (frame.height - incognitoLabel.bounds.height) / 2,
+            width: incognitoLabel.bounds.width, height: incognitoLabel.bounds.height,
+        )
+        let fieldEnd = isIncognito ? incognitoLabel.frame.minX - 6 : micButton.frame.minX + 4
+        field.frame = CGRect(x: 24, y: 0, width: max(fieldEnd - 24, 0), height: frame.height)
         let glyphSide = BrowserMobilePhoneBarView.controlHeight
         plusGlyph.frame = CGRect(
             x: isFieldExpanded ? 4 : (frame.width - glyphSide) / 2, y: (frame.height - glyphSide) / 2,
@@ -175,6 +221,7 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
         )
         let tableTop = frame.maxY + 6
         table.frame = CGRect(x: 0, y: tableTop, width: bounds.width, height: max(bounds.height - tableTop, 0))
+        incognitoNote.frame = table.frame.insetBy(dx: Self.margin, dy: 0)
     }
 
     /// Lays the field out as the full-width field or as the New Tab capsule;
@@ -189,6 +236,7 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
         let inAnimation = UIView.inheritedAnimationDuration > 0
         guard inAnimation else {
             field.alpha = expanded ? 1 : 0
+            accessories.alpha = field.alpha
             plusGlyph.alpha = expanded ? 0 : 1
             return
         }
@@ -201,6 +249,7 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
             .beginFromCurrentState, .overrideInheritedDuration, .overrideInheritedCurve,
         ]) {
             self.field.alpha = expanded ? 1 : 0
+            self.accessories.alpha = self.field.alpha
         }
     }
 
@@ -215,6 +264,11 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
     func prepare(text: String) {
         field.replaceText(text)
         refresh(complete: false)
+    }
+
+    /// Stops dictation, leaving what was heard in the field.
+    @objc func stopDictation() {
+        dictation.stop()
     }
 
     func focus() {
@@ -234,6 +288,7 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
         field.keepCompletion()
         let text = (textField.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return false }
+        dictation.stop()
         onSubmit?(text)
         return true
     }
@@ -255,6 +310,67 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
         for cell in table.visibleCells.compactMap({ $0 as? Cell }) {
             cell.reloadIcon()
         }
+    }
+
+    private func configureAccessories() {
+        accessories.alpha = 0
+        fieldBackground.addSubview(accessories)
+        for button in [micButton, eyesButton] {
+            button.tintColor = UIColor(white: 1, alpha: 0.55)
+            accessories.addSubview(button)
+        }
+        micButton.accessibilityIdentifier = "browser.searchDictation"
+        micButton.addAction(UIAction { [weak self] _ in self?.toggleDictation() }, for: .touchUpInside)
+        eyesButton.accessibilityIdentifier = "browser.searchIncognito"
+        eyesButton.accessibilityLabel = String(localized: "Incognito", table: "Mobile")
+        eyesButton.addAction(UIAction { [weak self] _ in self?.toggleIncognito() }, for: .touchUpInside)
+        incognitoLabel.text = String(localized: "Incognito", table: "Mobile")
+        incognitoLabel.font = .systemFont(ofSize: 13)
+        incognitoLabel.textColor = UIColor(white: 1, alpha: 0.55)
+        incognitoLabel.isAccessibilityElement = false
+        accessories.addSubview(incognitoLabel)
+        dictation.onListeningChange = { [weak self] _ in self?.updateAccessories() }
+        dictation.onText = { [weak self] text in
+            guard let self else { return }
+            field.replaceText(dictationPrefix + text)
+            refresh(complete: false)
+        }
+    }
+
+    private func updateAccessories() {
+        let symbol = { (name: String) in
+            UIImage(systemName: name, withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .regular))
+        }
+        let listening = dictation.isListening
+        micButton.setImage(symbol(listening ? "mic.fill" : "mic"), for: .normal)
+        micButton.tintColor = listening ? .systemRed : UIColor(white: 1, alpha: 0.55)
+        micButton.accessibilityLabel = listening
+            ? String(localized: "Stop Dictation", table: "Mobile")
+            : String(localized: "Dictate", table: "Mobile")
+        micButton.isHidden = isIncognito
+        eyesButton.setImage(symbol(isIncognito ? "eyes.inverse" : "eyes"), for: .normal)
+        eyesButton.tintColor = UIColor(white: 1, alpha: isIncognito ? 0.9 : 0.55)
+        eyesButton.accessibilityTraits = isIncognito ? [.button, .selected] : .button
+        incognitoLabel.isHidden = !isIncognito
+        table.isHidden = isIncognito
+        incognitoNote.isHidden = !isIncognito
+        setNeedsLayout()
+    }
+
+    private func toggleDictation() {
+        if dictation.isListening {
+            dictation.stop()
+            return
+        }
+        field.keepCompletion()
+        let typed = field.text ?? ""
+        dictationPrefix = typed.isEmpty || typed.hasSuffix(" ") ? typed : typed + " "
+        dictation.start(language: field.textInputMode?.primaryLanguage)
+    }
+
+    private func toggleIncognito() {
+        isIncognito.toggle()
+        onIncognitoChange?(isIncognito)
     }
 
     @objc private func textChanged() {
