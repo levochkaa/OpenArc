@@ -1504,18 +1504,27 @@ final class BrowserMobilePhoneViewController: UIViewController {
                 card.alpha = 1
             }
         }
-        UIView.animate(springDuration: 0.3, bounce: 0.1, initialSpringVelocity: 0, delay: 0, options: [
+        // The page drops into its card at once, slowing down as it lands;
+        // the other cards take a little longer to grow out of the stack.
+        UIView.animate(springDuration: 0.12, bounce: 0, initialSpringVelocity: 0, delay: 0, options: [
             .allowUserInteraction,
         ]) {
-            for card in entries.compactMap({ switcher.card(for: $0.id) }) {
-                card.transform = .identity
-            }
-            switcher.layoutCards()
-            for card in entries.compactMap({ switcher.card(for: $0.id) }) {
-                card.layoutIfNeeded()
-            }
+            switcher.layoutCards { $0 == currentID }
+            page?.layoutIfNeeded()
             if let hole, let page {
                 self.placeFlightHole(hole, in: under, around: page)
+            }
+        }
+        UIView.animate(springDuration: 0.2, bounce: 0, initialSpringVelocity: 0, delay: 0, options: [
+            .allowUserInteraction,
+        ]) {
+            let others = entries.filter { $0.id != currentID }.compactMap { switcher.card(for: $0.id) }
+            for card in others {
+                card.transform = .identity
+            }
+            switcher.layoutCards { $0 != currentID }
+            for card in others {
+                card.layoutIfNeeded()
             }
         } completion: { _ in
             switcher.restoreLiftedCards()

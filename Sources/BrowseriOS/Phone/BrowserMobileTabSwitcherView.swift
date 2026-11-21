@@ -187,8 +187,9 @@ final class BrowserMobileTabSwitcherView: UIView, UIScrollViewDelegate, UIGestur
         entries.firstIndex { $0.id == id }.map { cardFrame(index: $0, position: position) }
     }
 
-    func layoutCards() {
-        for (index, entry) in entries.enumerated() {
+    /// Places the cards of the tabs `includes` picks, all of them by default.
+    func layoutCards(where includes: (String) -> Bool = { _ in true }) {
+        for (index, entry) in entries.enumerated() where includes(entry.id) {
             guard let card = cards[entry.id], card !== liftedCard, !card.isDetached else { continue }
             let frame = cardFrame(index: index, position: position)
             card.bounds = CGRect(origin: .zero, size: frame.size)
