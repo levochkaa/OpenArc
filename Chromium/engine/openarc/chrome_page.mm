@@ -52,7 +52,6 @@
 #include "components/viz/common/frame_sinks/copy_output_result.h"
 #include "components/zoom/zoom_controller.h"
 #include "content/public/browser/browser_context.h"
-#include "content/public/browser/browser_url_handler.h"
 #include "content/public/browser/download_item_utils.h"
 #include "content/public/browser/download_manager.h"
 #include "content/public/browser/media_player_id.h"
@@ -61,6 +60,8 @@
 #include "content/public/browser/navigation_details.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/navigation_handle.h"
+#include "content/public/browser/navigation_throttle.h"
+#include "content/public/browser/navigation_throttle_registry.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_widget_host.h"
@@ -68,10 +69,7 @@
 #include "content/public/browser/ssl_status.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
-#include "content/public/browser/webui_config.h"
-#include "content/public/browser/webui_config_map.h"
 #include "content/public/common/isolated_world_ids.h"
-#include "content/public/common/url_constants.h"
 #include "net/cert/x509_certificate.h"
 #include "net/cert/x509_util.h"
 #include "third_party/blink/public/common/input/web_input_event.h"
@@ -87,6 +85,7 @@
 #include "url/gurl.h"
 
 #include "openarc/page_session.h"
+#include "openarc/tab_pages.h"
 
 @interface OpenArcChromePage ()
 - (void)adoptContents:(content::WebContents*)contents;
@@ -674,20 +673,12 @@ NSString* TextOfValue(const base::Value& value) {
 
 namespace openarc {
 
-// A chrome:// address Chrome has a page for, after Chrome's own rewrites (chrome://newtab, chrome://about); any
-// other address too. The tab controller loads chrome:// for an openarc:// address, and CEF blocks one it has no
-// page for, which leaves the tab's page as it is.
-bool HasChromePage(content::BrowserContext* context, const GURL& url) {
-  if (!url.SchemeIs(content::kChromeUIScheme)) {
-    return true;
+// OpenArc's throttles: its tabs open only the chrome:// pages that work in a tab.
+void NavigationThrottles(content::NavigationThrottleRegistry& registry) {
+  content::NavigationHandle& handle = registry.GetNavigationHandle();
+  if (handle.IsInPrimaryMainFrame() && PageFor(handle.GetWebContents())) {
+    registry.AddThrottle(CreateTabPageThrottle(registry));
   }
-  GURL rewritten = url;
-  content::BrowserURLHandler::GetInstance()->RewriteURLIfNecessary(&rewritten, context);
-  if (!rewritten.SchemeIs(content::kChromeUIScheme)) {
-    return true;
-  }
-  content::WebUIConfig* config = content::WebUIConfigMap::GetInstance().GetConfig(context, rewritten);
-  return config && config->IsWebUIEnabled(context);
 }
 
 void StartPages() {
@@ -695,6 +686,7 @@ void StartPages() {
   g_page_fullscreen = &PageFullscreen;
   g_page_is_fullscreen = &PageIsFullscreen;
   g_target_url = &TargetURL;
+  g_navigation_throttles = &NavigationThrottles;
 }
 
 void StopPages() {
@@ -1061,7 +1053,7 @@ void CancelDownload(NSString* downloadID) {
     return;
   }
   GURL url(UTF8(urlString));
-  if (!url.is_valid() || !openarc::HasChromePage(_contents->GetBrowserContext(), url)) {
+  if (!url.is_valid() || !openarc::OpensInTab(_contents->GetBrowserContext(), url)) {
     return;
   }
   _hasPage = YES;

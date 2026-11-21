@@ -14,6 +14,7 @@ class ChromeBrowserMainExtraParts;
 class GURL;
 
 namespace content {
+class NavigationThrottleRegistry;
 class WebContents;
 }
 namespace input {
@@ -54,6 +55,10 @@ inline TargetURLHook g_target_url = nullptr;
 // (chrome/browser/chrome_content_browser_client.cc).
 using SchemeLoaderFactoryHook = mojo::PendingRemote<network::mojom::URLLoaderFactory> (*)(const std::string& scheme);
 inline SchemeLoaderFactoryHook g_scheme_loader_factory = nullptr;
+
+// OpenArc's throttles for a navigation, after Chrome's own (chrome/browser/chrome_content_browser_client.cc).
+using NavigationThrottlesHook = void (*)(content::NavigationThrottleRegistry& registry);
+inline NavigationThrottlesHook g_navigation_throttles = nullptr;
 
 }  // namespace openarc
 

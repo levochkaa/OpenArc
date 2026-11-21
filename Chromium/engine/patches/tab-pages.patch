@@ -1,0 +1,14 @@
+diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
+--- a/chrome/browser/chrome_content_browser_client.cc
++++ b/chrome/browser/chrome_content_browser_client.cc
+@@ -5784,6 +5784,10 @@
+ void ChromeContentBrowserClient::CreateThrottlesForNavigation(
+     content::NavigationThrottleRegistry& registry) {
+   CreateAndAddChromeThrottlesForNavigation(registry);
++  // OpenArc's own, such as the chrome:// pages its tabs don't open.
++  if (openarc::g_navigation_throttles) {
++    openarc::g_navigation_throttles(registry);
++  }
+ }
+ 
+ void ChromeContentBrowserClient::CreateThrottlesForCommitWithoutUrlLoader(

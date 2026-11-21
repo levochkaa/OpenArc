@@ -11,6 +11,8 @@ source_set("core") {
     "page_session.mm",
     "scheme.h",
     "scheme.mm",
+    "tab_pages.h",
+    "tab_pages.mm",
   ]
   frameworks = [ "Cocoa.framework" ]
   deps = [
