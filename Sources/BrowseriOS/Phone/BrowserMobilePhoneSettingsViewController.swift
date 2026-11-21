@@ -258,12 +258,15 @@ final class BrowserMobilePhoneSettingsViewController: UITableViewController {
 
     override func tableView(_: UITableView, numberOfRowsInSection section: Int) -> Int { rows[section].count }
 
+    override func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
+        rows[indexPath.section][indexPath.row].subtitle == nil ? tableView.rowHeight : UITableView.automaticDimension
+    }
+
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let row = rows[indexPath.section][indexPath.row]
         let cell = tableView.dequeueReusableCell(withIdentifier: row.menu == nil ? "Row" : "MenuRow", for: indexPath)
-        var content = row.subtitle != nil
-            ? UIListContentConfiguration.subtitleCell()
-            : row.value == nil ? .cell() : .valueCell()
+        // A plain cell draws a subtitle under the title and keeps the rows' icon and text columns.
+        var content: UIListContentConfiguration = row.subtitle != nil || row.value == nil ? .cell() : .valueCell()
         content.text = row.title
         content.secondaryText = row.subtitle ?? row.value
         if row.subtitle != nil {
