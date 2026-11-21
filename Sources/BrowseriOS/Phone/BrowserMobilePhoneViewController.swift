@@ -148,11 +148,9 @@ final class BrowserMobilePhoneViewController: UIViewController {
         didSet { bar.background.isCovered = surface != nil }
     }
 
-    /// The bar's own material inside a dark panel: it shows while the panel
-    /// is the bar and gives way to the panel's glass as it rises.
+    /// A dark panel's material: the bar's own while the panel is the bar,
+    /// turning into the panel's glass as it rises.
     private var surfaceTint: BrowserMobileBarMaterial?
-    /// The dark panel's glass, which the bar's material replaces as it settles.
-    private var surfaceGlass = [UIView]()
     private var dismissCatcher: UIView?
     /// Drags the open search panel down to close it.
     private weak var surfacePan: UIPanGestureRecognizer?
@@ -522,10 +520,10 @@ final class BrowserMobilePhoneViewController: UIViewController {
     }
 
     /// How much the dark panel looks like the bar: 1 is the bar's own
-    /// material, 0 the panel's glass.
-    private func setSurfaceTint(_ share: CGFloat) {
-        surfaceTint?.alpha = share
-        surfaceGlass.forEach { $0.alpha = 1 - share }
+    /// material, 0 the panel's glass. `interactive` holds a share between
+    /// them as a finger moves the panel.
+    private func setSurfaceTint(_ share: CGFloat, interactive: Bool = false) {
+        surfaceTint?.setGlassShare(1 - share, interactive: interactive)
     }
 
     /// The bar may have changed under the panel, as when the switcher it was
@@ -818,22 +816,14 @@ final class BrowserMobilePhoneViewController: UIViewController {
         if dark {
             surface = UIView(frame: bar.frame)
             container = surface
-            let blur = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterialDark))
-            blur.frame = surface.bounds
-            blur.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-            surface.addSubview(blur)
-            // Leans the material toward the backdrop so it reads darker over light pages.
-            let shade = UIView(frame: surface.bounds)
-            shade.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-            shade.backgroundColor = view.backgroundColor?.withAlphaComponent(0.1)
-            surface.addSubview(shade)
-            // Starts as the bar it grows from.
+            // Starts as the bar it grows from and turns into the panel's glass.
             let tint = BrowserMobileBarMaterial()
             tint.frame = surface.bounds
             tint.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            // Leans the glass toward the backdrop so it reads darker over light pages.
+            tint.shadeColor = view.backgroundColor?.withAlphaComponent(0.1)
             surface.addSubview(tint)
             surfaceTint = tint
-            surfaceGlass = [blur, shade]
             matchSurfaceTintToBar()
             setSurfaceTint(1)
         } else {
@@ -931,7 +921,6 @@ final class BrowserMobilePhoneViewController: UIViewController {
                 self.surface = nil
                 self.surfaceGhosts = []
                 self.surfaceTint = nil
-                self.surfaceGlass = []
                 self.layoutPage()
                 self.layoutBar()
             }
@@ -2010,7 +1999,7 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
         surface.frame = CGRect(x: 0, y: y, width: view.bounds.width, height: view.bounds.height - y)
         let progress = min(travel / max(reach, 1), 1)
         surface.layer.cornerRadius = 36 * min(progress * 3, 1)
-        setSurfaceTint(1 - min(progress * 2, 1))
+        setSurfaceTint(1 - min(progress * 2, 1), interactive: true)
         // The page recedes into its card as the panel comes up.
         applyPageCard(interpolate(view.bounds, searchCardFrame(), progress))
         // The page menu button goes within the first points, the tab stack

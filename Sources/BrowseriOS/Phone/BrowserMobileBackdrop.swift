@@ -135,6 +135,10 @@ final class BrowserMobileBarMaterial: UIVisualEffectView {
     /// the dark one.
     static let hairlineAlpha: CGFloat = 0.1
 
+    /// The dark panel's glass that this material turns into as the panel
+    /// rises out of the bar.
+    static let panelGlass = UIBlurEffect(style: .systemUltraThinMaterialDark)
+
     /// Off over the switcher, where the bar shows what is behind it.
     var showsMaterial = true {
         didSet { updateEffect() }
@@ -153,15 +157,40 @@ final class BrowserMobileBarMaterial: UIVisualEffectView {
         didSet { updateEffect() }
     }
 
+    /// How far the material has turned into the panel glass, from 0 (the
+    /// bar's material) to 1.
+    private(set) var glassShare: CGFloat = 0
+
     private let wash = WashView()
     private let hairline = UIView()
+    private let shade = UIView()
+    /// Holds the blur partway between the bar's and the glass's while a
+    /// finger moves the panel; one effect view keeps the page blurred all the
+    /// way, where fading two would let it show through.
+    private var glassAnimator: UIViewPropertyAnimator?
+
+    /// The panel glass's shade over the blur.
+    var shadeColor: UIColor? {
+        get { shade.backgroundColor }
+        set { shade.backgroundColor = newValue }
+    }
+
+    /// The bar's own effect, or none where the bar shows what is behind it.
+    private var restingEffect: UIVisualEffect? {
+        guard showsMaterial, !isCovered else { return nil }
+        let dark = traitCollection.userInterfaceStyle == .dark
+        return UIBlurEffect(style: dark ? .systemThinMaterialDark : .systemThinMaterialLight)
+    }
 
     init() {
         super.init(effect: nil)
         wash.isUserInteractionEnabled = false
         hairline.isUserInteractionEnabled = false
+        shade.isUserInteractionEnabled = false
+        shade.alpha = 0
         contentView.insertSubview(wash, at: 0)
-        contentView.insertSubview(hairline, aboveSubview: wash)
+        contentView.insertSubview(shade, aboveSubview: wash)
+        contentView.insertSubview(hairline, aboveSubview: shade)
         updateEffect()
         registerForTraitChanges([UITraitUserInterfaceStyle.self, UITraitDisplayScale.self]) {
             (view: BrowserMobileBarMaterial, _) in
@@ -176,21 +205,59 @@ final class BrowserMobileBarMaterial: UIVisualEffectView {
         super.layoutSubviews()
         wash.frame = contentView.bounds
         wash.span = Self.washSpan
+        shade.frame = contentView.bounds
         let scale = traitCollection.displayScale > 0 ? traitCollection.displayScale : 1
         hairline.frame = CGRect(x: 0, y: 0, width: contentView.bounds.width, height: 1 / scale)
+    }
+
+    override func willMove(toWindow newWindow: UIWindow?) {
+        super.willMove(toWindow: newWindow)
+        // A paused animator must not outlive its run.
+        if newWindow == nil { endGlassAnimator() }
+    }
+
+    /// Turns the material toward the panel glass. Inside an animation block
+    /// the change animates; `interactive` holds it partway, as a finger
+    /// moving the panel does.
+    func setGlassShare(_ share: CGFloat, interactive: Bool = false) {
+        glassShare = share
+        wash.alpha = 1 - share
+        shade.alpha = share
+        if interactive {
+            if glassAnimator == nil {
+                UIView.performWithoutAnimation { effect = restingEffect }
+                let animator = UIViewPropertyAnimator(duration: 1, curve: .linear) { [weak self] in
+                    self?.effect = Self.panelGlass
+                }
+                animator.pausesOnCompletion = true
+                glassAnimator = animator
+            }
+            glassAnimator?.fractionComplete = share
+        } else {
+            endGlassAnimator()
+            effect = share > 0 ? Self.panelGlass : restingEffect
+        }
+    }
+
+    private func endGlassAnimator() {
+        guard let animator = glassAnimator else { return }
+        glassAnimator = nil
+        animator.stopAnimation(true)
     }
 
     private func updateEffect() {
         let shows = showsMaterial && !isCovered
         wash.isHidden = !shows
         hairline.isHidden = !shows || !showsTopHairline
-        guard shows else {
-            effect = nil
-            return
-        }
         let dark = traitCollection.userInterfaceStyle == .dark
-        effect = UIBlurEffect(style: dark ? .systemThinMaterialDark : .systemThinMaterialLight)
         wash.wash = Wash.forStyle(traitCollection.userInterfaceStyle)
         hairline.backgroundColor = UIColor(white: dark ? 1 : 0, alpha: Self.hairlineAlpha)
+        if glassAnimator != nil {
+            // Starts the held blur again from the new resting effect.
+            endGlassAnimator()
+            setGlassShare(glassShare, interactive: true)
+        } else {
+            effect = glassShare > 0 ? Self.panelGlass : restingEffect
+        }
     }
 }
