@@ -60,6 +60,8 @@ extension BrowserMobileDownloads: BrowserMobileDownloadsPresenting {}
     private var interactionError: String?
     private var interactionErrorItemIDs: Set<UUID>?
     private let statusLabel = UILabel()
+    private var doneButton = UIBarButtonItem()
+    private var clearButton = UIBarButtonItem()
     private let retryButton = UIButton(type: .system)
     private let statusStack = UIStackView()
 
@@ -109,15 +111,14 @@ extension BrowserMobileDownloads: BrowserMobileDownloadsPresenting {}
         tableView.rowHeight = UITableView.automaticDimension
         tableView.estimatedRowHeight = 140
         tableView.register(BrowserMobileDownloadCell.self, forCellReuseIdentifier: "Download")
-        let done = UIBarButtonItem(barButtonSystemItem: .done, target: self, action: #selector(close))
-        done.accessibilityIdentifier = "browser.downloads.done"
-        navigationItem.rightBarButtonItem = done
-        let clear = UIBarButtonItem(
+        doneButton = UIBarButtonItem(barButtonSystemItem: .done, target: self, action: #selector(close))
+        doneButton.accessibilityIdentifier = "browser.downloads.done"
+        clearButton = UIBarButtonItem(
             title: Self.localized("Clear Completed…"), style: .plain,
             target: self, action: #selector(requestClearCompleted),
         )
-        clear.accessibilityIdentifier = "browser.downloads.clear-completed"
-        navigationItem.leftBarButtonItem = clear
+        clearButton.accessibilityIdentifier = "browser.downloads.clear-completed"
+        placeBarButtons()
         statusLabel.font = .preferredFont(forTextStyle: .subheadline)
         statusLabel.adjustsFontForContentSizeCategory = true
         statusLabel.numberOfLines = 0
@@ -223,6 +224,11 @@ extension BrowserMobileDownloads: BrowserMobileDownloadsPresenting {}
                 _ = self?.requestDeletion(id: entry.id)
             }])
         }
+    }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        placeBarButtons()
     }
 
     private static func localized(_ key: String) -> String {
@@ -370,7 +376,7 @@ extension BrowserMobileDownloads: BrowserMobileDownloadsPresenting {}
         }
         retryButton.isHidden = !downloads.canRetryPersistence
         retryButton.isEnabled = !hasPendingAction && confirmation == nil && !downloads.isLoading
-        navigationItem.leftBarButtonItem?.isEnabled = canStartAction && downloads.canClearCompleted &&
+        clearButton.isEnabled = canStartAction && downloads.canClearCompleted &&
             !downloads.isClearingCompleted
         statusStack.isHidden = statusLabel.text == nil && retryButton.isHidden
         sizeStatusHeader()
@@ -576,6 +582,15 @@ extension BrowserMobileDownloads: BrowserMobileDownloadsPresenting {}
     @objc private func close() {
         invalidate()
         (navigationController ?? self).dismiss(animated: true)
+    }
+
+    /// Shown on its own, the list has Done and Clear Completed on either
+    /// side; pushed inside Settings, the back button keeps its place and
+    /// Clear Completed moves to the right.
+    private func placeBarButtons() {
+        let isPushed = navigationController.map { $0.viewControllers.first !== self } ?? false
+        navigationItem.leftBarButtonItem = isPushed ? nil : clearButton
+        navigationItem.rightBarButtonItem = isPushed ? clearButton : doneButton
     }
 
     private func sizeStatusHeader() {

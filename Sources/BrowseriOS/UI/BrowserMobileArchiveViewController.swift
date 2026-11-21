@@ -62,6 +62,7 @@ final class BrowserMobileArchiveViewController: UITableViewController, UISearchR
     private var olderButton = UIBarButtonItem()
     private var clearButton = UIBarButtonItem()
     private var timingButton = UIBarButtonItem()
+    private var doneButton = UIBarButtonItem()
     private var failedAutomaticArchival: ArchivalChoice?
     private let errorLabel = UILabel()
     private let retryButton = UIButton(type: .system)
@@ -94,15 +95,14 @@ final class BrowserMobileArchiveViewController: UITableViewController, UISearchR
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "Archive")
         tableView.rowHeight = UITableView.automaticDimension
         tableView.estimatedRowHeight = 80
-        let done = UIBarButtonItem(barButtonSystemItem: .done, target: self, action: #selector(close))
-        done.accessibilityIdentifier = "browser.archive.done"
-        navigationItem.rightBarButtonItem = done
+        doneButton = UIBarButtonItem(barButtonSystemItem: .done, target: self, action: #selector(close))
+        doneButton.accessibilityIdentifier = "browser.archive.done"
         timingButton = UIBarButtonItem(
             title: String(localized: "Auto-Archive", table: "Mobile"),
             menu: UIMenu(children: []),
         )
         timingButton.accessibilityIdentifier = "browser.archive.timing"
-        navigationItem.leftBarButtonItem = timingButton
+        placeBarButtons()
         newerButton = UIBarButtonItem(
             title: String(localized: "Newer", table: "Mobile"), style: .plain,
             target: self, action: #selector(showNewer),
@@ -156,6 +156,7 @@ final class BrowserMobileArchiveViewController: UITableViewController, UISearchR
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
+        placeBarButtons()
         navigationController?.setToolbarHidden(false, animated: animated)
         render()
     }
@@ -281,6 +282,15 @@ final class BrowserMobileArchiveViewController: UITableViewController, UISearchR
         picker.dismiss(animated: true) { [weak self] in
             self?.restore(entry, to: spaceID)
         }
+    }
+
+    /// Shown on its own, the archive has Done and Auto-Archive on either
+    /// side; pushed inside Settings, the back button keeps its place and
+    /// Auto-Archive moves to the right.
+    private func placeBarButtons() {
+        let isPushed = navigationController.map { $0.viewControllers.first !== self } ?? false
+        navigationItem.leftBarButtonItem = isPushed ? nil : timingButton
+        navigationItem.rightBarButtonItem = isPushed ? timingButton : doneButton
     }
 
     private func setQuery(_ value: String, debounce: Bool) {
