@@ -101,32 +101,18 @@ final class BrowserMobilePhoneSettingsViewController: UITableViewController {
         super.viewDidLoad()
         tableView.accessibilityIdentifier = "browser.settingsList"
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "Row")
+        tableView.rowHeight = 52
         navigationItem.rightBarButtonItem = UIBarButtonItem(
-            systemItem: .done, primaryAction: UIAction { [weak self] _ in self?.dismiss(animated: true) },
+            title: String(localized: "Done", table: "Mobile"), style: .plain,
+            target: self, action: #selector(close),
         )
+        navigationItem.rightBarButtonItem?.accessibilityIdentifier = "browser.settings.done"
+        tableView.tableHeaderView = makeShortcuts()
         rows = [
             [
                 .init(
-                    title: String(localized: "Downloads", table: "Mobile"),
-                    symbol: "arrow.down.circle",
-                    color: .systemBlue,
-                    id: "browser.settings.downloads",
-                    isEnabled: workspace.downloads != nil,
-                )
-                    { [weak self] in self?.openDownloads() },
-                .init(
-                    title: String(localized: "Archive", table: "Mobile"),
-                    symbol: "archivebox",
-                    color: .systemPurple,
-                    id: "browser.settings.archive",
-                    isEnabled: workspace.supportsArchive,
-                )
-                    { [weak self] in self?.openArchive() },
-            ],
-            [
-                .init(
                     title: String(localized: "Global Site Settings", table: "Mobile"),
-                    symbol: "hand.raised",
+                    symbol: "hand.raised.fill",
                     color: .systemRed,
                     id: "browser.settings.globalSiteSettings",
                     isEnabled: true,
@@ -138,7 +124,7 @@ final class BrowserMobilePhoneSettingsViewController: UITableViewController {
                 },
                 .init(
                     title: String(localized: "Extensions", table: "Mobile"),
-                    symbol: "puzzlepiece.extension",
+                    symbol: "puzzlepiece.extension.fill",
                     color: .systemTeal,
                     id: "browser.settings.extensions",
                     isEnabled: true,
@@ -156,8 +142,8 @@ final class BrowserMobilePhoneSettingsViewController: UITableViewController {
                     { [weak self] in self?.showSearchEngines() },
                 .init(
                     title: String(localized: "Auto-Open Keyboard", table: "Mobile"),
-                    symbol: "keyboard",
-                    color: .systemGray,
+                    symbol: "keyboard.fill",
+                    color: .systemYellow,
                     id: "browser.settings.autoOpenKeyboard",
                     isEnabled: true,
                     opensPage: false,
@@ -165,7 +151,7 @@ final class BrowserMobilePhoneSettingsViewController: UITableViewController {
                 ) {},
                 .init(
                     title: String(localized: "Clear Website Data", table: "Mobile"),
-                    symbol: "trash",
+                    symbol: "trash.fill",
                     color: .systemRed,
                     id: "browser.settings.clearWebsiteData",
                     isEnabled: true,
@@ -178,7 +164,7 @@ final class BrowserMobilePhoneSettingsViewController: UITableViewController {
             rows.insert([
                 .init(
                     title: String(localized: "Default Browser", table: "Mobile"),
-                    symbol: "safari",
+                    symbol: "safari.fill",
                     color: .systemBlue,
                     id: Self.defaultBrowserRowID,
                     isEnabled: true,
@@ -194,7 +180,7 @@ final class BrowserMobilePhoneSettingsViewController: UITableViewController {
             rows.append([
                 .init(
                     title: String(localized: "Account", table: "Mobile"),
-                    symbol: "person.crop.circle",
+                    symbol: "person.crop.circle.fill",
                     color: .systemIndigo,
                     id: "browser.settings.account",
                     isEnabled: true,
@@ -208,7 +194,7 @@ final class BrowserMobilePhoneSettingsViewController: UITableViewController {
         rows.append([
             .init(
                 title: String(localized: "Open Source Licenses", table: "Mobile"),
-                symbol: "doc.text",
+                symbol: "doc.text.fill",
                 color: .systemGray,
                 id: "browser.settings.licenses",
                 isEnabled: true,
@@ -227,8 +213,7 @@ final class BrowserMobilePhoneSettingsViewController: UITableViewController {
         var content = row.value == nil ? UIListContentConfiguration.cell() : .valueCell()
         content.text = row.title
         content.secondaryText = row.value
-        content.image = UIImage(systemName: row.symbol)
-        content.imageProperties.tintColor = row.color
+        content.image = Self.tile(symbol: row.symbol, color: row.isEnabled ? row.color : .systemGray)
         content.textProperties.color = row.isEnabled ? .label : .secondaryLabel
         cell.contentConfiguration = content
         cell.accessoryType = row.opensPage ? .disclosureIndicator : .none
@@ -265,6 +250,24 @@ final class BrowserMobilePhoneSettingsViewController: UITableViewController {
         }
     }
 
+    /// A white symbol on a rounded square of the row's color.
+    private static func tile(symbol: String, color: UIColor) -> UIImage {
+        let side: CGFloat = 29
+        let glyph = UIImage(
+            systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .medium),
+        )?.withTintColor(.white, renderingMode: .alwaysOriginal)
+        return UIGraphicsImageRenderer(size: CGSize(width: side, height: side)).image { _ in
+            color.setFill()
+            UIBezierPath(roundedRect: CGRect(x: 0, y: 0, width: side, height: side), cornerRadius: 7).fill()
+            guard let glyph else { return }
+            let scale = min(1, 19 / max(glyph.size.width, glyph.size.height))
+            let size = CGSize(width: glyph.size.width * scale, height: glyph.size.height * scale)
+            glyph.draw(in: CGRect(
+                x: (side - size.width) / 2, y: (side - size.height) / 2, width: size.width, height: size.height,
+            ))
+        }
+    }
+
     /// Settings › Extensions; a store link closes Settings and opens in a new tab.
     func showExtensions(animated: Bool) {
         let controller = BrowserMobileExtensionsViewController()
@@ -274,6 +277,56 @@ final class BrowserMobilePhoneSettingsViewController: UITableViewController {
             dismiss(animated: true) { workspace.openLinkInNewTab(url, inBackground: false) }
         }
         navigationController?.pushViewController(controller, animated: animated)
+    }
+
+    @objc private func close() {
+        dismiss(animated: true)
+    }
+
+    /// Downloads and Archive side by side above the list.
+    private func makeShortcuts() -> UIView {
+        func button(_ title: String, _ symbol: String, _ id: String, enabled: Bool, _ action: @escaping () -> Void)
+            -> UIButton
+        {
+            var configuration = UIButton.Configuration.filled()
+            configuration.title = title
+            configuration.image = UIImage(
+                systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .medium),
+            )
+            configuration.imagePadding = 8
+            configuration.baseBackgroundColor = .secondarySystemGroupedBackground
+            configuration.baseForegroundColor = .label
+            configuration.background.cornerRadius = 12
+            configuration.cornerStyle = .fixed
+            let button = UIButton(configuration: configuration, primaryAction: UIAction { _ in action() })
+            button.isEnabled = enabled
+            button.accessibilityIdentifier = id
+            return button
+        }
+        let stack = UIStackView(arrangedSubviews: [
+            button(
+                String(localized: "Downloads", table: "Mobile"), "folder", "browser.settings.downloads",
+                enabled: workspace.downloads != nil,
+            ) { [weak self] in self?.openDownloads() },
+            button(
+                String(localized: "Archive", table: "Mobile"), "archivebox", "browser.settings.archive",
+                enabled: workspace.supportsArchive,
+            ) { [weak self] in self?.openArchive() },
+        ])
+        stack.axis = .horizontal
+        stack.distribution = .fillEqually
+        stack.spacing = 8
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        let header = UIView(frame: CGRect(x: 0, y: 0, width: 320, height: 60))
+        header.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: header.layoutMarginsGuide.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: header.layoutMarginsGuide.trailingAnchor),
+            stack.topAnchor.constraint(equalTo: header.topAnchor, constant: 8),
+            stack.heightAnchor.constraint(equalToConstant: 40),
+        ])
+        header.preservesSuperviewLayoutMargins = true
+        return header
     }
 
     /// The system's Default Apps page is where OpenArc becomes the browser;

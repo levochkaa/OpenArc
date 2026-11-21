@@ -50,14 +50,26 @@ final class BrowserMobilePhoneViewController: UIViewController {
         ]
     }
 
+    /// Where the status corner is its own block (iPhone Duo), search hides
+    /// the status bar.
+    override var prefersStatusBarHidden: Bool {
+        statusCorner != nil && mode == .search
+    }
+
     override var preferredStatusBarStyle: UIStatusBarStyle {
-        if mode == .switcher || mode == .search { return .lightContent }
+        if mode == .switcher || mode == .search || showsHome { return .lightContent }
         return isStatusBandDark ? .lightContent : .darkContent
     }
 
     let workspace: BrowserMobileWorkspace
 
-    private(set) var mode = Mode.browsing
+    private(set) var mode = Mode.browsing {
+        didSet {
+            if statusCorner != nil, (mode == .search) != (oldValue == .search) {
+                setNeedsStatusBarAppearanceUpdate()
+            }
+        }
+    }
 
     lazy var javaScriptDialogPresenter =
         BrowserMobileJavaScriptDialogPresenter(host: self) { [weak self] id, response in
@@ -80,6 +92,12 @@ final class BrowserMobilePhoneViewController: UIViewController {
     /// Darkens the page while it is the search panel's card.
     private let pageDim = UIView()
     private let bar = BrowserMobilePhoneBarView()
+    /// Fills the screen while no page is open.
+    private let appBackdrop = BrowserMobileAppBackdrop()
+    /// No page is open: the backdrop shows, with Spaces and Settings in the bar.
+    private var showsHome = false
+    private var statusCorner: CGRect?
+    private var appliedObscuredInsets: UIEdgeInsets?
     private let emptyState = UIStackView()
     private let emptyTitle = UILabel()
     private let emptyMessage = UILabel()
@@ -177,6 +195,8 @@ final class BrowserMobilePhoneViewController: UIViewController {
         pageContainer.backgroundColor = .systemBackground
         pageContainer.layer.cornerCurve = .continuous
         pageContainer.clipsToBounds = true
+        appBackdrop.isHidden = true
+        view.addSubview(appBackdrop)
         view.addSubview(pageContainer)
         pageContainer.addSubview(contentView)
         statusBand.isUserInteractionEnabled = false
@@ -189,6 +209,10 @@ final class BrowserMobilePhoneViewController: UIViewController {
         configureEmptyState()
         view.addSubview(bar)
         bar.tabStack.addAction(UIAction { [weak self] _ in self?.openSwitcher() }, for: .touchUpInside)
+        // Holding the tab stack opens the Spaces sheet.
+        let holdStack = UILongPressGestureRecognizer(target: self, action: #selector(stackHeld(_:)))
+        holdStack.minimumPressDuration = 0.5
+        bar.tabStack.addGestureRecognizer(holdStack)
         bar.plusButton.addAction(
             UIAction { [weak self] _ in self?.openSearch(text: "", replacesPage: false) },
             for: .touchUpInside,
@@ -225,6 +249,8 @@ final class BrowserMobilePhoneViewController: UIViewController {
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
+        appBackdrop.frame = view.bounds
+        updateStatusCorner()
         layoutPage()
         if surface == nil {
             layoutBar()
@@ -234,12 +260,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
 
     override func viewSafeAreaInsetsDidChange() {
         super.viewSafeAreaInsetsDidChange()
-        // The bar stays opaque; the page lays out above its full height even
-        // while it is collapsed, so fixed footers never jump.
-        workspace.setObscuredInsets(UIEdgeInsets(
-            top: view.safeAreaInsets.top, left: view.safeAreaInsets.left,
-            bottom: expandedBarHeight, right: view.safeAreaInsets.right,
-        ))
+        updateObscuredInsets()
     }
 
     static func nextZoom(from zoom: CGFloat, larger: Bool) -> CGFloat {
@@ -278,6 +299,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
         if let tab { wasLoading[tab.id] = tab.state.isLoading }
         sampleBackdrop()
         updateTabStack()
+        bar.insecureBadge.isHidden = tab?.state.url?.scheme?.lowercased() != "http"
         requestIcons()
         updateEmptyState()
         updateStatusBand()
@@ -310,11 +332,47 @@ final class BrowserMobilePhoneViewController: UIViewController {
         }
     }
 
+    /// The bar stays opaque; the page lays out above its full height even
+    /// while it is collapsed, so fixed footers never jump. Beside a status
+    /// corner block the page takes the whole width and height; only the
+    /// block covers it.
+    private func updateObscuredInsets() {
+        let safe = view.safeAreaInsets
+        let insets = statusCorner == nil
+            ? UIEdgeInsets(top: safe.top, left: safe.left, bottom: expandedBarHeight, right: safe.right)
+            : UIEdgeInsets(top: 0, left: 0, bottom: expandedBarHeight, right: 0)
+        guard insets != appliedObscuredInsets else { return }
+        appliedObscuredInsets = insets
+        workspace.setObscuredInsets(insets)
+    }
+
+    /// The block the system keeps for the camera and the status bar in a
+    /// corner of the screen (iPhone Duo), in this view's coordinates. It
+    /// grows with what the status bar shows, a Live Activity for one.
+    private func updateStatusCorner() {
+        var corner: CGRect?
+        if #available(iOS 27.1, *) {
+            let size = view.bounds.size
+            corner = view.reservedRegions(kind: .occlusion).map(\.frame).first { frame in
+                frame.minY <= 1 && (frame.minX <= 1 || frame.maxX >= size.width - 1)
+                    && frame.width < size.width / 2 && frame.height < size.height / 2
+            }
+        }
+        // The regions are briefly empty while the device folds or rotates,
+        // and the block shrinks to the camera while search hides the status
+        // bar; the last block stays until the next one is reported.
+        guard let corner, corner != statusCorner else { return }
+        statusCorner = corner
+        updateObscuredInsets()
+        setNeedsStatusBarAppearanceUpdate()
+    }
+
     private func layoutPage() {
         guard pageContainer.transform.isIdentity else { return }
         pageContainer.frame = view.bounds
         contentView.frame = pageContainer.bounds
-        statusBand.frame = CGRect(x: 0, y: 0, width: view.bounds.width, height: view.safeAreaInsets.top)
+        statusBand.frame = statusCorner
+            ?? CGRect(x: 0, y: 0, width: view.bounds.width, height: view.safeAreaInsets.top)
         pageDim.frame = pageContainer.bounds
         emptyState.frame = pageContainer.bounds.inset(by: UIEdgeInsets(
             top: view.safeAreaInsets.top, left: 24, bottom: expandedBarHeight, right: 24,
@@ -402,7 +460,6 @@ final class BrowserMobilePhoneViewController: UIViewController {
         bar.tabStack.setImages(
             front: front.flatMap { thumbnails.image(for: $0.id) },
             back: back.flatMap { thumbnails.image(for: $0.id) },
-            showsFront: true, showsBack: back != nil,
         )
         bar.tabStack.accessibilityValue = String(workspace.switcherTabs.count)
     }
@@ -490,11 +547,13 @@ final class BrowserMobilePhoneViewController: UIViewController {
         let tab = workspace.selectedTab
         let error = workspace.sessionError ?? tab?.state.error ?? workspace.navigationError
         let isBlank = tab == nil || tab?.urlString == "about:blank"
-        emptyState.isHidden = workspace.isReady && error == nil && !isBlank
+        let home = workspace.isReady && error == nil && isBlank
+        emptyState.isHidden = home || workspace.isReady && error == nil && !isBlank
         contentView.isHidden = !workspace.isReady || tab?.state.error != nil || isBlank
+        setShowsHome(home)
         if contentView.isHidden {
             // The bar sits over this view, not the page it last matched.
-            setBackdropDark(traitCollection.userInterfaceStyle == .dark)
+            setBackdropDark(home || traitCollection.userInterfaceStyle == .dark)
         }
         if !workspace.isReady {
             emptyTitle.text = String(localized: "Opening your tabs", table: "Mobile")
@@ -522,6 +581,21 @@ final class BrowserMobilePhoneViewController: UIViewController {
             emptyAction.isHidden = false
             emptyAction.setTitle(String(localized: "Search or Enter Address", table: "Mobile"), for: .normal)
         }
+    }
+
+    /// With no page open the backdrop fills the screen, as it does behind
+    /// the switcher, and the bar offers Spaces and Settings.
+    private func setShowsHome(_ home: Bool) {
+        // The switcher may close onto the home after its last tab closed.
+        if mode == .browsing, bar.showsSwitcherControls != home {
+            bar.setShowsSwitcherControls(home, showsMaterial: true)
+            setBarCollapsed(false, animated: false)
+        }
+        guard home != showsHome else { return }
+        showsHome = home
+        pageContainer.isHidden = home
+        appBackdrop.isHidden = !home
+        setNeedsStatusBarAppearanceUpdate()
     }
 
     // MARK: Bar collapse
@@ -673,7 +747,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
         container.addSubview(content)
         // The tab stack and the page menu button ride the panel's top edge
         // and fade; they come back the same way when it closes.
-        surfaceGhosts = [bar.tabStack, bar.moreButton].compactMap { control in
+        surfaceGhosts = bar.sideControls.compactMap { control in
             // The pressed button opening the panel would be copied dimmed.
             control.isHighlighted = false
             guard let ghost = control.snapshotView(afterScreenUpdates: true) else { return nil }
@@ -688,10 +762,10 @@ final class BrowserMobilePhoneViewController: UIViewController {
             // The content takes over the New Tab capsule in place.
             bar.plusButton.alpha = 0
         }
+        let sideControls = bar.sideControls
         UIView.animate(withDuration: 0.1, delay: 0, options: [.beginFromCurrentState]) {
-            self.bar.tabStack.alpha = 0
+            sideControls.forEach { $0.alpha = 0 }
             self.bar.plusButton.alpha = 0
-            self.bar.moreButton.alpha = 0
         }
         let ghosts = surfaceGhosts
         UIView.animate(withDuration: 0.2, delay: 0, options: [.beginFromCurrentState, .curveEaseOut]) {
@@ -740,9 +814,8 @@ final class BrowserMobilePhoneViewController: UIViewController {
             }
         } completion: { _ in
             if self.surface === surface {
-                self.bar.tabStack.alpha = 1
+                self.bar.sideControls.forEach { $0.alpha = 1 }
                 self.bar.plusButton.alpha = 1
-                self.bar.moreButton.alpha = 1
                 surface.removeFromSuperview()
                 self.surface = nil
                 self.surfaceGhosts = []
@@ -1130,7 +1203,6 @@ final class BrowserMobilePhoneViewController: UIViewController {
             live.frame = view.bounds
             switcher.setLivePicture(live, for: currentID)
         }
-        switcher.backdrop.image = currentID.flatMap { thumbnails.image(for: $0) }
         // The bar stays: its controls change over the switcher.
         view.insertSubview(switcher, belowSubview: bar)
         self.switcher = switcher
@@ -1353,6 +1425,12 @@ final class BrowserMobilePhoneViewController: UIViewController {
             controller.showExtensions(animated: false)
         }
         present(navigation, animated: true)
+    }
+
+    @objc private func stackHeld(_ gesture: UILongPressGestureRecognizer) {
+        guard gesture.state == .began, mode == .browsing else { return }
+        bar.tabStack.cancelTracking(with: nil)
+        showSpaces()
     }
 
     @objc private func findInPage() {

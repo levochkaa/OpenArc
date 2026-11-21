@@ -30,7 +30,8 @@ final class BrowserMobileTabSwitcherView: UIView, UIScrollViewDelegate, UIGestur
     /// A tap outside the cards.
     var onDismiss: (() -> Void)?
 
-    let backdrop = UIImageView()
+    /// The app's backdrop behind the cards.
+    let backdrop = BrowserMobileAppBackdrop()
 
     private(set) var entries = [Entry]()
     /// Index of the card in the middle, fractional while scrolling.
@@ -38,8 +39,6 @@ final class BrowserMobileTabSwitcherView: UIView, UIScrollViewDelegate, UIGestur
 
     // MARK: Private
 
-    private let blur = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterialDark))
-    private let dim = UIView()
     private let cardsLayer = UIView()
     private let scroller = UIScrollView()
     private var cards = [String: Card]()
@@ -60,12 +59,7 @@ final class BrowserMobileTabSwitcherView: UIView, UIScrollViewDelegate, UIGestur
         super.init(frame: frame)
         accessibilityIdentifier = "browser.tabSwitcher"
         backgroundColor = UIColor(red: 0.1, green: 0.1, blue: 0.13, alpha: 1)
-        backdrop.contentMode = .scaleAspectFill
-        backdrop.clipsToBounds = true
         addSubview(backdrop)
-        addSubview(blur)
-        dim.backgroundColor = UIColor(red: 0.06, green: 0.06, blue: 0.13, alpha: 0.86)
-        addSubview(dim)
         addSubview(cardsLayer)
         scroller.delegate = self
         scroller.showsHorizontalScrollIndicator = false
@@ -87,7 +81,7 @@ final class BrowserMobileTabSwitcherView: UIView, UIScrollViewDelegate, UIGestur
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        for view in [backdrop, blur, dim, cardsLayer, scroller] as [UIView] {
+        for view in [backdrop, cardsLayer, scroller] as [UIView] {
             view.frame = bounds
         }
         let step = bounds.width * Self.forwardStep

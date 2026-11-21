@@ -24,11 +24,14 @@ final class BrowserMobilePhoneBarView: UIView {
     let moreButton = UIButton(type: .custom)
     let spacesButton = UIButton(type: .custom)
     let settingsButton = UIButton(type: .custom)
+    /// Marks the page menu button while the page came over plain http.
+    let insecureBadge = UIView()
     /// Brings the collapsed bar back. It is off while the controls show, so
     /// it never takes their taps.
     let expandRecognizer = UITapGestureRecognizer()
 
     private(set) var isCollapsed = false
+
     /// Spaces and Settings in place of the tab stack and the page menu.
     private(set) var showsSwitcherControls = false
 
@@ -39,6 +42,12 @@ final class BrowserMobilePhoneBarView: UIView {
             background.overrideUserInterfaceStyle = isDark ? .dark : .light
             applyTheme()
         }
+    }
+
+    /// The controls beside New Tab that show now: the tab stack and the page
+    /// menu, or Spaces and Settings.
+    var sideControls: [UIControl] {
+        showsSwitcherControls ? [spacesButton, settingsButton] : [tabStack, moreButton]
     }
 
     // MARK: Private
@@ -72,6 +81,21 @@ final class BrowserMobilePhoneBarView: UIView {
             for: .normal,
         )
         moreButton.layer.cornerRadius = Self.roundButtonSide / 2
+        insecureBadge.backgroundColor = .black
+        insecureBadge.isUserInteractionEnabled = false
+        insecureBadge.isHidden = true
+        insecureBadge.bounds = CGRect(x: 0, y: 0, width: 18.7, height: 18.7)
+        insecureBadge.layer.cornerRadius = 18.7 / 2
+        let lock = UIImageView(image: UIImage(
+            systemName: "lock.slash.fill", withConfiguration: UIImage.SymbolConfiguration(
+                pointSize: 9,
+                weight: .semibold,
+            ),
+        ))
+        lock.tintColor = UIColor(red: 0.51, green: 0.51, blue: 0.53, alpha: 1)
+        lock.center = CGPoint(x: 18.7 / 2, y: 18.7 / 2)
+        insecureBadge.addSubview(lock)
+        moreButton.addSubview(insecureBadge)
         for (button, symbol, size, title, id) in [
             (spacesButton, "desktopcomputer", 16, String(localized: "Spaces", table: "Mobile"), "browser.spaces"),
             (settingsButton, "gear", 18, String(localized: "Settings", table: "Mobile"), "browser.settings"),
@@ -120,6 +144,7 @@ final class BrowserMobilePhoneBarView: UIView {
         plusButton.center = CGPoint(x: bounds.midX, y: centerY)
         moreButton.bounds = CGRect(x: 0, y: 0, width: Self.roundButtonSide, height: Self.roundButtonSide)
         moreButton.center = CGPoint(x: bounds.maxX - 24 - Self.roundButtonSide / 2, y: centerY)
+        insecureBadge.center = CGPoint(x: Self.roundButtonSide / 2 + 12.8, y: Self.roundButtonSide / 2 - 13.2)
         settingsButton.frame = moreButton.frame
         spacesButton.bounds = moreButton.bounds
         spacesButton.center = CGPoint(x: 24 + Self.roundButtonSide / 2, y: centerY)
@@ -141,10 +166,10 @@ final class BrowserMobilePhoneBarView: UIView {
 
     /// Swaps the tab stack and the page menu for Spaces and Settings; call it
     /// inside an animation to crossfade them.
-    func setShowsSwitcherControls(_ shows: Bool) {
+    func setShowsSwitcherControls(_ shows: Bool, showsMaterial: Bool? = nil) {
         showsSwitcherControls = shows
         // Over the switcher the bar has no material of its own.
-        background.showsMaterial = !shows
+        background.showsMaterial = showsMaterial ?? !shows
         for (view, visible) in [
             (tabStack, !shows), (moreButton, !shows), (spacesButton, shows), (settingsButton, shows),
         ] as [(UIView, Bool)] {
@@ -173,8 +198,8 @@ final class BrowserMobilePhoneBarView: UIView {
     }
 
     @objc private func pressDown(_ sender: UIButton) {
-        UIView.animate(withDuration: 0.12, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction]) {
-            sender.transform = CGAffineTransform(scaleX: 0.92, y: 0.92)
+        UIView.animate(withDuration: 0.06, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction]) {
+            sender.transform = CGAffineTransform(scaleX: 0.95, y: 0.95)
         }
     }
 
@@ -191,6 +216,8 @@ final class BrowserMobilePhoneBarView: UIView {
 // MARK: - BrowserMobileTabStackButton
 
 /// Two small tilted pictures of the tabs before this one; tapping opens the switcher.
+/// A card with no tab behind it stays as a blank translucent card, so the
+/// stack always shows two.
 final class BrowserMobileTabStackButton: UIControl {
     // MARK: Internal
 
@@ -202,12 +229,14 @@ final class BrowserMobileTabStackButton: UIControl {
     static let frontAngle: CGFloat = 9 * .pi / 180
     static let backAngle: CGFloat = -16 * .pi / 180
 
-    override var isHighlighted: Bool {
-        didSet {
-            UIView.animate(withDuration: isHighlighted ? 0.1 : 0.3, delay: 0, options: .beginFromCurrentState) {
-                self.transform = self.isHighlighted ? CGAffineTransform(scaleX: 0.9, y: 0.9) : .identity
-            }
-        }
+    // MARK: Private
+
+    private static let blankFill = UIColor {
+        $0.userInterfaceStyle == .dark ? UIColor(white: 1, alpha: 0.12) : UIColor(white: 0, alpha: 0.08)
+    }
+
+    private static let edge = UIColor {
+        $0.userInterfaceStyle == .dark ? UIColor(white: 1, alpha: 0.14) : UIColor(white: 0, alpha: 0.14)
     }
 
     let front = BrowserMobileTabStackButton.card()
@@ -219,6 +248,8 @@ final class BrowserMobileTabStackButton: UIControl {
         addSubview(front)
         isAccessibilityElement = true
         accessibilityTraits = .button
+        registerForTraitChanges([UITraitUserInterfaceStyle.self]) { (self: Self, _) in self.applyCardColors() }
+        applyCardColors()
     }
 
     @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
@@ -236,8 +267,6 @@ final class BrowserMobileTabStackButton: UIControl {
         }
     }
 
-    // MARK: Private
-
     private static func card() -> UIImageView {
         let view = UIImageView()
         view.contentMode = .scaleAspectFill
@@ -245,8 +274,6 @@ final class BrowserMobileTabStackButton: UIControl {
         view.layer.cornerCurve = .continuous
         view.layer.masksToBounds = true
         view.layer.borderWidth = 0.5
-        view.layer.borderColor = UIColor(white: 0, alpha: 0.18).cgColor
-        view.backgroundColor = .white
         view.isUserInteractionEnabled = false
         return view
     }
@@ -263,10 +290,16 @@ final class BrowserMobileTabStackButton: UIControl {
         }
     }
 
-    func setImages(front frontImage: UIImage?, back backImage: UIImage?, showsFront: Bool, showsBack: Bool) {
+    func setImages(front frontImage: UIImage?, back backImage: UIImage?) {
         Self.fill(front, frontImage)
         Self.fill(back, backImage)
-        front.isHidden = !showsFront
-        back.isHidden = !showsBack
+        applyCardColors()
+    }
+
+    private func applyCardColors() {
+        for card in [front, back] {
+            card.backgroundColor = card.image == nil ? Self.blankFill : .white
+            card.layer.borderColor = Self.edge.resolvedColor(with: traitCollection).cgColor
+        }
     }
 }
