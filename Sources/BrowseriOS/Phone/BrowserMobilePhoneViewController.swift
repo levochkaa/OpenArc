@@ -56,6 +56,13 @@ final class BrowserMobilePhoneViewController: UIViewController {
         statusCorner != nil && Self.hidesStatusCorner(mode)
     }
 
+    /// On a screen wider than tall (the unfolded iPhone Duo) the status bar
+    /// runs along the top, as above a toolbar, and pages get the full width;
+    /// on the folded screen it keeps its column at the side.
+    @available(iOS 27.1, *) override var preferredVerticalBarBehavior: UIVerticalBarBehavior {
+        view.bounds.width > view.bounds.height ? .disabled : .automatic
+    }
+
     override var preferredStatusBarStyle: UIStatusBarStyle {
         if mode == .switcher || mode == .search || showsHome { return .lightContent }
         return isStatusBandDark ? .lightContent : .darkContent
@@ -285,6 +292,19 @@ final class BrowserMobilePhoneViewController: UIViewController {
         switcher?.frame = view.bounds
     }
 
+    override func viewWillTransition(to size: CGSize, with coordinator: any UIViewControllerTransitionCoordinator) {
+        super.viewWillTransition(to: size, with: coordinator)
+        if #available(iOS 27.1, *) {
+            setNeedsUpdateOfVerticalBarConfiguration()
+        }
+        // Folding or turning moves the status corner, and the system reports
+        // its new block only after the size changes; look again once it settles.
+        coordinator.animate(alongsideTransition: nil) { [weak self] _ in
+            self?.refreshStatusCorner()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { self?.refreshStatusCorner() }
+        }
+    }
+
     override func viewSafeAreaInsetsDidChange() {
         super.viewSafeAreaInsetsDidChange()
         updateObscuredInsets()
@@ -361,6 +381,14 @@ final class BrowserMobilePhoneViewController: UIViewController {
                 openSearch(text: "", replacesPage: false)
             }
         }
+    }
+
+    private func refreshStatusCorner() {
+        if #available(iOS 27.1, *) {
+            setNeedsUpdateOfVerticalBarConfiguration()
+        }
+        updateStatusCorner()
+        view.setNeedsLayout()
     }
 
     /// The bar stays opaque; the page lays out above its full height even
