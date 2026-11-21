@@ -1456,7 +1456,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
                 card.alpha = 1
             }
         }
-        UIView.animate(springDuration: 0.36, bounce: 0.1, initialSpringVelocity: 0, delay: 0, options: [
+        UIView.animate(springDuration: 0.3, bounce: 0.1, initialSpringVelocity: 0, delay: 0, options: [
             .allowUserInteraction,
         ]) {
             for card in entries.compactMap({ switcher.card(for: $0.id) }) {
