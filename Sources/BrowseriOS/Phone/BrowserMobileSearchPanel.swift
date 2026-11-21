@@ -159,11 +159,15 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
         field.accessibilityLabel = String(localized: "Address", table: "Mobile")
         field.attributedPlaceholder = NSAttributedString(
             string: String(localized: "Search…", table: "Mobile"),
-            attributes: [.foregroundColor: UIColor(white: 1, alpha: 0.45)],
+            attributes: [
+                .foregroundColor: UIColor(white: 1, alpha: 0.45),
+                .font: UIFont.systemFont(ofSize: 19, weight: .semibold),
+            ],
         )
         field.font = .systemFont(ofSize: 19)
         field.textColor = .white
-        field.tintColor = .white
+        // A blue caret, as on the system's own fields over dark glass.
+        field.tintColor = UIColor(red: 114 / 255, green: 135 / 255, blue: 242 / 255, alpha: 1)
         field.keyboardType = .webSearch
         field.keyboardAppearance = .dark
         field.returnKeyType = .go

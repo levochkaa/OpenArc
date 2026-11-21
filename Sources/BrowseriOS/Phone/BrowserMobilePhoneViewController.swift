@@ -125,7 +125,11 @@ final class BrowserMobilePhoneViewController: UIViewController {
     private var scrollTravel: CGFloat = 0
 
     /// Panels.
-    private var surface: UIView?
+    /// A panel grown out of the bar; while it is up, it is the bar.
+    private var surface: UIView? {
+        didSet { bar.background.isCovered = surface != nil }
+    }
+
     /// The bar's own material inside a dark panel: it shows while the panel
     /// is the bar and gives way to the panel's glass as it rises.
     private var surfaceTint: BrowserMobileBarMaterial?
@@ -932,6 +936,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
             title: isPinned ? String(localized: "Unpin", table: "Mobile") : String(localized: "Pin", table: "Mobile"),
             symbol: isPinned ? "pin.slash" : "pin", identifier: "browser.pin",
             isEnabled: document?.canEdit == true && tab?.spaceID != nil && isWebPage,
+            menu: isPinned ? nil : pinMenu(),
         ) { [weak self] in
             self?.togglePin()
         })
@@ -1029,6 +1034,53 @@ final class BrowserMobilePhoneViewController: UIViewController {
         BrowserMobileToast.show(
             String(localized: "Copied URL", table: "Mobile"), in: view, barTop: view.bounds.height - expandedBarHeight,
         )
+    }
+
+    /// Where Pin can put the tab: Favorites, the top of any Space, or a
+    /// folder of its own Space.
+    private func pinMenu() -> UIMenu? {
+        guard let document = workspace.profileDocument, let tab = workspace.selectedTab,
+              let spaceID = tab.spaceID else { return nil }
+        let pin = { [weak self] (space: String, placement: BrowserTabPlacement, folder: String?) in
+            guard let self, let document = workspace.profileDocument, let tab = workspace.selectedTab else { return }
+            document.move(
+                items: [BrowserSyncEntityReference(entityType: .tab, entityID: tab.id)],
+                destination: .tabs(spaceID: space, placement: placement, pinnedFolderID: folder),
+            )
+            updatePagePanel()
+        }
+        var children = [UIMenuElement]()
+        children.append(UIMenu(options: .displayInline, children: [
+            UIAction(
+                title: String(localized: "Favorite in App", table: "Mobile"), image: UIImage(systemName: "iphone"),
+            ) { _ in pin(spaceID, .app, nil) },
+        ]))
+        let spaces = workspace.spaces.map { space in
+            UIAction(
+                title: space.title, image: UIImage(systemName: space.systemImageName),
+            ) { _ in pin(space.id, .spacePinned, nil) }
+        }
+        if !spaces.isEmpty {
+            children.append(UIMenu(
+                title: String(localized: "Pin to Space:", table: "Mobile"), options: .displayInline,
+                children: spaces,
+            ))
+        }
+        let folders = (document.snapshot.pinnedTabFolders ?? []).filter { $0.spaceID == spaceID }
+        if !folders.isEmpty {
+            children.append(UIMenu(options: .displayInline, children: [
+                UIMenu(
+                    title: String(localized: "Pin to Folder…", table: "Mobile"),
+                    image: UIImage(systemName: "folder.badge.plus"),
+                    children: folders.map { folder in
+                        UIAction(
+                            title: folder.title, image: UIImage(systemName: folder.systemImageName ?? "folder"),
+                        ) { _ in pin(spaceID, .spacePinned, folder.id) }
+                    },
+                ),
+            ]))
+        }
+        return UIMenu(children: children)
     }
 
     private func togglePin() {
@@ -1724,6 +1776,8 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
         let progress = min(travel / max(reach, 1), 1)
         surface.layer.cornerRadius = 36 * min(progress * 3, 1)
         setSurfaceTint(1 - min(progress * 2, 1))
+        // The page recedes into its card as the panel comes up.
+        applyPageCard(interpolate(view.bounds, searchCardFrame(), progress))
     }
 
     private func addSurfacePan(to surface: UIView) {

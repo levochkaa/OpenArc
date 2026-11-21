@@ -80,6 +80,14 @@ final class BrowserMobileBarMaterial: UIVisualEffectView {
         didSet { updateEffect() }
     }
 
+    /// Off while a panel grown out of the bar stands in for it, so the two
+    /// materials do not stack.
+    var isCovered = false {
+        didSet {
+            if isCovered != oldValue { updateEffect() }
+        }
+    }
+
     init() {
         super.init(effect: nil)
         updateEffect()
@@ -91,7 +99,7 @@ final class BrowserMobileBarMaterial: UIVisualEffectView {
     @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
     private func updateEffect() {
-        guard showsMaterial else {
+        guard showsMaterial, !isCovered else {
             effect = nil
             return
         }

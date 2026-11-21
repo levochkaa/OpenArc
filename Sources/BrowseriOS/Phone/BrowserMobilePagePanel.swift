@@ -16,6 +16,8 @@ final class BrowserMobilePagePanel: UIView {
         let symbol: String
         let identifier: String
         let isEnabled: Bool
+        /// Shown on a tap instead of running `action`.
+        var menu: UIMenu?
         let action: () -> Void
     }
 
@@ -39,6 +41,8 @@ final class BrowserMobilePagePanel: UIView {
     /// Rows inside the open Display Options group.
     static let optionHeight: CGFloat = 49
     static let groupSpacing: CGFloat = 16
+
+    private static let tileActionIdentifier = UIAction.Identifier("browser.pagePanel.tileAction")
 
     private static let expandedKey = "BrowserMobilePagePanel.displayOptionsExpanded"
 
@@ -91,12 +95,15 @@ final class BrowserMobilePagePanel: UIView {
     private let translateRow = BrowserMobilePagePanelRow()
     private let readerRow = BrowserMobilePagePanelRow()
     private let optionSeparators = [UIView(), UIView(), UIView(), UIView()]
+    /// Site Settings and Extensions, one card like Display Options.
+    private let siteGroup = UIView()
     private let siteSettingsRow = BrowserMobilePagePanelRow()
     private let extensionsRow = BrowserMobilePagePanelRow()
+    private let siteSeparator = UIView()
 
     /// Height of the panel's content above the home indicator.
     var contentHeight: CGFloat {
-        extensionsTop + Self.rowHeight
+        siteSettingsTop + Self.rowHeight * 2
     }
 
     /// The rows Display Options open, top to bottom.
@@ -109,7 +116,6 @@ final class BrowserMobilePagePanel: UIView {
     }
 
     private var siteSettingsTop: CGFloat { displayTop + displayHeight + Self.groupSpacing }
-    private var extensionsTop: CGFloat { siteSettingsTop + Self.rowHeight + 8 }
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -141,23 +147,25 @@ final class BrowserMobilePagePanel: UIView {
         }
         configureDisplayOptions()
         siteSettingsRow.configure(
-            title: String(localized: "Site Settings", table: "Mobile"), symbol: "gearshape",
+            title: String(localized: "Site Settings", table: "Mobile"), symbol: "gear",
             identifier: "browser.siteSettings",
         )
-        siteSettingsRow.layer.cornerRadius = 16
-        siteSettingsRow.layer.cornerCurve = .continuous
-        siteSettingsRow.layer.borderWidth = 1 / 3
         siteSettingsRow.addAction(UIAction { [weak self] _ in self?.onSiteSettings?() }, for: .touchUpInside)
-        body.addSubview(siteSettingsRow)
         extensionsRow.configure(
             title: String(localized: "Extensions", table: "Mobile"), symbol: "puzzlepiece.extension",
             identifier: "browser.extensions",
         )
-        extensionsRow.layer.cornerRadius = 16
-        extensionsRow.layer.cornerCurve = .continuous
-        extensionsRow.layer.borderWidth = 1 / 3
         extensionsRow.addAction(UIAction { [weak self] _ in self?.onExtensions?() }, for: .touchUpInside)
-        body.addSubview(extensionsRow)
+        siteGroup.layer.cornerRadius = 16
+        siteGroup.layer.cornerCurve = .continuous
+        siteGroup.layer.borderWidth = 1 / 3
+        // A pressed row lights up inside the card's rounded corners.
+        siteGroup.clipsToBounds = true
+        siteSeparator.isUserInteractionEnabled = false
+        for view in [siteSettingsRow, extensionsRow, siteSeparator] as [UIView] {
+            siteGroup.addSubview(view)
+        }
+        body.addSubview(siteGroup)
     }
 
     @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
@@ -215,8 +223,10 @@ final class BrowserMobilePagePanel: UIView {
         zoomOutButton.frame = CGRect(x: 0, y: 0, width: 44, height: 32)
         zoomInButton.frame = CGRect(x: 44, y: 0, width: 44, height: 32)
         zoomDivider.frame = CGRect(x: 44 - hairline / 2, y: 7, width: hairline, height: 18)
-        siteSettingsRow.frame = CGRect(x: Self.margin, y: siteSettingsTop, width: width, height: Self.rowHeight)
-        extensionsRow.frame = CGRect(x: Self.margin, y: extensionsTop, width: width, height: Self.rowHeight)
+        siteGroup.frame = CGRect(x: Self.margin, y: siteSettingsTop, width: width, height: Self.rowHeight * 2)
+        siteSettingsRow.frame = CGRect(x: 0, y: 0, width: width, height: Self.rowHeight)
+        extensionsRow.frame = CGRect(x: 0, y: Self.rowHeight, width: width, height: Self.rowHeight)
+        siteSeparator.frame = CGRect(x: 0, y: Self.rowHeight, width: width, height: hairline)
     }
 
     func update(
@@ -271,20 +281,36 @@ final class BrowserMobilePagePanel: UIView {
             button.isEnabled = tile.isEnabled
             button.alpha = tile.isEnabled ? 1 : 0.45
             button.removeTarget(nil, action: nil, for: .allEvents)
-            button.addAction(UIAction { _ in tile.action() }, for: .touchUpInside)
+            // The same identifier replaces the action set by the last update.
+            button.addAction(
+                UIAction(identifier: Self.tileActionIdentifier) { _ in
+                    if tile.menu == nil { tile.action() }
+                },
+                for: .touchUpInside,
+            )
+            button.menu = tile.menu
+            button.showsMenuAsPrimaryAction = tile.menu != nil
+            // Top to bottom as written, even when the menu opens upward.
+            button.preferredMenuElementOrder = .fixed
+            // The tile gives under the finger.
+            button.addTarget(self, action: #selector(tilePressed(_:)), for: [.touchDown, .touchDragEnter])
+            button.addTarget(self, action: #selector(tileReleased(_:)), for: [
+                .touchUpInside, .touchUpOutside, .touchCancel, .touchDragExit,
+            ])
             let label = tileLabels[index]
             label.text = tile.title
-            label.font = .systemFont(ofSize: 12)
+            label.font = .systemFont(ofSize: 12, weight: .medium)
             label.textAlignment = .center
             label.adjustsFontSizeToFitWidth = true
             label.minimumScaleFactor = 0.8
-            label.textColor = glyph.withAlphaComponent(0.7)
+            label.textColor = glyph.withAlphaComponent(0.9)
             label.alpha = button.alpha
         }
-        for view in [displayGroup, siteSettingsRow, extensionsRow] {
+        for view in [displayGroup, siteGroup] {
             view.backgroundColor = fill
             view.layer.borderColor = border
         }
+        siteSeparator.backgroundColor = glyph.withAlphaComponent(0.15)
         for row in [displayHeader, siteSettingsRow, extensionsRow] + optionRows {
             row.tintColor = glyph
         }
@@ -462,8 +488,22 @@ final class BrowserMobilePagePanel: UIView {
         }
     }
 
+    @objc private func tilePressed(_ sender: UIButton) {
+        UIView.animate(withDuration: 0.08, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction]) {
+            sender.transform = CGAffineTransform(scaleX: 0.92, y: 0.92)
+        }
+    }
+
+    @objc private func tileReleased(_ sender: UIButton) {
+        UIView.animate(springDuration: 0.35, bounce: 0.3, initialSpringVelocity: 0, delay: 0, options: [
+            .beginFromCurrentState, .allowUserInteraction,
+        ]) {
+            sender.transform = .identity
+        }
+    }
+
     private func symbol(_ name: String) -> UIImage? {
-        UIImage(systemName: name, withConfiguration: UIImage.SymbolConfiguration(pointSize: 18, weight: .medium))
+        UIImage(systemName: name, withConfiguration: UIImage.SymbolConfiguration(pointSize: 14, weight: .medium))
     }
 
     private func rowButton(_ symbolName: String, _ title: String, _ id: String, action: @escaping () -> Void)
