@@ -72,10 +72,14 @@ final class BrowserMobilePhoneSettingsViewController: UITableViewController {
         var value: String?
         var opensPage = true
         var toggle: UISwitch?
+        /// A row that opens this menu where the finger lifts instead of acting.
+        var menu: (() -> UIMenu)?
         let action: () -> Void
     }
 
     private static let defaultBrowserRowID = "browser.settings.defaultBrowser"
+    private static let archivalRowID = "browser.settings.archiveInactiveTabs"
+    private static let menuButtonTag = 0x0A4C
 
     // MARK: Internal
 
@@ -91,6 +95,10 @@ final class BrowserMobilePhoneSettingsViewController: UITableViewController {
     private let workspace: BrowserMobileWorkspace
     private var rows = [[Row]]()
 
+    private var archivalLifetime: BrowserTemporaryTabLifetime? {
+        workspace.automaticTabArchivalEnabled ? workspace.temporaryTabLifetime : nil
+    }
+
     init(workspace: BrowserMobileWorkspace) {
         self.workspace = workspace
         super.init(style: .insetGrouped)
@@ -103,6 +111,7 @@ final class BrowserMobilePhoneSettingsViewController: UITableViewController {
         super.viewDidLoad()
         tableView.accessibilityIdentifier = "browser.settingsList"
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "Row")
+        tableView.register(UITableViewCell.self, forCellReuseIdentifier: "MenuRow")
         tableView.rowHeight = 52
         navigationItem.rightBarButtonItem = UIBarButtonItem(
             title: String(localized: "Done", table: "Mobile"), style: .plain,
@@ -151,6 +160,7 @@ final class BrowserMobilePhoneSettingsViewController: UITableViewController {
                     opensPage: false,
                     toggle: autoOpenSwitch(),
                 ) {},
+            ] + archivalRows() + [
                 .init(
                     title: String(localized: "Clear Website Data", table: "Mobile"),
                     symbol: "trash.fill",
@@ -211,7 +221,7 @@ final class BrowserMobilePhoneSettingsViewController: UITableViewController {
 
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let row = rows[indexPath.section][indexPath.row]
-        let cell = tableView.dequeueReusableCell(withIdentifier: "Row", for: indexPath)
+        let cell = tableView.dequeueReusableCell(withIdentifier: row.menu == nil ? "Row" : "MenuRow", for: indexPath)
         var content = row.value == nil ? UIListContentConfiguration.cell() : .valueCell()
         content.text = row.title
         content.secondaryText = row.value
@@ -221,7 +231,22 @@ final class BrowserMobilePhoneSettingsViewController: UITableViewController {
         cell.accessoryType = row.opensPage ? .disclosureIndicator : .none
         cell.accessoryView = row.toggle
         cell.accessibilityIdentifier = row.id
-        cell.selectionStyle = row.isEnabled && row.toggle == nil ? .default : .none
+        cell.selectionStyle = row.isEnabled && row.toggle == nil && row.menu == nil ? .default : .none
+        if let menu = row.menu {
+            let button = cell.contentView.viewWithTag(Self.menuButtonTag) as? UIButton ?? {
+                let button = UIButton(type: .system)
+                button.tag = Self.menuButtonTag
+                button.showsMenuAsPrimaryAction = true
+                button.frame = cell.contentView.bounds
+                button.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+                cell.contentView.addSubview(button)
+                return button
+            }()
+            button.menu = menu()
+            button.isEnabled = row.isEnabled
+            button.accessibilityLabel = row.title
+            button.accessibilityValue = row.value
+        }
         return cell
     }
 
@@ -243,6 +268,8 @@ final class BrowserMobilePhoneSettingsViewController: UITableViewController {
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         refreshDefaultBrowser()
+        // Archive's own page sets the same timing.
+        refreshArchival()
         // The search engine may have changed on its page.
         if let index = rows.indices.first(where: { rows[$0].contains { $0.id == "browser.settings.searchEngine" } }),
            let row = rows[index].firstIndex(where: { $0.id == "browser.settings.searchEngine" })
@@ -270,6 +297,17 @@ final class BrowserMobilePhoneSettingsViewController: UITableViewController {
         }
     }
 
+    private static func archivalTitle(_ lifetime: BrowserTemporaryTabLifetime?) -> String {
+        switch lifetime {
+        case nil: String(localized: "Off", table: "Mobile")
+        case .twelveHours: String(localized: "After 12 Hours", table: "Mobile")
+        case .twentyFourHours: String(localized: "After 1 Day", table: "Mobile")
+        case .threeDays: String(localized: "After 3 Days", table: "Mobile")
+        case .sevenDays: String(localized: "After 7 Days", table: "Mobile")
+        case .thirtyDays: String(localized: "After 30 Days", table: "Mobile")
+        }
+    }
+
     /// Settings › Extensions; a store link closes Settings and opens in a new tab.
     func showExtensions(animated: Bool) {
         let controller = BrowserMobileExtensionsViewController()
@@ -289,21 +327,62 @@ final class BrowserMobilePhoneSettingsViewController: UITableViewController {
         dismiss(animated: true)
     }
 
+    /// How long a Today tab stays open before Archive takes it, picked from a
+    /// menu in place.
+    private func archivalRows() -> [Row] {
+        guard workspace.supportsArchive else { return [] }
+        return [.init(
+            title: String(localized: "Archive Inactive Tabs", table: "Mobile"),
+            symbol: "archivebox.fill",
+            color: .systemPurple,
+            id: Self.archivalRowID,
+            isEnabled: workspace.canConfigureAutomaticTabArchival,
+            value: Self.archivalTitle(archivalLifetime),
+            opensPage: false,
+            menu: { [weak self] in self?.archivalMenu() ?? UIMenu(children: []) },
+        ) {}]
+    }
+
+    private func archivalMenu() -> UIMenu {
+        let current = archivalLifetime
+        let choices: [BrowserTemporaryTabLifetime?] = [nil] + BrowserTemporaryTabLifetime.allCases
+        return UIMenu(children: choices.map { lifetime in
+            UIAction(
+                title: Self.archivalTitle(lifetime),
+                identifier: .init("browser.settings.archiveInactiveTabs." + (lifetime?.rawValue ?? "off")),
+                state: lifetime == current ? .on : .off,
+            ) { [weak self] _ in
+                guard let self else { return }
+                workspace.setAutomaticTabArchival(lifetime: lifetime)
+                refreshArchival()
+            }
+        })
+    }
+
+    private func refreshArchival() {
+        guard let section = rows.firstIndex(where: { $0.contains { $0.id == Self.archivalRowID } }),
+              let row = rows[section].firstIndex(where: { $0.id == Self.archivalRowID }) else { return }
+        let value = Self.archivalTitle(archivalLifetime)
+        guard rows[section][row].value != value || !isViewLoaded else { return }
+        rows[section][row].value = value
+        tableView.reloadRows(at: [IndexPath(row: row, section: section)], with: .none)
+    }
+
     /// Downloads and Archive side by side above the list.
     private func makeShortcuts() -> UIView {
         func button(_ title: String, _ symbol: String, _ id: String, enabled: Bool, _ action: @escaping () -> Void)
             -> UIButton
         {
-            var configuration = UIButton.Configuration.filled()
+            // Plain: a press dims the title and glyph while the capsule keeps its fill.
+            var configuration = UIButton.Configuration.plain()
             configuration.title = title
             configuration.image = UIImage(
                 systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .medium),
             )
             configuration.imagePadding = 8
-            configuration.baseBackgroundColor = .secondarySystemGroupedBackground
+            configuration.background.backgroundColor = .secondarySystemGroupedBackground
             configuration.baseForegroundColor = .label
-            configuration.background.cornerRadius = 12
-            configuration.cornerStyle = .fixed
+            configuration.cornerStyle = .capsule
             let button = UIButton(configuration: configuration, primaryAction: UIAction { _ in action() })
             button.isEnabled = enabled
             button.accessibilityIdentifier = id

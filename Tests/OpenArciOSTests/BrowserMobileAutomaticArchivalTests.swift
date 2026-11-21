@@ -9,6 +9,33 @@ import UIKit
 // MARK: - BrowserMobileAutomaticArchivalTests
 
 @MainActor struct BrowserMobileAutomaticArchivalTests {
+    @Test func settingsShowsTheArchiveTimingInItsOwnRow() async throws {
+        try await withAutomaticArchiveFixture { f in
+            let workspace = await f.workspace("settings")
+            #expect(f.document.setAutomaticTabArchival(lifetime: .sevenDays))
+            let settings = BrowserMobilePhoneSettingsViewController(workspace: workspace)
+            settings.loadViewIfNeeded()
+            settings.beginAppearanceTransition(true, animated: false)
+            settings.endAppearanceTransition()
+            let table = settings.tableView!
+            let cells = (0..<table.numberOfSections).flatMap { section in
+                (0..<table.numberOfRows(inSection: section)).compactMap {
+                    settings.tableView(table, cellForRowAt: IndexPath(row: $0, section: section))
+                }
+            }
+            let row = try #require(cells.first { $0.accessibilityIdentifier == "browser.settings.archiveInactiveTabs" })
+            let content = try #require(row.contentConfiguration as? UIListContentConfiguration)
+            #expect(content.secondaryText == "After 7 Days")
+            let button = try #require(row.contentView.subviews.compactMap { $0 as? UIButton }.first)
+            #expect(button.showsMenuAsPrimaryAction)
+            let choices = button.menu?.children.compactMap { $0 as? UIAction } ?? []
+            #expect(choices.map(\.title) == [
+                "Off", "After 12 Hours", "After 1 Day", "After 3 Days", "After 7 Days", "After 30 Days",
+            ])
+            #expect(choices.filter { $0.state == .on }.map(\.title) == ["After 7 Days"])
+        }
+    }
+
     @Test func allAttachedScenesMustHydrateAndOnlyActiveSelectionsRefresh() async throws {
         try await withAutomaticArchiveFixture { f in
             let gate = AutomaticArchiveLoadGate()

@@ -131,6 +131,7 @@
 "The archive could not be changed. Try again." = "The archive could not be changed. Try again.";
 "Remove all currently archived tabs, including those hidden by search? Tabs archived after this confirmation opens will be kept." = "Remove all currently archived tabs, including those hidden by search? Tabs archived after this confirmation opens will be kept.";
 "Auto-Archive" = "Auto-Archive";
+"Archive Inactive Tabs" = "Archive Inactive Tabs";
 "Auto-Archive Today Tabs" = "Auto-Archive Today Tabs";
 "Off" = "Off";
 "After 12 Hours" = "After 12 Hours";
