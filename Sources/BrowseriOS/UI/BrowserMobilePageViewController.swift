@@ -73,6 +73,7 @@ final class BrowserMobilePageViewController: UIViewController, UITextFieldDelega
     private let emptyTitle = UILabel()
     private let emptyMessage = UILabel()
     private let emptyAction = UIButton(type: .system)
+    private let loadError = BrowserMobileLoadErrorView()
     private var backButton = UIButton(type: .system)
     private var forwardButton = UIButton(type: .system)
     private var reloadButton = UIButton(type: .system)
@@ -129,7 +130,15 @@ final class BrowserMobilePageViewController: UIViewController, UITextFieldDelega
         engineView.translatesAutoresizingMaskIntoConstraints = false
         content.addSubview(engineView)
         content.addSubview(emptyState)
+        loadError.isHidden = true
+        loadError.translatesAutoresizingMaskIntoConstraints = false
+        loadError.onReload = { [weak self] in self?.workspace.reload() }
+        content.addSubview(loadError)
         NSLayoutConstraint.activate([
+            loadError.topAnchor.constraint(equalTo: content.topAnchor),
+            loadError.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            loadError.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            loadError.bottomAnchor.constraint(equalTo: content.bottomAnchor),
             engineView.topAnchor.constraint(equalTo: content.topAnchor),
             engineView.leadingAnchor.constraint(equalTo: content.leadingAnchor),
             engineView.trailingAnchor.constraint(equalTo: content.trailingAnchor),
@@ -259,6 +268,11 @@ final class BrowserMobilePageViewController: UIViewController, UITextFieldDelega
         )
         emptyState.isHidden = tab?.state.error == nil && tab?.urlString != "about:blank" && tab != nil
         engineView.isHidden = !emptyState.isHidden
+        let pageError = workspace.isReady ? tab?.state.error : nil
+        loadError.isHidden = pageError == nil
+        loadError.setMessage(pageError)
+        // A page's own error shows in the load error view.
+        if pageError != nil { emptyState.isHidden = true }
         if !workspace.isReady {
             emptyTitle.text = String(localized: "Opening your tabs", table: "Mobile")
             emptyMessage.text = workspace.sessionError ?? String(
@@ -266,11 +280,6 @@ final class BrowserMobilePageViewController: UIViewController, UITextFieldDelega
                 table: "Mobile",
             )
             emptyAction.isHidden = true
-        } else if let error = tab?.state.error {
-            emptyTitle.text = String(localized: "Page could not load", table: "Mobile")
-            emptyMessage.text = error
-            emptyAction.isHidden = false
-            emptyAction.setTitle(String(localized: "Try Again", table: "Mobile"), for: .normal)
         } else {
             emptyTitle.text = String(localized: "Where next?", table: "Mobile")
             emptyMessage.text = String(localized: "Search the web or enter an address.", table: "Mobile")
@@ -512,14 +521,7 @@ final class BrowserMobilePageViewController: UIViewController, UITextFieldDelega
         var configuration = UIButton.Configuration.tinted()
         configuration.cornerStyle = .capsule
         emptyAction.configuration = configuration
-        emptyAction.addAction(UIAction { [weak self] _ in
-            guard let self else { return }
-            if workspace.selectedTab?.state.error != nil {
-                workspace.reloadOrStop()
-            } else {
-                focusAddress()
-            }
-        }, for: .touchUpInside)
+        emptyAction.addAction(UIAction { [weak self] _ in self?.focusAddress() }, for: .touchUpInside)
         for view in [emptyTitle, emptyMessage, emptyAction] {
             emptyState.addArrangedSubview(view)
         }

@@ -70,6 +70,8 @@ final class BrowserMobilePhoneViewController: UIViewController {
 
     override var preferredStatusBarStyle: UIStatusBarStyle {
         if mode == .switcher || mode == .search || showsHome { return .lightContent }
+        // The empty state or the load error fills the page's place.
+        if contentView.isHidden { return traitCollection.userInterfaceStyle == .dark ? .lightContent : .darkContent }
         return isStatusBandDark ? .lightContent : .darkContent
     }
 
@@ -128,6 +130,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
     private let emptyTitle = UILabel()
     private let emptyMessage = UILabel()
     private let emptyAction = UIButton(type: .system)
+    private let loadError = BrowserMobileLoadErrorView()
     private let thumbnails = BrowserMobileTabThumbnails.shared
     private let favicons = BrowserMobileFavicons.shared
     private var isBackdropSampleScheduled = false
@@ -448,6 +451,11 @@ final class BrowserMobilePhoneViewController: UIViewController {
         emptyState.frame = pageContainer.bounds.inset(by: UIEdgeInsets(
             top: view.safeAreaInsets.top, left: 24, bottom: expandedBarHeight, right: 24,
         ))
+        loadError.frame = pageContainer.bounds
+        loadError.contentInsets = UIEdgeInsets(
+            top: view.safeAreaInsets.top, left: view.safeAreaInsets.left,
+            bottom: expandedBarHeight, right: view.safeAreaInsets.right,
+        )
     }
 
     private func layoutBar() {
@@ -631,6 +639,9 @@ final class BrowserMobilePhoneViewController: UIViewController {
         emptyState.addArrangedSubview(inner)
         emptyState.addArrangedSubview(UIView())
         pageContainer.addSubview(emptyState)
+        loadError.isHidden = true
+        loadError.onReload = { [weak self] in self?.workspace.reload() }
+        pageContainer.insertSubview(loadError, belowSubview: pageDim)
     }
 
     private func updateEmptyState() {
@@ -641,6 +652,10 @@ final class BrowserMobilePhoneViewController: UIViewController {
         emptyState.isHidden = home || workspace.isReady && error == nil && !isBlank
         contentView.isHidden = !workspace.isReady || tab?.state.error != nil || isBlank
         setShowsHome(home)
+        let pageError = workspace.isReady && workspace.sessionError == nil ? tab?.state.error : nil
+        loadError.isHidden = pageError == nil
+        loadError.setMessage(pageError)
+        setNeedsStatusBarAppearanceUpdate()
         if contentView.isHidden {
             // The bar sits over this view, not the page it last matched.
             setBackdropDark(home || traitCollection.userInterfaceStyle == .dark)
@@ -664,7 +679,8 @@ final class BrowserMobilePhoneViewController: UIViewController {
                     : String(localized: "Retry", table: "Mobile"),
                 for: .normal,
             )
-            emptyState.isHidden = false
+            // A page's own error shows in the load error view.
+            emptyState.isHidden = pageError != nil
         } else {
             emptyTitle.text = String(localized: "Where next?", table: "Mobile")
             emptyMessage.text = String(localized: "Search the web or enter an address.", table: "Mobile")

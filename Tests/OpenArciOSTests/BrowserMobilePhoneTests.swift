@@ -383,3 +383,33 @@ import UIKit
     BrowserMobileContentBlocking.update(defaults, applies: false) { $0.blocksTrackers = false }
     #expect(!BrowserMobileContentBlocking.blocks(.trackers, onPage: "https://other.example/", defaults: defaults))
 }
+
+// MARK: - Load error
+
+@MainActor @Test func mobileLoadErrorCentersItsFaceAndWordsAboveTheBar() throws {
+    let view = BrowserMobileLoadErrorView(frame: CGRect(x: 0, y: 0, width: 402, height: 874))
+    view.contentInsets = UIEdgeInsets(top: 62, left: 0, bottom: 76, right: 0)
+    view.setMessage("A server with the specified hostname could not be found.")
+    view.layoutIfNeeded()
+    let labels = view.subviews.compactMap { $0 as? UILabel }
+    let face = try #require(view.subviews.first)
+    let message = try #require(labels.last)
+    let reload = try #require(view.subviews.first { $0.accessibilityIdentifier == "browser.loadError.reload" })
+    #expect(abs(face.frame.midX - 201) < 1)
+    let middle = (face.frame.minY + message.frame.maxY) / 2
+    #expect(abs(middle - (62 + 874 - 76) / 2) < 1, "The face and the words center between the status bar and the bar")
+    #expect(reload.frame.minY > message.frame.maxY, "The reload button hangs below the words")
+
+    view.setMessage(nil)
+    #expect(message.isHidden)
+}
+
+@MainActor @Test func mobileLoadErrorReloadButtonCallsBack() throws {
+    let view = BrowserMobileLoadErrorView()
+    var reloads = 0
+    view.onReload = { reloads += 1 }
+    let reload = try #require(view.subviews
+        .first { $0.accessibilityIdentifier == "browser.loadError.reload" } as? UIButton)
+    reload.sendActions(for: .touchUpInside)
+    #expect(reloads == 1)
+}
