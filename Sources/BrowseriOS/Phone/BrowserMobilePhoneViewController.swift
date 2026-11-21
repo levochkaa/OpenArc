@@ -1531,8 +1531,11 @@ final class BrowserMobilePhoneViewController: UIViewController {
         switcher.lift(ordered.filter { !$0.isOlder }.map(\.card), into: over)
         let page = currentID.flatMap { switcher.card(for: $0) }
         let hole = page.map { makeFlightHole(in: under, around: $0) }
-        UIView.animate(withDuration: 0.15) {
+        // The bar's material and controls give way within a couple of frames.
+        UIView.animate(withDuration: 0.05) {
             self.bar.setShowsSwitcherControls(true)
+        }
+        UIView.animate(withDuration: 0.15) {
             for card in entries.compactMap({ switcher.card(for: $0.id) }) where card.alpha == 0 {
                 card.alpha = 1
             }
