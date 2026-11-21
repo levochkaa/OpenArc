@@ -86,6 +86,7 @@ final class BrowserMobilePagePanel: UIView {
     private let zoomStepper = UIView()
     private let zoomOutButton = UIButton(type: .system)
     private let zoomInButton = UIButton(type: .system)
+    private let zoomDivider = UIView()
     private let desktopRow = BrowserMobilePagePanelRow()
     private let translateRow = BrowserMobilePagePanelRow()
     private let readerRow = BrowserMobilePagePanelRow()
@@ -207,12 +208,13 @@ final class BrowserMobilePagePanel: UIView {
         let hairline = 1 / max(traitCollection.displayScale, 1)
         for (index, separator) in optionSeparators.enumerated() {
             separator.frame = CGRect(
-                x: 52, y: Self.rowHeight + Self.optionHeight * CGFloat(index), width: width - 52, height: hairline,
+                x: 0, y: Self.rowHeight + Self.optionHeight * CGFloat(index), width: width, height: hairline,
             )
         }
         zoomStepper.frame = CGRect(x: width - 10 - 88, y: (Self.optionHeight - 32) / 2, width: 88, height: 32)
         zoomOutButton.frame = CGRect(x: 0, y: 0, width: 44, height: 32)
         zoomInButton.frame = CGRect(x: 44, y: 0, width: 44, height: 32)
+        zoomDivider.frame = CGRect(x: 44 - hairline / 2, y: 7, width: hairline, height: 18)
         siteSettingsRow.frame = CGRect(x: Self.margin, y: siteSettingsTop, width: width, height: Self.rowHeight)
         extensionsRow.frame = CGRect(x: Self.margin, y: extensionsTop, width: width, height: Self.rowHeight)
     }
@@ -291,6 +293,7 @@ final class BrowserMobilePagePanel: UIView {
             separator.backgroundColor = glyph.withAlphaComponent(0.15)
         }
         zoomStepper.backgroundColor = fill
+        zoomDivider.backgroundColor = glyph.withAlphaComponent(0.2)
         zoomOutButton.tintColor = glyph
         zoomInButton.tintColor = glyph
         displayGroup.alpha = display == nil ? 0.45 : 1
@@ -382,6 +385,8 @@ final class BrowserMobilePagePanel: UIView {
         zoomRow.isAccessibilityElement = false
         zoomStepper.layer.cornerRadius = 9
         zoomStepper.layer.cornerCurve = .continuous
+        zoomDivider.isUserInteractionEnabled = false
+        zoomStepper.addSubview(zoomDivider)
         for (button, symbolName, title, id, action) in [
             (
                 zoomOutButton,

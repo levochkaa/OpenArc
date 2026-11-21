@@ -50,10 +50,10 @@ final class BrowserMobilePhoneViewController: UIViewController {
         ]
     }
 
-    /// Where the status corner is its own block (iPhone Duo), search hides
-    /// the status bar.
+    /// Where the status corner is its own block (iPhone Duo), search and the
+    /// switcher hide the status bar: their cards pass under the block.
     override var prefersStatusBarHidden: Bool {
-        statusCorner != nil && mode == .search
+        statusCorner != nil && Self.hidesStatusCorner(mode)
     }
 
     override var preferredStatusBarStyle: UIStatusBarStyle {
@@ -65,7 +65,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
 
     private(set) var mode = Mode.browsing {
         didSet {
-            if statusCorner != nil, (mode == .search) != (oldValue == .search) {
+            if statusCorner != nil, Self.hidesStatusCorner(mode) != Self.hidesStatusCorner(oldValue) {
                 setNeedsStatusBarAppearanceUpdate()
             }
         }
@@ -267,6 +267,10 @@ final class BrowserMobilePhoneViewController: UIViewController {
         larger
             ? zoomSteps.first { $0 > zoom + 0.001 } ?? zoomSteps[zoomSteps.count - 1]
             : zoomSteps.last { $0 < zoom - 0.001 } ?? zoomSteps[0]
+    }
+
+    private static func hidesStatusCorner(_ mode: Mode) -> Bool {
+        mode == .search || mode == .switcher
     }
 
     /// Whether a page's background is dark; nil before it reports one.
@@ -680,14 +684,17 @@ final class BrowserMobilePhoneViewController: UIViewController {
         pagePanel.setAddressExpanded(false)
         addSurfacePan(to: surface)
         let target = CGRect(x: 0, y: view.bounds.height - height, width: view.bounds.width, height: height)
-        UIView.animate(springDuration: 0.42, bounce: 0.12, initialSpringVelocity: 0, delay: 0, options: [
-            .allowUserInteraction, .beginFromCurrentState,
-        ]) {
+        // Rises fast and settles without overshoot: an ease-out cubic over 0.24 s.
+        let rise = UIViewPropertyAnimator(
+            duration: 0.24, controlPoint1: CGPoint(x: 0.215, y: 0.61), controlPoint2: CGPoint(x: 0.355, y: 1),
+        ) {
             surface.frame = target
             surface.layer.cornerRadius = 36
             self.surfaceTint?.alpha = 0
             self.pagePanel.setAddressExpanded(true)
         }
+        rise.isUserInteractionEnabled = true
+        rise.startAnimation()
     }
 
     /// Puts a surface over the bar with the bar's frame and color, holding
@@ -1725,8 +1732,11 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
         // Right and up go back in time; left from the newest tab only rubber-bands.
         let target = toPrevious ? index.flatMap { $0 > 0 ? tabs[$0 - 1].id : nil } : nil
         thumbnails.capture(current, workspace: workspace, width: thumbnailWidth)
-        let backdrop = UIView(frame: view.bounds)
-        backdrop.backgroundColor = kind == .up ? UIColor(red: 0.1, green: 0.1, blue: 0.13, alpha: 1) : .black
+        // Dragging up shows the app's backdrop behind the shrinking page; sideways, black.
+        let backdrop = kind == .up ? BrowserMobileAppBackdrop(frame: view.bounds) : UIView(frame: view.bounds)
+        if kind != .up {
+            backdrop.backgroundColor = .black
+        }
         view.insertSubview(backdrop, belowSubview: pageContainer)
         let outgoing = pageContainer.snapshotView(afterScreenUpdates: false) ?? UIView()
         outgoing.frame = view.bounds
