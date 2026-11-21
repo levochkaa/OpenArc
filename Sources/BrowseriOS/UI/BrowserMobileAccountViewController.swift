@@ -33,6 +33,38 @@ extension BrowserMobileSyncSession: BrowserMobileAccountSessionPresenting {
     var changePublisher: AnyPublisher<Void, Never> { objectWillChange.eraseToAnyPublisher() }
 }
 
+// MARK: - BrowserMobileAccountField
+
+/// A filled 50 pt text field with the grouped cell color.
+final class BrowserMobileAccountField: UITextField {
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        borderStyle = .none
+        backgroundColor = .secondarySystemGroupedBackground
+        layer.cornerRadius = 12
+        layer.cornerCurve = .continuous
+        heightAnchor.constraint(greaterThanOrEqualToConstant: 50).isActive = true
+    }
+
+    @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    override func textRect(forBounds bounds: CGRect) -> CGRect { bounds.insetBy(dx: 16, dy: 0) }
+    override func editingRect(forBounds bounds: CGRect) -> CGRect { bounds.insetBy(dx: 16, dy: 0) }
+    override func placeholderRect(forBounds bounds: CGRect) -> CGRect { bounds.insetBy(dx: 16, dy: 0) }
+}
+
+private extension UIFont {
+    var bold: UIFont {
+        fontDescriptor.withSymbolicTraits(.traitBold).map { UIFont(descriptor: $0, size: 0) } ?? self
+    }
+
+    func withWeight(_ weight: UIFont.Weight) -> UIFont {
+        UIFont(descriptor: fontDescriptor.addingAttributes([
+            .traits: [UIFontDescriptor.TraitKey.weight: weight],
+        ]), size: 0)
+    }
+}
+
 // MARK: - BrowserMobileAccountViewController
 
 @MainActor final class BrowserMobileAccountViewController: UIViewController, UIAdaptivePresentationControllerDelegate,
@@ -41,24 +73,26 @@ extension BrowserMobileSyncSession: BrowserMobileAccountSessionPresenting {
     // MARK: Private
 
     private let session: any BrowserMobileAccountSessionPresenting
-    private let serverField = UITextField()
+    private let serverField = BrowserMobileAccountField()
+    private let titleLabel = UILabel()
     private let statusLabel = UILabel()
+    private let orLabel = UILabel()
     private let errorLabel = UILabel()
     private let consentLabel = UILabel()
     private let serverButton = UIButton(type: .system)
-    private let signInButton = ASAuthorizationAppleIDButton(
+    private lazy var signInButton = ASAuthorizationAppleIDButton(
         authorizationButtonType: .signIn,
-        authorizationButtonStyle: .black,
+        authorizationButtonStyle: traitCollection.userInterfaceStyle == .dark ? .white : .black,
     )
     private let providerButtons: [BrowserAccountProvider: UIButton] = [
         .google: UIButton(type: .system),
         .github: UIButton(type: .system),
     ]
     private let loadProvidersButton = UIButton(type: .system)
-    private let emailField = UITextField()
+    private let emailField = BrowserMobileAccountField()
     private let sendCodeButton = UIButton(type: .system)
     private let codeSentLabel = UILabel()
-    private let codeField = UITextField()
+    private let codeField = BrowserMobileAccountField()
     private let signInWithCodeButton = UIButton(type: .system)
     private let sendAgainButton = UIButton(type: .system)
     private let differentEmailButton = UIButton(type: .system)
@@ -94,12 +128,20 @@ extension BrowserMobileSyncSession: BrowserMobileAccountSessionPresenting {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemGroupedBackground
-        navigationItem.rightBarButtonItem = UIBarButtonItem(
-            systemItem: .done, primaryAction: UIAction { [weak self] _ in self?.close() },
-        )
         makeContent()
         observation = session.changePublisher.receive(on: RunLoop.main).sink { [weak self] in self?.render() }
         render()
+    }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        // Pushed inside Settings, the back button closes it; shown on its own, Done does.
+        let isPushed = navigationController.map { $0.viewControllers.first !== self } ?? false
+        navigationItem.rightBarButtonItem = isPushed
+            ? nil
+            : UIBarButtonItem(
+                title: Self.localized("Done"), style: .plain, target: self, action: #selector(doneTapped),
+            )
     }
 
     override func viewDidAppear(_ animated: Bool) {
@@ -131,14 +173,17 @@ extension BrowserMobileSyncSession: BrowserMobileAccountSessionPresenting {
         return true
     }
 
+    @objc private func doneTapped() { close() }
+
     private func makeContent() {
         let scroll = UIScrollView()
         scroll.translatesAutoresizingMaskIntoConstraints = false
         scroll.keyboardDismissMode = .interactive
+        scroll.alwaysBounceVertical = true
         view.addSubview(scroll)
         let stack = UIStackView()
         stack.axis = .vertical
-        stack.spacing = 16
+        stack.spacing = 10
         stack.translatesAutoresizingMaskIntoConstraints = false
         scroll.addSubview(stack)
         NSLayoutConstraint.activate([
@@ -148,16 +193,93 @@ extension BrowserMobileSyncSession: BrowserMobileAccountSessionPresenting {
             scroll.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor),
             stack.leadingAnchor.constraint(equalTo: scroll.contentLayoutGuide.leadingAnchor, constant: 20),
             stack.trailingAnchor.constraint(equalTo: scroll.contentLayoutGuide.trailingAnchor, constant: -20),
-            stack.topAnchor.constraint(equalTo: scroll.contentLayoutGuide.topAnchor, constant: 20),
-            stack.bottomAnchor.constraint(equalTo: scroll.contentLayoutGuide.bottomAnchor, constant: -20),
+            stack.topAnchor.constraint(equalTo: scroll.contentLayoutGuide.topAnchor, constant: 12),
+            stack.bottomAnchor.constraint(equalTo: scroll.contentLayoutGuide.bottomAnchor, constant: -24),
             stack.widthAnchor.constraint(equalTo: scroll.frameLayoutGuide.widthAnchor, constant: -40),
         ])
+        // The mark, what this screen is for, and where things stand.
+        let logo = UIImageView(image: UIImage(named: "HomeLogo"))
+        logo.contentMode = .scaleAspectFit
+        logo.heightAnchor.constraint(equalToConstant: 56).isActive = true
+        stack.addArrangedSubview(logo)
+        stack.setCustomSpacing(16, after: logo)
+        titleLabel.font = .preferredFont(forTextStyle: .title2).bold
+        titleLabel.adjustsFontForContentSizeCategory = true
+        titleLabel.textAlignment = .center
+        titleLabel.numberOfLines = 0
+        titleLabel.accessibilityIdentifier = "account.title"
+        stack.addArrangedSubview(titleLabel)
+        stack.setCustomSpacing(6, after: titleLabel)
+        for label in [statusLabel, consentLabel, errorLabel, orLabel] {
+            label.numberOfLines = 0
+            label.font = .preferredFont(forTextStyle: .subheadline)
+            label.adjustsFontForContentSizeCategory = true
+            label.textAlignment = .center
+            label.textColor = .secondaryLabel
+        }
+        statusLabel.accessibilityIdentifier = "account.status"
+        stack.addArrangedSubview(statusLabel)
+        stack.setCustomSpacing(24, after: statusLabel)
+        errorLabel.textColor = .systemRed
+        errorLabel.accessibilityIdentifier = "account.error"
+        stack.addArrangedSubview(errorLabel)
+        stack.setCustomSpacing(16, after: errorLabel)
+        signInButton.accessibilityIdentifier = "account.signIn"
+        signInButton.cornerRadius = 12
+        signInButton.heightAnchor.constraint(equalToConstant: 50).isActive = true
+        signInButton.addTarget(self, action: #selector(signIn), for: .touchUpInside)
+        stack.addArrangedSubview(signInButton)
+        makeOtherSignInMethods(in: stack)
+        stack.addArrangedSubview(progress)
+        consentLabel.text = Self
+            .localized(
+                "Sync shares your Spaces, folders, and tab addresses with your other devices through this server.",
+            )
+        stack.addArrangedSubview(consentLabel)
+        configure(enableButton, title: "Enable Sync", id: "account.enable", prominent: true) { [weak self] in
+            self?.session.enableSync()
+        }
+        configure(pauseButton, title: "Pause Sync", id: "account.pause") { [weak self] in self?.session.pauseSync() }
+        configure(resumeButton, title: "Resume Sync", id: "account.resume", prominent: true) { [weak self] in
+            self?.session.resumeSync()
+        }
+        configure(retryButton, title: "Retry Sync", id: "account.retry") { [weak self] in self?.session.retrySync() }
+        configure(signOutButton, title: "Sign Out", id: "account.signOut") { [weak self] in
+            self?.cancelOwnedSignIn()
+            self?.session.signOut()
+        }
+        configure(cancelButton, title: "Cancel Sign-In", id: "account.cancelSignIn") { [weak self] in
+            self?.cancelOwnedSignIn()
+        }
+        configure(deleteAccountButton, title: "Delete Account…", id: "account.delete", plain: true) { [weak self] in
+            self?.confirmAccountDeletion()
+        }
+        deleteAccountButton.configuration?.baseForegroundColor = .systemRed
+        for button in [enableButton, pauseButton, resumeButton, retryButton, signOutButton, cancelButton] {
+            stack.addArrangedSubview(button)
+        }
+        stack.addArrangedSubview(deleteAccountButton)
+        // Whatever shows above, the server keeps its distance.
+        let gap = UIView()
+        gap.heightAnchor.constraint(equalToConstant: 16).isActive = true
+        stack.addArrangedSubview(gap)
+        // The server is rarely changed, so it sits last.
         let serverTitle = UILabel()
-        serverTitle.text = Self.localized("Sync Server")
-        serverTitle.font = .preferredFont(forTextStyle: .headline)
+        serverTitle.text = Self.localized("Sync Server").uppercased()
+        serverTitle.font = .preferredFont(forTextStyle: .footnote)
         serverTitle.adjustsFontForContentSizeCategory = true
-        stack.addArrangedSubview(serverTitle)
-        serverField.borderStyle = .roundedRect
+        serverTitle.textColor = .secondaryLabel
+        let serverHeader = UIView()
+        serverTitle.translatesAutoresizingMaskIntoConstraints = false
+        serverHeader.addSubview(serverTitle)
+        NSLayoutConstraint.activate([
+            serverTitle.leadingAnchor.constraint(equalTo: serverHeader.leadingAnchor, constant: 16),
+            serverTitle.trailingAnchor.constraint(equalTo: serverHeader.trailingAnchor),
+            serverTitle.topAnchor.constraint(equalTo: serverHeader.topAnchor),
+            serverTitle.bottomAnchor.constraint(equalTo: serverHeader.bottomAnchor),
+        ])
+        stack.addArrangedSubview(serverHeader)
+        stack.setCustomSpacing(6, after: serverHeader)
         serverField.font = .preferredFont(forTextStyle: .body)
         serverField.adjustsFontForContentSizeCategory = true
         serverField.keyboardType = .URL
@@ -169,69 +291,17 @@ extension BrowserMobileSyncSession: BrowserMobileAccountSessionPresenting {
         serverField.accessibilityLabel = Self.localized("Sync Server")
         serverField.accessibilityIdentifier = "account.server"
         serverField.delegate = self
-        serverField.heightAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
         stack.addArrangedSubview(serverField)
-        configure(serverButton, title: "Save Server", id: "account.saveServer") { [weak self] in
+        configure(serverButton, title: "Save Server", id: "account.saveServer", plain: true) { [weak self] in
             self?.configureServer()
         }
         stack.addArrangedSubview(serverButton)
-        for label in [statusLabel, consentLabel, errorLabel] {
-            label.numberOfLines = 0
-            label.font = .preferredFont(forTextStyle: .body)
-            label.adjustsFontForContentSizeCategory = true
-            stack.addArrangedSubview(label)
-        }
-        statusLabel.accessibilityIdentifier = "account.status"
-        consentLabel.text = Self
-            .localized(
-                "Sync shares your Spaces, folders, and tab addresses with your other devices through this server.",
-            )
-        consentLabel.textColor = .secondaryLabel
-        errorLabel.textColor = .systemRed
-        errorLabel.accessibilityIdentifier = "account.error"
-        signInButton.accessibilityIdentifier = "account.signIn"
-        signInButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 50).isActive = true
-        signInButton.addTarget(self, action: #selector(signIn), for: .touchUpInside)
-        stack.addArrangedSubview(signInButton)
-        makeOtherSignInMethods(in: stack)
-        stack.addArrangedSubview(progress)
-        configure(enableButton, title: "Enable Sync", id: "account.enable") { [weak self] in
-            self?.session.enableSync()
-        }
-        configure(pauseButton, title: "Pause Sync", id: "account.pause") { [weak self] in self?.session.pauseSync() }
-        configure(resumeButton, title: "Resume Sync", id: "account.resume") { [weak self] in
-            self?.session.resumeSync()
-        }
-        configure(retryButton, title: "Retry Sync", id: "account.retry") { [weak self] in self?.session.retrySync() }
-        configure(signOutButton, title: "Sign Out", id: "account.signOut") { [weak self] in
-            self?.cancelOwnedSignIn()
-            self?.session.signOut()
-        }
-        configure(cancelButton, title: "Cancel Sign-In", id: "account.cancelSignIn") { [weak self] in
-            self?.cancelOwnedSignIn()
-        }
-        configure(deleteAccountButton, title: "Delete Account…", id: "account.delete") { [weak self] in
-            self?.confirmAccountDeletion()
-        }
-        deleteAccountButton.configuration?.baseForegroundColor = .systemRed
-        let buttons = [
-            enableButton,
-            pauseButton,
-            resumeButton,
-            retryButton,
-            signOutButton,
-            cancelButton,
-            deleteAccountButton,
-        ]
-        for button in buttons {
-            stack.addArrangedSubview(button)
-        }
-        stack.setCustomSpacing(32, after: cancelButton)
     }
 
     /// The server's other sign-in methods: a button per web provider, then a
     /// code sent by email.
     private func makeOtherSignInMethods(in stack: UIStackView) {
+        stack.setCustomSpacing(10, after: signInButton)
         let titles: [(BrowserAccountProvider, String)] = [
             (.google, "Continue with Google"),
             (.github, "Continue with GitHub"),
@@ -243,6 +313,7 @@ extension BrowserMobileSyncSession: BrowserMobileAccountSessionPresenting {
                     await session.signIn(with: provider, from: window, attemptID: attempt)
                 }
             }
+            applyBrand(provider, to: button)
             stack.addArrangedSubview(button)
         }
         configure(loadProvidersButton, title: "Show Sign-In Options", id: "account.loadProviders") { [weak self] in
@@ -250,11 +321,12 @@ extension BrowserMobileSyncSession: BrowserMobileAccountSessionPresenting {
             Task { await session.loadProviders() }
         }
         stack.addArrangedSubview(loadProvidersButton)
+        orLabel.text = Self.localized("or")
+        stack.addArrangedSubview(orLabel)
         for (field, placeholder, id) in [
             (emailField, "Email", "account.email"),
             (codeField, "6-digit code", "account.code"),
         ] {
-            field.borderStyle = .roundedRect
             field.font = .preferredFont(forTextStyle: .body)
             field.adjustsFontForContentSizeCategory = true
             field.autocapitalizationType = .none
@@ -263,7 +335,6 @@ extension BrowserMobileSyncSession: BrowserMobileAccountSessionPresenting {
             field.accessibilityLabel = field.placeholder
             field.accessibilityIdentifier = id
             field.delegate = self
-            field.heightAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
         }
         emailField.keyboardType = .emailAddress
         emailField.textContentType = .emailAddress
@@ -271,7 +342,7 @@ extension BrowserMobileSyncSession: BrowserMobileAccountSessionPresenting {
         codeField.keyboardType = .numberPad
         codeField.textContentType = .oneTimeCode
         codeField.returnKeyType = .done
-        configure(sendCodeButton, title: "Email Me a Code", id: "account.sendCode") { [weak self] in
+        configure(sendCodeButton, title: "Email Me a Code", id: "account.sendCode", prominent: true) { [weak self] in
             self?.requestEmailCode()
         }
         codeSentLabel.numberOfLines = 0
@@ -279,16 +350,18 @@ extension BrowserMobileSyncSession: BrowserMobileAccountSessionPresenting {
         codeSentLabel.adjustsFontForContentSizeCategory = true
         codeSentLabel.textColor = .secondaryLabel
         codeSentLabel.accessibilityIdentifier = "account.codeSent"
-        configure(signInWithCodeButton, title: "Sign In", id: "account.signInWithCode") { [weak self] in
+        configure(signInWithCodeButton, title: "Sign In", id: "account.signInWithCode", prominent: true) {
+            [weak self] in
             self?.signInWithCode()
         }
-        configure(sendAgainButton, title: "Send Again", id: "account.sendAgain") { [weak self] in
+        configure(sendAgainButton, title: "Send Again", id: "account.sendAgain", plain: true) { [weak self] in
             guard let self, let request = session.account.emailSignIn else { return }
             beginOwnedSignIn { session, window, attempt in
                 await session.requestEmailCode(request.email, from: window, attemptID: attempt)
             }
         }
-        configure(differentEmailButton, title: "Use a Different Email", id: "account.differentEmail") { [weak self] in
+        configure(differentEmailButton, title: "Use a Different Email", id: "account.differentEmail", plain: true) {
+            [weak self] in
             self?.codeField.text = nil
             self?.session.cancelEmailSignIn()
         }
@@ -301,11 +374,58 @@ extension BrowserMobileSyncSession: BrowserMobileAccountSessionPresenting {
         }
     }
 
-    private func configure(_ button: UIButton, title: String, id: String, action: @escaping @MainActor () -> Void) {
-        button.configuration = .bordered()
-        button.configuration?.title = Self.localized(title)
+    /// The provider's own mark and colors, next to Sign in with Apple: white
+    /// buttons on a dark sheet; on a light one Google stays white with an
+    /// edge and GitHub turns its dark gray.
+    private func applyBrand(_ provider: BrowserAccountProvider, to button: UIButton) {
+        guard var configuration = button.configuration else { return }
+        let dark = traitCollection.userInterfaceStyle == .dark
+        let gitHubGray = UIColor(red: 0x24 / 255, green: 0x29 / 255, blue: 0x2F / 255, alpha: 1)
+        let background: UIColor
+        let foreground: UIColor
+        switch provider {
+        case .github:
+            background = dark ? .white : gitHubGray
+            foreground = dark ? .black : .white
+            configuration.image = UIImage(named: "GitHubLogo")?.withRenderingMode(.alwaysTemplate)
+        default:
+            background = .white
+            foreground = UIColor(white: 0.12, alpha: 1)
+            configuration.image = UIImage(named: "GoogleLogo")?.withRenderingMode(.alwaysOriginal)
+            if !dark {
+                configuration.background.strokeColor = UIColor(white: 0.75, alpha: 1)
+                configuration.background.strokeWidth = 1
+            }
+        }
+        configuration.baseBackgroundColor = background
+        configuration.baseForegroundColor = foreground
+        configuration.imagePadding = 10
+        configuration.imagePlacement = .leading
+        button.configuration = configuration
+    }
+
+    /// A full-width 50 pt button: a gray tile, the accent for the step that
+    /// moves things forward, or plain text for side actions.
+    private func configure(
+        _ button: UIButton, title: String, id: String, prominent: Bool = false, plain: Bool = false,
+        action: @escaping @MainActor () -> Void,
+    ) {
+        var configuration: UIButton.Configuration = plain ? .plain() : .filled()
+        if !plain {
+            configuration.baseBackgroundColor = prominent ? .systemBlue : .secondarySystemGroupedBackground
+            configuration.baseForegroundColor = prominent ? .white : .label
+            configuration.background.cornerRadius = 12
+            configuration.cornerStyle = .fixed
+        }
+        configuration.title = Self.localized(title)
+        configuration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attributes in
+            var attributes = attributes
+            attributes.font = UIFont.preferredFont(forTextStyle: .body).withWeight(plain ? .regular : .semibold)
+            return attributes
+        }
+        button.configuration = configuration
         button.accessibilityIdentifier = id
-        button.heightAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
+        button.heightAnchor.constraint(greaterThanOrEqualToConstant: plain ? 40 : 50).isActive = true
         button.addAction(UIAction { [weak self] _ in
             self?.localError = nil
             action()
@@ -347,6 +467,9 @@ extension BrowserMobileSyncSession: BrowserMobileAccountSessionPresenting {
         errorLabel.text = error
         errorLabel.isHidden = error == nil
         retryButton.isHidden = session.lastSyncError == nil || account.bindingState != .enabled
+        titleLabel.text = account.isAuthenticated
+            ? account.session?.userEmail ?? Self.localized("Signed in")
+            : Self.localized("Sync your Spaces")
         if isDeleting {
             statusLabel.text = Self.localized("Deleting account…")
         } else if account.isSigningIn {
@@ -354,7 +477,7 @@ extension BrowserMobileSyncSession: BrowserMobileAccountSessionPresenting {
         } else if !account.isConfigured {
             statusLabel.text = Self.localized("Enter your sync server to sign in.")
         } else if !account.isAuthenticated {
-            statusLabel.text = Self.localized("Sign in to sync this profile.")
+            statusLabel.text = Self.localized("Sign in to keep your Spaces and tabs in step with OpenArc on your Mac.")
         } else {
             let status =
                 switch account.bindingState {
@@ -364,9 +487,7 @@ extension BrowserMobileSyncSession: BrowserMobileAccountSessionPresenting {
                 case .differentAccount: "This profile belongs to another account."
                 case nil: "Signed in."
                 }
-            statusLabel.text = [account.session?.userEmail, Self.localized(status)]
-                .compactMap(\.self)
-                .joined(separator: "\n")
+            statusLabel.text = Self.localized(status)
         }
     }
 
@@ -391,6 +512,8 @@ extension BrowserMobileSyncSession: BrowserMobileAccountSessionPresenting {
         for view in emailViews {
             view.isHidden = !showsEmail
         }
+        // "or" splits the one-tap sign-ins from the email code.
+        orLabel.isHidden = !showsEmail || account.isAuthenticated
         let codeViews: [UIView] = [
             codeSentLabel,
             codeField,
