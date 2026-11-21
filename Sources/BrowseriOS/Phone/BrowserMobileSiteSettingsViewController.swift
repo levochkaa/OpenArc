@@ -141,6 +141,7 @@ final class BrowserMobileSiteSettingsViewController: UITableViewController {
             cell.selectionStyle = .default
             cell.accessibilityIdentifier = "browser.siteSettings.appSettings"
         }
+        BrowserMobilePhoneSettingsViewController.layOutTile(in: &content)
         cell.contentConfiguration = content
         cell.backgroundColor = Self.cellBackground
         return cell
@@ -161,7 +162,7 @@ final class BrowserMobileSiteSettingsViewController: UITableViewController {
 
     /// A white symbol on a colored rounded square, as in the system's Settings.
     static func tile(_ symbol: String, color: UIColor) -> UIImage {
-        let side: CGFloat = 29
+        let side = BrowserMobilePhoneSettingsViewController.tileSide
         return UIGraphicsImageRenderer(size: CGSize(width: side, height: side))
             .image { _ in
                 color.setFill()

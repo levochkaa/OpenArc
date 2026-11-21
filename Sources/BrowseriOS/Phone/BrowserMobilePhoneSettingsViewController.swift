@@ -103,6 +103,9 @@ final class BrowserMobilePhoneSettingsViewController: UITableViewController {
         let action: () -> Void
     }
 
+    /// A white symbol on a rounded square of the row's color.
+    static let tileSide: CGFloat = 28
+
     private static let defaultBrowserRowID = "browser.settings.defaultBrowser"
     private static let archivalRowID = "browser.settings.archiveInactiveTabs"
     private static let exportRowID = "browser.settings.exportData"
@@ -271,8 +274,11 @@ final class BrowserMobilePhoneSettingsViewController: UITableViewController {
         content.secondaryText = row.subtitle ?? row.value
         if row.subtitle != nil {
             content.secondaryTextProperties.color = .secondaryLabel
+            content.secondaryTextProperties.font = .preferredFont(forTextStyle: .caption1)
         }
         content.image = Self.tile(symbol: row.symbol, color: row.isEnabled ? row.color : .systemGray)
+        Self.layOutTile(in: &content)
+        if row.opensPage { content.directionalLayoutMargins.trailing = 8 }
         content.textProperties.color = row.isEnabled ? .label : .secondaryLabel
         cell.contentConfiguration = content
         cell.accessoryType = row.opensPage ? .disclosureIndicator : .none
@@ -333,9 +339,21 @@ final class BrowserMobilePhoneSettingsViewController: UITableViewController {
         return urls.isEmpty ? nil : urls.joined(separator: "\n")
     }
 
-    /// A white symbol on a rounded square of the row's color.
+    /// Keeps a row's tile at full size, which the list cell otherwise shrinks to the title's line height.
+    static func layOutTile(in content: inout UIListContentConfiguration) {
+        content.imageProperties.maximumSize = CGSize(width: tileSide, height: tileSide)
+        content.imageProperties.reservedLayoutSize = CGSize(width: tileSide, height: tileSide)
+        content.imageToTextPadding = 12
+        // The default vertical margins leave a fixed 52 pt row only 22 pt for the tile.
+        content.directionalLayoutMargins.top = 8
+        content.directionalLayoutMargins.bottom = 8
+        content.directionalLayoutMargins.leading = 14
+        content.directionalLayoutMargins.trailing = 16
+        content.axesPreservingSuperviewLayoutMargins = []
+    }
+
     private static func tile(symbol: String, color: UIColor) -> UIImage {
-        let side: CGFloat = 29
+        let side = tileSide
         let glyph = UIImage(
             systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 15, weight: .medium),
         )?.withTintColor(.white, renderingMode: .alwaysOriginal)

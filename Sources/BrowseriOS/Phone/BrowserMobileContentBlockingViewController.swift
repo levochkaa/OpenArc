@@ -105,6 +105,7 @@ final class BrowserMobileContentBlockingViewController: UITableViewController {
             let kind = BrowserFilterListKind.mobileOrder[indexPath.row]
             content.text = kind.mobileTitle
             content.image = kind.mobileTile
+            BrowserMobilePhoneSettingsViewController.layOutTile(in: &content)
             cell.accessoryView = switches[kind]
             cell.selectionStyle = .none
             cell.accessibilityIdentifier = nil
