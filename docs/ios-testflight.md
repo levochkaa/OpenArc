@@ -43,6 +43,8 @@ Logs, the archive and the export options land in `.build/ios-testflight/<version
 
 Internal testers are App Store Connect users of the team; each one gets an email invitation and installs builds from the TestFlight app. External testers need a group of their own, the Test Information page filled in (description, feedback email, contact and sign-in details) and Beta App Review of the first build of each version.
 
+`python3 -I script/asc_api.py external-build com.levochkaa.OpenArc Public BUILD_ID --whats-new "..."` gives a build to external testers. It fills the Test Information page and copies the Beta App Review contact and notes from the App Store review details when they are empty, creates the external group with a public link if it is missing, adds the build and submits it for Beta App Review, then prints the public link. The build ID is the one `build-status` prints. Testers can install once Beta App Review approves the build.
+
 ## App Store listing
 
 The listing is in App Store Connect, not in the repository: English (U.S.) only, since the app is English only. Primary category Productivity, secondary Utilities. The age rating answers "unrestricted web access", which every browser must. China mainland is left out of availability, since it needs an ICP filing.

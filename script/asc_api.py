@@ -366,6 +366,151 @@ def cmd_add_build_to_group(args: argparse.Namespace) -> None:
     print(f"build is in TestFlight group {args.group}", file=sys.stderr)
 
 
+BETA_DESCRIPTION = (
+    "OpenArc is a web browser for iPhone and iPad. Type an address or a search in the field that opens on launch; "
+    "pages open in tabs grouped into Spaces. Signing in is optional and syncs Spaces and tabs with OpenArc for Mac."
+)
+
+
+def ensure_beta_test_information(app_id: str, feedback_email: str) -> None:
+    """Fills the Test Information page and the Beta App Review contact, which external testing needs."""
+    localizations = get_all(f"/v1/apps/{app_id}/betaAppLocalizations")
+    attributes = {
+        "description": BETA_DESCRIPTION,
+        "feedbackEmail": feedback_email,
+        "marketingUrl": "https://openarc.su",
+        "privacyPolicyUrl": "https://openarc.su/privacy/",
+    }
+    if localizations:
+        for localization in localizations:
+            missing = {key: value for key, value in attributes.items() if not localization["attributes"].get(key)}
+            if missing:
+                request(
+                    "PATCH",
+                    f"/v1/betaAppLocalizations/{localization['id']}",
+                    body={"data": {"type": "betaAppLocalizations", "id": localization["id"], "attributes": missing}},
+                )
+    else:
+        request(
+            "POST",
+            "/v1/betaAppLocalizations",
+            body={
+                "data": {
+                    "type": "betaAppLocalizations",
+                    "attributes": {"locale": "en-US", **attributes},
+                    "relationships": {"app": {"data": {"type": "apps", "id": app_id}}},
+                }
+            },
+        )
+
+    detail = request("GET", f"/v1/apps/{app_id}/betaAppReviewDetail")["data"]
+    if detail["attributes"].get("contactEmail"):
+        return
+    # The App Store review contact and notes already describe how to review the app.
+    store_detail = None
+    for version in get_all(f"/v1/apps/{app_id}/appStoreVersions"):
+        try:
+            store_detail = request("GET", f"/v1/appStoreVersions/{version['id']}/appStoreReviewDetail")["data"]
+        except ApiError:
+            continue
+        if store_detail and store_detail["attributes"].get("contactEmail"):
+            break
+    if not store_detail or not store_detail["attributes"].get("contactEmail"):
+        fail("set the App Review contact in App Store Connect first; Beta App Review needs one")
+    keys = ["contactFirstName", "contactLastName", "contactPhone", "contactEmail", "notes"]
+    review = {key: store_detail["attributes"].get(key) for key in keys}
+    review["demoAccountRequired"] = False
+    request(
+        "PATCH",
+        f"/v1/betaAppReviewDetails/{detail['id']}",
+        body={"data": {"type": "betaAppReviewDetails", "id": detail["id"], "attributes": review}},
+    )
+
+
+def find_or_create_external_group(app_id: str, name: str) -> dict:
+    for group in get_all(f"/v1/apps/{app_id}/betaGroups"):
+        if group["attributes"]["name"] == name:
+            if group["attributes"].get("isInternalGroup"):
+                fail(f"TestFlight group {name} is internal")
+            return group
+    created = request(
+        "POST",
+        "/v1/betaGroups",
+        body={
+            "data": {
+                "type": "betaGroups",
+                "attributes": {
+                    "name": name,
+                    "isInternalGroup": False,
+                    "publicLinkEnabled": True,
+                    "publicLinkLimitEnabled": False,
+                    "feedbackEnabled": True,
+                },
+                "relationships": {"app": {"data": {"type": "apps", "id": app_id}}},
+            }
+        },
+    )
+    print(f"created external TestFlight group {name} with a public link", file=sys.stderr)
+    return created["data"]
+
+
+def cmd_external_build(args: argparse.Namespace) -> None:
+    app = require_app(args.bundle_id)
+    ensure_beta_test_information(app["id"], args.feedback_email)
+    build_id = args.build_id
+    if args.whats_new:
+        localizations = get_all(f"/v1/builds/{build_id}/betaBuildLocalizations")
+        if localizations:
+            request(
+                "PATCH",
+                f"/v1/betaBuildLocalizations/{localizations[0]['id']}",
+                body={
+                    "data": {
+                        "type": "betaBuildLocalizations",
+                        "id": localizations[0]["id"],
+                        "attributes": {"whatsNew": args.whats_new},
+                    }
+                },
+            )
+        else:
+            request(
+                "POST",
+                "/v1/betaBuildLocalizations",
+                body={
+                    "data": {
+                        "type": "betaBuildLocalizations",
+                        "attributes": {"locale": "en-US", "whatsNew": args.whats_new},
+                        "relationships": {"build": {"data": {"type": "builds", "id": build_id}}},
+                    }
+                },
+            )
+    group = find_or_create_external_group(app["id"], args.group)
+    request(
+        "POST",
+        f"/v1/betaGroups/{group['id']}/relationships/builds",
+        body={"data": [{"type": "builds", "id": build_id}]},
+    )
+    try:
+        request(
+            "POST",
+            "/v1/betaAppReviewSubmissions",
+            body={
+                "data": {
+                    "type": "betaAppReviewSubmissions",
+                    "relationships": {"build": {"data": {"type": "builds", "id": build_id}}},
+                }
+            },
+        )
+        print("submitted the build for Beta App Review", file=sys.stderr)
+    except ApiError as error:
+        # A build already in review, or a later build of an approved version, needs no submission.
+        if error.status != 409 and error.status != 422:
+            raise
+        print(f"note: {error}", file=sys.stderr)
+    group = request("GET", f"/v1/betaGroups/{group['id']}")["data"]
+    print(group["attributes"].get("publicLink") or "")
+
+
 def cmd_build_status(args: argparse.Namespace) -> None:
     app = require_app(args.bundle_id)
     build = find_build(app["id"], args.version, args.build_number)
@@ -435,6 +580,16 @@ def main() -> None:
     add.add_argument("group")
     add.add_argument("build_id")
     add.set_defaults(func=cmd_add_build_to_group)
+
+    external = commands.add_parser(
+        "external-build", help="give an external TestFlight group with a public link a build and submit it for review"
+    )
+    external.add_argument("bundle_id")
+    external.add_argument("group")
+    external.add_argument("build_id")
+    external.add_argument("--whats-new", help="What to Test text for the build")
+    external.add_argument("--feedback-email", default="support@openarc.su")
+    external.set_defaults(func=cmd_external_build)
 
     status = commands.add_parser("build-status", help="print a build's processing and TestFlight state")
     status.add_argument("bundle_id")
