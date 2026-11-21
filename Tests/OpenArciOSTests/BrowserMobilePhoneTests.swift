@@ -424,3 +424,42 @@ import UIKit
     #expect(abs(face.frame.midX - 233) < 1, "The face centers on the screen, not beside the camera")
     #expect(message.frame.maxX <= 466 - 84 - 16, "The words stay clear of the camera column")
 }
+
+// MARK: - Home logo
+
+@Test func mobileHomeLogoTurnsFromAFingerMovingStraightDownBesideIt() {
+    let center = CGPoint(x: 200, y: 400)
+    let turn = BrowserMobileHomeLogo.wheelTurn(
+        at: CGPoint(x: 340, y: 400), moving: CGVector(dx: 0, dy: 15), around: center,
+    )
+    #expect(
+        abs(turn - 15 / BrowserMobileHomeLogo.wheelRadius) < 0.0001,
+        "Beside the mark a move turns it as on its rim",
+    )
+    let along = BrowserMobileHomeLogo.wheelTurn(
+        at: CGPoint(x: 340, y: 400), moving: CGVector(dx: 15, dy: 0), around: center,
+    )
+    #expect(along == 0, "Moving toward the center does not turn it")
+    #expect(BrowserMobileHomeLogo.wheelTurn(
+        at: CGPoint(x: 202, y: 401), moving: CGVector(dx: 0, dy: 15), around: center,
+    ) == 0)
+}
+
+@Test func mobileHomeLogoCoastsToAnUprightTurnAheadOrSettlesBack() {
+    let full = 2 * CGFloat.pi
+    let flung = BrowserMobileHomeLogo.landing(spin: 0.5, velocity: 30)
+    #expect(flung.coasts)
+    #expect(abs(flung.turn - 2 * full) < 0.0001, "A strong fling lands two turns on")
+    let weak = BrowserMobileHomeLogo.landing(spin: 0.5, velocity: 2)
+    #expect(!weak.coasts && weak.turn == 0, "A weak fling falls back to upright")
+    let backward = BrowserMobileHomeLogo.landing(spin: -0.5, velocity: -20)
+    #expect(backward.coasts && abs(backward.turn + 2 * full) < 0.0001)
+}
+
+@MainActor @Test func mobileHomeLogoMarkFillsItsWidth() {
+    let size = BrowserMobileHomeLogoMark.size
+    #expect(size.width == 150)
+    #expect((85...100).contains(size.height))
+    let path = BrowserMobileHomeLogoMark.path("M 0,0 L 10,0 Q 10,10 0,10 C 0,8 0,4 0,0 Z")
+    #expect(path.boundingBoxOfPath == CGRect(x: 0, y: 0, width: 10, height: 10))
+}
