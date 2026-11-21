@@ -8,8 +8,8 @@ import UIKit
 /// lifts it, one finger drags it, two fingers turn and scale it, and letting
 /// go springs it back to its place. Each lift and landing taps the haptics.
 /// A finger moving across the backdrop around it turns it like a wheel; let
-/// go while moving and it rolls on to stand upright again, at rest it rolls
-/// back. Its light stays put on the screen while it turns.
+/// go while moving and it coasts on, slowing down, to stand upright again,
+/// at rest it rolls back. Its light stays put on the screen while it turns.
 final class BrowserMobileHomeLogo: UIView, UIGestureRecognizerDelegate {
     // MARK: Internal
 
@@ -19,6 +19,9 @@ final class BrowserMobileHomeLogo: UIView, UIGestureRecognizerDelegate {
     /// Angular speed, in radians per second, above which a released wheel
     /// rolls on in its direction instead of back.
     private static let rollOnSpeed: CGFloat = 0.3
+    /// How long a released wheel's speed takes to fall by e, in seconds:
+    /// it coasts about its speed times this far.
+    private static let coast: CGFloat = 0.55
 
     override var intrinsicContentSize: CGSize {
         let size = imageView.image?.size ?? CGSize(width: 3, height: 2)
@@ -246,18 +249,24 @@ final class BrowserMobileHomeLogo: UIView, UIGestureRecognizerDelegate {
         }
     }
 
-    /// Rolls the wheel on to the next upright turn in its direction, or back
-    /// to the nearest one when it was let go at rest.
+    /// Coasts the wheel on, slowing down, to the upright turn past where its
+    /// speed carries it, or rolls it back to the nearest one when it was let
+    /// go at rest.
     private func roll(velocity: CGFloat) {
         let full = 2 * CGFloat.pi
+        let reach = spin + velocity * Self.coast
+        let coasts = abs(velocity) > Self.rollOnSpeed
         let target: CGFloat =
             if velocity > Self.rollOnSpeed {
-                ceil((spin + 0.01) / full) * full
+                ceil((reach + 0.01) / full) * full
             } else if velocity < -Self.rollOnSpeed {
-                floor((spin - 0.01) / full) * full
+                floor((reach - 0.01) / full) * full
             } else {
                 (spin / full).rounded() * full
             }
+        // A coasting wheel slows as a critically damped spring of the coast's
+        // time constant, which never turns it past the upright it stops at.
+        let rate = coasts ? 1 / Self.coast : 4
         let from = spin - target
         spin = 0
         apply()
@@ -269,8 +278,8 @@ final class BrowserMobileHomeLogo: UIView, UIGestureRecognizerDelegate {
             animation.fromValue = from * sign
             animation.toValue = 0
             animation.mass = 1
-            animation.stiffness = 16
-            animation.damping = 8
+            animation.stiffness = rate * rate
+            animation.damping = 2 * rate
             animation.initialVelocity = -velocity / from
             animation.duration = animation.settlingDuration
             animation.fillMode = .backwards
