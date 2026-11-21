@@ -167,6 +167,22 @@ final class BrowserMobileTabSwitcherView: UIView, UIScrollViewDelegate, UIGestur
         return CGRect(x: x, y: y, width: size.width, height: size.height)
     }
 
+    /// Moves cards into `host`, a view over the ones above the switcher, so
+    /// a flight to or from the tab stack passes over the bar.
+    func lift(_ lifted: [Card], into host: UIView) {
+        for card in lifted {
+            host.addSubview(card)
+        }
+    }
+
+    /// Brings lifted cards back among the others, in the row's order.
+    func restoreLiftedCards() {
+        for entry in entries {
+            if let card = cards[entry.id] { cardsLayer.addSubview(card) }
+        }
+        layoutCards()
+    }
+
     func cardFrame(for id: String) -> CGRect? {
         entries.firstIndex { $0.id == id }.map { cardFrame(index: $0, position: position) }
     }
