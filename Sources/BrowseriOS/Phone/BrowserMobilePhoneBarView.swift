@@ -122,6 +122,7 @@ final class BrowserMobilePhoneBarView: UIView {
         expandRecognizer.isEnabled = false
         addGestureRecognizer(expandRecognizer)
         background.overrideUserInterfaceStyle = .light
+        background.showsTopHairline = true
         addSubview(background)
         background.contentView.registerForTraitChanges([UITraitUserInterfaceStyle.self]) {
             [weak self] (_: UIView, _: UITraitCollection) in self?.applyTheme()

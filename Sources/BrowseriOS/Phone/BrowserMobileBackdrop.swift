@@ -71,10 +71,70 @@ enum BrowserMobileBackdrop {
 
 // MARK: - BrowserMobileBarMaterial
 
-/// The bar's surface: the page blurred under a light or dark material,
-/// following the view's interface style. The dark one is thinner so a
-/// colored page keeps more of its color.
+/// The bar's surface: the page blurred under a thin light or dark material,
+/// following the view's interface style, with a wash over it that lets more
+/// of the page through than the system material and darkens toward the
+/// bottom edge of the screen.
 final class BrowserMobileBarMaterial: UIVisualEffectView {
+    /// The wash over the material: its opacity and its top and bottom
+    /// whites, the bottom one reached at the view's bottom edge.
+    struct Wash: Equatable {
+        static let light = Wash(alpha: 0.47, top: 0.92, bottom: 0.675)
+        static let dark = Wash(alpha: 0.15, top: 0.116, bottom: 0.018)
+
+        var alpha: CGFloat
+        var top: CGFloat
+        var bottom: CGFloat
+
+        static func forStyle(_ style: UIUserInterfaceStyle) -> Wash {
+            style == .dark ? dark : light
+        }
+    }
+
+    /// The wash: one tone down to `span` above the bottom edge, then a
+    /// linear ramp to the bottom tone.
+    private final class WashView: UIView {
+        override static var layerClass: AnyClass { CAGradientLayer.self }
+
+        override var frame: CGRect {
+            didSet { if frame.height != oldValue.height { updateGradient() } }
+        }
+
+        var wash = Wash.light {
+            didSet { if wash != oldValue { updateGradient() } }
+        }
+
+        var span: CGFloat = 0 {
+            didSet { if span != oldValue { updateGradient() } }
+        }
+
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            updateGradient()
+        }
+
+        @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
+
+        private func updateGradient() {
+            guard let gradient = layer as? CAGradientLayer else { return }
+            let top = UIColor(white: wash.top, alpha: wash.alpha).cgColor
+            let bottom = UIColor(white: wash.bottom, alpha: wash.alpha).cgColor
+            let start = bounds.height > span ? 1 - span / bounds.height : 0
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            gradient.colors = [top, top, bottom]
+            gradient.locations = [0, NSNumber(value: Double(start)), 1]
+            CATransaction.commit()
+        }
+    }
+
+    /// Height over which the wash darkens, up from the bottom edge: the
+    /// expanded bar's height, so a taller panel keeps the top tone above it.
+    static let washSpan: CGFloat = 76
+    /// Opacity of the top hairline: black on the light material, white on
+    /// the dark one.
+    static let hairlineAlpha: CGFloat = 0.1
+
     /// Off over the switcher, where the bar shows what is behind it.
     var showsMaterial = true {
         didSet { updateEffect() }
@@ -88,23 +148,49 @@ final class BrowserMobileBarMaterial: UIVisualEffectView {
         }
     }
 
+    /// A hairline along the top edge, as the bar has and panels do not.
+    var showsTopHairline = false {
+        didSet { updateEffect() }
+    }
+
+    private let wash = WashView()
+    private let hairline = UIView()
+
     init() {
         super.init(effect: nil)
+        wash.isUserInteractionEnabled = false
+        hairline.isUserInteractionEnabled = false
+        contentView.insertSubview(wash, at: 0)
+        contentView.insertSubview(hairline, aboveSubview: wash)
         updateEffect()
-        registerForTraitChanges([UITraitUserInterfaceStyle.self]) { (view: BrowserMobileBarMaterial, _) in
+        registerForTraitChanges([UITraitUserInterfaceStyle.self, UITraitDisplayScale.self]) {
+            (view: BrowserMobileBarMaterial, _) in
             view.updateEffect()
+            view.setNeedsLayout()
         }
     }
 
     @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
 
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        wash.frame = contentView.bounds
+        wash.span = Self.washSpan
+        let scale = traitCollection.displayScale > 0 ? traitCollection.displayScale : 1
+        hairline.frame = CGRect(x: 0, y: 0, width: contentView.bounds.width, height: 1 / scale)
+    }
+
     private func updateEffect() {
-        guard showsMaterial, !isCovered else {
+        let shows = showsMaterial && !isCovered
+        wash.isHidden = !shows
+        hairline.isHidden = !shows || !showsTopHairline
+        guard shows else {
             effect = nil
             return
         }
-        effect = UIBlurEffect(
-            style: traitCollection.userInterfaceStyle == .dark ? .systemThinMaterialDark : .systemMaterialLight,
-        )
+        let dark = traitCollection.userInterfaceStyle == .dark
+        effect = UIBlurEffect(style: dark ? .systemThinMaterialDark : .systemThinMaterialLight)
+        wash.wash = Wash.forStyle(traitCollection.userInterfaceStyle)
+        hairline.backgroundColor = UIColor(white: dark ? 1 : 0, alpha: Self.hairlineAlpha)
     }
 }
