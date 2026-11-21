@@ -236,6 +236,9 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
             URLQueryItem(name: "client", value: "firefox"),
             URLQueryItem(name: "q", value: trimmedQuery),
         ]
+        // A plus would read as a space.
+        let encodedQuery = components.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
+        components.percentEncodedQuery = encodedQuery
 
         guard let url = components.url else {
             return []
