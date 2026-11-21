@@ -5286,9 +5286,14 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
 
 - (void)webKitPageDidChangeURL:(BrowserWebKitPage *)page {
   NSString *tabID = [self tabIDForWebKitPage:page];
-  if (tabID != nil) {
-    [self handleAddressChange:page.urlString forTabID:tabID];
+  if (tabID == nil) {
+    return;
   }
+  NSString *urlString = page.urlString;
+  if (![(id)page isKindOfClass:BrowserWebKitPage.class]) {
+    urlString = [BrowserChromeEngineInternalURLs displayURLStringFor:urlString];
+  }
+  [self handleAddressChange:urlString forTabID:tabID];
 }
 
 - (void)webKitPageDidChangeLoading:(BrowserWebKitPage *)page {
@@ -6423,7 +6428,11 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
   it->second.navigationPending = false;
   it->second.hasIssuedNavigation = true;
   if (it->second.peerPage != nil) {
-    [it->second.peerPage loadWithUrlString:ToNSString(target)];
+    NSString *urlString = ToNSString(target);
+    if (ChromePageOfRecord(it->second) != nil) {
+      urlString = [BrowserChromeEngineInternalURLs loadURLStringFor:urlString];
+    }
+    [it->second.peerPage loadWithUrlString:urlString];
     return;
   }
   NavigateBrowserOnUI(it->second.browser, target);

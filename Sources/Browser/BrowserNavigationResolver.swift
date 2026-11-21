@@ -352,6 +352,26 @@ enum BrowserInternalURLNormalizer {
     }
 }
 
+// MARK: - BrowserChromeEngineInternalURLs
+
+/// Chrome's engine knows no `openarc://` scheme: its pages load Chromium's own page for an `openarc://`
+/// address and report it back under `openarc://`, as CEF's tabs do.
+@objc final class BrowserChromeEngineInternalURLs: NSObject {
+    /// The address a Chrome engine page loads for `urlString`.
+    @objc(loadURLStringFor:) static func loadURLString(for urlString: String) -> String {
+        BrowserInternalURLNormalizer.chromiumURLString(forCanonicalURLString: urlString) ?? urlString
+    }
+
+    /// The address a Chrome engine page shows for the `urlString` it committed.
+    @objc(displayURLStringFor:) static func displayURLString(for urlString: String) -> String {
+        guard URLComponents(string: urlString)?.scheme?.lowercased() == BrowserInternalURLNormalizer.chromiumScheme
+        else {
+            return urlString
+        }
+        return BrowserInternalURLNormalizer.canonicalURLString(for: urlString) ?? urlString
+    }
+}
+
 // MARK: - BrowserParsedHost
 
 struct BrowserParsedHost: Equatable {

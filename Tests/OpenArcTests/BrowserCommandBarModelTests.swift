@@ -119,6 +119,30 @@ private let defaultAISuggestionTitle = BrowserStrings.commandBarAskAI(BrowserAIS
     )
 }
 
+@Test func chromeEngineLoadsChromiumPagesForOpenArcURLs() {
+    #expect(BrowserChromeEngineInternalURLs.loadURLString(for: "openarc://extensions/") == "chrome://extensions/")
+    #expect(
+        BrowserChromeEngineInternalURLs.loadURLString(for: "openarc://extensions/shortcuts")
+            == "chrome://extensions/shortcuts",
+    )
+    #expect(BrowserChromeEngineInternalURLs.loadURLString(for: "openarc://settings") == "chrome://settings/")
+    #expect(BrowserChromeEngineInternalURLs.loadURLString(for: "https://example.com/") == "https://example.com/")
+    #expect(BrowserChromeEngineInternalURLs.loadURLString(for: "openarc://easel/abc") == "openarc://easel/abc")
+}
+
+@Test func chromeEngineShowsChromiumPagesUnderOpenArcURLs() {
+    #expect(BrowserChromeEngineInternalURLs.displayURLString(for: "chrome://extensions/") == "openarc://extensions/")
+    #expect(
+        BrowserChromeEngineInternalURLs.displayURLString(for: "chrome://history/?q=news")
+            == "openarc://history/?q=news",
+    )
+    #expect(BrowserChromeEngineInternalURLs.displayURLString(for: "https://example.com/") == "https://example.com/")
+    #expect(
+        BrowserChromeEngineInternalURLs.displayURLString(for: "chrome-extension://abc/popup.html")
+            == "chrome-extension://abc/popup.html",
+    )
+}
+
 @Test func resolveRejectsTrailingDotHost() throws {
     let resolver = BrowserNavigationResolver()
     let resolution = try #require(resolver.resolve("Google."))

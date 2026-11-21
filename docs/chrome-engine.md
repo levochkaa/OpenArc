@@ -31,6 +31,9 @@ engine from launch to quit, so the switch takes effect after a relaunch, which t
   shows, navigates, finds, mutes, captures, prints and moves it between windows through the code WebKit pages
   already use. What only a Chrome page does (DevTools protocol, Developer Tools, renderer process, popups,
   downloads, keys) is `BrowserChromePage` and `BrowserChromePageDelegate`.
+- **`openarc://` addresses.** Chrome knows no `openarc` scheme. The tab controller loads `chrome://extensions/`
+  for `openarc://extensions/` (and so for settings, history, bookmarks, passwords) and shows a page's `chrome://`
+  address as `openarc://`, through `BrowserChromeEngineInternalURLs`, as CEF does in `OnBeforeBrowse`.
 - **OpenArc's changes to Chromium itself** that are not CEF's (notification permission, the history database,
   the passkey keychain group, the About page's update status) come along: `Chromium/engine/overrides` lists the
   files of `Chromium/chromium_src` the engine takes too. A new override that is pure Chromium belongs there.
@@ -103,7 +106,7 @@ rebuilt), and `script/sign_release_app.sh` signs its helpers with the CEF helper
 The CEF code paths stay as they are; on the Chrome engine these answer nothing or fall back:
 
 - Peek cards and small windows open as tabs; web sign-in windows and cookie import need CEF.
-- `openarc://` pages (CEF scheme handlers), the renderer-side scripts of `Sources/Helper` (password and address
+- `openarc://credits` (a CEF scheme handler), the renderer-side scripts of `Sources/Helper` (password and address
   form detection, protected video bridges) and site permission prompts in OpenArc's own card (Chrome shows its
   bubbles over the window instead).
 - Site settings, translate, battery saver throttling, tracing and the extension bridge's CEF exports.
