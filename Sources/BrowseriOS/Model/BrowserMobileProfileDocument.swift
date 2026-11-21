@@ -469,6 +469,27 @@ import Foundation
         ))])
     }
 
+    /// Keeps the page's title so the tab shows it while unloaded. It stays on
+    /// this device: sync never sends it.
+    @discardableResult func setPageTitle(tabID: String, title: String) -> Bool {
+        let title = Self.nonempty(title)
+        guard canEdit, let index = snapshot.tabs.firstIndex(where: { $0.id == tabID }),
+              snapshot.tabs[index].pageTitle != title else { return false }
+        let tab = snapshot.tabs[index]
+        var tabs = snapshot.tabs
+        tabs[index] = BrowserTabSessionSnapshotTab(
+            id: tab.id, urlString: tab.urlString, pinnedURLString: tab.pinnedURLString,
+            userTitleOverride: tab.userTitleOverride, placement: tab.placement, spaceID: tab.spaceID,
+            pinnedFolderID: tab.pinnedFolderID, lastActivityTimestamp: tab.lastActivityTimestamp,
+            pinnedSiblingRank: tab.pinnedSiblingRank, pageTitle: title, systemImageName: tab.systemImageName,
+        )
+        let next = BrowserTabSessionSnapshot(
+            version: snapshot.version, spaces: snapshot.spaces, pinnedTabFolders: snapshot.pinnedTabFolders,
+            tabs: tabs, splitGroups: snapshot.splitGroups,
+        )
+        return commit(next, moveIntent: nil)
+    }
+
     @discardableResult func renameTab(id: String, title: String?) -> Bool {
         apply([.patchTab(
             id: id,

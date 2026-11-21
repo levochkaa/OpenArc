@@ -46,6 +46,22 @@ import Testing
         #expect(try reopened.pendingSyncQueue(for: f.owner).prefix(queue.count) == queue[...])
     }
 
+    @Test func pageTitleStaysOnThisDeviceAcrossLaunches() throws {
+        let f = try MobileDocumentFixture()
+        defer { f.cleanup() }
+        let queued = try f.store.pendingSyncQueue(for: f.owner).count
+        #expect(f.document.setPageTitle(tabID: "a", title: "Welcome"))
+        #expect(!f.document.setPageTitle(tabID: "a", title: "Welcome"))
+        #expect(f.document.snapshot.tabs.first { $0.id == "a" }?.pageTitle == "Welcome")
+        #expect(try f.store.pendingSyncQueue(for: f.owner).count == queued)
+        let reopened = try BrowserSQLiteSessionStore(databaseURL: f.databaseURL)
+        let restored = try BrowserMobileProfileDocument(
+            store: reopened,
+            loadSnapshot: { try reopened.loadSnapshotStrict() },
+        )
+        #expect(restored.snapshot.tabs.first { $0.id == "a" }?.pageTitle == "Welcome")
+    }
+
     @Test func folderActionsUseRootIntentAndDeleteOnlyCurrentMembership() throws {
         let f = try MobileDocumentFixture()
         defer { f.cleanup() }

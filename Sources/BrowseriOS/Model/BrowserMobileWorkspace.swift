@@ -786,7 +786,7 @@ struct BrowserMobileTab: Identifiable, Equatable {
             guard let id = record.id else { return nil }
             var tab = previous[id] ?? BrowserMobileTab(
                 id: id, runtimeID: adoptedPopupRuntimeID ?? UUID().uuidString,
-                urlString: record.urlString, title: "",
+                urlString: record.urlString, title: record.pageTitle ?? "",
                 state: BrowserMobilePageState(url: URL(string: record.urlString)),
             )
             if previous[id] == nil, adoptedPopupRuntimeID != nil {
@@ -1084,6 +1084,9 @@ struct BrowserMobileTab: Identifiable, Equatable {
                 if let profileDocument {
                     if !applyingDocument, previousURL != tabs[index].urlString {
                         profileDocument.updateURL(tabID: tabs[index].id, urlString: tabs[index].urlString)
+                    }
+                    if !applyingDocument, previousTitle != tabs[index].title {
+                        profileDocument.setPageTitle(tabID: tabs[index].id, title: tabs[index].title)
                     }
                 } else {
                     enqueueCurrentSession()
