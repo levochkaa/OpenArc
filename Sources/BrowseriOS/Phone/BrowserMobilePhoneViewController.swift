@@ -499,9 +499,15 @@ final class BrowserMobilePhoneViewController: UIViewController {
     private func updateStatusBand() {
         let state = workspace.selectedTab?.state
         statusBand.isHidden = contentView.isHidden
-        guard let color = state?.themeColor ?? state?.backgroundColor else { return }
-        statusBand.backgroundColor = color
-        let dark = BrowserMobileBackdrop.luminance(of: color).map(BrowserMobileBackdrop.isDark) ?? false
+        let dark: Bool
+        if let color = state?.themeColor ?? state?.backgroundColor {
+            statusBand.backgroundColor = color
+            dark = BrowserMobileBackdrop.luminance(of: color).map(BrowserMobileBackdrop.isDark) ?? false
+        } else {
+            // Before the page reports its colors, the bar's reading of it
+            // stands in, rather than the last page's.
+            dark = bar.isDark
+        }
         guard dark != isStatusBandDark else { return }
         isStatusBandDark = dark
         setNeedsStatusBarAppearanceUpdate()
@@ -546,6 +552,8 @@ final class BrowserMobilePhoneViewController: UIViewController {
             self.bar.isDark = dark
             (self.surface as? UIVisualEffectView)?.overrideUserInterfaceStyle = dark ? .dark : .light
         }
+        let state = workspace.selectedTab?.state
+        if state?.themeColor == nil, state?.backgroundColor == nil { updateStatusBand() }
     }
 
     private func updateTabStack() {
@@ -1511,16 +1519,23 @@ final class BrowserMobilePhoneViewController: UIViewController {
     }
 
     /// The chosen card grows to fill the screen, then the page takes its
-    /// place, while the other cards go back into the tab stack.
+    /// place. Choosing the open tab sends the other cards back into the tab
+    /// stack, the way they came; choosing another zooms the row around it,
+    /// so the others slide out past the sides.
     private func closeSwitcher(opening id: String) {
         guard let switcher, mode == .switcher, !isAnimatingSwitcher, let card = switcher.card(for: id) else { return }
         isAnimatingSwitcher = true
-        if id != workspace.selectedTabID {
+        let wasOpen = id == workspace.selectedTabID
+        if !wasOpen {
             workspace.selectTab(id: id)
         }
         matchBackdrop(toPictureOf: id)
         card.superview?.bringSubviewToFront(card)
         card.titleAlpha = 0
+        guard wasOpen else {
+            zoomRow(of: switcher, into: card, keeping: id)
+            return
+        }
         let others = liftIntoStackFlight(switcher, keeping: id)
         UIView.animate(withDuration: 0.1) {
             self.bar.setShowsSwitcherControls(false)
@@ -1534,6 +1549,36 @@ final class BrowserMobilePhoneViewController: UIViewController {
             self.landInStack()
         }
         fadeHiddenStackCards(others)
+    }
+
+    /// Grows `card` to fill the screen and the rest of the row with it, as
+    /// if the camera moved in on it.
+    private func zoomRow(
+        of switcher: BrowserMobileTabSwitcherView, into card: BrowserMobileTabSwitcherView.Card, keeping id: String,
+    ) {
+        let scale = view.bounds.width / max(card.frame.width, 1)
+        let from = card.center
+        let to = CGPoint(x: view.bounds.midX, y: view.bounds.midY)
+        let others = switcher.entries.compactMap { $0.id == id ? nil : switcher.card(for: $0.id) }
+        updateTabStack()
+        hideStackCards(under: [])
+        UIView.animate(withDuration: 0.1) {
+            self.bar.setShowsSwitcherControls(false)
+        }
+        UIView.animate(springDuration: 0.26, bounce: 0, initialSpringVelocity: 0, delay: 0, options: []) {
+            card.bounds.size = self.view.bounds.size
+            card.center = to
+            card.layoutIfNeeded()
+            for other in others {
+                other.titleAlpha = 0
+                other.center = CGPoint(
+                    x: to.x + (other.center.x - from.x) * scale, y: to.y + (other.center.y - from.y) * scale,
+                )
+                other.transform = other.transform.scaledBy(x: scale, y: scale)
+            }
+        } completion: { _ in
+            self.landInStack()
+        }
     }
 
     /// A tap between the cards: the open tab grows back to full screen while
