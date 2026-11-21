@@ -27,8 +27,6 @@ type ReleasesResponse = {
   releases: BrowserRelease[];
 };
 
-type ReleasesState = "loading" | "ready" | "error";
-
 const sourceUrl = "https://github.com/levochkaa/OpenArc";
 const fallbackDownloadUrl = "https://github.com/levochkaa/OpenArc/releases/latest";
 const releasesApiUrl = import.meta.env.VITE_RELEASES_API_URL ?? "https://api.openarc.su/v1/releases";
@@ -37,6 +35,7 @@ const releaseDateFormatter = new Intl.DateTimeFormat(undefined, {
   day: "numeric",
   year: "numeric",
 });
+const shownReleaseCount = 3;
 const ancillaryAssetNamePattern = /(^|[.\-_\s])(blockmap|checksum|checksums|debug|dsym|manifest|metadata|sha256|sha512|signature|symbols?)([.\-_\s]|$)/i;
 
 const importItems = [
@@ -94,7 +93,6 @@ function Clip({ name, label }: { name: string; label: string }) {
 
 function App() {
   const [releases, setReleases] = useState<BrowserRelease[]>([]);
-  const [releasesState, setReleasesState] = useState<ReleasesState>("loading");
 
   useEffect(() => {
     const controller = new AbortController();
@@ -109,15 +107,8 @@ function App() {
       })
       .then((payload) => {
         setReleases(payload.releases);
-        setReleasesState("ready");
       })
-      .catch((error: unknown) => {
-        if (error instanceof DOMException && error.name === "AbortError") {
-          return;
-        }
-
-        setReleasesState("error");
-      });
+      .catch(() => {});
 
     return () => {
       controller.abort();
@@ -126,14 +117,14 @@ function App() {
 
   // Until a stable release ships, downloads offer the newest beta.
   const latestDownloadRelease = useMemo(
-    () =>
-      releases.find((release) => release.isLatestStable) ??
-      releases.find((release) => release.channel === "stable") ??
-      releases[0],
+    () => releases.find((release) => release.channel === "stable") ?? releases[0],
     [releases],
   );
-  // The repository is private, so its GitHub pages are not a download; the list below is.
-  const latestDownloadUrl = getPrimaryMacOSAsset(latestDownloadRelease?.assets ?? [])?.downloadURL ?? "#releases";
+  // The repository is private, so its GitHub pages are not a download yet.
+  const latestDownloadUrl = getPrimaryMacOSAsset(latestDownloadRelease?.assets ?? [])?.downloadURL ?? fallbackDownloadUrl;
+  // Betas are for people who opt in from the app; the page lists stable releases only.
+  const stableReleases = useMemo(() => releases.filter((release) => release.channel === "stable"), [releases]);
+  const hasReleases = stableReleases.length > 0;
 
   return (
     <main>
@@ -143,7 +134,7 @@ function App() {
             <LogoMark />
           </a>
           <div className="topbar-links">
-            <a href="#releases">Releases</a>
+            {hasReleases && <a href="#releases">Releases</a>}
             <a href={sourceUrl}>Source</a>
             <a href={latestDownloadUrl}>Download</a>
           </div>
@@ -277,12 +268,14 @@ function App() {
         </div>
       </section>
 
-      <section className="releases" id="releases" aria-labelledby="releases-title">
-        <div className="section-heading">
-          <h2 id="releases-title">Every build, and every download.</h2>
-        </div>
-        <ReleaseList releases={releases} state={releasesState} />
-      </section>
+      {hasReleases && (
+        <section className="releases" id="releases" aria-labelledby="releases-title">
+          <div className="section-heading">
+            <h2 id="releases-title">What’s new.</h2>
+          </div>
+          <ReleaseList releases={stableReleases} />
+        </section>
+      )}
 
       <footer className="site-footer">
         <div className="zigzag zigzag-blue-top" aria-hidden="true" />
@@ -299,7 +292,7 @@ function App() {
           <div className="footer-links">
             <a href="/privacy/">Privacy policy</a>
             <a href="/terms/">Terms</a>
-            <a href="#releases">Releases</a>
+            {hasReleases && <a href="#releases">Releases</a>}
             <a href={sourceUrl}>GitHub</a>
           </div>
           <span>Not affiliated with The Browser Company</span>
@@ -317,59 +310,90 @@ function LogoMark() {
   );
 }
 
-function ReleaseList({ releases, state }: { releases: BrowserRelease[]; state: ReleasesState }) {
-  if (state === "loading") {
-    return <p className="release-status">Loading release notes...</p>;
-  }
+function ReleaseList({ releases }: { releases: BrowserRelease[] }) {
+  const [showsAll, setShowsAll] = useState(false);
+  const shownReleases = showsAll ? releases : releases.slice(0, shownReleaseCount);
 
-  if (state === "error") {
-    return (
-      <div className="release-status">
-        <p>Release notes are temporarily unavailable.</p>
-        <a href={fallbackDownloadUrl}>Open GitHub releases</a>
+  return (
+    <>
+      <div className="release-grid">
+        {shownReleases.map((release) => (
+          <article className="release-card" key={release.id}>
+            <div className="release-card-header">
+              <div>
+                <p className="release-date">{formatReleaseDate(release.publishedAt)}</p>
+                <h3>{release.name}</h3>
+              </div>
+              {release.isLatestStable && <span className="release-channel">Latest</span>}
+            </div>
+            <ReleaseNotes notes={release.notes} />
+          </article>
+        ))}
       </div>
-    );
-  }
+      {!showsAll && releases.length > shownReleaseCount && (
+        <div className="release-more">
+          <button className="text-link" type="button" onClick={() => setShowsAll(true)}>
+            Show {releases.length - shownReleaseCount} more
+          </button>
+        </div>
+      )}
+    </>
+  );
+}
 
-  if (releases.length === 0) {
-    return <p className="release-status">No releases have been published yet.</p>;
+/** Release notes are Markdown with `##` headings, `-` lists and `code`; nothing else is rendered. */
+function ReleaseNotes({ notes }: { notes: string }) {
+  const blocks: { kind: "heading" | "list" | "paragraph"; lines: string[] }[] = [];
+  notes.split("\n").forEach((rawLine) => {
+    const line = rawLine.trim();
+    const last = blocks.at(-1);
+    if (!line) {
+      blocks.push({ kind: "paragraph", lines: [] });
+    } else if (/^#{1,6}\s/.test(line)) {
+      blocks.push({ kind: "heading", lines: [line.replace(/^#+\s+/, "")] });
+    } else if (/^[-*]\s/.test(line)) {
+      const item = line.replace(/^[-*]\s+/, "");
+      if (last?.kind === "list") {
+        last.lines.push(item);
+      } else {
+        blocks.push({ kind: "list", lines: [item] });
+      }
+    } else if (last?.kind === "paragraph") {
+      last.lines.push(line);
+    } else {
+      blocks.push({ kind: "paragraph", lines: [line] });
+    }
+  });
+  const shownBlocks = blocks.filter((block) => block.lines.length > 0);
+
+  if (shownBlocks.length === 0) {
+    return <p className="release-notes">Fixes and improvements.</p>;
   }
 
   return (
-    <div className="release-grid">
-      {releases.map((release) => (
-        <article className="release-card" key={release.id}>
-          <div className="release-card-header">
-            <div>
-              <p className="release-date">{formatReleaseDate(release.publishedAt)}</p>
-              <h3>{release.name}</h3>
-            </div>
-            <span className={`release-channel ${release.channel}`}>
-              {release.channel === "beta" ? "Beta" : release.isLatestStable ? "Latest stable" : "Stable"}
-            </span>
-          </div>
-
-          <p className="release-tag">{release.tagName}</p>
-          <p className="release-notes">{release.notes.trim() || "No release notes were published for this build."}</p>
-
-          <div className="release-assets" aria-label={`${release.name} downloads`}>
-            {release.assets.length > 0 ? (
-              release.assets.map((asset) => (
-                <a href={asset.downloadURL} key={asset.id}>
-                  <span>{asset.name}</span>
-                  <small>{formatAssetSize(asset.size)}</small>
-                </a>
-              ))
-            ) : (
-              <a href={release.htmlURL}>
-                <span>Open release on GitHub</span>
-                <small>Assets unavailable</small>
-              </a>
-            )}
-          </div>
-        </article>
-      ))}
+    <div className="release-notes">
+      {shownBlocks.map((block, index) => {
+        if (block.kind === "heading") {
+          return <h4 key={index}>{renderInline(block.lines[0])}</h4>;
+        }
+        if (block.kind === "list") {
+          return (
+            <ul key={index}>
+              {block.lines.map((item, itemIndex) => (
+                <li key={itemIndex}>{renderInline(item)}</li>
+              ))}
+            </ul>
+          );
+        }
+        return <p key={index}>{renderInline(block.lines.join(" "))}</p>;
+      })}
     </div>
+  );
+}
+
+function renderInline(text: string) {
+  return text.split(/(`[^`]+`)/).map((part, index) =>
+    part.startsWith("`") && part.endsWith("`") && part.length > 1 ? <code key={index}>{part.slice(1, -1)}</code> : part,
   );
 }
 

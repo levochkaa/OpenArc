@@ -408,8 +408,7 @@ a {
   gap: 12px;
 }
 
-.release-date,
-.release-tag {
+.release-date {
   font: 700 12px var(--mono);
   letter-spacing: 0.4px;
 }
@@ -431,60 +430,45 @@ a {
   background: var(--blue);
 }
 
-.release-channel.beta {
-  background: var(--red);
-}
-
-.release-tag {
-  margin-top: 10px;
-}
-
 .release-notes {
   margin-top: 10px;
   font: 500 15px/1.5 var(--body);
-  white-space: pre-wrap;
   color: var(--gray);
-}
-
-.release-assets {
-  display: grid;
-  gap: 8px;
-  margin-top: 16px;
-}
-
-.release-assets a {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 11px 14px;
-  border-radius: 10px;
-  font: 700 14px var(--body);
-  text-decoration: none;
-  background: var(--cream-light);
   overflow-wrap: anywhere;
 }
 
-.release-assets a:hover {
-  background: var(--cream);
+.release-notes > * + * {
+  margin-top: 8px;
 }
 
-.release-assets small {
-  flex: none;
-  font: 700 12px var(--mono);
+.release-notes h4 {
+  margin-top: 16px;
+  font: 700 15px/1.4 var(--body);
+  color: var(--blue);
 }
 
-.release-status {
-  margin-top: 26px;
-  font: 500 17px/25.5px var(--body);
-  color: var(--gray);
+.release-notes ul {
+  padding-left: 18px;
+  list-style: disc;
+}
+
+.release-notes li + li {
+  margin-top: 4px;
+}
+
+.release-notes code {
+  font: 700 13px var(--mono);
+}
+
+.release-more {
   text-align: center;
 }
 
-.release-status a {
-  display: inline-block;
-  margin-top: 6px;
-  font-weight: 700;
-  color: var(--blue);
+.release-more button {
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
 }
 
 /* Footer: the blue band with the last call, then mono links. */

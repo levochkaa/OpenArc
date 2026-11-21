@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 
@@ -14,7 +14,7 @@ const releaseResponse = {
       isLatestStable: true,
       publishedAt: "2026-05-20T12:00:00.000Z",
       htmlURL: "https://github.com/levochkaa/OpenArc/releases/tag/v1.4.0",
-      notes: "Workspace polish and signed update fixes.",
+      notes: "Workspace polish and signed update fixes.\n\n## Tabs\n\n- Typed `localhost:3000` opens.",
       assets: [
         {
           id: 200,
@@ -68,39 +68,38 @@ describe("App", () => {
     vi.unstubAllGlobals();
   });
 
-  it("renders the landing hero while release notes are loading", () => {
+  it("renders the landing hero while releases are loading", () => {
     vi.stubGlobal("fetch", vi.fn(() => new Promise(() => {})));
 
     render(<App />);
 
     expect(screen.getByRole("heading", { name: /the browser you loved, still open/i })).toBeInTheDocument();
     expect(screen.getByRole("navigation", { name: /primary/i })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /download for macos/i })).toHaveAttribute("href", "#releases");
-    expect(screen.getByText("Loading release notes...")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /download for macos/i })).toHaveAttribute(
+      "href",
+      "https://github.com/levochkaa/OpenArc/releases/latest",
+    );
+    expect(screen.queryByRole("heading", { name: /what’s new/i })).not.toBeInTheDocument();
   });
 
-  it("points download actions at the newest beta until a stable release ships", async () => {
+  it("downloads the newest beta and hides the release list until a stable release ships", async () => {
     mockFetchResponse({
       releases: [
         {
-          ...releaseResponse.releases[0],
+          ...releaseResponse.releases[1],
           id: 3,
-          name: "OpenArc 0.3.0 (3)",
-          tagName: "v0.3.0-3",
-          channel: "beta",
-          isLatestStable: false,
           assets: [
             {
-              id: 301,
+              id: 300,
               name: "OpenArc-0.3.0-3.zip",
               contentType: "application/zip",
-              size: 160_000_000,
+              size: 120_000_000,
               downloadCount: 1,
               downloadURL: "https://api.openarc.su/downloads/OpenArc-0.3.0-3.zip",
             },
           ],
         },
-        { ...releaseResponse.releases[0], id: 2, channel: "beta", isLatestStable: false },
+        { ...releaseResponse.releases[1], id: 2 },
       ],
     });
 
@@ -112,9 +111,11 @@ describe("App", () => {
         "https://api.openarc.su/downloads/OpenArc-0.3.0-3.zip",
       );
     });
+    expect(screen.queryByRole("heading", { name: /what’s new/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Releases" })).not.toBeInTheDocument();
   });
 
-  it("loads release notes and points landing download actions at the latest stable installer asset", async () => {
+  it("lists stable releases without betas or downloads and points download actions at the latest stable", async () => {
     const fetchMock = mockFetchResponse(releaseResponse);
     const installerDownloadURL = "https://api.openarc.su/downloads/OpenArc-1.4.0.dmg";
 
@@ -122,42 +123,44 @@ describe("App", () => {
 
     expect(fetchMock).toHaveBeenCalledWith(releasesApiUrl, expect.objectContaining({ signal: expect.any(AbortSignal) }));
 
-    const releaseHeading = await screen.findByRole("heading", { name: "OpenArc 1.4" });
-    const releaseCard = releaseHeading.closest("article");
+    const releaseCard = (await screen.findByRole("heading", { name: "OpenArc 1.4" })).closest("article");
     expect(releaseCard).not.toBeNull();
-
-    expect(within(releaseCard!).getByText("Latest stable")).toBeInTheDocument();
-    expect(within(releaseCard!).getByText("v1.4.0")).toBeInTheDocument();
+    expect(within(releaseCard!).getByText("Latest")).toBeInTheDocument();
     expect(within(releaseCard!).getByText("Workspace polish and signed update fixes.")).toBeInTheDocument();
-    expect(within(releaseCard!).getByRole("link", { name: /OpenArc-1\.4\.0\.dmg\s*120\.0 MB/i })).toHaveAttribute(
-      "href",
-      installerDownloadURL,
-    );
+    expect(within(releaseCard!).getByRole("heading", { name: "Tabs" })).toBeInTheDocument();
+    expect(within(releaseCard!).getByRole("listitem")).toHaveTextContent("Typed localhost:3000 opens.");
+    expect(within(releaseCard!).queryByRole("link")).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "OpenArc 1.5 Beta 1" })).not.toBeInTheDocument();
 
-    await waitFor(() => {
-      expect(screen.getByRole("link", { name: /download for macos/i })).toHaveAttribute(
-        "href",
-        installerDownloadURL,
-      );
-    });
+    expect(screen.getByRole("link", { name: /download for macos/i })).toHaveAttribute("href", installerDownloadURL);
     expect(within(screen.getByRole("navigation", { name: /primary/i })).getByRole("link", { name: "Download" })).toHaveAttribute(
       "href",
       installerDownloadURL,
     );
-    expect(screen.getByRole("link", { name: /download latest/i })).toHaveAttribute(
-      "href",
-      installerDownloadURL,
-    );
+    expect(screen.getByRole("link", { name: /download latest/i })).toHaveAttribute("href", installerDownloadURL);
+  });
 
-    const betaHeading = screen.getByRole("heading", { name: "OpenArc 1.5 Beta 1" });
-    const betaCard = betaHeading.closest("article");
-    expect(betaCard).not.toBeNull();
-    expect(within(betaCard!).getByText("Beta")).toBeInTheDocument();
-    expect(within(betaCard!).getByText("No release notes were published for this build.")).toBeInTheDocument();
-    expect(within(betaCard!).getByRole("link", { name: /open release on github\s*assets unavailable/i })).toHaveAttribute(
-      "href",
-      "https://github.com/levochkaa/OpenArc/releases/tag/v1.5.0-beta.1",
-    );
+  it("shows the newest three stable releases and the rest behind a button", async () => {
+    const stable = releaseResponse.releases[0];
+    mockFetchResponse({
+      releases: [1, 2, 3, 4, 5].map((minor, index) => ({
+        ...stable,
+        id: minor,
+        name: `OpenArc 1.${6 - minor}`,
+        isLatestStable: index === 0,
+      })),
+    });
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "OpenArc 1.5" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "OpenArc 1.3" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "OpenArc 1.2" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Show 2 more" }));
+
+    expect(screen.getByRole("heading", { name: "OpenArc 1.1" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /more/i })).not.toBeInTheDocument();
   });
 
   it("points primary download actions at the DMG asset when a non-DMG asset is listed first", async () => {
@@ -201,23 +204,17 @@ describe("App", () => {
     );
   });
 
-  it("shows the empty releases state", async () => {
-    mockFetchResponse({ releases: [] });
-
-    render(<App />);
-
-    expect(await screen.findByText("No releases have been published yet.")).toBeInTheDocument();
-  });
-
-  it("falls back to GitHub releases when the releases API fails", async () => {
+  it("keeps the download working when the releases API fails", async () => {
     mockFetchResponse({}, false);
 
     render(<App />);
 
-    expect(await screen.findByText("Release notes are temporarily unavailable.")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /open github releases/i })).toHaveAttribute(
-      "href",
-      "https://github.com/levochkaa/OpenArc/releases/latest",
-    );
+    await waitFor(() => {
+      expect(screen.getByRole("link", { name: /download latest/i })).toHaveAttribute(
+        "href",
+        "https://github.com/levochkaa/OpenArc/releases/latest",
+      );
+    });
+    expect(screen.queryByRole("heading", { name: /what’s new/i })).not.toBeInTheDocument();
   });
 });
