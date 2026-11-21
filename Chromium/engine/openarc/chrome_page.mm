@@ -438,6 +438,10 @@ class PageObserver : public content::WebContentsObserver,
   void DidFinishNavigation(content::NavigationHandle* handle) override {
     if (handle->IsInPrimaryMainFrame()) {
       [owner_ pageAddressChanged];
+      // A page Back or Forward restores from the back-forward cache sets no title, so TitleWasSet never comes.
+      if (handle->HasCommitted()) {
+        [owner_ pageTitleChanged];
+      }
       [owner_ pageLoadingChanged];
     }
   }
