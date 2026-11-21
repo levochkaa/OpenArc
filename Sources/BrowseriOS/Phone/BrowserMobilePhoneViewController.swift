@@ -1380,8 +1380,10 @@ final class BrowserMobilePhoneViewController: UIViewController {
 
     private func switcherEntries() -> [BrowserMobileTabSwitcherView.Entry] {
         workspace.switcherTabs.map {
-            .init(
-                id: $0.id, title: $0.userTitleOverride ?? $0.title, urlString: $0.urlString, isPrivate: $0.isPrivate,
+            // A page that failed to load keeps the title of the one before it.
+            let title = $0.state.error == nil ? $0.title : String(localized: "Cannot Load Page", table: "Mobile")
+            return .init(
+                id: $0.id, title: $0.userTitleOverride ?? title, urlString: $0.urlString, isPrivate: $0.isPrivate,
             )
         }
     }
