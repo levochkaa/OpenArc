@@ -1982,10 +1982,12 @@ final class BrowserMobilePhoneViewController: UIViewController {
 // MARK: UIGestureRecognizerDelegate
 
 extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
-    /// A drag from the bar to another tab: sideways goes to the previous tab
-    /// as on the system's home indicator, up from the tab stack pulls the
-    /// previous tab out of the stack while the page shrinks into a card.
-    fileprivate final class BarSwipe {
+    /// A drag from the bar to another tab. Sideways, the page turns into a
+    /// card in a row with its neighbor, right to the previous tab out of the
+    /// tab stack, left to the next one from the side; up from the tab stack,
+    /// it pulls the previous tab out of the stack while the page shrinks
+    /// into a card. Each picture rides in a card that clips and rounds it.
+    @MainActor fileprivate final class BarSwipe {
         enum Kind {
             case sideways
             case up
@@ -1994,19 +1996,49 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
         let kind: Kind
         let fromID: String
         let toID: String?
+        /// 1 when the row moves right, to the previous tab; -1 left, to the next.
+        let direction: CGFloat
         let incoming: UIImageView
+        let incomingCard: UIView
         let outgoing: UIView
+        let outgoingCard: UIView
         let backdrop: UIView
+        /// The page has turned into a card in the row.
+        var isRow = false
 
-        init(kind: Kind, fromID: String, toID: String?, incoming: UIImageView, outgoing: UIView, backdrop: UIView) {
+        init(
+            kind: Kind, fromID: String, toID: String?, direction: CGFloat,
+            incoming: UIImageView, outgoing: UIView, backdrop: UIView,
+        ) {
             self.kind = kind
             self.fromID = fromID
             self.toID = toID
+            self.direction = direction
             self.incoming = incoming
             self.outgoing = outgoing
             self.backdrop = backdrop
+            self.incomingCard = Self.card(holding: incoming)
+            self.outgoingCard = Self.card(holding: outgoing)
+        }
+
+        private static func card(holding picture: UIView) -> UIView {
+            let card = UIView(frame: picture.frame)
+            card.clipsToBounds = true
+            card.layer.cornerCurve = .continuous
+            picture.frame.origin = .zero
+            card.addSubview(picture)
+            return card
         }
     }
+
+    /// How far a sideways drag moves the page before it turns into a card.
+    private static let rowThreshold: CGFloat = 40
+    /// The row's cards: their top on the screen, their bottom's distance
+    /// above the bar, the room between them and their corner radius.
+    private static let rowCardTop: CGFloat = 62
+    private static let rowCardBottomGap: CGFloat = 20
+    private static let rowCardGap: CGFloat = 30
+    private static let rowCardRadius: CGFloat = 34
 
     /// How far up the finger goes for the page to reach its smallest card.
     private static let upSwipeTravel: CGFloat = 380
@@ -2156,31 +2188,33 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
         guard mode == .browsing, swipe == nil, let current = workspace.selectedTabID else { return }
         let tabs = workspace.switcherTabs
         let index = tabs.firstIndex { $0.id == current }
-        // Right and up go back in time; left from the newest tab only rubber-bands.
-        let target = toPrevious ? index.flatMap { $0 > 0 ? tabs[$0 - 1].id : nil } : nil
-        thumbnails.capture(current, workspace: workspace, width: thumbnailWidth)
-        // Dragging up shows the app's backdrop behind the shrinking page; sideways, black.
-        let backdrop = kind == .up ? BrowserMobileAppBackdrop(frame: view.bounds) : UIView(frame: view.bounds)
-        if kind != .up {
-            backdrop.backgroundColor = .black
+        // Right and up go back in time, left forward; past either end the
+        // page only rubber-bands.
+        let target = index.flatMap { index in
+            let next = toPrevious ? index - 1 : index + 1
+            return tabs.indices.contains(next) ? tabs[next].id : nil
         }
+        thumbnails.capture(current, workspace: workspace, width: thumbnailWidth)
+        // The app's backdrop shows behind the cards.
+        let backdrop = BrowserMobileAppBackdrop(frame: view.bounds)
         view.insertSubview(backdrop, belowSubview: pageContainer)
         let outgoing = pageContainer.snapshotView(afterScreenUpdates: false) ?? UIView()
         outgoing.frame = view.bounds
-        outgoing.layer.cornerCurve = .continuous
-        outgoing.clipsToBounds = true
-        view.insertSubview(outgoing, belowSubview: bar)
         let incoming = target.flatMap { pagePicture(for: $0) } ?? UIImageView()
         incoming.backgroundColor = .white
-        incoming.clipsToBounds = true
-        incoming.layer.cornerCurve = .continuous
         incoming.frame = view.bounds
-        incoming.isHidden = target == nil
-        view.insertSubview(incoming, belowSubview: bar)
-        pageContainer.isHidden = true
-        swipe = BarSwipe(
-            kind: kind, fromID: current, toID: target, incoming: incoming, outgoing: outgoing, backdrop: backdrop,
+        let swipe = BarSwipe(
+            kind: kind, fromID: current, toID: target, direction: toPrevious ? 1 : -1,
+            incoming: incoming, outgoing: outgoing, backdrop: backdrop,
         )
+        swipe.incomingCard.isHidden = target == nil
+        view.insertSubview(swipe.incomingCard, belowSubview: bar)
+        view.insertSubview(swipe.outgoingCard, belowSubview: bar)
+        pageContainer.isHidden = true
+        self.swipe = swipe
+        if kind == .sideways {
+            placeIncomingAtItsSource(swipe)
+        }
         updateSwipe(progress: 0)
     }
 
@@ -2188,8 +2222,13 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
         let width = view.bounds.width
         switch swipe.kind {
         case .sideways:
-            let x = translation.x
-            return swipe.toID == nil ? -rubberBand(-x, limit: width * 0.12) / width : max(x, 0) / width
+            // Toward the other tab the page follows the finger; without one,
+            // or back past where it started, it only gives a little.
+            let along = translation.x * swipe.direction
+            let travel = swipe.toID == nil || along < 0
+                ? (along < 0 ? -rubberBand(-along, limit: width * 0.12) : rubberBand(along, limit: width * 0.12))
+                : along
+            return travel * swipe.direction / width
         case .up:
             let lift = max(-translation.y, 0)
             let travel = Self.upSwipeTravel
@@ -2206,7 +2245,8 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
             switch swipe.kind {
             case .sideways:
                 gesture.state == .ended && swipe.toID != nil
-                    && (translation.x > width * 0.3 || velocity.x > 400)
+                    && translation.x * swipe.direction > 0
+                    && (translation.x * swipe.direction > width * 0.3 || velocity.x * swipe.direction > 400)
             case .up:
                 // Any real lift lands on the previous tab unless the finger
                 // heads back down.
@@ -2214,31 +2254,37 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
                     && -translation.y > 40 && velocity.y < 300
             }
         if completes, let toID = swipe.toID {
-            workspace.selectTab(id: toID)
+            // A swipe moves along the row without reordering it.
+            if swipe.kind == .sideways {
+                workspace.selectTabInPlace(id: toID)
+            } else {
+                workspace.selectTab(id: toID)
+            }
             matchBackdrop(toPictureOf: toID)
         }
         UIView.animate(
-            springDuration: 0.3,
+            springDuration: swipe.kind == .sideways ? 0.32 : 0.3,
             bounce: completes ? 0 : 0.15,
             initialSpringVelocity: 0,
             delay: 0,
-            options: [.allowUserInteraction],
+            options: [.allowUserInteraction, .beginFromCurrentState],
         ) {
-            if completes, swipe.kind == .up {
-                self.landUpSwipe()
+            if completes {
+                self.landSwipe(swipe)
+            } else if swipe.kind == .sideways {
+                self.cancelSidewaysSwipe(swipe)
             } else {
-                self.updateSwipe(progress: completes ? 1 : 0)
+                self.updateSwipe(progress: 0)
             }
         } completion: { _ in
-            swipe.outgoing.removeFromSuperview()
+            swipe.outgoingCard.removeFromSuperview()
             swipe.backdrop.removeFromSuperview()
             self.pageContainer.isHidden = false
             if self.swipe === swipe { self.swipe = nil }
             self.render()
+            swipe.incomingCard.removeFromSuperview()
             if completes, let toID = swipe.toID {
                 self.coverWhileLoading(toID, with: swipe.incoming)
-            } else {
-                swipe.incoming.removeFromSuperview()
             }
         }
     }
@@ -2306,29 +2352,129 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
         }
     }
 
-    /// The current page slides right and shrinks while the previous one grows
-    /// out of the tab stack.
+    /// Lays out `card` at `center` showing the part `content` of its
+    /// picture, `scale` times its size, its corners rounded `radius` on the screen.
+    private func place(
+        _ card: UIView, content: CGRect, center: CGPoint, scale: CGFloat, angle: CGFloat = 0, radius: CGFloat,
+    ) {
+        card.bounds = content
+        card.center = center
+        card.transform = CGAffineTransform(rotationAngle: angle).scaledBy(x: scale, y: scale)
+        card.layer.cornerRadius = radius / max(scale, 0.05)
+    }
+
+    /// The part of a page a card in the row shows: all of it below the
+    /// status bar.
+    private var rowCardContent: CGRect {
+        let top = view.safeAreaInsets.top
+        return CGRect(x: 0, y: top, width: view.bounds.width, height: view.bounds.height - top)
+    }
+
+    private var rowCardScale: CGFloat {
+        let bottom = expandedBarFrame.minY - Self.rowCardBottomGap
+        return (bottom - Self.rowCardTop) / max(rowCardContent.height, 1)
+    }
+
+    /// Where the other tab's card waits before the row shows it: the
+    /// previous tab in the tab stack, the next one past the side.
+    private func placeIncomingAtItsSource(_ swipe: BarSwipe) {
+        let bounds = view.bounds
+        let card = swipe.incomingCard
+        let content = rowCardContent
+        if swipe.direction > 0 {
+            let stack = bar.convert(bar.tabStack.center, to: view)
+            let scale = BrowserMobileTabStackButton.cardSize.width / bounds.width
+            place(
+                card, content: content, center: stack, scale: scale, angle: BrowserMobileTabStackButton.frontAngle,
+                radius: 4,
+            )
+            card.alpha = 0
+        } else {
+            let scale = rowCardScale
+            place(
+                card, content: content,
+                center: CGPoint(x: bounds.maxX + content.width * scale / 2 + Self.rowCardGap, y: rowCardCenterY),
+                scale: scale, radius: Self.rowCardRadius,
+            )
+            card.alpha = 1
+        }
+    }
+
+    private var rowCardCenterY: CGFloat {
+        (Self.rowCardTop + expandedBarFrame.minY - Self.rowCardBottomGap) / 2
+    }
+
+    /// The page follows the finger at full size, its corners rounding; past
+    /// the threshold toward another tab it turns into a card in a row with
+    /// that tab's card, which the row then carries along with the finger.
     private func layoutSidewaysSwipe(_ swipe: BarSwipe, progress: CGFloat) {
         let bounds = view.bounds
-        let p = max(min(progress, 1), -1)
-        let outgoingScale = 1 - 0.12 * max(p, 0)
-        swipe.outgoing.transform = CGAffineTransform(translationX: bounds.width * p * 0.92, y: 0)
-            .scaledBy(x: outgoingScale, y: outgoingScale)
-        swipe.outgoing.layer.cornerRadius = 40 * min(abs(p) * 4, 1)
-        guard swipe.toID != nil else { return }
-        let stack = bar.convert(bar.tabStack.center, to: view)
-        let startScale = BrowserMobileTabStackButton.cardSize.width / bounds.width
-        let scale = startScale + (1 - startScale) * p
-        let angle = BrowserMobileTabStackButton.frontAngle * (1 - p)
-        let center = CGPoint(
-            x: stack.x + (bounds.midX - stack.x) * p,
-            y: stack.y + (bounds.midY - stack.y) * p,
+        let travel = progress * bounds.width
+        let along = travel * swipe.direction
+        if !swipe.isRow, swipe.toID != nil, along >= Self.rowThreshold {
+            swipe.isRow = true
+            swipe.incomingCard.alpha = 1
+            UIView.animate(springDuration: 0.3, bounce: 0, initialSpringVelocity: 0, delay: 0, options: [
+                .allowUserInteraction, .beginFromCurrentState,
+            ]) {
+                self.layoutRow(swipe, travel: travel)
+            }
+            return
+        }
+        if swipe.isRow {
+            layoutRow(swipe, travel: travel)
+            return
+        }
+        place(
+            swipe.outgoingCard, content: bounds, center: CGPoint(x: bounds.midX + travel, y: bounds.midY),
+            scale: 1, radius: Self.rowCardRadius * min(abs(travel) / Self.rowThreshold, 1),
         )
-        swipe.incoming.bounds = bounds
-        swipe.incoming.center = center
-        swipe.incoming.transform = CGAffineTransform(rotationAngle: angle).scaledBy(x: scale, y: scale)
-        swipe.incoming.layer.cornerRadius = 40 * (1 - p) / max(scale, 0.05)
-        swipe.incoming.alpha = min(1, 0.4 + p * 3)
+    }
+
+    /// The page's card and the other tab's beside it, the row moved by `travel`.
+    private func layoutRow(_ swipe: BarSwipe, travel: CGFloat) {
+        let scale = rowCardScale
+        let content = rowCardContent
+        // The row starts where the page's card sits when it turns.
+        let shift = travel - swipe.direction * (Self.rowThreshold - 3)
+        let center = CGPoint(x: view.bounds.midX + shift, y: rowCardCenterY)
+        place(swipe.outgoingCard, content: content, center: center, scale: scale, radius: Self.rowCardRadius)
+        let step = content.width * scale + Self.rowCardGap
+        place(
+            swipe.incomingCard, content: content, center: CGPoint(x: center.x - swipe.direction * step, y: center.y),
+            scale: scale, radius: Self.rowCardRadius,
+        )
+    }
+
+    /// The page grows back to the screen while the other tab's card goes
+    /// back where it came from.
+    private func cancelSidewaysSwipe(_ swipe: BarSwipe) {
+        let bounds = view.bounds
+        place(
+            swipe.outgoingCard, content: bounds, center: CGPoint(x: bounds.midX, y: bounds.midY), scale: 1,
+            radius: 0,
+        )
+        if swipe.toID != nil {
+            placeIncomingAtItsSource(swipe)
+        }
+    }
+
+    /// The other tab's card grows to fill the screen while the page's card
+    /// drops into the tab stack.
+    private func landSwipe(_ swipe: BarSwipe) {
+        let bounds = view.bounds
+        swipe.incomingCard.alpha = 1
+        place(
+            swipe.incomingCard, content: bounds, center: CGPoint(x: bounds.midX, y: bounds.midY), scale: 1,
+            radius: 0,
+        )
+        let stack = bar.convert(bar.tabStack.center, to: view)
+        place(
+            swipe.outgoingCard, content: swipe.kind == .sideways ? rowCardContent : bounds, center: stack,
+            scale: BrowserMobileTabStackButton.cardSize.width / bounds.width,
+            angle: BrowserMobileTabStackButton.frontAngle, radius: 4,
+        )
+        swipe.outgoingCard.alpha = 0
     }
 
     /// The page shrinks into a card that rests on the bar while the previous
@@ -2338,40 +2484,22 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
         let p = max(progress, 0)
         let scale = 1 - 0.28 * p
         let bottom = bounds.height - (bounds.height - expandedBarFrame.minY + 6) * min(1, p * 2)
-        let lift = bottom - bounds.midY - bounds.height * scale / 2
-        swipe.outgoing.transform = CGAffineTransform(translationX: 0, y: lift).scaledBy(x: scale, y: scale)
-        swipe.outgoing.layer.cornerRadius = 44 * min(p * 4, 1) / scale
+        place(
+            swipe.outgoingCard, content: bounds,
+            center: CGPoint(x: bounds.midX, y: bottom - bounds.height * scale / 2), scale: scale,
+            radius: 44 * min(p * 4, 1),
+        )
         guard swipe.toID != nil else { return }
         let q = min(p, 1)
         let stack = bar.convert(bar.tabStack.center, to: view)
         let startScale = BrowserMobileTabStackButton.cardSize.width / bounds.width
-        let scale2 = startScale + (0.36 - startScale) * q
+        let incomingScale = startScale + (0.36 - startScale) * q
         let target = CGPoint(x: bounds.width * 0.27, y: bounds.height * 0.62)
-        swipe.incoming.bounds = bounds
-        swipe.incoming.center = CGPoint(x: stack.x + (target.x - stack.x) * q, y: stack.y + (target.y - stack.y) * q)
-        swipe.incoming.transform = CGAffineTransform(rotationAngle: BrowserMobileTabStackButton.frontAngle * (1 - q))
-            .scaledBy(x: scale2, y: scale2)
-        swipe.incoming.layer.cornerRadius = 40 / max(scale2, 0.05)
-        swipe.incoming.alpha = min(1, 0.4 + q * 3)
-    }
-
-    /// The previous tab fills the screen while the page's card drops into the
-    /// tab stack.
-    private func landUpSwipe() {
-        guard let swipe else { return }
-        let bounds = view.bounds
-        swipe.incoming.transform = .identity
-        swipe.incoming.bounds = bounds
-        swipe.incoming.center = CGPoint(x: bounds.midX, y: bounds.midY)
-        swipe.incoming.layer.cornerRadius = 0
-        swipe.incoming.alpha = 1
-        let stack = bar.convert(bar.tabStack.center, to: view)
-        let scale = BrowserMobileTabStackButton.cardSize.width / bounds.width
-        swipe.outgoing.transform = CGAffineTransform(
-            translationX: stack.x - bounds.midX, y: stack.y - bounds.midY,
+        place(
+            swipe.incomingCard, content: bounds,
+            center: CGPoint(x: stack.x + (target.x - stack.x) * q, y: stack.y + (target.y - stack.y) * q),
+            scale: incomingScale, angle: BrowserMobileTabStackButton.frontAngle * (1 - q), radius: 40,
         )
-        .rotated(by: BrowserMobileTabStackButton.frontAngle)
-        .scaledBy(x: scale, y: scale)
-        swipe.outgoing.alpha = 0
+        swipe.incomingCard.alpha = min(1, 0.4 + q * 3)
     }
 }

@@ -33,7 +33,7 @@ struct BrowserMobileTab: Identifiable, Equatable {
     private(set) var tabs = [BrowserMobileTab]()
     private(set) var selectedTabID: String? {
         didSet {
-            guard let selectedTabID, recentTabIDs.first != selectedTabID else { return }
+            guard let selectedTabID, !keepsRecentOrder, recentTabIDs.first != selectedTabID else { return }
             recentTabIDs.removeAll { $0 == selectedTabID }
             recentTabIDs.insert(selectedTabID, at: 0)
             let privateIDs = Set(tabs.filter(\.isPrivate).map(\.id))
@@ -56,6 +56,9 @@ struct BrowserMobileTab: Identifiable, Equatable {
     private(set) var openedLinkCount = 0
     /// Search opens pages in private tabs. It lasts while the window is open.
     var isIncognito = false
+
+    /// Set while a selection leaves the switcher's order as it is.
+    private var keepsRecentOrder = false
 
     private let engine: any BrowserMobileEngine
     private let store: (any BrowserMobileSessionStoring)?
@@ -511,6 +514,14 @@ struct BrowserMobileTab: Identifiable, Equatable {
         selectCurrentRuntime()
         recordSelectionActivity(previousID: previousID)
         notify()
+    }
+
+    /// Selects a tab without making it the newest in the switcher, as a
+    /// swipe along the bar moves through the row without reordering it.
+    func selectTabInPlace(id: String) {
+        keepsRecentOrder = true
+        defer { keepsRecentOrder = false }
+        selectTab(id: id)
     }
 
     func selectSpace(id: String) {

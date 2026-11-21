@@ -14,7 +14,7 @@ import UIKit
 final class BrowserMobileHomeLogo: UIView, UIGestureRecognizerDelegate {
     /// The rim a finger turns the wheel at: wherever it moves, its speed
     /// across the line to the center turns the wheel as if it held this rim.
-    static let wheelRadius: CGFloat = 75
+    static let wheelRadius: CGFloat = 50
 
     // MARK: Internal
 
