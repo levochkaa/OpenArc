@@ -1998,7 +1998,7 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
         let toID: String?
         /// 1 when the row moves right, to the previous tab; -1 left, to the next.
         let direction: CGFloat
-        let incoming: UIImageView
+        let incoming: UIView
         let incomingCard: UIView
         let outgoing: UIView
         let outgoingCard: UIView
@@ -2008,7 +2008,7 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
 
         init(
             kind: Kind, fromID: String, toID: String?, direction: CGFloat,
-            incoming: UIImageView, outgoing: UIView, backdrop: UIView,
+            incoming: UIView, outgoing: UIView, backdrop: UIView,
         ) {
             self.kind = kind
             self.fromID = fromID
@@ -2200,9 +2200,8 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
         view.insertSubview(backdrop, belowSubview: pageContainer)
         let outgoing = pageContainer.snapshotView(afterScreenUpdates: false) ?? UIView()
         outgoing.frame = view.bounds
-        let incoming = target.flatMap { pagePicture(for: $0) } ?? UIImageView()
-        incoming.backgroundColor = .white
-        incoming.frame = view.bounds
+        let incoming = target.flatMap { pagePicture(for: $0) } ?? UIView(frame: view.bounds)
+        incoming.backgroundColor = incoming.backgroundColor ?? .white
         let swipe = BarSwipe(
             kind: kind, fromID: current, toID: target, direction: toPrevious ? 1 : -1,
             incoming: incoming, outgoing: outgoing, backdrop: backdrop,
@@ -2282,9 +2281,10 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
             self.pageContainer.isHidden = false
             if self.swipe === swipe { self.swipe = nil }
             self.render()
-            swipe.incomingCard.removeFromSuperview()
             if completes, let toID = swipe.toID {
-                self.coverWhileLoading(toID, with: swipe.incoming)
+                self.coverWhileLoading(toID, with: swipe.incomingCard)
+            } else {
+                swipe.incomingCard.removeFromSuperview()
             }
         }
     }
@@ -2323,19 +2323,23 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
         }
     }
 
-    /// The tab's last picture sized to the screen, top aligned.
-    private func pagePicture(for tabID: String) -> UIImageView? {
+    /// The tab's last picture as the screen shows its page: the picture of
+    /// what lies below the status bar sits there, on the page's color.
+    private func pagePicture(for tabID: String) -> UIView? {
         guard let image = thumbnails.image(for: tabID), image.size.width > 0 else { return nil }
+        let bounds = view.bounds
+        let state = workspace.tabs.first { $0.id == tabID }?.state
+        let cover = UIView(frame: bounds)
+        cover.backgroundColor = state?.themeColor ?? state?.backgroundColor ?? .white
         let picture = UIImageView(image: image)
         picture.backgroundColor = .white
-        picture.clipsToBounds = true
-        picture.layer.cornerCurve = .continuous
         picture.contentMode = .scaleToFill
-        picture.layer.contentsRect = CGRect(
-            x: 0, y: 0, width: 1,
-            height: min(1, view.bounds.height / (image.size.height * view.bounds.width / image.size.width)),
+        picture.frame = CGRect(
+            x: 0, y: view.safeAreaInsets.top,
+            width: bounds.width, height: bounds.width * image.size.height / image.size.width,
         )
-        return picture
+        cover.addSubview(picture)
+        return cover
     }
 
     private func rubberBand(_ value: CGFloat, limit: CGFloat) -> CGFloat {
@@ -2463,6 +2467,8 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
     /// drops into the tab stack.
     private func landSwipe(_ swipe: BarSwipe) {
         let bounds = view.bounds
+        // The tab coming in grows over the one going into the stack.
+        view.insertSubview(swipe.incomingCard, aboveSubview: swipe.outgoingCard)
         swipe.incomingCard.alpha = 1
         place(
             swipe.incomingCard, content: bounds, center: CGPoint(x: bounds.midX, y: bounds.midY), scale: 1,
