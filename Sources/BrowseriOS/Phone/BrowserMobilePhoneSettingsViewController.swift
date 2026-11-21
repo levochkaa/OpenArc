@@ -65,6 +65,7 @@ final class BrowserMobilePhoneSettingsViewController: UITableViewController {
 
     private struct Row {
         let title: String
+        var subtitle: String?
         let symbol: String
         let color: UIColor
         let id: String
@@ -79,6 +80,7 @@ final class BrowserMobilePhoneSettingsViewController: UITableViewController {
 
     private static let defaultBrowserRowID = "browser.settings.defaultBrowser"
     private static let archivalRowID = "browser.settings.archiveInactiveTabs"
+    private static let exportRowID = "browser.settings.exportData"
     private static let menuButtonTag = 0x0A4C
 
     // MARK: Internal
@@ -170,6 +172,16 @@ final class BrowserMobilePhoneSettingsViewController: UITableViewController {
                     opensPage: false,
                 )
                     { [weak self] in self?.confirmClearWebsiteData() },
+                .init(
+                    title: String(localized: "Export Data", table: "Mobile"),
+                    subtitle: String(localized: "Share your open tab URLs", table: "Mobile"),
+                    symbol: "square.and.arrow.up",
+                    color: .systemBlue,
+                    id: Self.exportRowID,
+                    isEnabled: true,
+                    opensPage: false,
+                )
+                    { [weak self] in self?.exportTabURLs() },
             ],
         ]
         if BrowserMobileDefaultBrowser.isAvailable {
@@ -222,9 +234,14 @@ final class BrowserMobilePhoneSettingsViewController: UITableViewController {
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let row = rows[indexPath.section][indexPath.row]
         let cell = tableView.dequeueReusableCell(withIdentifier: row.menu == nil ? "Row" : "MenuRow", for: indexPath)
-        var content = row.value == nil ? UIListContentConfiguration.cell() : .valueCell()
+        var content = row.subtitle != nil
+            ? UIListContentConfiguration.subtitleCell()
+            : row.value == nil ? .cell() : .valueCell()
         content.text = row.title
-        content.secondaryText = row.value
+        content.secondaryText = row.subtitle ?? row.value
+        if row.subtitle != nil {
+            content.secondaryTextProperties.color = .secondaryLabel
+        }
         content.image = Self.tile(symbol: row.symbol, color: row.isEnabled ? row.color : .systemGray)
         content.textProperties.color = row.isEnabled ? .label : .secondaryLabel
         cell.contentConfiguration = content
@@ -277,6 +294,13 @@ final class BrowserMobilePhoneSettingsViewController: UITableViewController {
             rows[index][row].value = BrowserMobileSearchEngineSetting.current(defaults).title
             tableView.reloadRows(at: [IndexPath(row: row, section: index)], with: .none)
         }
+    }
+
+    /// Shares the open tabs' addresses through the share sheet.
+    /// The tabs' addresses, one per line, leaving out private and blank tabs.
+    static func exportedURLs(_ tabs: [BrowserMobileTab]) -> String? {
+        let urls = tabs.filter { !$0.isPrivate }.map(\.urlString).filter { !$0.isEmpty && $0 != "about:blank" }
+        return urls.isEmpty ? nil : urls.joined(separator: "\n")
     }
 
     /// A white symbol on a rounded square of the row's color.
@@ -466,6 +490,19 @@ final class BrowserMobilePhoneSettingsViewController: UITableViewController {
     private func showSearchEngines() {
         let controller = BrowserMobileSearchEnginesViewController(defaults: defaults)
         navigationController?.pushViewController(controller, animated: true)
+    }
+
+    private func exportTabURLs() {
+        guard let text = Self.exportedURLs(workspace.tabs) else { return }
+        let share = UIActivityViewController(activityItems: [text], applicationActivities: nil)
+        if let index = rows.indices.first(where: { rows[$0].contains { $0.id == Self.exportRowID } }),
+           let row = rows[index].firstIndex(where: { $0.id == Self.exportRowID }),
+           let cell = tableView.cellForRow(at: IndexPath(row: row, section: index))
+        {
+            share.popoverPresentationController?.sourceView = cell
+            share.popoverPresentationController?.sourceRect = cell.bounds
+        }
+        present(share, animated: true)
     }
 
     private func confirmClearWebsiteData() {

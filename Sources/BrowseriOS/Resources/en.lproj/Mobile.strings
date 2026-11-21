@@ -132,6 +132,8 @@
 "Remove all currently archived tabs, including those hidden by search? Tabs archived after this confirmation opens will be kept." = "Remove all currently archived tabs, including those hidden by search? Tabs archived after this confirmation opens will be kept.";
 "Auto-Archive" = "Auto-Archive";
 "Archive Inactive Tabs" = "Archive Inactive Tabs";
+"Export Data" = "Export Data";
+"Share your open tab URLs" = "Share your open tab URLs";
 "Auto-Archive Today Tabs" = "Auto-Archive Today Tabs";
 "Off" = "Off";
 "After 12 Hours" = "After 12 Hours";

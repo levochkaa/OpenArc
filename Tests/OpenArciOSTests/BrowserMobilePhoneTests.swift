@@ -463,3 +463,22 @@ import UIKit
     let path = BrowserMobileHomeLogoMark.path("M 0,0 L 10,0 Q 10,10 0,10 C 0,8 0,4 0,0 Z")
     #expect(path.boundingBoxOfPath == CGRect(x: 0, y: 0, width: 10, height: 10))
 }
+
+@MainActor @Test func mobileSettingsExportListsOpenTabsWithoutPrivateOrBlankOnes() {
+    func tab(_ id: String, _ url: String, isPrivate: Bool = false) -> BrowserMobileTab {
+        var tab = BrowserMobileTab(
+            id: id,
+            runtimeID: id,
+            urlString: url,
+            title: "",
+            state: .init(url: URL(string: url)),
+        )
+        tab.isPrivate = isPrivate
+        return tab
+    }
+    #expect(BrowserMobilePhoneSettingsViewController.exportedURLs([
+        tab("a", "https://example.com/"), tab("b", "about:blank"),
+        tab("c", "https://private.example/", isPrivate: true), tab("d", "https://en.wikipedia.org/"),
+    ]) == "https://example.com/\nhttps://en.wikipedia.org/")
+    #expect(BrowserMobilePhoneSettingsViewController.exportedURLs([tab("b", "about:blank")]) == nil)
+}
