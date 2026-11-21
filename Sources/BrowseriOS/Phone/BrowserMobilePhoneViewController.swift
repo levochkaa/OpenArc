@@ -113,6 +113,10 @@ final class BrowserMobilePhoneViewController: UIViewController {
     /// Covers the page under the status bar in the page's theme color, or
     /// its background, so scrolled content never shows there.
     private let statusBand = UIView()
+    /// The page's background beside it in the side insets, such as the
+    /// camera column on iPhone Duo, which WebKit leaves unpainted on some
+    /// systems.
+    private let sideBands = [UIView(), UIView()]
     private var isStatusBandDark = false
     /// Darkens the page while it is the search panel's card.
     private let pageDim = UIView()
@@ -252,6 +256,11 @@ final class BrowserMobilePhoneViewController: UIViewController {
         statusBand.isUserInteractionEnabled = false
         statusBand.backgroundColor = .white
         pageContainer.addSubview(statusBand)
+        for band in sideBands {
+            band.isUserInteractionEnabled = false
+            band.isHidden = true
+            pageContainer.addSubview(band)
+        }
         pageDim.backgroundColor = .black
         pageDim.alpha = 0
         pageDim.isUserInteractionEnabled = false
@@ -450,6 +459,11 @@ final class BrowserMobilePhoneViewController: UIViewController {
         pageContainer.frame = view.bounds
         contentView.frame = pageContainer.bounds
         statusBand.frame = CGRect(x: 0, y: 0, width: view.bounds.width, height: view.safeAreaInsets.top)
+        let safe = view.safeAreaInsets
+        sideBands[0].frame = CGRect(x: 0, y: 0, width: safe.left, height: pageContainer.bounds.height)
+        sideBands[1].frame = CGRect(
+            x: pageContainer.bounds.width - safe.right, y: 0, width: safe.right, height: pageContainer.bounds.height,
+        )
         pageDim.frame = pageContainer.bounds
         emptyState.frame = pageContainer.bounds.inset(by: UIEdgeInsets(
             top: view.safeAreaInsets.top, left: 24, bottom: expandedBarHeight, right: 24,
@@ -502,6 +516,11 @@ final class BrowserMobilePhoneViewController: UIViewController {
     private func updateStatusBand() {
         let state = workspace.selectedTab?.state
         statusBand.isHidden = contentView.isHidden
+        let sideColor = state?.backgroundColor ?? state?.themeColor
+        for band in sideBands {
+            band.isHidden = contentView.isHidden || sideColor == nil
+            band.backgroundColor = sideColor
+        }
         let dark: Bool
         if let color = state?.themeColor ?? state?.backgroundColor {
             statusBand.backgroundColor = color
