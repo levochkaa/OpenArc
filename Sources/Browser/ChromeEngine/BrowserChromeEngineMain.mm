@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 
+#import "Browser/BrowserSchemeHandlers.h"
 #import "Browser/ChromeEngine/BrowserChromeEngine.h"
 #import "Browser/SwiftBridge.h"
 #import "OpenArc-Swift.h"
@@ -19,6 +20,25 @@
 namespace {
 
 bool gUsesChromeEngine = false;
+
+/// The Chrome engine's openarc:// pages (setSchemePageProvider:): a shared page's Add to OpenArc button goes to
+/// the app and stops the navigation, as CEF's tabs hand it over before loading; other addresses get the HTML CEF's
+/// scheme handler serves.
+NSString* SchemePage(NSString* urlString, NSInteger* statusCode) {
+  NSString* host = [NSURLComponents componentsWithString:urlString].host.lowercaseString ?: @"";
+  if ([host isEqualToString:@"share"]) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+      [NSNotificationCenter.defaultCenter postNotificationName:BrowserShareLinkEvents.open
+                                                        object:nil
+                                                      userInfo:@{BrowserShareLinkEvents.urlKey : urlString}];
+    });
+    return nil;
+  }
+  int status_code = 200;
+  const std::string html = browser::OpenArcSchemePageHTML(host.UTF8String, &status_code);
+  *statusCode = status_code;
+  return [NSString stringWithUTF8String:html.c_str()];
+}
 
 }  // namespace
 
@@ -56,6 +76,13 @@ int BrowserRunChromeEngine(int argc, char* argv[], NSString* cache_root) {
     return 1;
   }
   gUsesChromeEngine = true;
+  // An engine built before setSchemePageProvider: shows no openarc:// pages of the app's own.
+  Class<BrowserChromeEngine> engine = BrowserChromeEngineClass();
+  if ([(Class)engine respondsToSelector:@selector(setSchemePageProvider:)]) {
+    [engine setSchemePageProvider:^NSString*(NSString* urlString, NSInteger* statusCode) {
+      return SchemePage(urlString, statusCode);
+    }];
+  }
 
   NSArray<NSString*>* arguments = [BrowserEngineChoice chromeArgumentsForUserDataPath:cache_root];
   // Chromium keeps argv for the whole process; never freed.

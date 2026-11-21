@@ -354,21 +354,41 @@ enum BrowserInternalURLNormalizer {
 
 // MARK: - BrowserChromeEngineInternalURLs
 
-/// Chrome's engine knows no `openarc://` scheme: its pages load Chromium's own page for an `openarc://`
-/// address and report it back under `openarc://`, as CEF's tabs do.
+/// On Chrome's engine, `openarc://` addresses of Chromium's pages load Chromium's own page and show under
+/// `openarc://` again, as CEF's tabs do. openarc://credits is the engine's own chrome://credits there; the engine
+/// serves OpenArc's other addresses (Easels, notes) itself.
 @objc final class BrowserChromeEngineInternalURLs: NSObject {
+    static let creditsURLString = "openarc://credits/"
+    static let chromiumCreditsURLString = "chrome://credits/"
+
     /// The address a Chrome engine page loads for `urlString`.
     @objc(loadURLStringFor:) static func loadURLString(for urlString: String) -> String {
-        BrowserInternalURLNormalizer.chromiumURLString(forCanonicalURLString: urlString) ?? urlString
+        if host(of: urlString, scheme: BrowserInternalURLNormalizer.canonicalScheme)
+            == BrowserInternalURLNormalizer.creditsHost
+        {
+            return chromiumCreditsURLString
+        }
+        return BrowserInternalURLNormalizer.chromiumURLString(forCanonicalURLString: urlString) ?? urlString
     }
 
     /// The address a Chrome engine page shows for the `urlString` it committed.
     @objc(displayURLStringFor:) static func displayURLString(for urlString: String) -> String {
-        guard URLComponents(string: urlString)?.scheme?.lowercased() == BrowserInternalURLNormalizer.chromiumScheme
-        else {
+        guard let host = host(of: urlString, scheme: BrowserInternalURLNormalizer.chromiumScheme) else {
             return urlString
         }
+        if host == BrowserInternalURLNormalizer.creditsHost {
+            return creditsURLString
+        }
         return BrowserInternalURLNormalizer.canonicalURLString(for: urlString) ?? urlString
+    }
+
+    private static func host(of urlString: String, scheme: String) -> String? {
+        guard let components = URLComponents(string: urlString),
+              components.scheme?.lowercased() == scheme
+        else {
+            return nil
+        }
+        return components.host?.lowercased()
     }
 }
 

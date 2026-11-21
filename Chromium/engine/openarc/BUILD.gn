@@ -9,6 +9,8 @@ source_set("core") {
     "engine_main.mm",
     "page_session.h",
     "page_session.mm",
+    "scheme.h",
+    "scheme.mm",
   ]
   frameworks = [ "Cocoa.framework" ]
   deps = [
@@ -29,7 +31,11 @@ source_set("core") {
     "//components/keep_alive_registry",
     "//components/zoom",
     "//content/public/browser",
+    "//mojo/public/cpp/bindings",
+    "//mojo/public/cpp/system",
     "//net",
+    "//services/network/public/cpp",
+    "//services/network/public/mojom",
     "//skia",
     "//ui/base",
     "//ui/gfx",

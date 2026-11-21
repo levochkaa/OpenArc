@@ -31,9 +31,14 @@ engine from launch to quit, so the switch takes effect after a relaunch, which t
   shows, navigates, finds, mutes, captures, prints and moves it between windows through the code WebKit pages
   already use. What only a Chrome page does (DevTools protocol, Developer Tools, renderer process, popups,
   downloads, keys) is `BrowserChromePage` and `BrowserChromePageDelegate`.
-- **`openarc://` addresses.** Chrome knows no `openarc` scheme. The tab controller loads `chrome://extensions/`
-  for `openarc://extensions/` (and so for settings, history, bookmarks, passwords) and shows a page's `chrome://`
-  address as `openarc://`, through `BrowserChromeEngineInternalURLs`, as CEF does in `OnBeforeBrowse`.
+- **`openarc://` addresses** open on both engines the same way. The tab controller loads Chromium's own page
+  for one of Chromium's (`openarc://extensions/` loads `chrome://extensions/`; settings, history, bookmarks and
+  passwords too) and shows the page's `chrome://` address as `openarc://`, through
+  `BrowserChromeEngineInternalURLs`, as CEF does in `OnBeforeBrowse`. `openarc://credits` is the engine's own
+  `chrome://credits`. The rest (an Easel's or a note's empty page) the layer serves itself: Chrome registers
+  `openarc` as a standard, secure, CORS-enabled scheme, as CEF does, and `openarc/scheme.mm` loads its pages with
+  the HTML of `BrowserChromeEngineSchemePage`, the same HTML CEF's scheme handler serves. A shared page's Add to
+  OpenArc button (`openarc://share/<id>`) goes to the app and the navigation stops.
 - **OpenArc's changes to Chromium itself** that are not CEF's (notification permission, the history database,
   the passkey keychain group, the About page's update status) come along: `Chromium/engine/overrides` lists the
   files of `Chromium/chromium_src` the engine takes too. A new override that is pure Chromium belongs there.
@@ -60,6 +65,7 @@ engine from launch to quit, so the switch takes effect after a relaunch, which t
   - `frame-sink-destruction.patch`: a page hidden in OpenArc's window drops its own compositor, and the GPU side of
     it is destroyed without the synchronous wait Chrome does for a window the GPU process draws into, which a Mac
     window never is. The wait stalled tab switches.
+  - `openarc-scheme.patch`: the `openarc` scheme in every process, and its loader from OpenArc's layer.
 - The hooks (`Chromium/engine/hooks/openarc_engine_hooks.h`) are null until `OpenArcChromeEngineMain` sets them,
   so the patched code behaves as Chrome's own otherwise.
 - The layer is based on Cra's engine bridge (github.com/VictorKildahl/cra, MIT License), credited in
@@ -106,14 +112,14 @@ rebuilt), and `script/sign_release_app.sh` signs its helpers with the CEF helper
 The CEF code paths stay as they are; on the Chrome engine these answer nothing or fall back:
 
 - Peek cards and small windows open as tabs; web sign-in windows and cookie import need CEF.
-- `openarc://credits` (a CEF scheme handler), the renderer-side scripts of `Sources/Helper` (password and address
+- The renderer-side scripts of `Sources/Helper` (password and address
   form detection, protected video bridges) and site permission prompts in OpenArc's own card (Chrome shows its
   bubbles over the window instead).
 - Site settings, translate, battery saver throttling, tracing and the extension bridge's CEF exports.
 - OpenArc's screen share picker: `getDisplayMedia` shows no picker in OpenArc's window.
 - Extensions see one more tab in `chrome.tabs.query`: the blank tab of the profile's hidden window.
-- The built-in ad, tracker and cookie banner blocking (it filters CEF's resource requests), Easel tabs (their
-  blank page is an `openarc://` page) and moving a page whose protected video fails to WebKit.
+- The built-in ad, tracker and cookie banner blocking (it filters CEF's resource requests) and moving a page
+  whose protected video fails to WebKit.
 - Chrome's background mode stays on: Chromium 156 no longer builds extensions without it.
 - Developer Tools open in Chrome's own window instead of docking beside the page.
 - Downloads go where Chrome's download settings say.

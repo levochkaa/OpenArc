@@ -17,6 +17,7 @@
 #include "components/keep_alive_registry/scoped_keep_alive.h"
 
 #import "openarc/chrome_page.h"
+#import "openarc/scheme.h"
 
 extern "C" int ChromeMain(int argc, const char** argv);
 
@@ -28,6 +29,7 @@ ScopedKeepAlive* g_keep_alive = nullptr;
 
 class OpenArcParts : public ChromeBrowserMainExtraParts {
  public:
+  void PreProfileInit() override { openarc::RegisterScheme(); }
   void PostBrowserStart() override {
     openarc::StartPages();
     g_keep_alive = new ScopedKeepAlive(KeepAliveOrigin::APP_CONTROLLER, KeepAliveRestartOption::DISABLED);
@@ -93,6 +95,10 @@ __attribute__((visibility("default")))
   openarc::CancelDownload(downloadID);
 }
 
++ (void)setSchemePageProvider:(NSString* _Nullable (^)(NSString*, NSInteger*))provider {
+  openarc::SetSchemePageProvider(provider);
+}
+
 + (void)quit {
   openarc::StopPages();
   delete g_keep_alive;
@@ -108,6 +114,7 @@ extern "C" __attribute__((visibility("default"))) int OpenArcChromeEngineMain(in
   g_ready = [ready copy];
   openarc::g_extra_parts_factory = &MakeOpenArcParts;
   openarc::g_embedder_owns_app = true;
+  openarc::g_scheme_loader_factory = &openarc::CreateSchemeLoaderFactory;
   // Before ChromeMain, which checks that NSApp is Chrome's application class. The class's +initialize reads
   // the command line (the forced text direction), so it exists for that moment; ChromeMain makes its own.
   if (!base::CommandLine::InitializedForCurrentProcess()) {

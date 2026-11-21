@@ -5,6 +5,10 @@
 #define CHROME_BROWSER_OPENARC_ENGINE_HOOKS_H_
 
 #include <memory>
+#include <string>
+
+#include "mojo/public/cpp/bindings/pending_remote.h"
+#include "services/network/public/mojom/url_loader_factory.mojom-forward.h"
 
 class ChromeBrowserMainExtraParts;
 class GURL;
@@ -45,6 +49,11 @@ inline PageIsFullscreenHook g_page_is_fullscreen = nullptr;
 // The link under the pointer in one of OpenArc's pages, empty when none. True when the page is OpenArc's.
 using TargetURLHook = bool (*)(content::WebContents* contents, const GURL& url);
 inline TargetURLHook g_target_url = nullptr;
+
+// The loader of navigations to a scheme of OpenArc's own (openarc://), null for any other scheme
+// (chrome/browser/chrome_content_browser_client.cc).
+using SchemeLoaderFactoryHook = mojo::PendingRemote<network::mojom::URLLoaderFactory> (*)(const std::string& scheme);
+inline SchemeLoaderFactoryHook g_scheme_loader_factory = nullptr;
 
 }  // namespace openarc
 

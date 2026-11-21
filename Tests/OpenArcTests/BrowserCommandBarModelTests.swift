@@ -128,6 +128,7 @@ private let defaultAISuggestionTitle = BrowserStrings.commandBarAskAI(BrowserAIS
     #expect(BrowserChromeEngineInternalURLs.loadURLString(for: "openarc://settings") == "chrome://settings/")
     #expect(BrowserChromeEngineInternalURLs.loadURLString(for: "https://example.com/") == "https://example.com/")
     #expect(BrowserChromeEngineInternalURLs.loadURLString(for: "openarc://easel/abc") == "openarc://easel/abc")
+    #expect(BrowserChromeEngineInternalURLs.loadURLString(for: "openarc://credits/") == "chrome://credits/")
 }
 
 @Test func chromeEngineShowsChromiumPagesUnderOpenArcURLs() {
@@ -137,6 +138,8 @@ private let defaultAISuggestionTitle = BrowserStrings.commandBarAskAI(BrowserAIS
             == "openarc://history/?q=news",
     )
     #expect(BrowserChromeEngineInternalURLs.displayURLString(for: "https://example.com/") == "https://example.com/")
+    #expect(BrowserChromeEngineInternalURLs.displayURLString(for: "chrome://credits/") == "openarc://credits/")
+    #expect(BrowserChromeEngineInternalURLs.displayURLString(for: "openarc://easel/abc") == "openarc://easel/abc")
     #expect(
         BrowserChromeEngineInternalURLs.displayURLString(for: "chrome-extension://abc/popup.html")
             == "chrome-extension://abc/popup.html",

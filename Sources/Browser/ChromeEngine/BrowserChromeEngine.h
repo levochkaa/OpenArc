@@ -122,6 +122,11 @@ NS_ASSUME_NONNULL_BEGIN
                                   delegate:(id<BrowserChromePageDelegate>)delegate;
 /// The Chromium version the framework was built from, as "148.0.7778.180".
 + (NSString *)chromiumVersion;
+/// The pages of OpenArc's own `openarc://` addresses (an Easel's or a note's tab), which Chrome has no scheme
+/// for: `provider` returns a page's HTML and sets `statusCode` (200 before the call), or returns nil when the app
+/// took the address itself (a shared page's Add to OpenArc button) and the navigation stops. Set before the
+/// engine starts; runs on the main thread.
++ (void)setSchemePageProvider:(NSString *_Nullable (^)(NSString *urlString, NSInteger *statusCode))provider;
 /// Stops a running download a page reported.
 + (void)cancelDownloadWithID:(NSString *)downloadID;
 /// Asks Chrome to close its windows and quit; `OpenArcChromeEngineMain` returns once it has.

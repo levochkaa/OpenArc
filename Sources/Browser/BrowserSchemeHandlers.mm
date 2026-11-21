@@ -100,10 +100,16 @@ class StringResourceHandler : public CefResourceHandler {
   DISALLOW_COPY_AND_ASSIGN(StringResourceHandler);
 };
 
+CefRefPtr<CefResourceHandler> CreatePageHandler(const std::string& host) {
+  int status_code = 200;
+  std::string html = OpenArcSchemePageHTML(host, &status_code);
+  return new StringResourceHandler(status_code,
+                                   status_code == 200 ? "OK" : "Not Found",
+                                   "text/html", std::move(html));
+}
+
 CefRefPtr<CefResourceHandler> CreateNotFoundHandler() {
-  return new StringResourceHandler(
-      404, "Not Found", "text/html",
-      "<!doctype html><title>Not Found</title><h1>Not Found</h1>");
+  return CreatePageHandler(std::string());
 }
 
 std::string RequestHost(CefRefPtr<CefRequest> request) {
@@ -209,21 +215,9 @@ class OpenArcSchemeHandlerFactory
                                        CefRefPtr<CefRequest> request) override {
     CEF_REQUIRE_IO_THREAD();
 
-    // An Easel's tab shows an empty page; the window draws the canvas over it.
-    if (RequestHost(request) == shared::kOpenArcEaselHost) {
-      return new StringResourceHandler(
-          200, "OK", "text/html",
-          "<!doctype html><meta charset=\"utf-8\"><meta name=\"color-scheme\" "
-          "content=\"light dark\"><title>Easel</title>");
-    }
-    // A note's tab too; the window draws the note over it.
-    if (RequestHost(request) == shared::kOpenArcNotesHost) {
-      return new StringResourceHandler(
-          200, "OK", "text/html",
-          "<!doctype html><meta name=\"color-scheme\" content=\"light dark\">");
-    }
-    if (RequestHost(request) != shared::kOpenArcCreditsHost) {
-      return CreateNotFoundHandler();
+    const std::string host = RequestHost(request);
+    if (host != shared::kOpenArcCreditsHost) {
+      return CreatePageHandler(host);
     }
 
     std::string path = RequestPath(request);
@@ -254,6 +248,21 @@ class OpenArcSchemeHandlerFactory
 };
 
 }  // namespace
+
+std::string OpenArcSchemePageHTML(const std::string& host, int* status_code) {
+  *status_code = 200;
+  // An Easel's tab shows an empty page; the window draws the canvas over it.
+  if (host == shared::kOpenArcEaselHost) {
+    return "<!doctype html><meta charset=\"utf-8\"><meta name=\"color-scheme\" "
+           "content=\"light dark\"><title>Easel</title>";
+  }
+  // A note's tab too; the window draws the note over it.
+  if (host == shared::kOpenArcNotesHost) {
+    return "<!doctype html><meta name=\"color-scheme\" content=\"light dark\">";
+  }
+  *status_code = 404;
+  return "<!doctype html><title>Not Found</title><h1>Not Found</h1>";
+}
 
 void RegisterBrowserSchemeHandlers() {
   CefRegisterSchemeHandlerFactory(

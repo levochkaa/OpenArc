@@ -1,0 +1,41 @@
+diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
+index 565bd580ba6..d27ea53f532 100644
+--- a/chrome/browser/chrome_content_browser_client.cc
++++ b/chrome/browser/chrome_content_browser_client.cc
+@@ -136,6 +136,7 @@
+ #include "chrome/browser/net/profile_network_context_service.h"
+ #include "chrome/browser/net/profile_network_context_service_factory.h"
+ #include "chrome/browser/net/system_network_context_manager.h"
++#include "chrome/browser/openarc_engine_hooks.h"
+ #include "chrome/browser/optimization_guide/optimization_guide_keyed_service.h"
+ #include "chrome/browser/optimization_guide/optimization_guide_keyed_service_factory.h"
+ #include "chrome/browser/payments/payment_request_display_manager_factory.h"
+@@ -6385,6 +6386,12 @@ mojo::PendingRemote<network::mojom::URLLoaderFactory>
+ ChromeContentBrowserClient::CreateNonNetworkNavigationURLLoaderFactory(
+     const std::string& scheme,
+     content::FrameTreeNodeId frame_tree_node_id) {
++  // OpenArc's own pages (openarc://), served by OpenArc's layer.
++  if (openarc::g_scheme_loader_factory) {
++    if (auto factory = openarc::g_scheme_loader_factory(scheme)) {
++      return factory;
++    }
++  }
+ #if BUILDFLAG(ENABLE_EXTENSIONS_CORE) || BUILDFLAG(IS_CHROMEOS) || \
+     !BUILDFLAG(IS_ANDROID)
+   content::WebContents* web_contents =
+diff --git a/chrome/common/chrome_content_client.cc b/chrome/common/chrome_content_client.cc
+index 601ff3ce617..a39f934c077 100644
+--- a/chrome/common/chrome_content_client.cc
++++ b/chrome/common/chrome_content_client.cc
+@@ -231,6 +231,11 @@ void ChromeContentClient::AddAdditionalSchemes(Schemes* schemes) {
+   // chrome-search: resources shouldn't trigger insecure content warnings.
+   schemes->secure_schemes.push_back(chrome::kChromeSearchScheme);
+ 
++  // OpenArc's own pages (openarc://), registered as CEF registers them: standard, secure and CORS-enabled.
++  schemes->standard_schemes.push_back("openarc");
++  schemes->secure_schemes.push_back("openarc");
++  schemes->cors_enabled_schemes.push_back("openarc");
++
+ #if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
+   // Treat extensions as secure because communication with them is entirely in
+   // the browser, so there is no danger of manipulation or eavesdropping on
