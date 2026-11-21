@@ -323,6 +323,35 @@ import UIKit
     #expect(!panel.dragMovesPanel(at: CGPoint(x: 200, y: 200), downward: false), "Up over suggestions scrolls")
 }
 
+@MainActor @Test func mobileSearchFieldHandlesKeystrokesThatLandBeforeTheFilledInPart() {
+    let panel = BrowserMobileSearchPanel(frame: CGRect(x: 0, y: 0, width: 402, height: 400))
+    // Incognito asks the web for nothing.
+    panel.isIncognito = true
+    panel.candidates = [.init(tabID: "a", title: "Google", urlString: "https://google.com/", location: nil)]
+    let field = panel.field
+    field.text = "google.co"
+    field.sendActions(for: .editingChanged)
+    #expect(field.text == "google.com")
+    #expect(field.completion == "m")
+
+    // The last letter arrives in place, before the highlighted one.
+    field.text = "google.comm"
+    field.sendActions(for: .editingChanged)
+    #expect(field.text == "google.com", "The typed host is whole, with nothing left filled in")
+    #expect(field.completion == nil)
+
+    panel.prepare(text: "")
+    field.text = "g"
+    field.sendActions(for: .editingChanged)
+    #expect(field.text == "google.com")
+    // Delete arrives in place too, taking the typed letter.
+    field.text = "oogle.com"
+    field.sendActions(for: .editingChanged)
+    #expect(field.text == "g", "Delete takes away the filled-in part")
+    #expect(field.completion == nil)
+    #expect(field.lastEditDeleted)
+}
+
 // MARK: - Settings
 
 @Test func mobileSearchEngineSettingDefaultsToGoogleAndKeepsTheChoice() throws {

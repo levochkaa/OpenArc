@@ -558,6 +558,7 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
     }
 
     @objc private func textChanged() {
+        field.noteEdit()
         refresh(complete: !field.lastEditDeleted)
         updateAccessories(animated: true)
     }
@@ -576,8 +577,16 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
                 : [],
         )
         table.reloadData()
-        guard complete, field.markedTextRange == nil, let completion = suggestions.completion,
-              completion.hasPrefix(typed.lowercased()), !typed.isEmpty else { return }
-        field.showCompletion(String(completion.dropFirst(typed.count)), after: typed)
+        let fill = suggestions.completion.flatMap { completion in
+            completion.hasPrefix(typed.lowercased()) && !typed.isEmpty && field.markedTextRange == nil
+                ? String(completion.dropFirst(typed.count))
+                : nil
+        }
+        if complete, let fill {
+            field.showCompletion(fill, after: typed)
+        } else if field.completion != nil, field.completion != fill {
+            // What shows no longer completes the typed text.
+            field.dropCompletion()
+        }
     }
 }

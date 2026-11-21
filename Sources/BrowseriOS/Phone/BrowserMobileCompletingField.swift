@@ -14,6 +14,11 @@ final class BrowserMobileCompletingField: UITextField {
     /// Whether the last edit removed text, so the next refresh fills nothing in.
     private(set) var lastEditDeleted = false
 
+    /// The typed text as of the last edit the field accounted for.
+    private var lastTyped = ""
+    /// Delete was pressed since the last accounted edit.
+    private var pressedDelete = false
+
     /// The text without the filled-in part.
     var typedText: String {
         let full = text ?? ""
@@ -51,6 +56,7 @@ final class BrowserMobileCompletingField: UITextField {
 
     override func deleteBackward() {
         lastEditDeleted = true
+        pressedDelete = true
         guard completion != nil else {
             super.deleteBackward()
             return
@@ -84,6 +90,44 @@ final class BrowserMobileCompletingField: UITextField {
         return super.resignFirstResponder()
     }
 
+    /// Accounts for an edit that reached the text directly, as keystrokes
+    /// can, past `insertText` and `deleteBackward`: it went in before the
+    /// filled-in part. Call on each change of the text, before reading it.
+    func noteEdit() {
+        let full = text ?? ""
+        defer { pressedDelete = false }
+        guard let completion else {
+            lastEditDeleted = pressedDelete || full.count < lastTyped.count
+            lastTyped = full
+            return
+        }
+        guard full.hasSuffix(completion) else {
+            self.completion = nil
+            lastEditDeleted = pressedDelete || full.count < lastTyped.count
+            lastTyped = full
+            return
+        }
+        let typed = String(full.dropLast(completion.count))
+        if typed.count < lastTyped.count, lastTyped.hasPrefix(typed) {
+            // Delete takes away the filled-in part, not the typed text.
+            self.completion = nil
+            text = lastTyped
+            lastEditDeleted = true
+        } else {
+            lastEditDeleted = false
+            lastTyped = typed
+        }
+    }
+
+    /// Removes the filled-in part, if one shows.
+    func dropCompletion() {
+        guard completion != nil else { return }
+        let typed = typedText
+        completion = nil
+        text = typed
+        lastTyped = typed
+    }
+
     /// Shows `suffix` after `typed`, highlighted.
     func showCompletion(_ suffix: String, after typed: String) {
         guard !suffix.isEmpty else {
@@ -96,6 +140,7 @@ final class BrowserMobileCompletingField: UITextField {
         shown.append(NSAttributedString(string: suffix, attributes: attributes))
         attributedText = shown
         completion = suffix
+        lastTyped = typed
         if let end = position(from: beginningOfDocument, offset: typed.count) {
             selectedTextRange = textRange(from: end, to: end)
         }
@@ -107,6 +152,7 @@ final class BrowserMobileCompletingField: UITextField {
         let full = text ?? ""
         completion = nil
         text = full
+        lastTyped = full
         selectedTextRange = textRange(from: endOfDocument, to: endOfDocument)
     }
 
@@ -114,12 +160,6 @@ final class BrowserMobileCompletingField: UITextField {
     func replaceText(_ newText: String) {
         completion = nil
         text = newText
-    }
-
-    private func dropCompletion() {
-        guard completion != nil else { return }
-        let typed = typedText
-        completion = nil
-        text = typed
+        lastTyped = newText
     }
 }
