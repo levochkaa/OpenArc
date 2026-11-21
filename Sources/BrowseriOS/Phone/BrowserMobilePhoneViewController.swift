@@ -170,8 +170,6 @@ final class BrowserMobilePhoneViewController: UIViewController {
     private var switcherFlight: UIView?
     /// The page's card that the flying older tabs pass under, and the mask
     /// that hides them there.
-    private var flightCut: (host: UIView, card: UIView, mask: CAShapeLayer)?
-    private var flightCutLink: CADisplayLink?
     private var isAnimatingSwitcher = false
     private weak var presentedTabs: BrowserMobileTabsViewController?
 
@@ -1413,15 +1411,9 @@ final class BrowserMobilePhoneViewController: UIViewController {
         hideStackCards(under: Set(slots.values))
         setBackdropDark(true)
 
-        let chrome = [switcher.backdrop]
-        let background = switcher.backgroundColor
-        switcher.backgroundColor = .clear
-        for view in chrome {
-            view.alpha = 0
-        }
-        switcher.subviews
-            .filter { $0 is UIVisualEffectView || $0.backgroundColor != nil && !($0 is UIButton) }
-            .forEach { $0.alpha = 0 }
+        // The page's card is the page from here on: no copy of it stays
+        // behind to fade, and the switcher's backdrop shows around it at once.
+        pageContainer.isHidden = true
         var flying = [(card: BrowserMobileTabSwitcherView.Card, slot: Int, isOlder: Bool)]()
         for (index, entry) in entries.enumerated() {
             guard let card = switcher.card(for: entry.id) else { continue }
@@ -1446,8 +1438,9 @@ final class BrowserMobilePhoneViewController: UIViewController {
             }
         }
         let flight = makeSwitcherFlight()
-        // Tabs before the page stay under it while they fly; it is not lifted,
-        // so they are cut where it covers them.
+        // Tabs before the page fly under it: the page stays under the bar,
+        // so they are hidden where it covers them, through a hole that moves
+        // with it in the same animation.
         let under = UIView(frame: flight.bounds)
         flight.addSubview(under)
         let over = UIView(frame: flight.bounds)
@@ -1455,9 +1448,8 @@ final class BrowserMobilePhoneViewController: UIViewController {
         let ordered = flying.sorted { $0.slot > $1.slot }
         switcher.lift(ordered.filter(\.isOlder).map(\.card), into: under)
         switcher.lift(ordered.filter { !$0.isOlder }.map(\.card), into: over)
-        if let currentID, let page = switcher.card(for: currentID) {
-            cutFlight(under, around: page)
-        }
+        let page = currentID.flatMap { switcher.card(for: $0) }
+        let hole = page.map { makeFlightHole(in: under, around: $0) }
         UIView.animate(withDuration: 0.15) {
             self.bar.setShowsSwitcherControls(true)
             for card in entries.compactMap({ switcher.card(for: $0.id) }) where card.alpha == 0 {
@@ -1474,19 +1466,15 @@ final class BrowserMobilePhoneViewController: UIViewController {
             for card in entries.compactMap({ switcher.card(for: $0.id) }) {
                 card.layoutIfNeeded()
             }
+            if let hole, let page {
+                self.placeFlightHole(hole, in: under, around: page)
+            }
         } completion: { _ in
             switcher.restoreLiftedCards()
             self.hideStackCards(under: [])
             self.removeSwitcherFlight()
             self.isAnimatingSwitcher = false
             self.refreshSwitcherEntries()
-        }
-        UIView.animate(withDuration: 0.2) {
-            switcher.backgroundColor = background
-            for view in chrome {
-                view.alpha = 1
-            }
-            switcher.subviews.filter { $0.alpha == 0 && !($0 is UIButton) }.forEach { $0.alpha = 1 }
         }
     }
 
@@ -1598,37 +1586,33 @@ final class BrowserMobilePhoneViewController: UIViewController {
     }
 
     private func removeSwitcherFlight() {
-        flightCutLink?.invalidate()
-        flightCutLink = nil
-        flightCut = nil
         switcherFlight?.removeFromSuperview()
         switcherFlight = nil
     }
 
-    /// Hides what flies in `host` where `card` covers it, following the card
-    /// frame by frame as it moves.
-    private func cutFlight(_ host: UIView, around card: UIView) {
-        let mask = CAShapeLayer()
-        mask.fillRule = .evenOdd
-        host.layer.mask = mask
-        flightCut = (host, card, mask)
-        updateFlightCut()
-        let link = CADisplayLink(target: self, selector: #selector(updateFlightCut))
-        link.add(to: .main, forMode: .common)
-        flightCutLink = link
+    /// Masks `host` with a hole the shape of `card`, so what flies in it is
+    /// hidden where the card covers it. Move the hole with `placeFlightHole`
+    /// in the card's own animation.
+    private func makeFlightHole(in host: UIView, around card: UIView) -> UIView {
+        let mask = UIView(frame: host.bounds)
+        let ring = UIView()
+        ring.layer.borderColor = UIColor.black.cgColor
+        ring.layer.cornerCurve = .continuous
+        mask.addSubview(ring)
+        host.mask = mask
+        placeFlightHole(ring, in: host, around: card)
+        return ring
     }
 
-    @objc private func updateFlightCut() {
-        guard let (host, card, mask) = flightCut, let superview = card.superview else { return }
-        let layer = card.layer.presentation() ?? card.layer
-        let frame = superview.convert(layer.frame, to: host)
-        let path = UIBezierPath(rect: host.bounds)
-        path.append(UIBezierPath(roundedRect: frame, cornerRadius: BrowserMobileTabSwitcherView.cornerRadius))
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        mask.frame = host.bounds
-        mask.path = path.cgPath
-        CATransaction.commit()
+    /// The hole is the inside of a ring reaching past the screen: its inner
+    /// edge is the card's rounded outline.
+    private func placeFlightHole(_ ring: UIView, in host: UIView, around card: UIView) {
+        guard let superview = card.superview else { return }
+        let frame = superview.convert(card.frame, to: host)
+        let reach = max(view.bounds.width, view.bounds.height) * 2
+        ring.frame = frame.insetBy(dx: -reach, dy: -reach)
+        ring.layer.borderWidth = reach
+        ring.layer.cornerRadius = BrowserMobileTabSwitcherView.cornerRadius + reach
     }
 
     /// Lifts the cards other than `id`'s over the bar for their flight into
@@ -1694,6 +1678,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
         switcher?.removeFromSuperview()
         switcher = nil
         removeSwitcherFlight()
+        pageContainer.isHidden = showsHome
         hideStackCards(under: [])
         isAnimatingSwitcher = false
         mode = .browsing
