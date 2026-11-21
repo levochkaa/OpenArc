@@ -539,16 +539,18 @@ final class BrowserMobilePhoneViewController: UIViewController {
         setNeedsStatusBarAppearanceUpdate()
     }
 
-    /// Whether the top of a tab's last picture, under the status bar, is dark.
+    /// Whether the top of the page in a tab's last picture, just below the
+    /// status bar, is dark; the picture leaves the status bar's place empty.
     private func isPictureTopDark(_ tabID: String) -> Bool? {
         guard let image = thumbnails.image(for: tabID), let cgImage = image.cgImage, cgImage.height > 0 else {
             return nil
         }
         if let cached = pictureTopDarkness, cached.image === image { return cached.dark }
-        let strip = CGFloat(cgImage.width) * 16 / max(view.bounds.width, 1)
-        guard let top = cgImage.cropping(to: CGRect(
-            x: 0, y: 0, width: CGFloat(cgImage.width), height: min(strip, CGFloat(cgImage.height)),
-        )), let luminance = BrowserMobileBackdrop.luminance(of: top) else { return nil }
+        let pixelsPerPoint = CGFloat(cgImage.width) / max(view.bounds.width, 1)
+        let top = view.safeAreaInsets.top * pixelsPerPoint
+        guard top + 16 * pixelsPerPoint <= CGFloat(cgImage.height), let strip = cgImage.cropping(to: CGRect(
+            x: 0, y: top, width: CGFloat(cgImage.width), height: 16 * pixelsPerPoint,
+        )), let luminance = BrowserMobileBackdrop.luminance(of: strip) else { return nil }
         let dark = BrowserMobileBackdrop.isDark(luminance: luminance)
         pictureTopDarkness = (image, dark)
         return dark
@@ -2347,20 +2349,19 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
         }
     }
 
-    /// The tab's last picture as the screen shows its page: the picture of
-    /// what lies below the status bar sits there, on the page's color.
+    /// The tab's last picture as the screen shows its page, from the top of
+    /// the screen, on the page's color where the picture has none.
     private func pagePicture(for tabID: String) -> UIView? {
         guard let image = thumbnails.image(for: tabID), image.size.width > 0 else { return nil }
         let bounds = view.bounds
         let state = workspace.tabs.first { $0.id == tabID }?.state
         let cover = UIView(frame: bounds)
-        cover.backgroundColor = state?.themeColor ?? state?.backgroundColor ?? .white
+        cover.backgroundColor = state?.themeColor ?? state?.backgroundColor
+            ?? (isPictureTopDark(tabID) == true ? .black : .white)
         let picture = UIImageView(image: image)
-        picture.backgroundColor = .white
         picture.contentMode = .scaleToFill
         picture.frame = CGRect(
-            x: 0, y: view.safeAreaInsets.top,
-            width: bounds.width, height: bounds.width * image.size.height / image.size.width,
+            x: 0, y: 0, width: bounds.width, height: bounds.width * image.size.height / image.size.width,
         )
         cover.addSubview(picture)
         return cover
