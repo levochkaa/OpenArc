@@ -31,6 +31,7 @@
 #include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/lifetime/browser_shutdown.h"
 #include "chrome/browser/openarc_engine_hooks.h"
+#include "chrome/browser/openarc_permission_hooks.h"
 #include "chrome/browser/printing/print_view_manager_common.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
@@ -85,6 +86,7 @@
 #include "url/gurl.h"
 
 #include "openarc/page_session.h"
+#include "openarc/permission_prompt.h"
 #include "openarc/tab_pages.h"
 
 @interface OpenArcChromePage ()
@@ -681,12 +683,23 @@ void NavigationThrottles(content::NavigationThrottleRegistry& registry) {
   }
 }
 
+// A permission prompt for one of OpenArc's pages shows in OpenArc's window, as on CEF.
+std::unique_ptr<permissions::PermissionPrompt> PagePermissionPrompt(content::WebContents* contents,
+                                                                    permissions::PermissionPrompt::Delegate* delegate) {
+  OpenArcChromePage* page = PageFor(contents);
+  if (!page) {
+    return nullptr;
+  }
+  return CreatePermissionPrompt(page, page.delegate, delegate);
+}
+
 void StartPages() {
   g_key_event = &KeyEvent;
   g_page_fullscreen = &PageFullscreen;
   g_page_is_fullscreen = &PageIsFullscreen;
   g_target_url = &TargetURL;
   g_navigation_throttles = &NavigationThrottles;
+  g_permission_prompt = &PagePermissionPrompt;
 }
 
 void StopPages() {

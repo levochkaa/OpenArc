@@ -92,6 +92,18 @@ NS_ASSUME_NONNULL_BEGIN
 /// fileName, url, fullPath, receivedBytes, totalBytes, currentSpeed (bytes a second) and state, a
 /// BrowserDownloadState raw value ("inProgress", "completed", "canceled" or "interrupted").
 - (void)chromePage:(id)page didUpdateDownload:(NSDictionary<NSString *, id> *)info;
+/// One of Chrome's permission prompts for the page (location, notifications, camera, microphone and the rest),
+/// shown by the app instead of Chrome's bubble. `kinds` are BrowserSitePermissionKind raw values ("other" for a
+/// request without a name of its own). `decision` runs once on the main thread: YES allows, NO blocks, nil closes
+/// the prompt without an answer. NO leaves the prompt to Chrome.
+- (BOOL)chromePage:(id)page
+    requestSitePermissionPrompt:(uint64_t)promptID
+                         origin:(NSString *)origin
+                          kinds:(NSArray<NSString *> *)kinds
+                       decision:(void (^)(NSNumber *_Nullable allowed))decision;
+/// Chrome took the prompt back (a navigation, the page closing, a request ahead of it); its `decision` does
+/// nothing now.
+- (void)chromePage:(id)page didWithdrawSitePermissionPrompt:(uint64_t)promptID;
 @end
 
 /// A Chrome engine page, as the layer makes it.

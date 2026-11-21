@@ -72,7 +72,12 @@ engine from launch to quit, so the switch takes effect after a relaunch, which t
     window never is. The wait stalled tab switches.
   - `openarc-scheme.patch`: the `openarc` scheme in every process, and its loader from OpenArc's layer.
   - `tab-pages.patch`: OpenArc's navigation throttles, which keep its tabs to the `chrome://` pages that work there.
-- The hooks (`Chromium/engine/hooks/openarc_engine_hooks.h`) are null until `OpenArcChromeEngineMain` sets them,
+  - `permission-prompts.patch`: a page's permission requests (location, notifications, camera, microphone and the
+    rest) go to OpenArc's own prompt, as CEF's do, instead of Chrome's bubble. `openarc/permission_prompt.mm`
+    hands them to `BrowserChromePageDelegate` and answers Chrome with Allow, Block or no answer; Chrome remembers
+    the site's answer. The hook has a header of its own (`hooks/openarc_permission_hooks.h`), so only the prompt
+    factory sees the permissions headers.
+- The hooks (`Chromium/engine/hooks`) are null until `OpenArcChromeEngineMain` sets them,
   so the patched code behaves as Chrome's own otherwise.
 - The layer is based on Cra's engine bridge (github.com/VictorKildahl/cra, MIT License), credited in
   `Sources/Browser/Resources/Credits.html`.
@@ -119,8 +124,7 @@ The CEF code paths stay as they are; on the Chrome engine these answer nothing o
 
 - Peek cards and small windows open as tabs; web sign-in windows and cookie import need CEF.
 - The renderer-side scripts of `Sources/Helper` (password and address
-  form detection, protected video bridges) and site permission prompts in OpenArc's own card (Chrome shows its
-  bubbles over the window instead).
+  form detection, protected video bridges).
 - Site settings, translate, battery saver throttling, tracing and the extension bridge's CEF exports.
 - OpenArc's screen share picker: `getDisplayMedia` shows no picker in OpenArc's window.
 - Extensions see one more tab in `chrome.tabs.query`: the blank tab of the profile's hidden window.

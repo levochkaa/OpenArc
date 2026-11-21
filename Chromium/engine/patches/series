@@ -5,3 +5,4 @@ browser-delegate.patch
 frame-sink-destruction.patch
 openarc-scheme.patch
 tab-pages.patch
+permission-prompts.patch

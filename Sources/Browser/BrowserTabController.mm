@@ -2768,12 +2768,14 @@ NSString *PeekSitePermissionTabID(int sessionID) {
 }
 
 /// A site permission request waiting for the user: a camera and microphone
-/// request from getUserMedia, or one of Chromium's permission prompts.
+/// request from getUserMedia, or one of Chromium's permission prompts (CEF's
+/// callback, or the Chrome engine's decision block).
 struct PendingSitePermission {
   std::string tabID;
   CefRefPtr<CefMediaAccessCallback> mediaCallback;
   uint32_t mediaPermissions = 0;
   CefRefPtr<CefPermissionPromptCallback> promptCallback;
+  void (^chromeDecision)(NSNumber *allowed) = nil;
   uint64_t promptID = 0;
 };
 
@@ -5521,6 +5523,28 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
   return NO;
 }
 
+/// Chrome's permission prompts go to the page's prompt, as CEF's do; Chrome
+/// remembers the answer.
+- (BOOL)chromePage:(id)page
+    requestSitePermissionPrompt:(uint64_t)promptID
+                         origin:(NSString *)origin
+                          kinds:(NSArray<NSString *> *)kinds
+                       decision:(void (^)(NSNumber *_Nullable))decision {
+  NSString *tabID = [self tabIDForWebKitPage:page];
+  if (tabID == nil || kinds.count == 0) {
+    return NO;
+  }
+  PendingSitePermission pending;
+  pending.chromeDecision = decision;
+  pending.promptID = promptID;
+  [self requestSitePermissionForTabID:tabID origin:origin kinds:kinds pending:pending];
+  return YES;
+}
+
+- (void)chromePage:(id)page didWithdrawSitePermissionPrompt:(uint64_t)promptID {
+  [self dismissSitePermissionPromptWithID:promptID];
+}
+
 - (void)chromePage:(id)page didUpdateDownload:(NSDictionary<NSString *, id> *)info {
   [self handleDownloadUpdateWithID:info[@"id"]
                           fileName:info[@"fileName"]
@@ -7915,6 +7939,8 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
                                   allowed == nil      ? CEF_PERMISSION_RESULT_IGNORE
                                   : allowed.boolValue ? CEF_PERMISSION_RESULT_ACCEPT
                                                       : CEF_PERMISSION_RESULT_DENY);
+  } else if (pending.chromeDecision != nil) {
+    pending.chromeDecision(allowed);
   }
 }
 
@@ -7974,7 +8000,7 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
 
 - (void)dismissSitePermissionPromptWithID:(uint64_t)promptID {
   for (auto it = _sitePermissions.begin(); it != _sitePermissions.end(); ++it) {
-    if (it->second.promptCallback && it->second.promptID == promptID) {
+    if ((it->second.promptCallback || it->second.chromeDecision != nil) && it->second.promptID == promptID) {
       const NSInteger requestID = it->first;
       _sitePermissions.erase(it);
       [self notifySitePermissionDismissed:requestID];
