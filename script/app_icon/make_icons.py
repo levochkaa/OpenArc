@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 """Draws OpenArc's app icons from the mark in mark.py.
 
-Writes the bundle icon set (the Original colors), the iOS app icon, one
-1024 px PNG for each icon Settings offers, and the website's favicon. Needs `rsvg-convert`
-(Homebrew librsvg).
+Writes the bundle icon set (the Original colors), the iOS app icon in Icon
+Composer's format, one 1024 px PNG for each icon Settings offers, and the
+website's favicon. Needs `rsvg-convert` (Homebrew librsvg).
 
     script/app_icon/make_icons.py
 """
 
+import json
 import pathlib
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -18,7 +20,7 @@ import mark  # noqa: E402
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 ICON_SET = ROOT / "Sources/Browser/Assets.xcassets/AppIcon.appiconset"
-IOS_ICON_SET = ROOT / "Sources/BrowseriOS/Assets.xcassets/AppIcon.appiconset"
+IOS_ICON = ROOT / "Sources/BrowseriOS/AppIcon.icon"
 RESOURCES = ROOT / "Sources/Browser/Resources"
 FAVICON = ROOT / "Website/public/favicon.svg"
 
@@ -27,8 +29,9 @@ CANVAS, BODY, MARGIN, RADIUS = 1024, 824, 100, 185
 MARK_WIDTH = 680
 # A sticker's outline takes room, so its mark is drawn wider.
 STICKER_WIDTH = 700
-# iOS masks a full-bleed square; the mark keeps the Mac icon's share of it.
-IOS_MARK_WIDTH = 840
+# The iOS icon's mark, without the sticker outline, inside the system's
+# rounded square.
+IOS_MARK_WIDTH = 780
 
 
 def mark_transform(width=MARK_WIDTH):
@@ -198,18 +201,56 @@ def monochrome():
     return svg("", content)
 
 
-def ios():
-    """The Original icon for iOS: the system rounds the corners, so the
-    background fills the canvas and has no shadow."""
-    outline = 58 * IOS_MARK_WIDTH / STICKER_WIDTH
-    rim, group = sticker_mark("url(#leg)", "url(#arch)", outline, "#6E7487", 0.3, IOS_MARK_WIDTH)
-    defs = (
-        gradient("bg", [(0, "#FFFFFF"), (1, "#F2F3F8")])
-        + gradient("leg", [(0, "#5B6CFF"), (1, "#1B26A8")], 0.2, 0, 0.6, 1)
-        + gradient("arch", [(0, "#FF8A98"), (0.55, "#F2475F"), (1, "#C92A47")], 0.1, 0, 0.9, 1)
-        + rim
+def ios_layer(name, path, stops, x1, y1, x2, y2):
+    """One shape of the mark as an Icon Composer layer on the 1024 pt canvas."""
+    defs = gradient(name, stops, x1, y1, x2, y2)
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{CANVAS}" height="{CANVAS}" '
+        f'viewBox="0 0 {CANVAS} {CANVAS}"><defs>{defs}</defs>'
+        f'<g transform="{mark_transform(IOS_MARK_WIDTH)}"><path d="{path}" fill="url(#{name})"/></g></svg>\n'
     )
-    return svg(defs, f'<rect width="{CANVAS}" height="{CANVAS}" fill="url(#bg)"/>' + group)
+
+
+def ios_icon():
+    """The iOS icon in Icon Composer's format: the arch and the leg as glass
+    layers over a pale fill, so the system draws the dark, tinted and clear
+    looks from them."""
+    layers = {
+        "arch.svg": ios_layer("arch", mark.arch(), [(0, "#FF8A98"), (0.55, "#F2475F"), (1, "#C92A47")], 0.1, 0, 0.9, 1),
+        "leg.svg": ios_layer("leg", mark.leg(), [(0, "#5B6CFF"), (1, "#1B26A8")], 0.2, 0, 0.6, 1),
+    }
+    description = {
+        "fill-specializations": [
+            {"value": {"automatic-gradient": "srgb:0.94902,0.95294,0.97255,1.00000"}},
+            {"appearance": "dark", "value": "automatic"},
+        ],
+        "groups": [
+            {
+                "name": "Mark",
+                "layers": [
+                    {"glass": True, "image-name": "arch.svg", "name": "arch"},
+                    {"glass": True, "image-name": "leg.svg", "name": "leg"},
+                ],
+                "lighting": "individual",
+                "shadow": {"kind": "layer-color", "opacity": 0.5},
+                "specular": True,
+                "translucency": {"enabled": True, "value": 0.2},
+            }
+        ],
+        "supported-platforms": {"squares": "shared"},
+    }
+    return layers, description
+
+
+def write_ios_icon():
+    layers, description = ios_icon()
+    if IOS_ICON.exists():
+        shutil.rmtree(IOS_ICON)
+    assets = IOS_ICON / "Assets"
+    assets.mkdir(parents=True)
+    for name, content in layers.items():
+        (assets / name).write_text(content)
+    (IOS_ICON / "icon.json").write_text(json.dumps(description, indent=2) + "\n")
 
 
 def favicon():
@@ -256,10 +297,8 @@ def render(source, size, destination):
 
 def main():
     FAVICON.write_text(favicon())
+    write_ios_icon()
     with tempfile.TemporaryDirectory() as temporary:
-        source = pathlib.Path(temporary) / "ios.svg"
-        source.write_text(ios())
-        render(source, CANVAS, IOS_ICON_SET / "icon_1024.png")
         for name, draw in VARIANTS.items():
             source = pathlib.Path(temporary) / f"{name}.svg"
             source.write_text(draw())

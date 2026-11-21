@@ -1,0 +1,43 @@
+{
+  "fill-specializations": [
+    {
+      "value": {
+        "automatic-gradient": "srgb:0.94902,0.95294,0.97255,1.00000"
+      }
+    },
+    {
+      "appearance": "dark",
+      "value": "automatic"
+    }
+  ],
+  "groups": [
+    {
+      "name": "Mark",
+      "layers": [
+        {
+          "glass": true,
+          "image-name": "arch.svg",
+          "name": "arch"
+        },
+        {
+          "glass": true,
+          "image-name": "leg.svg",
+          "name": "leg"
+        }
+      ],
+      "lighting": "individual",
+      "shadow": {
+        "kind": "layer-color",
+        "opacity": 0.5
+      },
+      "specular": true,
+      "translucency": {
+        "enabled": true,
+        "value": 0.2
+      }
+    }
+  ],
+  "supported-platforms": {
+    "squares": "shared"
+  }
+}
