@@ -71,6 +71,8 @@ final class BrowserMobilePhoneViewController: UIViewController {
     override var preferredStatusBarStyle: UIStatusBarStyle {
         // Leaving the switcher, the status bar takes the page's colors as its card starts to grow.
         if mode == .switcher && !isLeavingSwitcher || mode == .search || showsHome { return .lightContent }
+        // A swipe's row of cards shows the app's backdrop until it lets go.
+        if let swipe, swipe.isRow, !swipe.isSettling { return .lightContent }
         // The empty state or the load error fills the page's place.
         if contentView.isHidden { return traitCollection.userInterfaceStyle == .dark ? .lightContent : .darkContent }
         return isStatusBandDark ? .lightContent : .darkContent
@@ -118,6 +120,8 @@ final class BrowserMobilePhoneViewController: UIViewController {
     /// systems.
     private let sideBands = [UIView(), UIView()]
     private var isStatusBandDark = false
+    /// The last picture `isPictureTopDark` read, and what it found.
+    private var pictureTopDarkness: (image: UIImage, dark: Bool)?
     /// Darkens the page while it is the search panel's card.
     private let pageDim = UIView()
     private let bar = BrowserMobilePhoneBarView()
@@ -526,13 +530,28 @@ final class BrowserMobilePhoneViewController: UIViewController {
             statusBand.backgroundColor = color
             dark = BrowserMobileBackdrop.luminance(of: color).map(BrowserMobileBackdrop.isDark) ?? false
         } else {
-            // Before the page reports its colors, the bar's reading of it
-            // stands in, rather than the last page's.
-            dark = bar.isDark
+            // Before the page reports its colors, the top of its last picture
+            // stands in, or the bar's reading of it, rather than the last page's.
+            dark = workspace.selectedTabID.flatMap(isPictureTopDark) ?? bar.isDark
         }
         guard dark != isStatusBandDark else { return }
         isStatusBandDark = dark
         setNeedsStatusBarAppearanceUpdate()
+    }
+
+    /// Whether the top of a tab's last picture, under the status bar, is dark.
+    private func isPictureTopDark(_ tabID: String) -> Bool? {
+        guard let image = thumbnails.image(for: tabID), let cgImage = image.cgImage, cgImage.height > 0 else {
+            return nil
+        }
+        if let cached = pictureTopDarkness, cached.image === image { return cached.dark }
+        let strip = CGFloat(cgImage.width) * 16 / max(view.bounds.width, 1)
+        guard let top = cgImage.cropping(to: CGRect(
+            x: 0, y: 0, width: CGFloat(cgImage.width), height: min(strip, CGFloat(cgImage.height)),
+        )), let luminance = BrowserMobileBackdrop.luminance(of: top) else { return nil }
+        let dark = BrowserMobileBackdrop.isDark(luminance: luminance)
+        pictureTopDarkness = (image, dark)
+        return dark
     }
 
     /// Turns the bar to match a tab's background, or its last picture, before
@@ -2005,6 +2024,8 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
         let backdrop: UIView
         /// The page has turned into a card in the row.
         var isRow = false
+        /// The finger has let go and the cards are on their way.
+        var isSettling = false
 
         init(
             kind: Kind, fromID: String, toID: String?, direction: CGFloat,
@@ -2260,7 +2281,10 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
                 workspace.selectTab(id: toID)
             }
             matchBackdrop(toPictureOf: toID)
+            updateStatusBand()
         }
+        swipe.isSettling = true
+        UIView.animate(withDuration: 0.2) { self.setNeedsStatusBarAppearanceUpdate() }
         UIView.animate(
             springDuration: swipe.kind == .sideways ? 0.32 : 0.3,
             bounce: completes ? 0 : 0.15,
@@ -2417,6 +2441,7 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
         let along = travel * swipe.direction
         if !swipe.isRow, swipe.toID != nil, along >= Self.rowThreshold {
             swipe.isRow = true
+            UIView.animate(withDuration: 0.2) { self.setNeedsStatusBarAppearanceUpdate() }
             swipe.incomingCard.alpha = 1
             UIView.animate(springDuration: 0.3, bounce: 0, initialSpringVelocity: 0, delay: 0, options: [
                 .allowUserInteraction, .beginFromCurrentState,
