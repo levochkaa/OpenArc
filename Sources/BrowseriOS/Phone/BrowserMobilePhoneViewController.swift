@@ -140,6 +140,9 @@ final class BrowserMobilePhoneViewController: UIViewController {
     private weak var surfacePan: UIPanGestureRecognizer?
     private var surfaceGhosts = [UIView]()
     private var surfaceDragStartTop: CGFloat = 0
+    /// Search opened from the switcher: it rises over the cards, and closing
+    /// it goes back to them instead of to the last tab.
+    private var searchOverSwitcher = false
     private lazy var pagePanel = BrowserMobilePagePanel()
     private lazy var searchPanel = BrowserMobileSearchPanel()
     private var searchReplacesPage = false
@@ -831,7 +834,8 @@ final class BrowserMobilePhoneViewController: UIViewController {
             return
         }
         let closingMode = mode
-        mode = .browsing
+        mode = closingMode == .search && searchOverSwitcher ? .switcher : .browsing
+        searchOverSwitcher = false
         if closingMode == .search {
             searchPanel.stopDictation()
             searchPanel.field.resignFirstResponder()
@@ -1101,7 +1105,8 @@ final class BrowserMobilePhoneViewController: UIViewController {
         switch mode {
         case .browsing: break
         case .switcher: closeSwitcherInstantly()
-        case .pageMenu, .search: closePanel()
+        case .pageMenu: closePanel()
+        case .search: closeSearchForPage()
         }
     }
 
@@ -1118,11 +1123,13 @@ final class BrowserMobilePhoneViewController: UIViewController {
     /// capsule; `finishOpeningSearch` raises it.
     private func beginSearch(text: String, replacesPage: Bool) -> Bool {
         guard workspace.isReady else { return false }
-        if mode == .switcher {
+        let overSwitcher = mode == .switcher && switcher != nil && !isAnimatingSwitcher
+        if mode == .switcher, !overSwitcher {
             closeSwitcherInstantly()
         }
-        guard mode == .browsing else { return false }
+        guard mode == .browsing || overSwitcher else { return false }
         workspace.dismissFindInPage()
+        searchOverSwitcher = overSwitcher
         mode = .search
         searchReplacesPage = replacesPage
         searchPanel.candidates = searchCandidates()
@@ -1136,7 +1143,8 @@ final class BrowserMobilePhoneViewController: UIViewController {
         guard let surface = makeSurface(
             height: view.bounds.height - top, dark: true, content: searchPanel, revealsContent: true,
         ) else {
-            mode = .browsing
+            mode = overSwitcher ? .switcher : .browsing
+            searchOverSwitcher = false
             return false
         }
         searchPanel.setFieldExpanded(false)
@@ -1245,7 +1253,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
         // A page loads in the current tab only when that keeps it as private
         // as the search asked; otherwise it gets a tab of its own.
         let replaces = searchReplacesPage && workspace.selectedTab?.isPrivate == isPrivate
-        closePanel()
+        closeSearchForPage()
         if replaces {
             workspace.submit(text)
         } else if isPrivate {
@@ -1255,12 +1263,20 @@ final class BrowserMobilePhoneViewController: UIViewController {
         }
     }
 
+    /// Closes search for a page it chose; search over the switcher takes the
+    /// switcher with it.
+    private func closeSearchForPage() {
+        let overSwitcher = searchOverSwitcher
+        closePanel()
+        if overSwitcher { closeSwitcherInstantly() }
+    }
+
     private func selectSuggestion(_ item: BrowserMobileSearchSuggestions.Item) {
         switch item.kind {
         case .address(let address): submitSearch(address)
         case .search(let query): submitSearch(query)
         case .tab(let id):
-            closePanel()
+            closeSearchForPage()
             if id != workspace.selectedTabID {
                 if let current = workspace.selectedTabID {
                     thumbnails.capture(current, workspace: workspace, width: thumbnailWidth)
