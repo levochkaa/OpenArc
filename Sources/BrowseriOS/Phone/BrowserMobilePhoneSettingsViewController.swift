@@ -317,7 +317,7 @@ final class BrowserMobilePhoneSettingsViewController: UITableViewController {
         stack.distribution = .fillEqually
         stack.spacing = 8
         stack.translatesAutoresizingMaskIntoConstraints = false
-        let header = UIView(frame: CGRect(x: 0, y: 0, width: 320, height: 60))
+        let header = UIView(frame: CGRect(x: 0, y: 0, width: 320, height: 72))
         header.addSubview(stack)
         NSLayoutConstraint.activate([
             stack.leadingAnchor.constraint(equalTo: header.layoutMarginsGuide.leadingAnchor),

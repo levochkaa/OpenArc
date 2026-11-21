@@ -67,27 +67,6 @@ import WebKit
         }
     }
 
-    /// A page whose sides follow the host's insets instead of the safe area,
-    /// so a page fills the width beside a status corner block (iPhone Duo):
-    /// WebKit lays pages out inside the web view's safe area.
-    private final class PageWebView: WKWebView {
-        override var safeAreaInsets: UIEdgeInsets {
-            var insets = super.safeAreaInsets
-            if let sideInsets {
-                insets.left = sideInsets.left
-                insets.right = sideInsets.right
-            }
-            return insets
-        }
-
-        var sideInsets: (left: CGFloat, right: CGFloat)? {
-            didSet {
-                guard sideInsets?.left != oldValue?.left || sideInsets?.right != oldValue?.right else { return }
-                safeAreaInsetsDidChange()
-            }
-        }
-    }
-
     private final class PageToolsMessageProxy: NSObject, WKScriptMessageHandler {
         weak var engine: BrowserWebKitEngine?
 
@@ -177,9 +156,6 @@ import WebKit
     private var isFinishingAuthentication = false
     private var downloads: BrowserMobileDownloads?
     private var obscuredInsets = UIEdgeInsets.zero
-    /// Whether a host set the insets; until then pages keep the system's
-    /// safe area at their sides.
-    private var hasObscuredInsets = false
     private let actionDownloads = NSMapTable<WKNavigationAction, DownloadHandoff>.weakToStrongObjects()
     private let responseDownloads = NSMapTable<WKNavigationResponse, DownloadHandoff>.weakToStrongObjects()
     private var contentRulesObservation: AnyCancellable?
@@ -458,11 +434,9 @@ import WebKit
 
     func setObscuredInsets(_ insets: UIEdgeInsets) {
         obscuredInsets = insets
-        hasObscuredInsets = true
         storeButtonBottom?.constant = -(insets.bottom + 16)
         for record in records.values {
             record.webView?.obscuredContentInsets = insets
-            (record.webView as? PageWebView)?.sideInsets = (insets.left, insets.right)
         }
     }
 
@@ -883,10 +857,7 @@ import WebKit
             }
         }
         BrowserWebKitContentRules.shared.apply(to: configuration.userContentController, urlString: nil)
-        let webView = PageWebView(frame: .zero, configuration: configuration)
-        if hasObscuredInsets {
-            webView.sideInsets = (obscuredInsets.left, obscuredInsets.right)
-        }
+        let webView = WKWebView(frame: .zero, configuration: configuration)
         #if DEBUG
             // Web Inspector reaches pages and their extensions' scripts in development builds.
             webView.isInspectable = true

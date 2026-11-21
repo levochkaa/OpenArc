@@ -65,6 +65,13 @@ final class BrowserMobilePhoneViewController: UIViewController {
 
     private(set) var mode = Mode.browsing {
         didSet {
+            // The mark sinks behind search and the panels, and comes back with the backdrop.
+            if (mode == .browsing) != (oldValue == .browsing) {
+                let visible = mode == .browsing
+                UIView.animate(withDuration: visible ? 0.25 : 0.15, delay: 0, options: [.beginFromCurrentState]) {
+                    self.homeLogo.alpha = visible ? 1 : 0
+                }
+            }
             if statusCorner != nil, Self.hidesStatusCorner(mode) != Self.hidesStatusCorner(oldValue) {
                 setNeedsStatusBarAppearanceUpdate()
             }
@@ -94,6 +101,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
     private let bar = BrowserMobilePhoneBarView()
     /// Fills the screen while no page is open.
     private let appBackdrop = BrowserMobileAppBackdrop()
+    private let homeLogo = BrowserMobileHomeLogo()
     /// No page is open: the backdrop shows, with Spaces and Settings in the bar.
     private var showsHome = false
     private var statusCorner: CGRect?
@@ -197,6 +205,8 @@ final class BrowserMobilePhoneViewController: UIViewController {
         pageContainer.clipsToBounds = true
         appBackdrop.isHidden = true
         view.addSubview(appBackdrop)
+        homeLogo.isHidden = true
+        view.addSubview(homeLogo)
         view.addSubview(pageContainer)
         pageContainer.addSubview(contentView)
         statusBand.isUserInteractionEnabled = false
@@ -250,6 +260,9 @@ final class BrowserMobilePhoneViewController: UIViewController {
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         appBackdrop.frame = view.bounds
+        let logoSize = homeLogo.intrinsicContentSize
+        homeLogo.bounds = CGRect(origin: .zero, size: logoSize)
+        homeLogo.center = CGPoint(x: view.bounds.midX, y: view.bounds.midY)
         updateStatusCorner()
         layoutPage()
         if surface == nil {
@@ -338,13 +351,11 @@ final class BrowserMobilePhoneViewController: UIViewController {
 
     /// The bar stays opaque; the page lays out above its full height even
     /// while it is collapsed, so fixed footers never jump. Beside a status
-    /// corner block the page takes the whole width and height; only the
-    /// block covers it.
+    /// corner block (iPhone Duo) the page keeps the system's side inset, which
+    /// WebKit fills with the page's background.
     private func updateObscuredInsets() {
         let safe = view.safeAreaInsets
-        let insets = statusCorner == nil
-            ? UIEdgeInsets(top: safe.top, left: safe.left, bottom: expandedBarHeight, right: safe.right)
-            : UIEdgeInsets(top: 0, left: 0, bottom: expandedBarHeight, right: 0)
+        let insets = UIEdgeInsets(top: safe.top, left: safe.left, bottom: expandedBarHeight, right: safe.right)
         guard insets != appliedObscuredInsets else { return }
         appliedObscuredInsets = insets
         workspace.setObscuredInsets(insets)
@@ -367,7 +378,6 @@ final class BrowserMobilePhoneViewController: UIViewController {
         // bar; the last block stays until the next one is reported.
         guard let corner, corner != statusCorner else { return }
         statusCorner = corner
-        updateObscuredInsets()
         setNeedsStatusBarAppearanceUpdate()
     }
 
@@ -375,8 +385,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
         guard pageContainer.transform.isIdentity else { return }
         pageContainer.frame = view.bounds
         contentView.frame = pageContainer.bounds
-        statusBand.frame = statusCorner
-            ?? CGRect(x: 0, y: 0, width: view.bounds.width, height: view.safeAreaInsets.top)
+        statusBand.frame = CGRect(x: 0, y: 0, width: view.bounds.width, height: view.safeAreaInsets.top)
         pageDim.frame = pageContainer.bounds
         emptyState.frame = pageContainer.bounds.inset(by: UIEdgeInsets(
             top: view.safeAreaInsets.top, left: 24, bottom: expandedBarHeight, right: 24,
@@ -599,6 +608,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
         showsHome = home
         pageContainer.isHidden = home
         appBackdrop.isHidden = !home
+        homeLogo.isHidden = !home
         setNeedsStatusBarAppearanceUpdate()
     }
 
@@ -781,7 +791,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
         return surface
     }
 
-    /// Shrinks the open panel back into the bar, which settles with a small bounce.
+    /// Shrinks the open panel back into the bar.
     private func closePanel(completion: (() -> Void)? = nil) {
         guard let surface else {
             completion?()
@@ -803,7 +813,8 @@ final class BrowserMobilePhoneViewController: UIViewController {
         dismissCatcher = nil
         surfacePan = nil
         let ghosts = surfaceGhosts
-        UIView.animate(springDuration: 0.5, bounce: 0.28, initialSpringVelocity: 0, delay: 0, options: [
+        // Settles into the bar without dipping below its height.
+        UIView.animate(springDuration: 0.3, bounce: 0, initialSpringVelocity: 0, delay: 0, options: [
             .allowUserInteraction, .beginFromCurrentState,
         ]) {
             surface.frame = self.expandedBarFrame
@@ -983,6 +994,9 @@ final class BrowserMobilePhoneViewController: UIViewController {
         UIPasteboard.general.url = url
         UINotificationFeedbackGenerator().notificationOccurred(.success)
         closePanel()
+        BrowserMobileToast.show(
+            String(localized: "Copied URL", table: "Mobile"), in: view, barTop: view.bounds.height - expandedBarHeight,
+        )
     }
 
     private func togglePin() {

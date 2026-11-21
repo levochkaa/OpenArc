@@ -77,7 +77,10 @@
 "Spaces and tabs on this device stay here and no longer sync." = "Spaces and tabs on this device stay here and no longer sync.";
 "Signing in…" = "Signing in…";
 "Enter your sync server to sign in." = "Enter your sync server to sign in.";
-"Sign in to sync this profile." = "Sign in to sync this profile.";
+"Sign in to keep your Spaces and tabs in step with OpenArc on your Mac." = "Sign in to keep your Spaces and tabs in step with OpenArc on your Mac.";
+"Sync your Spaces" = "Sync your Spaces";
+"Signed in" = "Signed in";
+"or" = "or";
 "Sync is enabled." = "Sync is enabled.";
 "Sync is paused. Your data stays on this device." = "Sync is paused. Your data stays on this device.";
 "Choose whether to sync this profile." = "Choose whether to sync this profile.";
@@ -172,6 +175,7 @@
 "%@ in %@" = "%1$@ in %2$@";
 "Changes could not be saved" = "Changes could not be saved";
 "Copy Link" = "Copy Link";
+"Copied URL" = "Copied URL";
 "Display Options" = "Display Options";
 "Find on Page" = "Find on Page";
 "Larger Text" = "Larger Text";
