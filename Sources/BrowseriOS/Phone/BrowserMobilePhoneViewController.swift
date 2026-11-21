@@ -170,6 +170,10 @@ final class BrowserMobilePhoneViewController: UIViewController {
     private var switcher: BrowserMobileTabSwitcherView?
     /// Holds the cards flying between the switcher and the tab stack, over the bar.
     private var switcherFlight: UIView?
+    /// The page's card that the flying older tabs pass under, and the mask
+    /// that hides them there.
+    private var flightCut: (host: UIView, card: UIView, mask: CAShapeLayer)?
+    private var flightCutLink: CADisplayLink?
     private var isAnimatingSwitcher = false
     private weak var presentedTabs: BrowserMobileTabsViewController?
 
@@ -1429,7 +1433,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
         switcher.subviews
             .filter { $0 is UIVisualEffectView || $0.backgroundColor != nil && !($0 is UIButton) }
             .forEach { $0.alpha = 0 }
-        var flying = [(card: BrowserMobileTabSwitcherView.Card, slot: Int)]()
+        var flying = [(card: BrowserMobileTabSwitcherView.Card, slot: Int, isOlder: Bool)]()
         for (index, entry) in entries.enumerated() {
             guard let card = switcher.card(for: entry.id) else { continue }
             let frame = switcher.cardFrame(index: index, position: focus)
@@ -1449,11 +1453,22 @@ final class BrowserMobilePhoneViewController: UIViewController {
                 card.titleAlpha = 0
                 card.alpha = slot < Self.hiddenStackSlot ? 1 : 0
                 card.layoutIfNeeded()
-                flying.append((card, slot))
+                flying.append((card, slot, index < currentIndex))
             }
         }
         let flight = makeSwitcherFlight()
-        switcher.lift(flying.sorted { $0.slot > $1.slot }.map(\.card), into: flight)
+        // Tabs before the page stay under it while they fly; it is not lifted,
+        // so they are cut where it covers them.
+        let under = UIView(frame: flight.bounds)
+        flight.addSubview(under)
+        let over = UIView(frame: flight.bounds)
+        flight.addSubview(over)
+        let ordered = flying.sorted { $0.slot > $1.slot }
+        switcher.lift(ordered.filter(\.isOlder).map(\.card), into: under)
+        switcher.lift(ordered.filter { !$0.isOlder }.map(\.card), into: over)
+        if let currentID, let page = switcher.card(for: currentID) {
+            cutFlight(under, around: page)
+        }
         UIView.animate(withDuration: 0.15) {
             self.bar.setShowsSwitcherControls(true)
             for card in entries.compactMap({ switcher.card(for: $0.id) }) where card.alpha == 0 {
@@ -1594,8 +1609,37 @@ final class BrowserMobilePhoneViewController: UIViewController {
     }
 
     private func removeSwitcherFlight() {
+        flightCutLink?.invalidate()
+        flightCutLink = nil
+        flightCut = nil
         switcherFlight?.removeFromSuperview()
         switcherFlight = nil
+    }
+
+    /// Hides what flies in `host` where `card` covers it, following the card
+    /// frame by frame as it moves.
+    private func cutFlight(_ host: UIView, around card: UIView) {
+        let mask = CAShapeLayer()
+        mask.fillRule = .evenOdd
+        host.layer.mask = mask
+        flightCut = (host, card, mask)
+        updateFlightCut()
+        let link = CADisplayLink(target: self, selector: #selector(updateFlightCut))
+        link.add(to: .main, forMode: .common)
+        flightCutLink = link
+    }
+
+    @objc private func updateFlightCut() {
+        guard let (host, card, mask) = flightCut, let superview = card.superview else { return }
+        let layer = card.layer.presentation() ?? card.layer
+        let frame = superview.convert(layer.frame, to: host)
+        let path = UIBezierPath(rect: host.bounds)
+        path.append(UIBezierPath(roundedRect: frame, cornerRadius: BrowserMobileTabSwitcherView.cornerRadius))
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        mask.frame = host.bounds
+        mask.path = path.cgPath
+        CATransaction.commit()
     }
 
     /// Lifts the cards other than `id`'s over the bar for their flight into
