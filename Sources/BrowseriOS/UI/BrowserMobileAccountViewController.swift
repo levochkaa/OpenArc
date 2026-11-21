@@ -259,6 +259,13 @@ private extension UIFont {
             stack.addArrangedSubview(button)
         }
         stack.addArrangedSubview(deleteAccountButton)
+        // People use the app's own server; only development builds pick another.
+        #if DEBUG
+            makeServerSection(in: stack)
+        #endif
+    }
+
+    private func makeServerSection(in stack: UIStackView) {
         // Whatever shows above, the server keeps its distance.
         let gap = UIView()
         gap.heightAnchor.constraint(equalToConstant: 16).isActive = true
