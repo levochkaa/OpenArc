@@ -1142,6 +1142,17 @@ import WebKit
 
 // MARK: WKNavigationDelegate
 
+extension BrowserWebKitEngine {
+    /// The Chrome Web Store shows phones only a note that extensions are for
+    /// computers; its desktop site lists them, and their pages get Add to
+    /// OpenArc.
+    static func wantsDesktopSite(_ url: URL?) -> Bool {
+        url?.host()?.lowercased() == "chromewebstore.google.com"
+    }
+}
+
+// MARK: WKNavigationDelegate
+
 extension BrowserWebKitEngine: WKNavigationDelegate {
     func webView(
         _ webView: WKWebView,
@@ -1158,6 +1169,7 @@ extension BrowserWebKitEngine: WKNavigationDelegate {
         decisionHandler: @escaping @MainActor (WKNavigationActionPolicy, WKWebpagePreferences) -> Void,
     ) {
         let prefersDesktop = record(for: webView)?.prefersDesktop == true
+            || Self.wantsDesktopSite(navigationAction.request.url)
         self.webView(webView, decidePolicyFor: navigationAction) { policy in
             if navigationAction.targetFrame?.isMainFrame != false {
                 preferences.preferredContentMode = prefersDesktop ? .desktop : .mobile
