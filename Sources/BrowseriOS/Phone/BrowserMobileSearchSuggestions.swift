@@ -3,7 +3,8 @@
 import Foundation
 
 /// What the search panel lists for a query: the site the query completes to,
-/// a web search, then open and pinned tabs that match.
+/// a web search, open and pinned tabs that match, then the search engine's
+/// suggestions.
 struct BrowserMobileSearchSuggestions: Equatable {
     // MARK: Internal
 
@@ -32,11 +33,14 @@ struct BrowserMobileSearchSuggestions: Equatable {
         let location: String?
     }
 
+    /// Tabs listed before the search engine's suggestions take the rest.
+    static let tabLimitWithSearches = 3
+
     let items: [Item]
     /// The host the typed text completes to, such as "apple.com" for "app".
     let completion: String?
 
-    init(query rawQuery: String, candidates: [Candidate], limit: Int = 8) {
+    init(query rawQuery: String, candidates: [Candidate], searches: [String] = [], limit: Int = 8) {
         let query = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else {
             completion = nil
@@ -73,11 +77,16 @@ struct BrowserMobileSearchSuggestions: Equatable {
             candidate.title.localizedCaseInsensitiveContains(query)
                 || candidate.urlString.localizedCaseInsensitiveContains(query)
         }
-        for candidate in matches.prefix(max(limit - items.count, 0)) {
+        let searches = searches.filter { $0.caseInsensitiveCompare(query) != .orderedSame }
+        let tabRoom = searches.isEmpty ? limit - items.count : Self.tabLimitWithSearches
+        for candidate in matches.prefix(max(min(tabRoom, limit - items.count), 0)) {
             items.append(Item(
                 kind: .tab(candidate.tabID), title: Self.title(candidate),
                 subtitle: candidate.location ?? Self.host(candidate.urlString), iconPage: candidate.urlString,
             ))
+        }
+        for search in searches.prefix(max(limit - items.count, 0)) {
+            items.append(Item(kind: .search(search), title: search, subtitle: nil, iconPage: nil))
         }
         self.items = items
     }

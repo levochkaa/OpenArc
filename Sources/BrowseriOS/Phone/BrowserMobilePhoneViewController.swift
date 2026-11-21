@@ -124,9 +124,13 @@ final class BrowserMobilePhoneViewController: UIViewController {
     private var lastScrollY: CGFloat = 0
     private var scrollTravel: CGFloat = 0
 
-    // Panels.
+    /// Panels.
     private var surface: UIView?
-    private var surfaceTint: UIView?
+    /// The bar's own material inside a dark panel: it shows while the panel
+    /// is the bar and gives way to the panel's glass as it rises.
+    private var surfaceTint: BrowserMobileBarMaterial?
+    /// The dark panel's glass, which the bar's material replaces as it settles.
+    private var surfaceGlass = [UIView]()
     private var dismissCatcher: UIView?
     /// Drags the open search panel down to close it.
     private weak var surfacePan: UIPanGestureRecognizer?
@@ -204,6 +208,9 @@ final class BrowserMobilePhoneViewController: UIViewController {
         pageContainer.layer.cornerCurve = .continuous
         pageContainer.clipsToBounds = true
         appBackdrop.isHidden = true
+        // A finger across the empty backdrop turns the mark.
+        appBackdrop.isUserInteractionEnabled = true
+        appBackdrop.addGestureRecognizer(homeLogo.backdropPan)
         view.addSubview(appBackdrop)
         homeLogo.isHidden = true
         view.addSubview(homeLogo)
@@ -405,7 +412,8 @@ final class BrowserMobilePhoneViewController: UIViewController {
         // Over the switcher the bar stays dark.
         guard mode != .switcher else { return }
         guard let tab = workspace.selectedTab, !contentView.isHidden else {
-            setBackdropDark(false)
+            // The bar sits over the home backdrop or the empty state, not a page.
+            setBackdropDark(showsHome || traitCollection.userInterfaceStyle == .dark)
             return
         }
         if let dark = Self.isDark(tab.state) {
@@ -458,6 +466,21 @@ final class BrowserMobilePhoneViewController: UIViewController {
         setBackdropDark(BrowserMobileBackdrop.isDark(luminance: luminance))
     }
 
+    /// How much the dark panel looks like the bar: 1 is the bar's own
+    /// material, 0 the panel's glass.
+    private func setSurfaceTint(_ share: CGFloat) {
+        surfaceTint?.alpha = share
+        surfaceGlass.forEach { $0.alpha = 1 - share }
+    }
+
+    /// The bar may have changed under the panel, as when the switcher it was
+    /// over went away.
+    private func matchSurfaceTintToBar() {
+        guard let tint = surfaceTint else { return }
+        tint.overrideUserInterfaceStyle = bar.isDark ? .dark : .light
+        tint.showsMaterial = bar.background.showsMaterial
+    }
+
     private func setBackdropDark(_ dark: Bool) {
         guard bar.isDark != dark else { return }
         UIView.transition(with: bar, duration: 0.25, options: [.transitionCrossDissolve, .allowUserInteraction]) {
@@ -470,6 +493,8 @@ final class BrowserMobilePhoneViewController: UIViewController {
         let ordered = workspace.switcherTabs.filter { $0.id != workspace.selectedTabID }
         let front = ordered.last
         let back = ordered.dropLast().last
+        let width = max(view.bounds.width, 1)
+        bar.tabStack.sideCrop = (view.safeAreaInsets.left / width, view.safeAreaInsets.right / width)
         bar.tabStack.setImages(
             front: front.flatMap { thumbnails.image(for: $0.id) },
             back: back.flatMap { thumbnails.image(for: $0.id) },
@@ -701,7 +726,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
         ) {
             surface.frame = target
             surface.layer.cornerRadius = 36
-            self.surfaceTint?.alpha = 0
+            self.setSurfaceTint(0)
             self.pagePanel.setAddressExpanded(true)
         }
         rise.isUserInteractionEnabled = true
@@ -743,12 +768,15 @@ final class BrowserMobilePhoneViewController: UIViewController {
             shade.autoresizingMask = [.flexibleWidth, .flexibleHeight]
             shade.backgroundColor = view.backgroundColor?.withAlphaComponent(0.1)
             surface.addSubview(shade)
-            // Starts the color of the bar it grows from.
-            let tint = UIView(frame: surface.bounds)
+            // Starts as the bar it grows from.
+            let tint = BrowserMobileBarMaterial()
+            tint.frame = surface.bounds
             tint.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-            tint.backgroundColor = bar.isDark ? UIColor(white: 0.13, alpha: 1) : UIColor(white: 0.86, alpha: 1)
             surface.addSubview(tint)
             surfaceTint = tint
+            surfaceGlass = [blur, shade]
+            matchSurfaceTintToBar()
+            setSurfaceTint(1)
         } else {
             let glass = BrowserMobileBarMaterial()
             glass.frame = bar.frame
@@ -815,13 +843,14 @@ final class BrowserMobilePhoneViewController: UIViewController {
         dismissCatcher = nil
         surfacePan = nil
         let ghosts = surfaceGhosts
+        matchSurfaceTintToBar()
         // Settles into the bar without dipping below its height.
         UIView.animate(springDuration: 0.3, bounce: 0, initialSpringVelocity: 0, delay: 0, options: [
             .allowUserInteraction, .beginFromCurrentState,
         ]) {
             surface.frame = self.expandedBarFrame
             surface.layer.cornerRadius = 0
-            self.surfaceTint?.alpha = 1
+            self.setSurfaceTint(1)
             // The field or the address row narrows back into the New Tab capsule.
             if closingMode == .search {
                 self.searchPanel.setFieldExpanded(false)
@@ -840,6 +869,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
                 self.surface = nil
                 self.surfaceGhosts = []
                 self.surfaceTint = nil
+                self.surfaceGlass = []
                 self.layoutPage()
                 self.layoutBar()
             }
@@ -1076,7 +1106,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
         ]) {
             surface.frame = CGRect(x: 0, y: top, width: self.view.bounds.width, height: self.view.bounds.height - top)
             surface.layer.cornerRadius = 36
-            self.surfaceTint?.alpha = 0
+            self.setSurfaceTint(0)
             self.searchPanel.setFieldExpanded(true)
         }
         UIView.animate(springDuration: 0.42, bounce: 0.1, initialSpringVelocity: 0, delay: 0, options: [
@@ -1226,6 +1256,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
         }
         let switcher = BrowserMobileTabSwitcherView(frame: view.bounds)
         wireSwitcher(switcher)
+        switcher.pageSideInsets = (view.safeAreaInsets.left, view.safeAreaInsets.right)
         let currentIndex = entries.firstIndex { $0.id == currentID } ?? entries.count - 1
         let focus = CGFloat(max(currentIndex - 1, 0))
         switcher.setEntries(entries, focus: focus)
@@ -1692,7 +1723,7 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
         surface.frame = CGRect(x: 0, y: y, width: view.bounds.width, height: view.bounds.height - y)
         let progress = min(travel / max(reach, 1), 1)
         surface.layer.cornerRadius = 36 * min(progress * 3, 1)
-        surfaceTint?.alpha = 1 - min(progress * 2, 1)
+        setSurfaceTint(1 - min(progress * 2, 1))
     }
 
     private func addSurfacePan(to surface: UIView) {

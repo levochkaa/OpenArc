@@ -39,6 +39,12 @@ final class BrowserMobileTabSwitcherView: UIView, UIScrollViewDelegate, UIGestur
     /// Index of the card in the middle, fractional while scrolling.
     private(set) var position: CGFloat = 0
 
+    /// The page's side insets on screen, such as the strip beside the
+    /// camera on iPhone Duo; card pictures leave them out.
+    var pageSideInsets: (left: CGFloat, right: CGFloat) = (0, 0) {
+        didSet { cards.values.forEach(applyCrop) }
+    }
+
     // MARK: Private
 
     private let cardsLayer = UIView()
@@ -86,6 +92,7 @@ final class BrowserMobileTabSwitcherView: UIView, UIScrollViewDelegate, UIGestur
         for view in [backdrop, cardsLayer, scroller] as [UIView] {
             view.frame = bounds
         }
+        cards.values.forEach(applyCrop)
         let step = bounds.width * Self.forwardStep
         scroller.contentSize = CGSize(width: bounds.width + step * CGFloat(max(entries.count - 1, 0)), height: 1)
         if !scroller.isDragging, !scroller.isDecelerating, settle == nil {
@@ -117,6 +124,7 @@ final class BrowserMobileTabSwitcherView: UIView, UIScrollViewDelegate, UIGestur
         for entry in entries {
             let card = cards[entry.id] ?? Card()
             card.show(entry)
+            applyCrop(card)
             if cards[entry.id] == nil {
                 cards[entry.id] = card
                 cardsLayer.addSubview(card)
@@ -210,6 +218,13 @@ final class BrowserMobileTabSwitcherView: UIView, UIScrollViewDelegate, UIGestur
 
     func scrollViewWillBeginDragging(_: UIScrollView) {
         stopSettle()
+    }
+
+    private func applyCrop(_ card: Card) {
+        card.crop = Card.Crop(
+            left: pageSideInsets.left, right: pageSideInsets.right,
+            screenWidth: bounds.width, restingWidth: cardSize.width,
+        )
     }
 
     /// A critically damped spring from the flick's speed to the card's place.
@@ -334,6 +349,15 @@ final class BrowserMobileTabSwitcherView: UIView, UIScrollViewDelegate, UIGestur
 extension BrowserMobileTabSwitcherView {
     /// One tab in the switcher: its picture with the site's icon and title above it.
     final class Card: UIView {
+        /// What of the page's width the picture leaves out at each side,
+        /// fully once the card is at rest and none while it fills the screen.
+        struct Crop: Equatable {
+            var left: CGFloat = 0
+            var right: CGFloat = 0
+            var screenWidth: CGFloat = 0
+            var restingWidth: CGFloat = 0
+        }
+
         // MARK: Private
 
         /// The icon's distance from the card's left edge.
@@ -345,6 +369,12 @@ extension BrowserMobileTabSwitcherView {
 
         var picture: UIImage? {
             didSet { updatePicture() }
+        }
+
+        var crop = Crop() {
+            didSet {
+                if crop != oldValue { setNeedsLayout() }
+            }
         }
 
         var livePicture: UIView? {
@@ -382,7 +412,7 @@ extension BrowserMobileTabSwitcherView {
         private let header = UIView()
         private let icon = UIImageView()
         private let privateGlyph = UIImageView(image: UIImage(
-            systemName: "eyes.inverse", withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .medium),
+            systemName: "eyes", withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .medium),
         ))
         private let titleLabel = UILabel()
         private var entry: Entry?
@@ -476,14 +506,26 @@ extension BrowserMobileTabSwitcherView {
         /// Pictures fill the card's width from the top; a short picture leaves
         /// white below, as a page shorter than the screen does.
         private func layoutPicture() {
+            // The share of the side insets cut off grows as the card shrinks
+            // from the screen's width to its resting width.
+            let range = crop.screenWidth - crop.restingWidth
+            let cut = range > 0 ? min(max((crop.screenWidth - bounds.width) / range, 0), 1) : 1
+            let left = crop.left * cut
+            let right = crop.right * cut
             if let livePicture {
-                let scale = bounds.width / max(livePicture.bounds.width, 1)
+                let pageWidth = max(livePicture.bounds.width, 1)
+                let scale = bounds.width / max(pageWidth - left - right, 1)
                 livePicture.transform = CGAffineTransform(scaleX: scale, y: scale)
-                livePicture.center = CGPoint(x: bounds.midX, y: livePicture.bounds.height * scale / 2)
+                livePicture.center = CGPoint(
+                    x: (pageWidth / 2 - left) * scale, y: livePicture.bounds.height * scale / 2,
+                )
             }
             guard let picture, picture.size.width > 0 else { return }
+            let pageWidth = crop.screenWidth > 0 ? crop.screenWidth : bounds.width
+            let scale = bounds.width / max(pageWidth - left - right, 1)
+            let width = pageWidth * scale
             imageView.frame = CGRect(
-                x: 0, y: 0, width: bounds.width, height: bounds.width * picture.size.height / picture.size.width,
+                x: -left * scale, y: 0, width: width, height: width * picture.size.height / picture.size.width,
             )
         }
     }

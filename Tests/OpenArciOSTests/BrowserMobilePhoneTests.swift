@@ -45,6 +45,30 @@ import UIKit
     #expect(address.items[0].iconPage == "https://example.org/path")
 }
 
+@Test func mobileSearchSuggestionsListTheEnginesSearchesAfterAFewTabs() {
+    let candidates = (1...5).map {
+        BrowserMobileSearchSuggestions.Candidate(
+            tabID: "t\($0)", title: "Weather \($0)", urlString: "https://w\($0).example/", location: nil,
+        )
+    }
+    let suggestions = BrowserMobileSearchSuggestions(
+        query: "weather", candidates: candidates, searches: ["Weather", "weather today", "weather tomorrow"],
+    )
+    #expect(suggestions.items.map(\.kind) == [
+        .search("weather"), .tab("t1"), .tab("t2"), .tab("t3"),
+        .search("weather today"), .search("weather tomorrow"),
+    ], "The typed query is listed once, and the engine's searches follow three tabs")
+}
+
+@Test func mobileWebSuggestionsReadTheEnginesAnswer() {
+    let data = Data(#"["wea",["weather","weather today"],[],{}]"#.utf8)
+    #expect(BrowserMobileWebSuggestions.parse(data) == ["weather", "weather today"])
+    #expect(BrowserMobileWebSuggestions.parse(Data("{}".utf8)).isEmpty)
+    let url = BrowserMobileWebSuggestions.url(for: "a b&c+d")
+    #expect(url?.host() == "suggestqueries.google.com")
+    #expect(url?.query()?.contains("q=a%20b%26c%2Bd") == true)
+}
+
 // MARK: - Bar backdrop
 
 @MainActor @Test func mobileCompletingFieldReplacesOrKeepsTheFilledInPart() {

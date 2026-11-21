@@ -5,7 +5,8 @@ import UIKit
 /// The search sheet that grows out of the bar for New Tab: a field over a
 /// dark glass panel, with suggestions under it. The field starts as the
 /// bar's New Tab capsule and widens once the panel is up. At the field's end,
-/// the microphone dictates into it and the eyes turn Incognito on.
+/// the microphone dictates into it and the eyes turn Incognito on; once
+/// there is text, a clear button takes their place.
 final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDataSource, UITableViewDelegate {
     // MARK: Private
 
@@ -106,7 +107,8 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
         didSet {
             guard isIncognito != oldValue else { return }
             if isIncognito { dictation.stop() }
-            updateAccessories()
+            updateAccessories(animated: window != nil)
+            refresh(complete: false)
         }
     }
 
@@ -123,15 +125,30 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
     private let accessories = UIView()
     private let micButton = UIButton(type: .system)
     private let eyesButton = UIButton(type: .system)
+    private let clearButton = UIButton(type: .system)
+    /// Clips the Incognito label, which slides out from under the eyes.
+    private let incognitoClip = UIView()
     private let incognitoLabel = UILabel()
     private let incognitoNote = UILabel()
+    /// Darkens the panel while Incognito is on.
+    private let incognitoShade = UIView()
+    private let webSuggestions = BrowserMobileWebSuggestions()
+    /// What the accessories show now, to animate only what changes.
+    private var shownIncognito: Bool?
+    private var shownText: Bool?
     private let dictation = BrowserMobileDictation()
     /// The text before dictation started; what is heard goes after it.
     private var dictationPrefix = ""
 
+    private var hasText: Bool { field.text?.isEmpty == false }
+
     override init(frame: CGRect) {
         super.init(frame: frame)
         accessibilityIdentifier = "browser.searchPanel"
+        incognitoShade.backgroundColor = UIColor(white: 0, alpha: 0.57)
+        incognitoShade.alpha = 0
+        incognitoShade.isUserInteractionEnabled = false
+        addSubview(incognitoShade)
         fieldBackground.backgroundColor = UIColor(white: 1, alpha: 0.1)
         fieldBackground.layer.cornerRadius = Self.fieldHeight / 2
         fieldBackground.layer.cornerCurve = .continuous
@@ -156,7 +173,7 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
         field.smartQuotesType = .no
         field.smartDashesType = .no
         field.spellCheckingType = .no
-        field.clearButtonMode = .whileEditing
+        field.clearButtonMode = .never
         field.delegate = self
         field.addTarget(self, action: #selector(textChanged), for: .editingChanged)
         fieldBackground.addSubview(field)
@@ -181,7 +198,8 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
         incognitoNote.textAlignment = .center
         incognitoNote.accessibilityIdentifier = "browser.searchIncognitoNote"
         addSubview(incognitoNote)
-        updateAccessories()
+        updateAccessories(animated: false)
+        webSuggestions.onChange = { [weak self] in self?.refresh(complete: false, asks: false) }
         NotificationCenter.default.addObserver(
             self, selector: #selector(stopDictation), name: UIApplication.didEnterBackgroundNotification, object: nil,
         )
@@ -207,12 +225,20 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
         let eyesX = full.width - Self.eyesInset
         eyesButton.frame = CGRect(x: eyesX - 22, y: (frame.height - 44) / 2, width: 44, height: 44)
         micButton.frame = eyesButton.frame.offsetBy(dx: -Self.accessorySpacing, dy: 0)
+        clearButton.frame = eyesButton.frame
+        // The label hides under the eyes' left edge and slides out of it.
+        let clipEnd = eyesX - 12
+        incognitoClip.frame = CGRect(x: 0, y: 0, width: max(clipEnd, 0), height: frame.height)
         incognitoLabel.sizeToFit()
+        let labelSize = incognitoLabel.bounds.size
+        let labelShownX = clipEnd - 8 - labelSize.width
         incognitoLabel.frame = CGRect(
-            x: eyesX - 12 - 8 - incognitoLabel.bounds.width, y: (frame.height - incognitoLabel.bounds.height) / 2,
-            width: incognitoLabel.bounds.width, height: incognitoLabel.bounds.height,
+            x: isIncognito ? labelShownX : clipEnd, y: (frame.height - labelSize.height) / 2,
+            width: labelSize.width, height: labelSize.height,
         )
-        let fieldEnd = isIncognito ? incognitoLabel.frame.minX - 6 : micButton.frame.minX + 4
+        let fieldEnd = hasText
+            ? clearButton.frame.minX + 4
+            : isIncognito ? labelShownX - 6 : micButton.frame.minX + 4
         field.frame = CGRect(x: 24, y: 0, width: max(fieldEnd - 24, 0), height: frame.height)
         let glyphSide = BrowserMobilePhoneBarView.controlHeight
         plusGlyph.frame = CGRect(
@@ -222,6 +248,7 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
         let tableTop = frame.maxY + 6
         table.frame = CGRect(x: 0, y: tableTop, width: bounds.width, height: max(bounds.height - tableTop, 0))
         incognitoNote.frame = table.frame.insetBy(dx: Self.margin, dy: 0)
+        incognitoShade.frame = bounds
     }
 
     /// Lays the field out as the full-width field or as the New Tab capsule;
@@ -264,6 +291,7 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
     func prepare(text: String) {
         field.replaceText(text)
         refresh(complete: false)
+        updateAccessories(animated: false)
     }
 
     /// Stops dictation, leaving what was heard in the field.
@@ -328,16 +356,32 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
         incognitoLabel.font = .systemFont(ofSize: 13)
         incognitoLabel.textColor = UIColor(white: 1, alpha: 0.55)
         incognitoLabel.isAccessibilityElement = false
-        accessories.addSubview(incognitoLabel)
-        dictation.onListeningChange = { [weak self] _ in self?.updateAccessories() }
+        incognitoClip.clipsToBounds = true
+        incognitoClip.isUserInteractionEnabled = false
+        incognitoClip.addSubview(incognitoLabel)
+        accessories.addSubview(incognitoClip)
+        clearButton.setImage(UIImage(
+            systemName: "xmark.circle.fill",
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .regular),
+        ), for: .normal)
+        clearButton.tintColor = UIColor(white: 1, alpha: 0.75)
+        clearButton.accessibilityIdentifier = "browser.searchClear"
+        clearButton.accessibilityLabel = String(localized: "Clear text", table: "Mobile")
+        clearButton.addAction(UIAction { [weak self] _ in self?.clearText() }, for: .touchUpInside)
+        accessories.addSubview(clearButton)
+        dictation.onListeningChange = { [weak self] _ in self?.updateAccessories(animated: false) }
         dictation.onText = { [weak self] text in
             guard let self else { return }
             field.replaceText(dictationPrefix + text)
             refresh(complete: false)
+            updateAccessories(animated: true)
         }
     }
 
-    private func updateAccessories() {
+    /// Shows the microphone and the eyes, or the clear button once there is
+    /// text; with Incognito on, the eyes fill, the label slides out from under
+    /// them, the microphone goes and the panel darkens.
+    private func updateAccessories(animated: Bool) {
         let symbol = { (name: String) in
             UIImage(systemName: name, withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .regular))
         }
@@ -347,14 +391,80 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
         micButton.accessibilityLabel = listening
             ? String(localized: "Stop Dictation", table: "Mobile")
             : String(localized: "Dictate", table: "Mobile")
-        micButton.isHidden = isIncognito
-        eyesButton.setImage(symbol(isIncognito ? "eyes.inverse" : "eyes"), for: .normal)
-        eyesButton.tintColor = UIColor(white: 1, alpha: isIncognito ? 0.9 : 0.55)
         eyesButton.accessibilityTraits = isIncognito ? [.button, .selected] : .button
-        incognitoLabel.isHidden = !isIncognito
-        table.isHidden = isIncognito
-        incognitoNote.isHidden = !isIncognito
+        let incognito = isIncognito
+        let text = hasText
+        let incognitoChanged = shownIncognito != nil && shownIncognito != incognito
+        let textChanged = shownText != nil && shownText != text
+        let eyes = symbol(incognito ? "eyes" : "eyes.inverse")
+        if animated, incognitoChanged {
+            UIView.transition(
+                with: eyesButton,
+                duration: 0.12,
+                options: [.transitionCrossDissolve, .allowUserInteraction],
+            ) {
+                self.eyesButton.setImage(eyes, for: .normal)
+                self.eyesButton.tintColor = UIColor(white: 1, alpha: incognito ? 0.9 : 0.55)
+            }
+        } else {
+            eyesButton.setImage(eyes, for: .normal)
+            eyesButton.tintColor = UIColor(white: 1, alpha: incognito ? 0.9 : 0.55)
+        }
+        shownIncognito = incognito
+        shownText = text
+        let controls = {
+            self.micButton.alpha = incognito || text ? 0 : 1
+            self.eyesButton.alpha = text ? 0 : 1
+            self.incognitoClip.alpha = text ? 0 : 1
+            self.clearButton.alpha = text ? 1 : 0
+        }
+        let mood = {
+            self.incognitoShade.alpha = incognito ? 1 : 0
+            self.fieldBackground.backgroundColor = UIColor(white: 1, alpha: incognito ? 0.13 : 0.1)
+            self.table.alpha = incognito ? 0 : 1
+            self.incognitoNote.alpha = incognito ? 1 : 0
+        }
+        micButton.isUserInteractionEnabled = !incognito && !text
+        eyesButton.isUserInteractionEnabled = !text
+        clearButton.isUserInteractionEnabled = text
+        table.isUserInteractionEnabled = !incognito
+        incognitoNote.isHidden = false
         setNeedsLayout()
+        guard animated, incognitoChanged || textChanged else {
+            controls()
+            mood()
+            layoutIfNeeded()
+            return
+        }
+        let options: UIView.AnimationOptions = [.beginFromCurrentState, .allowUserInteraction]
+        if incognitoChanged, incognito {
+            // The microphone goes at once while the label slides out and the
+            // panel darkens.
+            UIView.animate(withDuration: 0.1, delay: 0, options: options.union(.curveLinear), animations: controls)
+            UIView.animate(springDuration: 0.35, bounce: 0, initialSpringVelocity: 0, delay: 0, options: options) {
+                self.layoutIfNeeded()
+            }
+            UIView.animate(withDuration: 0.2, delay: 0, options: options.union(.curveEaseOut), animations: mood)
+        } else if incognitoChanged {
+            // The label slides back under the eyes before the microphone returns.
+            UIView.animate(withDuration: 0.2, delay: 0, options: options.union(.curveEaseInOut)) {
+                self.layoutIfNeeded()
+            }
+            UIView.animate(withDuration: 0.1, delay: 0.18, options: options.union(.curveLinear), animations: controls)
+            UIView.animate(withDuration: 0.22, delay: 0, options: options.union(.curveEaseOut), animations: mood)
+        } else {
+            UIView.animate(withDuration: 0.15, delay: 0, options: options.union(.curveEaseOut)) {
+                controls()
+                self.layoutIfNeeded()
+            }
+        }
+    }
+
+    private func clearText() {
+        dictation.stop()
+        field.replaceText("")
+        refresh(complete: false)
+        updateAccessories(animated: true)
     }
 
     private func toggleDictation() {
@@ -375,13 +485,22 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
 
     @objc private func textChanged() {
         refresh(complete: !field.lastEditDeleted)
+        updateAccessories(animated: true)
     }
 
     /// Lists suggestions for the typed text; while typing forward it also fills
     /// in the rest of a known host, which the next keystroke replaces.
-    private func refresh(complete: Bool) {
+    private func refresh(complete: Bool, asks: Bool = true) {
         let typed = field.typedText
-        suggestions = BrowserMobileSearchSuggestions(query: typed, candidates: candidates)
+        // Private browsing and other search engines send nothing out.
+        let asksWeb = !isIncognito && BrowserMobileSearchEngineSetting.current() == .google
+        if asks { webSuggestions.request(asksWeb ? typed : nil) }
+        suggestions = BrowserMobileSearchSuggestions(
+            query: typed, candidates: candidates,
+            searches: asksWeb
+                ? webSuggestions.suggestions(for: typed.trimmingCharacters(in: .whitespacesAndNewlines))
+                : [],
+        )
         table.reloadData()
         guard complete, field.markedTextRange == nil, let completion = suggestions.completion,
               completion.hasPrefix(typed.lowercased()), !typed.isEmpty else { return }

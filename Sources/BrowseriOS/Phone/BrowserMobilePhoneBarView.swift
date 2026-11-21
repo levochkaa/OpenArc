@@ -241,6 +241,9 @@ final class BrowserMobileTabStackButton: UIControl {
 
     let front = BrowserMobileTabStackButton.card()
     let back = BrowserMobileTabStackButton.card()
+    /// Shares of the pictures' width to leave out at each side: the page's
+    /// side insets, such as the strip beside the camera on iPhone Duo.
+    var sideCrop: (left: CGFloat, right: CGFloat) = (0, 0)
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -278,22 +281,25 @@ final class BrowserMobileTabStackButton: UIControl {
         return view
     }
 
-    private static func fill(_ view: UIImageView, _ image: UIImage?) {
+    func setImages(front frontImage: UIImage?, back backImage: UIImage?) {
+        fill(front, frontImage)
+        fill(back, backImage)
+        applyCardColors()
+    }
+
+    private func fill(_ view: UIImageView, _ image: UIImage?) {
         view.image = image
         // Keep the page's top in view; the bottom is cut off.
         if let image, image.size.width > 0 {
-            let visibleHeight = image.size.width * cardSize.height / cardSize.width
-            view.layer.contentsRect = CGRect(x: 0, y: 0, width: 1, height: min(1, visibleHeight / image.size.height))
+            let share = max(1 - sideCrop.left - sideCrop.right, 0.1)
+            let visibleHeight = image.size.width * share * Self.cardSize.height / Self.cardSize.width
+            view.layer.contentsRect = CGRect(
+                x: sideCrop.left, y: 0, width: share, height: min(1, visibleHeight / image.size.height),
+            )
             view.contentMode = .scaleToFill
         } else {
             view.layer.contentsRect = CGRect(x: 0, y: 0, width: 1, height: 1)
         }
-    }
-
-    func setImages(front frontImage: UIImage?, back backImage: UIImage?) {
-        Self.fill(front, frontImage)
-        Self.fill(back, backImage)
-        applyCardColors()
     }
 
     private func applyCardColors() {
