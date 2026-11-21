@@ -83,6 +83,8 @@ final class BrowserMobilePhoneSettingsViewController: UITableViewController {
     var showDownloads: (() -> Void)?
     var showArchive: (() -> Void)?
     var didRestoreFromArchive: (() -> Void)?
+    /// A link from Settings opened in a new tab, which is now the selected one.
+    var didOpenTab: (() -> Void)?
     var defaults = UserDefaults.standard
     var websiteDataStore = WKWebsiteDataStore.default()
 
@@ -274,7 +276,11 @@ final class BrowserMobilePhoneSettingsViewController: UITableViewController {
         controller.openURL = { [weak self] url in
             guard let self else { return }
             let workspace = workspace
-            dismiss(animated: true) { workspace.openLinkInNewTab(url, inBackground: false) }
+            let opened = didOpenTab
+            dismiss(animated: true) {
+                workspace.openLinkInNewTab(url, inBackground: false)
+                opened?()
+            }
         }
         navigationController?.pushViewController(controller, animated: animated)
     }

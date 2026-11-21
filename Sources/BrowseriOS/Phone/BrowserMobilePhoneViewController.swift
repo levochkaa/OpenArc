@@ -1743,6 +1743,8 @@ final class BrowserMobilePhoneViewController: UIViewController {
             refreshSwitcherEntries()
             closeSwitcher(opening: id)
         }
+        // A store link opens its tab over the switcher Settings came from.
+        controller.didOpenTab = controller.didRestoreFromArchive
         let navigation = UINavigationController(rootViewController: controller)
         navigation.overrideUserInterfaceStyle = .dark
         navigation.sheetPresentationController?.preferredCornerRadius = 36
