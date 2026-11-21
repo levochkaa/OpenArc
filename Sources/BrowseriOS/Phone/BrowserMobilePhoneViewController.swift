@@ -526,7 +526,11 @@ final class BrowserMobilePhoneViewController: UIViewController {
             band.backgroundColor = sideColor
         }
         let dark: Bool
-        if let color = state?.themeColor ?? state?.backgroundColor {
+        if let id = workspace.selectedTabID, isCoveredByPicture(id), let pictureDark = isPictureTopDark(id) {
+            // A page still loading under its picture reports WebKit's empty
+            // background, black in dark mode; the picture is what shows.
+            dark = pictureDark
+        } else if let color = state?.themeColor ?? state?.backgroundColor {
             statusBand.backgroundColor = color
             dark = BrowserMobileBackdrop.luminance(of: color).map(BrowserMobileBackdrop.isDark) ?? false
         } else {
@@ -537,6 +541,12 @@ final class BrowserMobilePhoneViewController: UIViewController {
         guard dark != isStatusBandDark else { return }
         isStatusBandDark = dark
         setNeedsStatusBarAppearanceUpdate()
+    }
+
+    /// Whether a tab's last picture stands in for its page, which may not
+    /// have drawn yet: while a swipe lands on it, or as its loading cover.
+    private func isCoveredByPicture(_ tabID: String) -> Bool {
+        loadingCover?.tabID == tabID || swipe.map { $0.isSettling && $0.toID == tabID } == true
     }
 
     /// Whether the top of the page in a tab's last picture, just below the
@@ -560,7 +570,9 @@ final class BrowserMobilePhoneViewController: UIViewController {
     /// its page shows, so the color changes along with a switch instead of
     /// after it.
     private func matchBackdrop(toPictureOf tabID: String) {
-        if let tab = workspace.tabs.first(where: { $0.id == tabID }), let dark = Self.isDark(tab.state) {
+        if !isCoveredByPicture(tabID), let tab = workspace.tabs.first(where: { $0.id == tabID }),
+           let dark = Self.isDark(tab.state)
+        {
             setBackdropDark(dark)
             return
         }
@@ -1803,11 +1815,12 @@ final class BrowserMobilePhoneViewController: UIViewController {
         isAnimatingSwitcher = false
         mode = .browsing
         bar.setShowsSwitcherControls(false)
-        setNeedsStatusBarAppearanceUpdate()
-        render()
+        // The picture covers the page before the page's colors are read.
         if let id, let picture {
             coverWhileLoading(id, with: picture)
         }
+        setNeedsStatusBarAppearanceUpdate()
+        render()
     }
 
     private func closeSwitcherInstantly() {
@@ -2275,6 +2288,7 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
                 gesture.state == .ended && swipe.toID != nil
                     && -translation.y > 40 && velocity.y < 300
             }
+        swipe.isSettling = true
         if completes, let toID = swipe.toID {
             // A swipe moves along the row without reordering it.
             if swipe.kind == .sideways {
@@ -2285,7 +2299,6 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
             matchBackdrop(toPictureOf: toID)
             updateStatusBand()
         }
-        swipe.isSettling = true
         UIView.animate(withDuration: 0.2) { self.setNeedsStatusBarAppearanceUpdate() }
         UIView.animate(
             springDuration: swipe.kind == .sideways ? 0.32 : 0.3,
@@ -2305,13 +2318,14 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
             swipe.outgoingCard.removeFromSuperview()
             swipe.backdrop.removeFromSuperview()
             self.pageContainer.isHidden = false
-            if self.swipe === swipe { self.swipe = nil }
-            self.render()
+            // The picture keeps covering the page before the swipe lets go of it.
             if completes, let toID = swipe.toID {
                 self.coverWhileLoading(toID, with: swipe.incomingCard)
             } else {
                 swipe.incomingCard.removeFromSuperview()
             }
+            if self.swipe === swipe { self.swipe = nil }
+            self.render()
         }
     }
 
@@ -2338,6 +2352,7 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
     private func removeLoadingCover(animated: Bool = true) {
         guard let cover = loadingCover?.view else { return }
         loadingCover = nil
+        updateStatusBand()
         guard animated else {
             cover.removeFromSuperview()
             return
