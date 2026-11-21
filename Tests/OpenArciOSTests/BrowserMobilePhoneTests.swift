@@ -69,6 +69,16 @@ import UIKit
     #expect(url?.query()?.contains("q=a%20b%26c%2Bd") == true)
 }
 
+@Test func mobileRemovedSuggestionsStayOutOnce() throws {
+    let defaults = try #require(UserDefaults(suiteName: "mobileRemovedSuggestions-\(UUID().uuidString)"))
+    #expect(BrowserMobileRemovedSuggestions.pages(in: defaults).isEmpty)
+    BrowserMobileRemovedSuggestions.remove("https://example.com/", in: defaults)
+    BrowserMobileRemovedSuggestions.remove("https://example.com/", in: defaults)
+    BrowserMobileRemovedSuggestions.remove("https://apple.com/", in: defaults)
+    #expect(BrowserMobileRemovedSuggestions.pages(in: defaults) == ["https://example.com/", "https://apple.com/"])
+    #expect(defaults.stringArray(forKey: "BrowserMobileRemovedSuggestions")?.count == 2)
+}
+
 // MARK: - Bar backdrop
 
 @MainActor @Test func mobileCompletingFieldReplacesOrKeepsTheFilledInPart() {

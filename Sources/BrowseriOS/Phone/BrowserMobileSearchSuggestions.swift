@@ -2,6 +2,8 @@
 
 import Foundation
 
+// MARK: - BrowserMobileSearchSuggestions
+
 /// What the search panel lists for a query: the site the query completes to,
 /// a web search, open and pinned tabs that match, then the search engine's
 /// suggestions.
@@ -116,5 +118,24 @@ struct BrowserMobileSearchSuggestions: Equatable {
 
     private static func pageURL(_ query: String) -> String {
         query.contains("://") ? query : "https://" + query
+    }
+}
+
+// MARK: - BrowserMobileRemovedSuggestions
+
+/// Pages taken out of the search suggestions from a row's menu; they stay
+/// out, inline completion included.
+enum BrowserMobileRemovedSuggestions {
+    private static let key = "BrowserMobileRemovedSuggestions"
+    private static let limit = 500
+
+    static func pages(in defaults: UserDefaults = .standard) -> Set<String> {
+        Set(defaults.stringArray(forKey: key) ?? [])
+    }
+
+    static func remove(_ page: String, in defaults: UserDefaults = .standard) {
+        var pages = (defaults.stringArray(forKey: key) ?? []).filter { $0 != page }
+        pages.append(page)
+        defaults.set(Array(pages.suffix(limit)), forKey: key)
     }
 }

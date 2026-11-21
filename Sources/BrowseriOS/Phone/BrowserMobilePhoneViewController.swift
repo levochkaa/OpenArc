@@ -1200,6 +1200,11 @@ final class BrowserMobilePhoneViewController: UIViewController {
         searchPanel.candidates = searchCandidates()
         searchPanel.onSubmit = { [weak self] text in self?.submitSearch(text) }
         searchPanel.onSelect = { [weak self] item in self?.selectSuggestion(item) }
+        searchPanel.onRemove = { [weak self] item in
+            guard let self, let page = item.iconPage else { return }
+            BrowserMobileRemovedSuggestions.remove(page)
+            searchPanel.candidates = searchCandidates()
+        }
         // Editing a private tab's address stays private.
         searchPanel.isIncognito = workspace.isIncognito || (replacesPage && workspace.selectedTab?.isPrivate == true)
         searchPanel.onIncognitoChange = { [weak self] isOn in self?.workspace.isIncognito = isOn }
@@ -1301,7 +1306,8 @@ final class BrowserMobilePhoneViewController: UIViewController {
                 location: location(of: tab),
             ))
         }
-        return result.filter { $0.urlString != "about:blank" }
+        let removed = BrowserMobileRemovedSuggestions.pages()
+        return result.filter { $0.urlString != "about:blank" && !removed.contains($0.urlString) }
     }
 
     private func location(of tab: BrowserMobileTab) -> String? {
@@ -1882,8 +1888,9 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
     func gestureRecognizer(
         _ gesture: UIGestureRecognizer, shouldBeRequiredToFailBy other: UIGestureRecognizer,
     ) -> Bool {
-        // The suggestions scroll only when a drag does not move the panel.
-        gesture === surfacePan && other.view is UIScrollView
+        // The suggestions scroll only when a drag does not move the panel;
+        // their other gestures, such as a row's menu, do not wait for it.
+        gesture === surfacePan && other === (other.view as? UIScrollView)?.panGestureRecognizer
     }
 
     private func configureBarSwipe() {

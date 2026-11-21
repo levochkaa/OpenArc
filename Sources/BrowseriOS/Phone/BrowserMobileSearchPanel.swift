@@ -7,7 +7,9 @@ import UIKit
 /// bar's New Tab capsule and widens once the panel is up. At the field's end,
 /// the microphone dictates into it and the eyes turn Incognito on; once
 /// there is text, a clear button takes their place.
-final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDataSource, UITableViewDelegate {
+final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDataSource, UITableViewDelegate,
+    UIGestureRecognizerDelegate
+{
     // MARK: Private
 
     private final class Cell: UITableViewCell {
@@ -56,9 +58,23 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
             }
         }
 
-        func show(_ item: BrowserMobileSearchSuggestions.Item) {
+        /// A suggested search that goes on from the typed text shows that
+        /// text dimmed.
+        func show(_ item: BrowserMobileSearchSuggestions.Item, typed: String) {
             self.item = item
-            title.text = item.title
+            if case .search = item.kind, !typed.isEmpty, item.title.count > typed.count,
+               item.title.lowercased().hasPrefix(typed.lowercased())
+            {
+                let text = NSMutableAttributedString(string: item.title)
+                let end = item.title.index(item.title.startIndex, offsetBy: typed.count)
+                text.addAttribute(
+                    .foregroundColor, value: UIColor(white: 1, alpha: 0.5),
+                    range: NSRange(item.title.startIndex..<end, in: item.title),
+                )
+                title.attributedText = text
+            } else {
+                title.text = item.title
+            }
             subtitle.text = item.subtitle
             subtitle.isHidden = item.subtitle == nil
             accessibilityLabel = [item.title, item.subtitle].compactMap(\.self).joined(separator: ", ")
@@ -99,6 +115,8 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
 
     var onSubmit: ((String) -> Void)?
     var onSelect: ((BrowserMobileSearchSuggestions.Item) -> Void)?
+    /// A tab's row was asked to leave the suggestions.
+    var onRemove: ((BrowserMobileSearchSuggestions.Item) -> Void)?
     /// The eyes were tapped; the new value is already shown.
     var onIncognitoChange: ((Bool) -> Void)?
 
@@ -120,6 +138,7 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
         systemName: "plus", withConfiguration: UIImage.SymbolConfiguration(pointSize: 20, weight: .semibold),
     ))
     private let table = UITableView(frame: .zero, style: .plain)
+    private let holdGesture = UILongPressGestureRecognizer()
     private var suggestions = BrowserMobileSearchSuggestions(query: "", candidates: [])
     /// The microphone and the eyes, which fade in with the field.
     private let accessories = UIView()
@@ -196,6 +215,10 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
         table.register(Cell.self, forCellReuseIdentifier: "Suggestion")
         table.accessibilityIdentifier = "browser.searchSuggestions"
         addSubview(table)
+        // Holding a suggested search puts it in the field to go on typing.
+        holdGesture.addTarget(self, action: #selector(heldSuggestion(_:)))
+        holdGesture.delegate = self
+        table.addGestureRecognizer(holdGesture)
         incognitoNote.text = String(localized: "You’re browsing Incognito", table: "Mobile")
         incognitoNote.font = .systemFont(ofSize: 20, weight: .medium)
         incognitoNote.textColor = UIColor(white: 1, alpha: 0.5)
@@ -253,6 +276,12 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
         table.frame = CGRect(x: 0, y: tableTop, width: bounds.width, height: max(bounds.height - tableTop, 0))
         incognitoNote.frame = table.frame.insetBy(dx: Self.margin, dy: 0)
         incognitoShade.frame = bounds
+    }
+
+    override func gestureRecognizerShouldBegin(_ gesture: UIGestureRecognizer) -> Bool {
+        // Only on a suggested search, so the tabs' rows keep their menu.
+        guard gesture === holdGesture else { return super.gestureRecognizerShouldBegin(gesture) }
+        return fillableSearch(at: gesture.location(in: table)) != nil
     }
 
     /// Lays the field out as the full-width field or as the New Tab capsule;
@@ -329,13 +358,36 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
 
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "Suggestion", for: indexPath) as! Cell
-        cell.show(suggestions.items[indexPath.row])
+        cell.show(
+            suggestions.items[indexPath.row], typed: field.typedText.trimmingCharacters(in: .whitespacesAndNewlines),
+        )
         return cell
     }
 
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: false)
         onSelect?(suggestions.items[indexPath.row])
+    }
+
+    func tableView(
+        _: UITableView, contextMenuConfigurationForRowAt indexPath: IndexPath, point _: CGPoint,
+    ) -> UIContextMenuConfiguration? {
+        guard suggestions.items.indices.contains(indexPath.row) else { return nil }
+        let item = suggestions.items[indexPath.row]
+        guard case .tab = item.kind else { return nil }
+        return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { [weak self] _ in
+            UIMenu(title: item.iconPage ?? "", children: [
+                UIAction(
+                    title: String(localized: "Remove Suggestion", table: "Mobile"), image: UIImage(systemName: "trash"),
+                ) { _ in
+                    self?.onRemove?(item)
+                },
+            ])
+        }
+    }
+
+    func gestureRecognizer(_: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith _: UIGestureRecognizer) -> Bool {
+        true
     }
 
     func reloadIcons() {
@@ -462,6 +514,24 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
                 self.layoutIfNeeded()
             }
         }
+    }
+
+    /// The suggested search, other than the typed text, in the row at `point`.
+    private func fillableSearch(at point: CGPoint) -> String? {
+        guard let indexPath = table.indexPathForRow(at: point), suggestions.items.indices.contains(indexPath.row),
+              case .search(let text) = suggestions.items[indexPath.row].kind,
+              text != field.typedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        else { return nil }
+        return text
+    }
+
+    @objc private func heldSuggestion(_ gesture: UILongPressGestureRecognizer) {
+        guard gesture.state == .began, let text = fillableSearch(at: gesture.location(in: table)) else { return }
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        dictation.stop()
+        field.replaceText(text)
+        refresh(complete: false)
+        updateAccessories(animated: true)
     }
 
     private func clearText() {
