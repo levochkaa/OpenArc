@@ -35,6 +35,21 @@
         "enabled": true,
         "value": 0.2
       }
+    },
+    {
+      "name": "Outline",
+      "layers": [
+        {
+          "image-name": "outline.svg",
+          "name": "outline"
+        }
+      ],
+      "lighting": "combined",
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.35
+      },
+      "specular": false
     }
   ],
   "supported-platforms": {

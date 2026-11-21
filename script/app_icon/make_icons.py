@@ -29,9 +29,10 @@ CANVAS, BODY, MARGIN, RADIUS = 1024, 824, 100, 185
 MARK_WIDTH = 680
 # A sticker's outline takes room, so its mark is drawn wider.
 STICKER_WIDTH = 700
-# The iOS icon's mark, without the sticker outline, inside the system's
-# rounded square.
-IOS_MARK_WIDTH = 780
+# The iOS icon's mark inside the system's rounded square, and the width of
+# the white sticker outline around it, in the mark's own units.
+IOS_MARK_WIDTH = 640
+IOS_OUTLINE = 100
 
 
 def mark_transform(width=MARK_WIDTH):
@@ -211,11 +212,23 @@ def ios_layer(name, path, stops, x1, y1, x2, y2):
     )
 
 
+def ios_outline():
+    """Both shapes of the mark grown by a white sticker outline, which also
+    fills the gap between them."""
+    line = f'fill="#FFFFFF" stroke="#FFFFFF" stroke-width="{IOS_OUTLINE}" stroke-linejoin="round"'
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{CANVAS}" height="{CANVAS}" '
+        f'viewBox="0 0 {CANVAS} {CANVAS}"><g transform="{mark_transform(IOS_MARK_WIDTH)}">'
+        f'<path d="{mark.leg()}" {line}/><path d="{mark.arch()}" {line}/></g></svg>\n'
+    )
+
+
 def ios_icon():
     """The iOS icon in Icon Composer's format: the arch and the leg as glass
-    layers over a pale fill, so the system draws the dark, tinted and clear
-    looks from them."""
+    layers on a white sticker outline over a pale fill, so the system draws
+    the dark, tinted and clear looks from them."""
     layers = {
+        "outline.svg": ios_outline(),
         "arch.svg": ios_layer("arch", mark.arch(), [(0, "#FF8A98"), (0.55, "#F2475F"), (1, "#C92A47")], 0.1, 0, 0.9, 1),
         "leg.svg": ios_layer("leg", mark.leg(), [(0, "#5B6CFF"), (1, "#1B26A8")], 0.2, 0, 0.6, 1),
     }
@@ -235,7 +248,14 @@ def ios_icon():
                 "shadow": {"kind": "layer-color", "opacity": 0.5},
                 "specular": True,
                 "translucency": {"enabled": True, "value": 0.2},
-            }
+            },
+            {
+                "name": "Outline",
+                "layers": [{"image-name": "outline.svg", "name": "outline"}],
+                "lighting": "combined",
+                "shadow": {"kind": "neutral", "opacity": 0.35},
+                "specular": False,
+            },
         ],
         "supported-platforms": {"squares": "shared"},
     }
