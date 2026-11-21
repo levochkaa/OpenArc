@@ -169,8 +169,14 @@ final class BrowserMobilePhoneBarView: UIView {
     /// inside an animation to crossfade them.
     func setShowsSwitcherControls(_ shows: Bool, showsMaterial: Bool? = nil) {
         showsSwitcherControls = shows
-        // Over the switcher the bar has no material of its own.
-        background.showsMaterial = showsMaterial ?? !shows
+        // Over the switcher the bar has no material of its own. It goes at
+        // once: a blur fading out lags well behind the controls' crossfade.
+        let material = showsMaterial ?? !shows
+        if material {
+            background.showsMaterial = true
+        } else {
+            UIView.performWithoutAnimation { background.showsMaterial = false }
+        }
         for (view, visible) in [
             (tabStack, !shows), (moreButton, !shows), (spacesButton, shows), (settingsButton, shows),
         ] as [(UIView, Bool)] {
