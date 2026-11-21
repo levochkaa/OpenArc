@@ -34,7 +34,8 @@ engine from launch to quit, so the switch takes effect after a relaunch, which t
 - **`openarc://` addresses** open on both engines the same way. The tab controller loads Chromium's own page
   for one of Chromium's (`openarc://extensions/` loads `chrome://extensions/`; settings, history, bookmarks and
   passwords too) and shows the page's `chrome://` address as `openarc://`, through
-  `BrowserChromeEngineInternalURLs`, as CEF does in `OnBeforeBrowse`. `openarc://credits` is the engine's own
+  `BrowserChromeEngineInternalURLs`, as CEF does in `OnBeforeBrowse`. An address Chrome has no page for
+  (`openarc://nothing`) loads nothing, as CEF blocks it; the tab keeps its page. `openarc://credits` is the engine's own
   `chrome://credits`. The rest (an Easel's or a note's empty page) the layer serves itself: Chrome registers
   `openarc` as a standard, secure, CORS-enabled scheme, as CEF does, and `openarc/scheme.mm` loads its pages with
   the HTML of `BrowserChromeEngineSchemePage`, the same HTML CEF's scheme handler serves. A shared page's Add to

@@ -52,6 +52,7 @@
 #include "components/viz/common/frame_sinks/copy_output_result.h"
 #include "components/zoom/zoom_controller.h"
 #include "content/public/browser/browser_context.h"
+#include "content/public/browser/browser_url_handler.h"
 #include "content/public/browser/download_item_utils.h"
 #include "content/public/browser/download_manager.h"
 #include "content/public/browser/media_player_id.h"
@@ -67,7 +68,10 @@
 #include "content/public/browser/ssl_status.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
+#include "content/public/browser/webui_config.h"
+#include "content/public/browser/webui_config_map.h"
 #include "content/public/common/isolated_world_ids.h"
+#include "content/public/common/url_constants.h"
 #include "net/cert/x509_certificate.h"
 #include "net/cert/x509_util.h"
 #include "third_party/blink/public/common/input/web_input_event.h"
@@ -670,6 +674,22 @@ NSString* TextOfValue(const base::Value& value) {
 
 namespace openarc {
 
+// A chrome:// address Chrome has a page for, after Chrome's own rewrites (chrome://newtab, chrome://about); any
+// other address too. The tab controller loads chrome:// for an openarc:// address, and CEF blocks one it has no
+// page for, which leaves the tab's page as it is.
+bool HasChromePage(content::BrowserContext* context, const GURL& url) {
+  if (!url.SchemeIs(content::kChromeUIScheme)) {
+    return true;
+  }
+  GURL rewritten = url;
+  content::BrowserURLHandler::GetInstance()->RewriteURLIfNecessary(&rewritten, context);
+  if (!rewritten.SchemeIs(content::kChromeUIScheme)) {
+    return true;
+  }
+  content::WebUIConfig* config = content::WebUIConfigMap::GetInstance().GetConfig(context, rewritten);
+  return config && config->IsWebUIEnabled(context);
+}
+
 void StartPages() {
   g_key_event = &KeyEvent;
   g_page_fullscreen = &PageFullscreen;
@@ -701,8 +721,12 @@ void CancelDownload(NSString* downloadID) {
   NSString* _profilePath;
   BOOL _ephemeral;
   NSString* _pendingURL;
+  // The address the page starts on (about:blank for a tab's page), until the app loads its own.
+  NSString* _startURL;
   NSString* _currentURL;
   NSString* _title;
+  // The page shows something: the app loaded an address in it, or Chrome made it for a page that opened it.
+  BOOL _hasPage;
   BOOL _isLoading;
   BOOL _canGoBack;
   BOOL _canGoForward;
@@ -739,6 +763,7 @@ void CancelDownload(NSString* downloadID) {
     return self;  // Contents arrive through -adoptContents: (a page's popup).
   }
   _pendingURL = [urlString copy];
+  _startURL = _pendingURL;
   if (g_quitting || !g_browser_process || !g_browser_process->profile_manager()) {
     return self;
   }
@@ -782,11 +807,17 @@ void CancelDownload(NSString* downloadID) {
   NSString* url = _pendingURL;
   _pendingURL = nil;
   if (url.length) {
+    const BOOL hadPage = _hasPage;
     [self loadWithUrlString:url];
+    // The blank page a tab's page starts on is no page of its own.
+    if (url == _startURL) {
+      _hasPage = hadPage;
+    }
   }
 }
 
 - (void)adoptContents:(content::WebContents*)contents {
+  _hasPage = YES;
   [self contentsCreated:contents];
   [self pageTitleChanged];
 }
@@ -828,6 +859,11 @@ void CancelDownload(NSString* downloadID) {
 
 - (void)pageTitleChanged {
   if (!_contents) {
+    return;
+  }
+  // The blank page a page starts on, and stays on when the first address loads nothing, has no title: Chrome's
+  // would be "about:blank", and the tab keeps its own, as on CEF.
+  if (!_hasPage) {
     return;
   }
   NSString* title = base::SysUTF16ToNSString(_contents->GetTitle());
@@ -1025,9 +1061,10 @@ void CancelDownload(NSString* downloadID) {
     return;
   }
   GURL url(UTF8(urlString));
-  if (!url.is_valid()) {
+  if (!url.is_valid() || !openarc::HasChromePage(_contents->GetBrowserContext(), url)) {
     return;
   }
+  _hasPage = YES;
   content::NavigationController::LoadURLParams params(url);
   params.transition_type = ui::PageTransitionFromInt(ui::PAGE_TRANSITION_TYPED | ui::PAGE_TRANSITION_FROM_ADDRESS_BAR);
   _contents->GetController().LoadURLWithParams(params);
