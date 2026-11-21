@@ -118,6 +118,11 @@ import WebKit
     // MARK: Internal
 
     /// Reader Mode and translation run here, out of the page's sight.
+    /// WebKit's `_WKNavigationActionPolicyAllowWithoutTryingAppLink`: loads
+    /// in the tab without first offering the URL to an app that claims it.
+    static let allowWithoutTryingAppLink = WKNavigationActionPolicy(
+        rawValue: WKNavigationActionPolicy.allow.rawValue + 2,
+    ) ?? .allow
     static let pageToolsWorld = WKContentWorld.world(name: "OpenArcPageTools")
     static let pageToolsMessageName = "openArcPageTools"
 
@@ -1240,21 +1245,16 @@ extension BrowserWebKitEngine: WKNavigationDelegate {
             cancelJavaScriptDialog(runtimeID: record.id)
             cancelHTTPAuthentication(runtimeID: record.id)
         }
-        // A tapped link to another site opens in the app that claims it, if
-        // one does; the tab follows the link only when none does.
-        if !record.isPrivate, BrowserMobileAppLinksSetting.opensInApps(),
-           let url = navigationAction.request.url,
-           BrowserMobileAppLinksSetting.mayOpenInApp(
-               url, from: webView.url, isLinkTap: navigationAction.navigationType == .linkActivated,
-               isMainFrame: navigationAction.targetFrame?.isMainFrame != false,
-           )
-        {
-            UIApplication.shared.open(url, options: [.universalLinksOnly: true]) { opened in
-                decisionHandler(opened ? .cancel : .allow)
-            }
-            return
-        }
-        decisionHandler(.allow)
+        // On a plain allow, WebKit hands a main-frame navigation to another
+        // site to the app that claims it. Only a tapped link may leave that
+        // way, and never from Incognito or with the setting off.
+        let mayOpenApp = !record.isPrivate && BrowserMobileAppLinksSetting.opensInApps()
+            && BrowserMobileAppLinksSetting.mayOpenInApp(
+                navigationAction.request.url, from: webView.url,
+                isLinkTap: navigationAction.navigationType == .linkActivated,
+                isMainFrame: navigationAction.targetFrame?.isMainFrame != false,
+            )
+        decisionHandler(mayOpenApp ? .allow : Self.allowWithoutTryingAppLink)
     }
 
     func webView(
