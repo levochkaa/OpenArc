@@ -787,7 +787,11 @@ final class BrowserMobilePhoneViewController: UIViewController {
     /// Puts a surface over the bar with the bar's frame and color, holding
     /// `content` laid out at `height`. Content that shows from the start
     /// (`revealsContent`) is not faded in.
-    private func makeSurface(height: CGFloat, dark: Bool, content: UIView, revealsContent: Bool) -> UIView? {
+    /// `followsFinger`: the panel comes up under a finger, which fades the
+    /// tab stack and the page menu button as it goes.
+    private func makeSurface(
+        height: CGFloat, dark: Bool, content: UIView, revealsContent: Bool, followsFinger: Bool = false,
+    ) -> UIView? {
         guard surface == nil else { return nil }
         setBarCollapsed(false, animated: false)
         layoutBar()
@@ -864,9 +868,11 @@ final class BrowserMobilePhoneViewController: UIViewController {
             sideControls.forEach { $0.alpha = 0 }
             self.bar.plusButton.alpha = 0
         }
-        let ghosts = surfaceGhosts
-        UIView.animate(withDuration: 0.2, delay: 0, options: [.beginFromCurrentState, .curveEaseOut]) {
-            ghosts.forEach { $0.alpha = 0 }
+        if !followsFinger {
+            let ghosts = surfaceGhosts
+            UIView.animate(withDuration: 0.2, delay: 0, options: [.beginFromCurrentState, .curveEaseOut]) {
+                ghosts.forEach { $0.alpha = 0 }
+            }
         }
         return surface
     }
@@ -1180,7 +1186,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
 
     /// Puts the search panel over the bar, its field still the New Tab
     /// capsule; `finishOpeningSearch` raises it.
-    private func beginSearch(text: String, replacesPage: Bool) -> Bool {
+    private func beginSearch(text: String, replacesPage: Bool, followsFinger: Bool = false) -> Bool {
         guard workspace.isReady else { return false }
         let overSwitcher = mode == .switcher && switcher != nil && !isAnimatingSwitcher
         if mode == .switcher, !overSwitcher {
@@ -1201,6 +1207,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
         let top = searchPanelTop(keyboardTop: keyboardTop ?? view.bounds.height * 0.655)
         guard let surface = makeSurface(
             height: view.bounds.height - top, dark: true, content: searchPanel, revealsContent: true,
+            followsFinger: followsFinger,
         ) else {
             mode = overSwitcher ? .switcher : .browsing
             searchOverSwitcher = false
@@ -1227,6 +1234,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
             surface.layer.cornerRadius = 36
             self.setSurfaceTint(0)
             self.searchPanel.setFieldExpanded(true)
+            self.surfaceGhosts.forEach { $0.alpha = 0 }
         }
         UIView.animate(springDuration: 0.42, bounce: 0.1, initialSpringVelocity: 0, delay: 0, options: [
             .allowUserInteraction, .beginFromCurrentState,
@@ -1894,7 +1902,7 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
                       !bar.isCollapsed
             {
                 beginTabSwipe(.up, toPrevious: true)
-            } else if beginSearch(text: "", replacesPage: false), let surface {
+            } else if beginSearch(text: "", replacesPage: false, followsFinger: true), let surface {
                 surfaceDragStartTop = surface.frame.minY
             }
         case .changed:
@@ -1934,6 +1942,11 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
         setSurfaceTint(1 - min(progress * 2, 1))
         // The page recedes into its card as the panel comes up.
         applyPageCard(interpolate(view.bounds, searchCardFrame(), progress))
+        // The page menu button goes within the first points, the tab stack
+        // over a longer way.
+        for (ghost, fadeDistance) in zip(surfaceGhosts, [CGFloat(100), 20]) {
+            ghost.alpha = 1 - min(travel / fadeDistance, 1)
+        }
     }
 
     private func addSurfacePan(to surface: UIView) {
