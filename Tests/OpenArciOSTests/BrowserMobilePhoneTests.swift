@@ -413,3 +413,14 @@ import UIKit
     reload.sendActions(for: .touchUpInside)
     #expect(reloads == 1)
 }
+
+@MainActor @Test func mobileLoadErrorCentersOnTheScreenBesideACameraColumn() throws {
+    let view = BrowserMobileLoadErrorView(frame: CGRect(x: 0, y: 0, width: 466, height: 678))
+    view.contentInsets = UIEdgeInsets(top: 0, left: 0, bottom: 76, right: 84)
+    view.setMessage("A server with the specified hostname could not be found.")
+    view.layoutIfNeeded()
+    let face = try #require(view.subviews.first)
+    let message = try #require(view.subviews.compactMap { $0 as? UILabel }.last)
+    #expect(abs(face.frame.midX - 233) < 1, "The face centers on the screen, not beside the camera")
+    #expect(message.frame.maxX <= 466 - 84 - 16, "The words stay clear of the camera column")
+}

@@ -39,6 +39,10 @@ final class BrowserMobileLoadErrorView: UIView {
     private static let messageToButton: CGFloat = 28
     private static let buttonHeight: CGFloat = 40
     private static let sideInset: CGFloat = 40
+    /// Room the words keep from a side inset, such as the camera column.
+    private static let insetGap: CGFloat = 16
+    /// The narrowest column of words that still centers on the whole view.
+    private static let narrowestCentered: CGFloat = 240
 
     /// Insets of the area the content centers in, such as the status bar
     /// above and the bar below.
@@ -111,7 +115,17 @@ final class BrowserMobileLoadErrorView: UIView {
     override func layoutSubviews() {
         super.layoutSubviews()
         let area = bounds.inset(by: contentInsets)
-        let width = max(area.width - 2 * Self.sideInset, 1)
+        // The content centers on the whole view, as on iPhone Duo beside its
+        // camera column, while a column of words that wide stays clear of
+        // the side insets; only a narrower one centers in the area.
+        let reach = min(bounds.midX - area.minX, area.maxX - bounds.midX) - Self.insetGap
+        let centerX = 2 * reach >= Self.narrowestCentered ? bounds.midX : area.midX
+        let width = max(
+            centerX == bounds.midX
+                ? min(2 * reach, bounds.width - 2 * Self.sideInset)
+                : area.width - 2 * Self.sideInset,
+            1,
+        )
         let titleFont = titleLabel.font ?? .systemFont(ofSize: 28)
         let messageFont = messageLabel.font ?? .systemFont(ofSize: 20)
         let titleHeight = titleLabel.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude)).height
@@ -128,22 +142,22 @@ final class BrowserMobileLoadErrorView: UIView {
             : messageGap + messageHeight)
         var y = (area.midY - blockHeight / 2).rounded()
         face.frame = CGRect(
-            x: (area.midX - faceSize.width / 2).rounded(),
+            x: (centerX - faceSize.width / 2).rounded(),
             y: y,
             width: faceSize.width,
             height: faceSize.height,
         )
         y += faceSize.height + titleGap
-        titleLabel.frame = CGRect(x: area.midX - width / 2, y: y, width: width, height: titleHeight)
+        titleLabel.frame = CGRect(x: centerX - width / 2, y: y, width: width, height: titleHeight)
         y += titleHeight
         if !messageLabel.isHidden {
             y += messageGap
-            messageLabel.frame = CGRect(x: area.midX - width / 2, y: y, width: width, height: messageHeight)
+            messageLabel.frame = CGRect(x: centerX - width / 2, y: y, width: width, height: messageHeight)
             y += messageHeight
         }
         let buttonWidth = min(reloadButton.sizeThatFits(CGSize(width: width, height: Self.buttonHeight)).width, width)
         reloadButton.frame = CGRect(
-            x: (area.midX - buttonWidth / 2).rounded(), y: (y + Self.messageToButton).rounded(),
+            x: (centerX - buttonWidth / 2).rounded(), y: (y + Self.messageToButton).rounded(),
             width: buttonWidth, height: Self.buttonHeight,
         )
     }
