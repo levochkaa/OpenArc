@@ -56,11 +56,11 @@ final class BrowserMobilePhoneViewController: UIViewController {
         statusCorner != nil && Self.hidesStatusCorner(mode)
     }
 
-    /// On a screen wider than tall (the unfolded iPhone Duo) the status bar
-    /// runs along the top, as above a toolbar, and pages get the full width;
-    /// on the folded screen it keeps its column at the side.
+    /// Where the status bar is a column at the side (iPhone Duo), it lies
+    /// down along the top while the page menu stands taller than the column,
+    /// so the menu's top row is not under it.
     @available(iOS 27.1, *) override var preferredVerticalBarBehavior: UIVerticalBarBehavior {
-        view.bounds.width > view.bounds.height ? .disabled : .automatic
+        pageMenuReachesStatus ? .disabled : .automatic
     }
 
     override var preferredStatusBarStyle: UIStatusBarStyle {
@@ -78,6 +78,9 @@ final class BrowserMobilePhoneViewController: UIViewController {
                 UIView.animate(withDuration: visible ? 0.25 : 0.15, delay: 0, options: [.beginFromCurrentState]) {
                     self.homeLogo.alpha = visible ? 1 : 0
                 }
+            }
+            if mode != .pageMenu {
+                updateVerticalBar(pageMenuHeight: nil)
             }
             if statusCorner != nil, Self.hidesStatusCorner(mode) != Self.hidesStatusCorner(oldValue) {
                 setNeedsStatusBarAppearanceUpdate()
@@ -112,6 +115,9 @@ final class BrowserMobilePhoneViewController: UIViewController {
     /// No page is open: the backdrop shows, with Spaces and Settings in the bar.
     private var showsHome = false
     private var statusCorner: CGRect?
+    /// The bottom of the status column, while the status bar is one.
+    private var statusColumnBottom: CGFloat?
+    private var pageMenuReachesStatus = false
     private var appliedObscuredInsets: UIEdgeInsets?
     private let emptyState = UIStackView()
     private let emptyTitle = UILabel()
@@ -420,6 +426,9 @@ final class BrowserMobilePhoneViewController: UIViewController {
         // bar; the last block stays until the next one is reported.
         guard let corner, corner != statusCorner else { return }
         statusCorner = corner
+        if corner.height > corner.width {
+            statusColumnBottom = corner.maxY
+        }
         setNeedsStatusBarAppearanceUpdate()
     }
 
@@ -949,7 +958,21 @@ final class BrowserMobilePhoneViewController: UIViewController {
         pagePanel.onExtensions = { [weak self] in self?.showExtensions() }
         pagePanel.onContentHeightChange = { [weak self] layout in self?.resizePagePanel(layout) }
         updatePagePanel()
-        openPagePanel(height: pagePanel.contentHeight + safeBottom)
+        let height = pagePanel.contentHeight + safeBottom
+        openPagePanel(height: height)
+        updateVerticalBar(pageMenuHeight: height)
+    }
+
+    /// Lays the status column down along the top while the page menu reaches it.
+    private func updateVerticalBar(pageMenuHeight: CGFloat?) {
+        let reaches = mode == .pageMenu && pageMenuHeight.flatMap { height in
+            statusColumnBottom.map { view.bounds.height - height < $0 }
+        } == true
+        guard reaches != pageMenuReachesStatus else { return }
+        pageMenuReachesStatus = reaches
+        if #available(iOS 27.1, *) {
+            setNeedsUpdateOfVerticalBarConfiguration()
+        }
     }
 
     private func updatePagePanel() {
@@ -1038,6 +1061,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
             return
         }
         let height = pagePanel.contentHeight + safeBottom
+        updateVerticalBar(pageMenuHeight: height)
         UIView.animate(springDuration: 0.3, bounce: 0, initialSpringVelocity: 0, delay: 0, options: [
             .allowUserInteraction, .beginFromCurrentState,
         ]) {
