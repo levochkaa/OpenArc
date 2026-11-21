@@ -69,7 +69,8 @@ final class BrowserMobilePhoneViewController: UIViewController {
     }
 
     override var preferredStatusBarStyle: UIStatusBarStyle {
-        if mode == .switcher || mode == .search || showsHome { return .lightContent }
+        // Leaving the switcher, the status bar takes the page's colors as its card starts to grow.
+        if mode == .switcher && !isLeavingSwitcher || mode == .search || showsHome { return .lightContent }
         // The empty state or the load error fills the page's place.
         if contentView.isHidden { return traitCollection.userInterfaceStyle == .dark ? .lightContent : .darkContent }
         return isStatusBandDark ? .lightContent : .darkContent
@@ -121,6 +122,8 @@ final class BrowserMobilePhoneViewController: UIViewController {
     private let homeLogo = BrowserMobileHomeLogo()
     /// No page is open: the backdrop shows, with Spaces and Settings in the bar.
     private var showsHome = false
+    /// The switcher's chosen card is growing into the page.
+    private var isLeavingSwitcher = false
     private var statusCorner: CGRect?
     /// The bottom of the status column, while the status bar is one.
     private var statusColumnBottom: CGFloat?
@@ -1530,6 +1533,8 @@ final class BrowserMobilePhoneViewController: UIViewController {
             workspace.selectTab(id: id)
         }
         matchBackdrop(toPictureOf: id)
+        isLeavingSwitcher = true
+        setNeedsStatusBarAppearanceUpdate()
         card.superview?.bringSubviewToFront(card)
         card.titleAlpha = 0
         guard wasOpen else {
@@ -1595,6 +1600,8 @@ final class BrowserMobilePhoneViewController: UIViewController {
             workspace.selectTab(id: id)
         }
         matchBackdrop(toPictureOf: id)
+        isLeavingSwitcher = true
+        setNeedsStatusBarAppearanceUpdate()
         card.superview?.bringSubviewToFront(card)
         let others = liftIntoStackFlight(switcher, keeping: id)
         UIView.animate(springDuration: 0.26, bounce: 0, initialSpringVelocity: 0, delay: 0, options: []) {
@@ -1740,6 +1747,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
         let picture = id.flatMap { switcher?.card(for: $0)?.livePicture == nil ? pagePicture(for: $0) : nil }
         switcher?.removeFromSuperview()
         switcher = nil
+        isLeavingSwitcher = false
         removeSwitcherFlight()
         pageContainer.isHidden = showsHome
         hideStackCards(under: [])
