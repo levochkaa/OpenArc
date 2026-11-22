@@ -200,6 +200,8 @@ final class BrowserMobilePhoneViewController: UIViewController {
 
     /// Bar swipe between tabs.
     private var swipe: BarSwipe?
+    /// The tap a sideways swipe gives as it snaps into the row or back out of it.
+    private let rowSnapHaptic = UIImpactFeedbackGenerator(style: .light)
     /// Tabs a swipe in from the left edge closed, the last one last: the
     /// right edge brings one back while its neighbor is still showing.
     private var edgeClosedTabs = [EdgeClosedTab]()
@@ -2180,7 +2182,11 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
     }
 
     /// How far a sideways drag moves the page before it turns into a card.
-    private static let rowThreshold: CGFloat = 40
+    private static let rowThreshold: CGFloat = 52
+    /// How far a swipe from the screen's edge goes before the page snaps
+    /// into the row, and the share of it the page follows before that.
+    private static let edgeRowThreshold: CGFloat = 76
+    private static let edgeResistance: CGFloat = 0.11
     /// The row's cards: their top on the screen, their bottom's distance
     /// above the bar, the room between them and their corner radius.
     private static let rowCardTop: CGFloat = 62
@@ -2259,10 +2265,15 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
         switch gesture.state {
         case .began:
             guard let action = edgeAction(for: gesture.edges) else { return }
+            rowSnapHaptic.prepare()
             beginTabSwipe(.sideways, toPrevious: gesture.edges == .left, edge: action)
         case .changed:
             if let swipe {
-                updateSwipe(progress: swipeProgress(swipe, translation: gesture.translation(in: view)))
+                // The finger's distance from the edge, not from where the
+                // recognizer began, sets how far the swipe has gone.
+                let x = gesture.location(in: view).x
+                let travel = gesture.edges == .left ? x : x - view.bounds.width
+                updateSwipe(progress: swipeProgress(swipe, translation: CGPoint(x: travel, y: 0)))
             }
         case .cancelled, .ended, .failed:
             if swipe?.edgeAction != nil {
@@ -2277,6 +2288,7 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
         case .began:
             let velocity = gesture.velocity(in: view)
             if abs(velocity.x) > abs(velocity.y) {
+                rowSnapHaptic.prepare()
                 beginTabSwipe(.sideways, toPrevious: velocity.x > 0)
             } else if bar.tabStack.frame.insetBy(dx: -8, dy: -8).contains(gesture.location(in: bar)),
                       !bar.isCollapsed
@@ -2460,6 +2472,11 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
         let velocity = gesture.velocity(in: view)
         let completes: Bool =
             switch swipe.kind {
+            // From the edge, the row lands unless the finger flicks back; the
+            // page held back lands only on a fast flick.
+            case .sideways where swipe.edgeAction != nil:
+                gesture.state == .ended && swipe.toID != nil
+                    && (swipe.isRow ? velocity.x * swipe.direction > -300 : velocity.x * swipe.direction > 800)
             case .sideways:
                 gesture.state == .ended && swipe.toID != nil
                     && translation.x * swipe.direction > 0
@@ -2670,41 +2687,62 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
         (Self.rowCardTop + expandedBarFrame.minY - Self.rowCardBottomGap) / 2
     }
 
-    /// The page follows the finger at full size, its corners rounding; past
-    /// the threshold toward another tab it turns into a card in a row with
-    /// that tab's card, which the row then carries along with the finger.
+    /// Toward another tab the page holds until the finger is past a
+    /// threshold: there it snaps, with a tap, into a card in a row with that
+    /// tab's card, which the row then carries along with the finger; back
+    /// short of the threshold it snaps back the same way. Along the bar the
+    /// page follows the finger at full size, its corners rounding; from the
+    /// screen's edge it gives only a little.
     private func layoutSidewaysSwipe(_ swipe: BarSwipe, progress: CGFloat) {
         let bounds = view.bounds
         let travel = progress * bounds.width
         let along = travel * swipe.direction
-        if !swipe.isRow, swipe.toID != nil, along >= Self.rowThreshold {
-            swipe.isRow = true
-            UIView.animate(withDuration: 0.2) { self.setNeedsStatusBarAppearanceUpdate() }
-            swipe.incomingCard.alpha = 1
-            UIView.animate(springDuration: 0.3, bounce: 0, initialSpringVelocity: 0, delay: 0, options: [
-                .allowUserInteraction, .beginFromCurrentState,
-            ]) {
+        let fromEdge = swipe.edgeAction != nil
+        let threshold = fromEdge ? Self.edgeRowThreshold : Self.rowThreshold
+        let isRow = swipe.toID != nil && along >= threshold
+        let layout = {
+            if isRow {
                 self.layoutRow(swipe, travel: travel)
+                return
             }
+            let shift = fromEdge ? max(along, 0) * Self.edgeResistance * swipe.direction : travel
+            let rounding = fromEdge ? max(along, 0) / 20 : abs(travel) / threshold
+            self.place(
+                swipe.outgoingCard, content: bounds, center: CGPoint(x: bounds.midX + shift, y: bounds.midY),
+                scale: 1, radius: Self.rowCardRadius * min(rounding, 1),
+            )
+        }
+        guard isRow != swipe.isRow else {
+            layout()
             return
         }
-        if swipe.isRow {
-            layoutRow(swipe, travel: travel)
-            return
+        swipe.isRow = isRow
+        rowSnapHaptic.impactOccurred()
+        UIView.animate(withDuration: 0.2) { self.setNeedsStatusBarAppearanceUpdate() }
+        swipe.incomingCard.alpha = 1
+        UIView.animate(
+            springDuration: fromEdge ? 0.25 : 0.3, bounce: 0, initialSpringVelocity: 0, delay: 0,
+            options: [.allowUserInteraction, .beginFromCurrentState],
+        ) {
+            layout()
+            if !isRow {
+                self.placeIncomingAtItsSource(swipe)
+            }
         }
-        place(
-            swipe.outgoingCard, content: bounds, center: CGPoint(x: bounds.midX + travel, y: bounds.midY),
-            scale: 1, radius: Self.rowCardRadius * min(abs(travel) / Self.rowThreshold, 1),
-        )
     }
 
-    /// The page's card and the other tab's beside it, the row moved by `travel`.
+    /// The page's card and the other tab's beside it, the row moved by
+    /// `travel`: along the bar the card's near side stays where the page's
+    /// was, from the edge it trails the finger a little.
     private func layoutRow(_ swipe: BarSwipe, travel: CGFloat) {
         let scale = rowCardScale
         let content = rowCardContent
-        // The row starts where the page's card sits when it turns.
-        let shift = travel - swipe.direction * (Self.rowThreshold - 3)
-        let center = CGPoint(x: view.bounds.midX + shift, y: rowCardCenterY)
+        let bounds = view.bounds
+        let trail: CGFloat = swipe.edgeAction != nil ? 10 : 0
+        let center = CGPoint(
+            x: bounds.midX + travel - swipe.direction * ((bounds.width - content.width * scale) / 2 + trail),
+            y: rowCardCenterY,
+        )
         place(swipe.outgoingCard, content: content, center: center, scale: scale, radius: Self.rowCardRadius)
         let step = content.width * scale + Self.rowCardGap
         place(
