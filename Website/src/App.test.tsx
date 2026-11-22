@@ -82,6 +82,26 @@ describe("App", () => {
     expect(screen.queryByRole("heading", { name: /what’s new/i })).not.toBeInTheDocument();
   });
 
+  it("shows Peek, Boosts and Picture in Picture as cards with their own clips", () => {
+    vi.stubGlobal("fetch", vi.fn(() => new Promise(() => {})));
+
+    render(<App />);
+
+    const section = screen.getByRole("heading", { name: /stay right where you are/i }).closest("section");
+    expect(section).not.toBeNull();
+    const cards = within(section as HTMLElement).getAllByRole("listitem");
+    expect(cards.map((card) => within(card).getByRole("heading").textContent)).toEqual([
+      "Peek",
+      "Boosts",
+      "Picture in Picture",
+    ]);
+    expect(cards.map((card) => card.querySelector("video")?.getAttribute("src"))).toEqual([
+      "/videos/peek.mp4",
+      "/videos/boost.mp4",
+      "/videos/pip.mp4",
+    ]);
+  });
+
   it("downloads the newest beta and hides the release list until a stable release ships", async () => {
     mockFetchResponse({
       releases: [

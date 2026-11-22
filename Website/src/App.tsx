@@ -72,12 +72,33 @@ function usePrefersReducedMotion() {
   return reduced;
 }
 
+const stayCards = [
+  {
+    name: "peek",
+    title: "Peek",
+    text: "Shift-click a link to open a card. Escape closes it, ⌘O keeps the tab.",
+    label: "Shift-clicking Jupiter on Wikipedia's Saturn page opens it in a scrolling card, then Escape closes it",
+  },
+  {
+    name: "boost",
+    title: "Boosts",
+    text: "Change a site's colors and fonts, and it stays that way next time.",
+    label: "On GitHub, the Boost panel switches the font to Futura, inverts colors, then picks American Typewriter",
+  },
+  {
+    name: "pip",
+    title: "Picture in Picture",
+    text: "Leave a playing video and it pops out. Return to put it back.",
+    label: "Switching from a YouTube video to Lonely Planet pops the video to the corner, then returns it",
+  },
+];
+
 /** A clip recorded from OpenArc itself. Motion stays still for people who ask for less. */
-function Clip({ name, label }: { name: string; label: string }) {
+function Clip({ name, label, className = "clip" }: { name: string; label: string; className?: string }) {
   const reduced = usePrefersReducedMotion();
   return (
     <video
-      className="clip"
+      className={className}
       aria-label={label}
       autoPlay={!reduced}
       controls={reduced}
@@ -200,7 +221,10 @@ function App() {
           Press <strong>⌘T</strong> for tabs in every Space, your history, bookmarks and every command, ranked as you
           type.
         </p>
-        <Clip name="command" label="Typing split and then figma into OpenArc's command bar" />
+        <Clip
+          name="command"
+          label="Command bar opens over Linear, finds Split View, then switches to the Saturn tab in Study Space"
+        />
       </section>
 
       <section className="feature" aria-labelledby="split-title">
@@ -210,6 +234,20 @@ function App() {
           <strong>toolbar</strong>.
         </p>
         <Clip name="split" label="Opening a second page beside the first in Split View" />
+      </section>
+
+      <section className="feature" aria-labelledby="stay-title">
+        <h2 id="stay-title">Stay right where you are.</h2>
+        <p className="sub">Preview links, restyle sites, and keep videos playing without losing your place.</p>
+        <ul className="cards">
+          {stayCards.map(({ name, title, text, label }) => (
+            <li key={name}>
+              <Clip className="card-clip" label={label} name={name} />
+              <h3>{title}</h3>
+              <p>{text}</p>
+            </li>
+          ))}
+        </ul>
       </section>
 
       <section className="feature" aria-labelledby="import-title">
