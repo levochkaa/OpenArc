@@ -1,0 +1,25 @@
+OpenArc is a free, open-source web browser for iPhone and iPad. Organize your tabs into Spaces, block ads and trackers on your device, and browse with no ads or analytics.
+
+SPACES AND TABS
+Keep a separate Space for each part of life, such as Personal, Travel, and Work. Each Space holds its own Favorites, pinned tabs, folders, and Today tabs. Swipe sideways in the Spaces sheet to switch. Pin sites you return to, group them in folders, and reopen closed Today tabs from the Archive.
+
+IPHONE GESTURES
+Pages fill the screen and the bottom bar shrinks as you scroll. Swipe along the bar to return to the previous tab. Tap the tab stack to open the tab switcher, flip through tabs as cards, and flick a card up to close it.
+
+SEARCH AND INCOGNITO
+Swipe up on the bottom bar or tap New Tab to search. Before you type, OpenArc lists your open tabs. As you type, it completes site addresses, offers web searches, and matches open tabs. Use voice search by dictation, choose your search engine, or tap the eyes button in the search field for an incognito tab.
+
+PAGE MENU
+Tap the chevron for Back, Forward, Copy Link, Reload, Find on Page, Pin, Downloads, and Share. Open Display Options for on-device Translate, Reader Mode, Page Zoom, and Request Desktop Site, or adjust Site Settings and Extensions.
+
+BUILT-IN BLOCKER AND EXTENSIONS
+The built-in blocker is on by default and runs on your device. It blocks ads, trackers (EasyList, EasyPrivacy), and cookie banners (EasyList Cookie List), with per-site switches. Install web extensions directly from extension store pages with "Add to OpenArc."
+
+IPAD
+Keep Favorites, pinned folders, and Today tabs in the sidebar beside the page. Open multiple windows, drag tabs between windows or into folders and Spaces, and use keyboard shortcuts.
+
+OPTIONAL SYNC AND EXTRAS
+Sign in with an account or an email code to sync Spaces, pinned tabs, folders, and tabs with OpenArc on Mac (free and open source at openarc.su). Browsing history, passwords, cookies, and website data are never synced. Without an account, everything stays on your device. Delete Account is in Account & Sync. Downloads save to Files, and OpenArc includes a Home Screen widget, quick actions for search and voice search, and alternate app icons.
+
+PRIVACY
+OpenArc is free and open source, with no ads, no analytics, and no crash reports.
