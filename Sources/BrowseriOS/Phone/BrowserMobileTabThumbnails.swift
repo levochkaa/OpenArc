@@ -10,9 +10,14 @@ import UIKit
     static let shared = BrowserMobileTabThumbnails()
     static let didChange = Notification.Name("BrowserMobileTabThumbnailsDidChange")
 
+    /// The status bar's height over the screen's width: pages lie below it,
+    /// and pictures of them get its place back on top.
+    var statusBarShare: CGFloat = 0
+
     // MARK: Private
 
     private let cache = NSCache<NSString, UIImage>()
+
     private let directory: URL?
     private var missing = Set<String>()
 
@@ -24,6 +29,25 @@ import UIKit
     ) {
         self.directory = directory
         cache.totalCostLimit = 96 * 1024 * 1024
+    }
+
+    /// Gives a picture of a page that starts below the status bar the status
+    /// bar's place above it again, filled with the page's top edge, so every
+    /// picture covers the whole screen.
+    static func padTop(_ image: UIImage, by height: CGFloat) -> UIImage {
+        let height = (height * image.scale).rounded() / image.scale
+        guard height > 0, let cgImage = image.cgImage,
+              let edge = cgImage.cropping(to: CGRect(x: 0, y: 0, width: cgImage.width, height: 1))
+        else { return image }
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = image.scale
+        format.opaque = true
+        let size = CGSize(width: image.size.width, height: image.size.height + height)
+        return UIGraphicsImageRenderer(size: size, format: format).image { _ in
+            UIImage(cgImage: edge, scale: image.scale, orientation: .up)
+                .draw(in: CGRect(x: 0, y: 0, width: size.width, height: height))
+            image.draw(at: CGPoint(x: 0, y: height))
+        }
     }
 
     // MARK: Private
@@ -69,9 +93,10 @@ import UIKit
     /// Captures the tab's page as it draws now.
     func capture(_ tabID: String, workspace: BrowserMobileWorkspace, width: CGFloat) {
         let persist = workspace.tabs.first { $0.id == tabID }?.isPrivate != true
+        let statusBarShare = statusBarShare
         workspace.snapshot(tabID: tabID, width: width) { [weak self] image in
             guard let image else { return }
-            self?.store(image, for: tabID, persist: persist)
+            self?.store(Self.padTop(image, by: image.size.width * statusBarShare), for: tabID, persist: persist)
         }
     }
 

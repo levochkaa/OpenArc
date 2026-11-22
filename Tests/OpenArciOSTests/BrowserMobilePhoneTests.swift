@@ -518,3 +518,32 @@ import UIKit
     BrowserMobileAppLinksSetting.set(false, defaults: defaults)
     #expect(!BrowserMobileAppLinksSetting.opensInApps(defaults))
 }
+
+@MainActor @Test func mobileTabPicturesGetTheStatusBarPlaceBackFilledWithThePageTop() throws {
+    let format = UIGraphicsImageRendererFormat()
+    format.scale = 1
+    format.opaque = true
+    let page = UIGraphicsImageRenderer(size: CGSize(width: 10, height: 20), format: format).image { context in
+        UIColor.red.setFill()
+        context.fill(CGRect(x: 0, y: 0, width: 10, height: 1))
+        UIColor.blue.setFill()
+        context.fill(CGRect(x: 0, y: 1, width: 10, height: 19))
+    }
+    let padded = BrowserMobileTabThumbnails.padTop(page, by: 5)
+    #expect(padded.size == CGSize(width: 10, height: 25))
+    let cgImage = try #require(padded.cgImage)
+    let pixel = try #require(cgImage.cropping(to: CGRect(x: 5, y: 2, width: 1, height: 1)))
+    let below = try #require(cgImage.cropping(to: CGRect(x: 5, y: 10, width: 1, height: 1)))
+    func rgb(_ image: CGImage) -> [UInt8] {
+        var bytes = [UInt8](repeating: 0, count: 4)
+        let context = CGContext(
+            data: &bytes, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue,
+        )
+        context?.draw(image, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+        return Array(bytes[0..<3])
+    }
+    #expect(rgb(pixel)[0] > 200 && rgb(pixel)[2] < 50, "The status bar's place takes the page's top edge")
+    #expect(rgb(below)[2] > 200 && rgb(below)[0] < 50, "The page sits below it")
+    #expect(BrowserMobileTabThumbnails.padTop(page, by: 0) === page)
+}

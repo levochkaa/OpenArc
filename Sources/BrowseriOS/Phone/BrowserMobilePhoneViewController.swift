@@ -429,7 +429,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
     /// WebKit fills with the page's background.
     private func updateObscuredInsets() {
         let safe = view.safeAreaInsets
-        let insets = UIEdgeInsets(top: safe.top, left: safe.left, bottom: expandedBarHeight, right: safe.right)
+        let insets = UIEdgeInsets(top: 0, left: safe.left, bottom: expandedBarHeight, right: safe.right)
         guard insets != appliedObscuredInsets else { return }
         appliedObscuredInsets = insets
         workspace.setObscuredInsets(insets)
@@ -461,7 +461,11 @@ final class BrowserMobilePhoneViewController: UIViewController {
     private func layoutPage() {
         guard pageContainer.transform.isIdentity else { return }
         pageContainer.frame = view.bounds
-        contentView.frame = pageContainer.bounds
+        // Pages start below the status bar, which the band covers, so the
+        // viewport units of a page leave it out.
+        let top = view.safeAreaInsets.top
+        contentView.frame = pageContainer.bounds.inset(by: UIEdgeInsets(top: top, left: 0, bottom: 0, right: 0))
+        thumbnails.statusBarShare = top / max(view.bounds.width, 1)
         statusBand.frame = CGRect(x: 0, y: 0, width: view.bounds.width, height: view.safeAreaInsets.top)
         let safe = view.safeAreaInsets
         sideBands[0].frame = CGRect(x: 0, y: 0, width: safe.left, height: pageContainer.bounds.height)
