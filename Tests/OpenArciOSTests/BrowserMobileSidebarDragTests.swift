@@ -2154,6 +2154,34 @@ extension BrowserMobileUITests {
         #expect(await f.workspace.shutdown())
     }
 
+    @Test func rowMenuThatWinsOverTheDragLetsGoOfTheRowsWhenItCloses() async throws {
+        let f = try SidebarDragFixture()
+        defer { f.cleanup() }
+        await f.start()
+        let path = IndexPath(row: 0, section: 2)
+        let id = try #require(f.rowIDs(section: 2).first?.replacing("browser.tab.", with: ""))
+        func title() -> String? {
+            (f.table.cellForRow(at: path)?.contentConfiguration as? UIListContentConfiguration)?.text
+        }
+        // A long press asks for drag items; the row's menu then opens instead of a drag.
+        let menuPress = try f.begin(row: 0, section: 2)
+        #expect(f.document.renameTab(id: id, title: "Renamed"))
+        #expect(title() != "Renamed")
+        f.sidebar.tableView(f.table, willEndContextMenuInteraction: UIContextMenuConfiguration(), animator: nil)
+        f.table.layoutIfNeeded()
+        #expect(title() == "Renamed")
+        // The next long press can lift a row again.
+        let drag = try f.begin(row: 0, section: 2)
+        f.sidebar.tableView(f.table, dragSessionWillBegin: drag)
+        // A drag that began from the menu keeps holding the rows.
+        f.sidebar.tableView(f.table, willEndContextMenuInteraction: UIContextMenuConfiguration(), animator: nil)
+        #expect(f.sidebar.tableView(f.table, itemsForBeginning: SidebarDragSession(), at: path).isEmpty)
+        f.sidebar.tableView(f.table, dragSessionDidEnd: drag)
+        #expect(f.sidebar.tableView(f.table, itemsForBeginning: SidebarDragSession(), at: path).count == 1)
+        withExtendedLifetime(menuPress) {}
+        #expect(await f.workspace.shutdown())
+    }
+
     @Test func sidebarAcceptsOneCompleteGroupAndRejectsForeignExternalOrMismatchedPayloads() async throws {
         let f = try SidebarDragFixture()
         let other = try SidebarDragFixture()

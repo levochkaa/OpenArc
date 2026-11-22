@@ -335,6 +335,8 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
     /// fingers or the trackpad in the sidebar): the neighbor's rows slide in
     /// beside the current ones.
     private var phoneSpacePage: (spaceID: String, side: CGFloat, preview: UIView)?
+    /// The drag session UIKit began, as opposed to one it only asked items for.
+    private var startedSessionID: ObjectIdentifier?
     private weak var phoneSpacePan: UIPanGestureRecognizer?
 
     var sidebarDragHasHoverProjection: Bool { isApplyingHoverProjection }
@@ -644,6 +646,26 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         _ = tableView(tableView, dropSessionDidUpdate: session, withDestinationIndexPath: nil)
     }
 
+    /// A long press asks for drag items before UIKit knows whether a drag or
+    /// the row's menu wins. When the menu wins, no drag session begins or
+    /// ends, so the rows it held are let go once the menu closes.
+    override func tableView(
+        _: UITableView, willEndContextMenuInteraction _: UIContextMenuConfiguration,
+        animator: (any UIContextMenuInteractionAnimating)?,
+    ) {
+        guard let sessionID = sourceSessionID else { return }
+        let release = { [weak self] in
+            guard let self, sourceSessionID == sessionID, startedSessionID != sessionID else { return }
+            needsStructuralRefresh = true
+            endSourceSession()
+        }
+        if let animator {
+            animator.addCompletion(release)
+        } else {
+            release()
+        }
+    }
+
     func render() {
         guard isViewLoaded else { return }
         presentedArchive?.render()
@@ -779,15 +801,13 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
     func tableView(_: UITableView, dragSessionAllowsMoveOperation _: any UIDragSession) -> Bool { true }
     func tableView(_: UITableView, dragSessionIsRestrictedToDraggingApplication _: any UIDragSession) -> Bool { true }
 
+    func tableView(_: UITableView, dragSessionWillBegin session: any UIDragSession) {
+        startedSessionID = ObjectIdentifier(session)
+    }
+
     func tableView(_: UITableView, dragSessionDidEnd session: any UIDragSession) {
         guard sourceSessionID == ObjectIdentifier(session) else { return }
-        cancelPendingFolderExpansion(clearSession: true)
-        sourceSessionID = nil
-        spaceDropClosing = true
-        initialDragItems.removeAll(keepingCapacity: true)
-        suppliedInitialItems.removeAll(keepingCapacity: true)
-        activeSource?.notifyParticipants()
-        finishInteractionIfPossible()
+        endSourceSession()
     }
 
     func tableView(_: UITableView, canHandle session: any UIDropSession) -> Bool { payload(for: session) != nil }
@@ -1181,6 +1201,17 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
               let index = spaces.firstIndex(where: { $0.id == workspace.selectedSpaceID }),
               spaces.indices.contains(index + offset) else { return }
         selectPhoneSpace(spaces[index + offset].id)
+    }
+
+    private func endSourceSession() {
+        cancelPendingFolderExpansion(clearSession: true)
+        sourceSessionID = nil
+        startedSessionID = nil
+        spaceDropClosing = true
+        initialDragItems.removeAll(keepingCapacity: true)
+        suppliedInitialItems.removeAll(keepingCapacity: true)
+        activeSource?.notifyParticipants()
+        finishInteractionIfPossible()
     }
 
     /// The sidebar's Space name with the menu's chevron.
