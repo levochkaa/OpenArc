@@ -882,6 +882,8 @@
 "browser.menu.help" = "Help";
 "browser.menu.keyboard_shortcuts" = "Essential Keyboard Shortcuts";
 "browser.menu.contact_team" = "Contact the Team";
+"browser.menu.privacy_policy" = "Privacy Policy";
+"browser.menu.terms_of_use" = "Terms of Use";
 "browser.menu.report_issue" = "Report an Issue";
 "browser.menu.reveal_data" = "Reveal OpenArc Data";
 "browser.menu.copy_info" = "Copy OpenArc Info";

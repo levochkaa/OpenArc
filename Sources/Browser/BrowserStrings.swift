@@ -2465,6 +2465,8 @@ enum BrowserStrings {
     static let menuHelp = NSLocalizedString("browser.menu.help", comment: "Menu bar title.")
     static let menuKeyboardShortcuts = NSLocalizedString("browser.menu.keyboard_shortcuts", comment: "Help menu item.")
     static let menuContactTeam = NSLocalizedString("browser.menu.contact_team", comment: "Help menu item.")
+    static let menuPrivacyPolicy = NSLocalizedString("browser.menu.privacy_policy", comment: "Help menu item.")
+    static let menuTermsOfUse = NSLocalizedString("browser.menu.terms_of_use", comment: "Help menu item.")
     static let menuReportIssue = NSLocalizedString("browser.menu.report_issue", comment: "Help menu item.")
     static let menuRevealData = NSLocalizedString("browser.menu.reveal_data", comment: "Help menu item.")
     static let menuCopyInfo = NSLocalizedString("browser.menu.copy_info", comment: "Help menu item.")

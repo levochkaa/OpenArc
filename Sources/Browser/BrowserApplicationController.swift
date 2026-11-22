@@ -2578,6 +2578,17 @@ NSMenuDelegate, NSUserInterfaceValidations {
             self?.presentRestoreData()
         })
         menu.addItem(.separator())
+        menu.addItem(BrowserNativeMenuItem(BrowserStrings.menuPrivacyPolicy) { [weak self] in
+            if let url = URL(string: "https://openarc.su/privacy/") {
+                self?.activeChromeModel?.openURLInNewTab(url)
+            }
+        })
+        menu.addItem(BrowserNativeMenuItem(BrowserStrings.menuTermsOfUse) { [weak self] in
+            if let url = URL(string: "https://openarc.su/terms/") {
+                self?.activeChromeModel?.openURLInNewTab(url)
+            }
+        })
+        menu.addItem(.separator())
         let troubleshooting = NSMenu(title: BrowserStrings.menuTroubleshooting)
         troubleshooting.addItem(BrowserNativeMenuItem(BrowserStrings.menuRecordTrace) { [weak self] in
             self?.presentTraceRecorder()
