@@ -24,7 +24,7 @@ final class BrowserMobileTabSwitcherView: UIView, UIScrollViewDelegate, UIGestur
     /// How far the card left of the focused one sits, as a share of the width.
     static let backwardStep: CGFloat = 0.18
     static let newestExtraStep: CGFloat = 0.062
-    static let cardWidthShare: CGFloat = 0.65
+    static let cardHeightShare: CGFloat = 0.65
     /// How much smaller each older card is than the one in the middle, up to two back.
     static let olderCardShrink: CGFloat = 0.014
     static let cornerRadius: CGFloat = 26
@@ -50,7 +50,10 @@ final class BrowserMobileTabSwitcherView: UIView, UIScrollViewDelegate, UIGestur
     /// The status bar's strip above the page, which the tabs' pictures
     /// include and their cards leave out at rest.
     var pageTopInset: CGFloat = 0 {
-        didSet { cards.values.forEach(applyCrop) }
+        didSet {
+            cards.values.forEach(applyCrop)
+            setNeedsLayout()
+        }
     }
 
     // MARK: Private
@@ -67,8 +70,11 @@ final class BrowserMobileTabSwitcherView: UIView, UIScrollViewDelegate, UIGestur
     private var settle: (start: CGFloat, target: CGFloat, velocity: CGFloat, began: CFTimeInterval)?
 
     var cardSize: CGSize {
-        let width = (bounds.width * Self.cardWidthShare).rounded()
-        return CGSize(width: width, height: (width * bounds.height / max(bounds.width, 1)).rounded())
+        // A card is the page below the status bar, as wide as that is for
+        // its height.
+        let height = (bounds.height * Self.cardHeightShare).rounded()
+        let pageHeight = max(bounds.height - pageTopInset, 1)
+        return CGSize(width: (height * bounds.width / pageHeight).rounded(), height: height)
     }
 
     override init(frame: CGRect) {
@@ -159,7 +165,8 @@ final class BrowserMobileTabSwitcherView: UIView, UIScrollViewDelegate, UIGestur
         let size = cardSize
         let offset = CGFloat(index) - position
         let width = bounds.width
-        let focusedX = width * 0.211
+        // A lone card sits in the middle; with more, the focused one leaves room on the right.
+        let focusedX = entries.count == 1 ? ((width - size.width) / 2).rounded() : width * 0.211
         let x: CGFloat
         if offset >= 0 {
             x = focusedX + offset * width * Self.forwardStep

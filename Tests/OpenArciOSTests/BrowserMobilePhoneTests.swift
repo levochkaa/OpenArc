@@ -234,13 +234,14 @@ import UIKit
 
 @MainActor @Test func mobileSwitcherCardsBunchOlderTabsLeftAndSpaceTheNewestOut() {
     let switcher = BrowserMobileTabSwitcherView(frame: CGRect(x: 0, y: 0, width: 402, height: 874))
+    switcher.pageTopInset = 62
     let entries = (0..<4).map { BrowserMobileTabSwitcherView.Entry(id: "\($0)", title: "", urlString: "") }
     switcher.setEntries(entries, focus: 2)
     let width: CGFloat = 402
     let focused = switcher.cardFrame(index: 2, position: 2)
     #expect(abs(focused.minX - width * 0.211) < 0.5)
-    #expect(abs(focused.width - width * BrowserMobileTabSwitcherView.cardWidthShare) < 0.5)
-    #expect(abs(focused.height / focused.width - 874 / width) < 0.01, "Cards keep the screen's shape")
+    #expect(abs(focused.height - 874 * BrowserMobileTabSwitcherView.cardHeightShare) < 0.5)
+    #expect(abs(focused.height / focused.width - (874 - 62) / width) < 0.01, "Cards show the page below the status bar")
 
     let newest = switcher.cardFrame(index: 3, position: 2)
     let step = BrowserMobileTabSwitcherView.forwardStep + BrowserMobileTabSwitcherView.newestExtraStep
@@ -253,6 +254,10 @@ import UIKit
     #expect(abs(focused.minX - older.minX - width * BrowserMobileTabSwitcherView.backwardStep) < 0.5)
     #expect(focused.minX - older.minX > older.minX - oldest.minX, "Older cards bunch up")
     #expect(oldest.minX < older.minX)
+
+    switcher.setEntries([entries[0]], focus: 0)
+    let lone = switcher.cardFrame(index: 0, position: 0)
+    #expect(abs(lone.midX - width / 2) < 0.5, "A lone card sits in the middle")
 }
 
 @Test func mobileFaviconsPlateOnlyIconsThatVanishOnDarkBackgrounds() throws {
