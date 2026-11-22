@@ -362,7 +362,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
         let tab = workspace.selectedTab
         if renderedTabID != tab?.id {
             if let previous = renderedTabID, mode == .browsing {
-                thumbnails.capture(previous, workspace: workspace, width: thumbnailWidth)
+                capturePageIfFullScreen(previous)
             }
             renderedTabID = tab?.id
             observeScrolling()
@@ -1263,6 +1263,11 @@ final class BrowserMobilePhoneViewController: UIViewController {
             closeSwitcherInstantly()
         }
         guard mode == .browsing || overSwitcher else { return false }
+        // The page is still full screen: its picture is right for the switcher
+        // only now, before it shrinks behind the panel.
+        if !overSwitcher, let tab = workspace.selectedTab, !tab.state.isLoading {
+            capturePageIfFullScreen(tab.id)
+        }
         workspace.dismissFindInPage()
         searchOverSwitcher = overSwitcher
         mode = .search
@@ -1421,9 +1426,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
         case .tab(let id):
             closeSearchForPage()
             if id != workspace.selectedTabID {
-                if let current = workspace.selectedTabID {
-                    thumbnails.capture(current, workspace: workspace, width: thumbnailWidth)
-                }
+                if let current = workspace.selectedTabID { capturePageIfFullScreen(current) }
                 workspace.selectTab(id: id)
             }
         }
@@ -2369,6 +2372,15 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
         } completion: { _ in
             cover.removeFromSuperview()
         }
+    }
+
+    /// Takes the tab's picture unless its page is shrunk into a card (or
+    /// still growing back from one), where WebKit draws it without the
+    /// status bar's band.
+    private func capturePageIfFullScreen(_ tabID: String) {
+        let layer = pageContainer.layer.presentation() ?? pageContainer.layer
+        guard pageContainer.transform.isIdentity, layer.affineTransform().isIdentity else { return }
+        thumbnails.capture(tabID, workspace: workspace, width: thumbnailWidth)
     }
 
     /// The tab's last picture as the screen shows its page, from the top of
