@@ -178,7 +178,7 @@ final class BrowserMobileTabSwitcherView: UIView, UIScrollViewDelegate, UIGestur
                 + (index == entries.count - 1 ? min(offset, 1) * between * width * Self.newestExtraStep : 0)
         } else {
             // The older cards bunch up toward the left edge, closer still at the row's end.
-            let k: CGFloat = 1.5
+            let k: CGFloat = 1.16
             let spread = width * Self.backwardStep * (0.76 + 0.24 * between) / (1 - exp(-k))
             x = focusedX - spread * (1 - exp(k * offset))
         }
