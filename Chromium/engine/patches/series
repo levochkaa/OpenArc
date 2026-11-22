@@ -6,3 +6,8 @@ frame-sink-destruction.patch
 openarc-scheme.patch
 tab-pages.patch
 permission-prompts.patch
+context-menu-embedded-view.patch
+fedcm-dialog.patch
+browser-element-checks.patch
+tab-group-sync-closed-window.patch
+page-dialogs.patch

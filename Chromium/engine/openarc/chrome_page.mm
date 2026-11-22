@@ -77,6 +77,7 @@
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/base_window.h"
 #include "ui/base/page_transition_types.h"
+#include "ui/compositor/compositor.h"
 #include "ui/gfx/codec/png_codec.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/image/image.h"
@@ -130,6 +131,9 @@ std::map<content::BrowserContext*, OpenArcChromePage* __weak>& LastPages() {
   static auto* pages = new std::map<content::BrowserContext*, OpenArcChromePage* __weak>();
   return *pages;
 }
+
+// The page that took the focus last (pageFocused).
+OpenArcChromePage* __weak g_last_focused_page = nil;
 
 bool g_quitting = false;
 // Set while OpenArc adds a page of its own to a host's tab strip, so the host doesn't take it for a popup.
@@ -220,6 +224,19 @@ class PageHost : public TabStripModelObserver {
     browser->GetTabStripModel()->AppendWebContents(std::move(blank), /*foreground=*/true);
     browser->GetTabStripModel()->AddObserver(this);
     MakeHostWindow(window());
+    StopDrawing();
+  }
+
+  // The window is never seen, but on screen (a bubble Chrome anchors to it, an extension's popup, only shows over
+  // a window that is), and its compositor drew for it: the GPU process's display link ticked at idle. Chrome's
+  // macOS widgets set their compositor's visibility only with the NotifyCompositorOf* features, off, so it stays
+  // hidden. The bubbles are windows with compositors of their own. Based on Cra (MIT License).
+  void StopDrawing() {
+    NSWindow* hidden = window();
+    views::Widget* widget = hidden ? views::Widget::GetWidgetForNativeWindow(gfx::NativeWindow(hidden)) : nullptr;
+    if (ui::Compositor* compositor = widget ? widget->GetCompositor() : nullptr) {
+      compositor->SetVisible(false);
+    }
   }
 
   BrowserWindowInterface* browser() { return browser_; }
@@ -237,6 +254,7 @@ class PageHost : public TabStripModelObserver {
     if (hidden.parentWindow != openarc) {
       [hidden.parentWindow removeChildWindow:hidden];
       [openarc addChildWindow:hidden ordered:NSWindowAbove];
+      StopDrawing();
     }
     if (!NSEqualRects(hidden.frame, openarc.frame)) {
       [hidden setFrame:openarc.frame display:NO];
@@ -944,12 +962,34 @@ void CancelDownload(NSString* downloadID) {
 - (void)pageFocused {
   if (_contents) {
     LastPages()[_contents->GetBrowserContext()] = self;
+  }
+  // Once Chrome is done with what it was doing: focus also comes back in the middle of a tab strip change. An
+  // extension popup's Settings opens the options page as a tab; Chrome closes the popup while that tab goes in,
+  // OpenArc's window becomes key again, its page takes focus, and activating it there hits TabStripModel's
+  // reentrancy CHECK. Only for the page focused last: an earlier one, made Chrome's active tab after another took
+  // the focus, would take it back, and the two would trade it. Based on Cra (MIT License).
+  g_last_focused_page = self;
+  OpenArcChromePage* __weak weakSelf = self;
+  Later(base::BindOnce(^{
+    OpenArcChromePage* page = weakSelf;
+    if (!page || page != g_last_focused_page) {
+      return;
+    }
+    [page followFocus];
+  }));
+}
+
+- (void)followFocus {
+  if (_contents) {
     if (PageHost* host = HostOf(_contents)) {
+      // The hidden window rides along with the page's window whether or not that window is key: dialogs and
+      // bubbles anchor to it.
       host->FollowWindow(_container.window);
-      // Chrome's active tab follows the page in use, so extensions see the tab the user is on.
+      // Chrome's active tab follows the page in use, so extensions see the tab the user is on; only in a key
+      // window, where the page takes the keys.
       TabStripModel* tabs = host->browser()->GetTabStripModel();
       int index = tabs->GetIndexOfWebContents(_contents);
-      if (index != TabStripModel::kNoTab && tabs->active_index() != index) {
+      if (_container.window.isKeyWindow && index != TabStripModel::kNoTab && tabs->active_index() != index) {
         tabs->ActivateTabAt(index);
       }
     }

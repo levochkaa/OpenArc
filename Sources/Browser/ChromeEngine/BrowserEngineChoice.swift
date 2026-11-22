@@ -48,8 +48,11 @@ import Foundation
 
     /// Features the Chrome engine always runs with. To Chrome every OpenArc page is a background tab of a hidden
     /// window, and a discarded tab gets new contents that OpenArc's tab never sees, so Chrome discards none.
+    /// Chrome also unloads a profile once its last Chrome window closes; OpenArc's pages live outside Chrome's
+    /// windows, so the profile would go with pages still in it (a crash in `ProfileDestroyer::Timeout`), and
+    /// OpenArc's profiles stay loaded until it quits.
     static let enabledChromeFeatures = ["DisableTabDiscarding"]
-    static let disabledChromeFeatures = ["UrgentPageDiscarding"]
+    static let disabledChromeFeatures = ["UrgentPageDiscarding", "DestroyProfileOnBrowserClose"]
 
     static var isChromeEngineAvailable: Bool {
         frameworkBinaryPath(bundlePath: Bundle.main.bundlePath) != nil

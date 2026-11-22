@@ -49,6 +49,10 @@ on, this setting waits for it to be turned off.
 - **OpenArc's changes to Chromium itself** that are not CEF's (notification permission, the history database,
   the passkey keychain group, the About page's update status) come along: `Chromium/engine/overrides` lists the
   files of `Chromium/chromium_src` the engine takes too. A new override that is pure Chromium belongs there.
+  Based on Cra's engine, Secure Input (`ui/base/cocoa/secure_password_input.mm` and
+  `content/browser/renderer_host/render_widget_host_view_mac.mm`) stays on only while a password field in the
+  active app's key window holds it on both engines, because leaving it on in the background blocked other apps'
+  global shortcuts.
 - **The layer** (`Chromium/engine/openarc`, linked into Chrome's framework as `//openarc:core`):
   - one hidden Chrome `Browser` per profile holds that profile's pages as background tabs behind a blank one;
     its window is invisible, never key, and rides along with the OpenArc window in use as a child of the same
@@ -63,6 +67,12 @@ on, this setting waits for it to be turned off.
   - downloads of OpenArc's profiles are reported to the page that started them;
   - `OpenArcChromeApplication` is NSApp: Chrome's application class, which its message pump needs, with Cocoa's
     own quit, so OpenArc's app delegate decides.
+  - a focused page becomes Chrome's active tab only after Chrome finishes any change in progress and only for the
+    last-focused page in a key window; activating during a tab strip change (such as an extension popup's Settings
+    opening its options as a tab) hit `TabStripModel`'s reentrancy CHECK. The hidden window's compositor stays
+    invisible (`PageHost::StopDrawing`), so the GPU process's display link does not tick for an unseen window. The
+    engine runs with `DestroyProfileOnBrowserClose` off so Chrome does not unload a profile when its last Chrome
+    window closes while OpenArc's pages are still open in it.
 - **Chrome's own code** changes in `Chromium/engine/patches` (`series` lists the order):
   - `engine-hooks.patch`: OpenArc's start-up part, no AppController or main menu of Chrome's, the framework's
     exports, `//openarc:core` in `chrome_dll`;
@@ -79,6 +89,17 @@ on, this setting waits for it to be turned off.
     hands them to `BrowserChromePageDelegate` and answers Chrome with Allow, Block or no answer; Chrome remembers
     the site's answer. The hook has a header of its own (`hooks/openarc_permission_hooks.h`), so only the prompt
     factory sees the permissions headers.
+  - `context-menu-embedded-view.patch`: lets Chrome's native page context menu (extension items, Look Up, Speech,
+    Services, Writing Tools, AutoFill) show in OpenArc's window, which is not a views widget.
+  - `fedcm-dialog.patch`: parents the FedCM accounts dialog (sign in with Google and similar) to the tab's hidden
+    Browser window instead of the page's widget-less window, avoiding a crash.
+  - `browser-element-checks.patch`: skips in-product help events from Settings pages (such as Clear browsing data's
+    Cancel) when the hidden window has no tracked BrowserView element, avoiding a Chrome CHECK.
+  - `tab-group-sync-closed-window.patch`: lets a saved tab group disconnect during session restore when its window
+    no longer exists, avoiding a launch-time CHECK in `GetTabStripModelForLocalGroup`.
+  - `page-dialogs.patch`: centers tab-modal dialogs (alert, confirm, prompt, HTTP sign-in prompt, screen-share
+    picker, passkeys, certificates) on the page rather than the whole window so a split pane's alert stays over its
+    pane, and closes them before teardown so closing a tab under its sign-in prompt does not crash.
 - The hooks (`Chromium/engine/hooks`) are null until `OpenArcChromeEngineMain` sets them,
   so the patched code behaves as Chrome's own otherwise.
 - The layer is based on Cra's engine bridge (github.com/VictorKildahl/cra, MIT License), credited in

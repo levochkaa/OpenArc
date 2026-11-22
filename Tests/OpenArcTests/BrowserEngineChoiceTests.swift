@@ -104,7 +104,7 @@ struct BrowserEngineChoiceTests {
         #expect(!arguments.contains("https://example.com"))
         #expect(!arguments.contains("--openarc-engine=chrome"))
         #expect(arguments.contains("--enable-features=DisableTabDiscarding"))
-        #expect(arguments.contains("--disable-features=UrgentPageDiscarding"))
+        #expect(arguments.contains("--disable-features=UrgentPageDiscarding,DestroyProfileOnBrowserClose"))
     }
 
     @Test func theLaunchsFeatureListsJoinTheEnginesOwn() {
@@ -116,7 +116,8 @@ struct BrowserEngineChoiceTests {
         #expect(arguments
             .filter { $0.hasPrefix("--enable-features=") } == ["--enable-features=Foo,DisableTabDiscarding"])
         #expect(arguments
-            .filter { $0.hasPrefix("--disable-features=") } == ["--disable-features=Bar,UrgentPageDiscarding"])
+            .filter { $0.hasPrefix("--disable-features=") } ==
+            ["--disable-features=Bar,UrgentPageDiscarding,DestroyProfileOnBrowserClose"])
     }
 
     @Test func theFrameworkIsFoundThroughItsVersionFolder() throws {
