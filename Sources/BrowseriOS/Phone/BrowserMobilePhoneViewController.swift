@@ -434,6 +434,13 @@ final class BrowserMobilePhoneViewController: UIViewController {
         }
     }
 
+    /// The Home Screen widget's search, voice search or new tab.
+    func open(_ link: BrowserMobileAppLink) {
+        pendingAppLink = link
+        didAutoOpenSearch = true
+        performPendingAppLink()
+    }
+
     private func refreshStatusCorner() {
         if #available(iOS 27.1, *) {
             setNeedsUpdateOfVerticalBarConfiguration()
@@ -2020,18 +2027,16 @@ final class BrowserMobilePhoneViewController: UIViewController {
         openSearch(text: url == nil || url == "about:blank" ? "" : url!, replacesPage: true)
     }
 
-    /// The Home Screen widget's search, voice search or new tab.
-    func open(_ link: BrowserMobileAppLink) {
-        pendingAppLink = link
-        didAutoOpenSearch = true
-        performPendingAppLink()
-    }
-
     private func performPendingAppLink() {
         guard let link = pendingAppLink, workspace.isReady, view.window != nil else { return }
         pendingAppLink = nil
         if presentedViewController != nil {
             dismiss(animated: false)
+        }
+        if link == .appIcon {
+            if mode != .browsing { closePanel() }
+            BrowserMobileAppIconViewController.present(from: self)
+            return
         }
         if mode != .search {
             newTab()

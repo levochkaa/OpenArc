@@ -20,6 +20,33 @@
   <string>$(MARKETING_VERSION)</string>
   <key>CFBundleVersion</key>
   <string>$(CURRENT_PROJECT_VERSION)</string>
+  <key>UIApplicationShortcutItems</key>
+  <array>
+    <dict>
+      <key>UIApplicationShortcutItemType</key>
+      <string>search</string>
+      <key>UIApplicationShortcutItemTitle</key>
+      <string>Search</string>
+      <key>UIApplicationShortcutItemIconSymbolName</key>
+      <string>magnifyingglass</string>
+    </dict>
+    <dict>
+      <key>UIApplicationShortcutItemType</key>
+      <string>voice-search</string>
+      <key>UIApplicationShortcutItemTitle</key>
+      <string>Voice Search</string>
+      <key>UIApplicationShortcutItemIconSymbolName</key>
+      <string>mic</string>
+    </dict>
+    <dict>
+      <key>UIApplicationShortcutItemType</key>
+      <string>app-icon</string>
+      <key>UIApplicationShortcutItemTitle</key>
+      <string>Change App Icon</string>
+      <key>UIApplicationShortcutItemIconSymbolName</key>
+      <string>apps.iphone</string>
+    </dict>
+  </array>
   <key>CFBundleURLTypes</key>
   <array>
     <dict>

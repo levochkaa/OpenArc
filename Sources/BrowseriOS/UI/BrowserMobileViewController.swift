@@ -29,9 +29,7 @@ final class BrowserMobileViewController: UISplitViewController, UISplitViewContr
 
     let workspace: BrowserMobileWorkspace
     let pageController: BrowserMobilePageViewController
-    private var pendingAppLink: BrowserMobileAppLink?
     let tabsController: BrowserMobileTabsViewController
-
     lazy var javaScriptDialogPresenter =
         BrowserMobileJavaScriptDialogPresenter(host: self) { [weak self] id, response in
             self?.workspace.resolveJavaScriptDialog(id: id, response: response)
@@ -41,6 +39,8 @@ final class BrowserMobileViewController: UISplitViewController, UISplitViewContr
         BrowserMobileHTTPAuthenticationPresenter(host: self) { [weak self] id, response in
             self?.workspace.resolveHTTPAuthentication(id: id, response: response)
         }
+
+    private var pendingAppLink: BrowserMobileAppLink?
 
     // MARK: Private
 
@@ -96,18 +96,22 @@ final class BrowserMobileViewController: UISplitViewController, UISplitViewContr
         performPendingAppLink()
     }
 
+    func splitViewController(_: UISplitViewController, topColumnForCollapsingToProposedTopColumn _: Column) -> Column {
+        .secondary
+    }
+
     private func performPendingAppLink() {
-        guard pendingAppLink != nil, workspace.isReady else { return }
+        guard let link = pendingAppLink, workspace.isReady else { return }
         pendingAppLink = nil
         if presentedViewController != nil {
             dismiss(animated: false)
         }
+        if link == .appIcon {
+            BrowserMobileAppIconViewController.present(from: self)
+            return
+        }
         workspace.newTab()
         pageController.focusAddress()
-    }
-
-    func splitViewController(_: UISplitViewController, topColumnForCollapsingToProposedTopColumn _: Column) -> Column {
-        .secondary
     }
 
     /// Settings › Extensions, from the page's extension list.

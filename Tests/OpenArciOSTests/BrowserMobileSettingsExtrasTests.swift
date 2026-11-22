@@ -37,6 +37,14 @@ private func scratchDefaults() throws -> UserDefaults {
     #expect(try BrowserMobileAppLink(url: #require(URL(string: "https://search"))) == nil)
 }
 
+@Test func mobileQuickActionsNameTheirAppLinks() {
+    // The app's Info.plist lists the quick actions by these types.
+    #expect(["search", "voice-search", "app-icon"].map(BrowserMobileAppLink.init(rawValue:)) == [
+        .search, .voiceSearch, .appIcon,
+    ])
+    #expect(BrowserMobileAppLink.appIcon.url.absoluteString == "openarc://app-icon")
+}
+
 // MARK: - Voice Search languages
 
 @Test func mobileVoiceSearchFollowsTheKeyboardUntilALanguageIsChosen() throws {
@@ -65,9 +73,24 @@ private func scratchDefaults() throws -> UserDefaults {
         supported: Set(names.keys.map { Locale(identifier: $0) }), added: ["fr-FR"], name: { names[$0] ?? $0 },
     )
     #expect(choices == ["en-US", "de-DE", "ru-RU"])
-    #expect(BrowserMobileAddLanguageViewController.matches("ru-RU", query: "рус", name: "Russian", nativeName: "русский"))
-    #expect(BrowserMobileAddLanguageViewController.matches("ru-RU", query: " rus ", name: "Russian", nativeName: "русский"))
-    #expect(!BrowserMobileAddLanguageViewController.matches("ru-RU", query: "germ", name: "Russian", nativeName: "русский"))
+    #expect(BrowserMobileAddLanguageViewController.matches(
+        "ru-RU",
+        query: "рус",
+        name: "Russian",
+        nativeName: "русский",
+    ))
+    #expect(BrowserMobileAddLanguageViewController.matches(
+        "ru-RU",
+        query: " rus ",
+        name: "Russian",
+        nativeName: "русский",
+    ))
+    #expect(!BrowserMobileAddLanguageViewController.matches(
+        "ru-RU",
+        query: "germ",
+        name: "Russian",
+        nativeName: "русский",
+    ))
     #expect(BrowserMobileAddLanguageViewController.matches("ru-RU", query: "", name: "Russian", nativeName: "русский"))
 }
 

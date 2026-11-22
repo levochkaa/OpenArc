@@ -18,6 +18,9 @@ final class BrowserSceneDelegate: UIResponder, UIWindowSceneDelegate {
     func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options: UIScene.ConnectionOptions) {
         guard let windowScene = scene as? UIWindowScene else { return }
         pendingLinks = options.urlContexts.map(\.url)
+        if let action = options.shortcutItem.flatMap({ BrowserMobileAppLink(rawValue: $0.type) }) {
+            pendingLinks.append(action.url)
+        }
         connectionTask?.cancel()
         if let connection {
             BrowserMobileSceneSessions.shared.disconnect(connection)
@@ -72,6 +75,22 @@ final class BrowserSceneDelegate: UIResponder, UIWindowSceneDelegate {
         open(links, in: connection)
     }
 
+    /// The app icon's quick actions: Search, Voice Search and Change App Icon.
+    func windowScene(
+        _ windowScene: UIWindowScene, performActionFor shortcutItem: UIApplicationShortcutItem,
+        completionHandler: @escaping (Bool) -> Void,
+    ) {
+        guard connectionScene === windowScene, let link = BrowserMobileAppLink(rawValue: shortcutItem.type) else {
+            return completionHandler(false)
+        }
+        if let connection {
+            open([link.url], in: connection)
+        } else {
+            pendingLinks.append(link.url)
+        }
+        completionHandler(true)
+    }
+
     func sceneDidBecomeActive(_ scene: UIScene) {
         guard connectionScene === scene, let connection else { return }
         BrowserMobileSceneSessions.shared.setActive(true, for: connection)
@@ -88,6 +107,19 @@ final class BrowserSceneDelegate: UIResponder, UIWindowSceneDelegate {
         BrowserMobileSceneSessions.shared.flush(connection)
     }
 
+    func sceneDidDisconnect(_ scene: UIScene) {
+        guard connectionScene === scene else { return }
+        connectionTask?.cancel()
+        connectionTask = nil
+        if let connection {
+            BrowserMobileSceneSessions.shared.disconnect(connection)
+        }
+        connection = nil
+        connectionScene = nil
+        pendingLinks = []
+        window = nil
+    }
+
     /// Web links open as pages; the widget's `openarc://` links go to the browser's controller.
     private func open(_ links: [URL], in connection: BrowserMobileSceneSessions.Connection) {
         for url in links {
@@ -101,18 +133,5 @@ final class BrowserSceneDelegate: UIResponder, UIWindowSceneDelegate {
                 connection.workspace.openLinkFromAnotherApp(url)
             }
         }
-    }
-
-    func sceneDidDisconnect(_ scene: UIScene) {
-        guard connectionScene === scene else { return }
-        connectionTask?.cancel()
-        connectionTask = nil
-        if let connection {
-            BrowserMobileSceneSessions.shared.disconnect(connection)
-        }
-        connection = nil
-        connectionScene = nil
-        pendingLinks = []
-        window = nil
     }
 }
