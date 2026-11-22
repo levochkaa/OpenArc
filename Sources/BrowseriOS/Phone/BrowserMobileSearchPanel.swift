@@ -12,6 +12,31 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
 {
     // MARK: Private
 
+    /// A pressed row lights a rounded plate inset from the panel's edges,
+    /// about as wide as the field, not the whole row.
+    private final class PressedBackground: UIView {
+        // MARK: Private
+
+        private let plate = UIView()
+
+        // MARK: Internal
+
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            plate.backgroundColor = UIColor(white: 1, alpha: 0.11)
+            plate.layer.cornerRadius = 12
+            plate.layer.cornerCurve = .continuous
+            addSubview(plate)
+        }
+
+        @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) is not supported") }
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            plate.frame = bounds.insetBy(dx: 10, dy: 2)
+        }
+    }
+
     private final class Cell: UITableViewCell {
         // MARK: Private
 
@@ -25,9 +50,7 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
         override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
             super.init(style: style, reuseIdentifier: reuseIdentifier)
             backgroundColor = .clear
-            let selected = UIView()
-            selected.backgroundColor = UIColor(white: 1, alpha: 0.08)
-            selectedBackgroundView = selected
+            selectedBackgroundView = PressedBackground()
             icon.contentMode = .scaleAspectFit
             icon.tintColor = .white
             icon.layer.cornerRadius = 4
