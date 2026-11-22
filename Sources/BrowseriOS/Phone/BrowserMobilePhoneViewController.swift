@@ -160,7 +160,6 @@ final class BrowserMobilePhoneViewController: UIViewController {
     /// What the Home Screen widget asked for, done once the tabs are ready.
     private var pendingAppLink: BrowserMobileAppLink?
     private var shownOpenedLinkCount: Int
-    private var iconRequests = Set<String>()
 
     // Bar collapse while scrolling.
     private var scrollObservation: NSKeyValueObservation?
@@ -679,30 +678,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
     }
 
     private func requestIcons() {
-        // A private tab's site is not saved among the icons.
-        for tab in workspace.switcherTabs where !tab.isPrivate {
-            // The shown page lists its own icons once it has loaded; other
-            // tabs, which may have no page yet, get the site's /favicon.ico.
-            let fromPage = tab.id == workspace.selectedTabID
-            if fromPage, tab.state.isLoading || tab.state.progress < 1 { continue }
-            guard favicons.needsIcon(forPage: tab.urlString, fromPage: fromPage),
-                  let host = BrowserMobileFavicons.host(forPage: tab.urlString), iconRequests.insert(host).inserted
-            else { continue }
-            let page = tab.urlString
-            let finish: @MainActor ([URL]) -> Void = { [weak self] urls in
-                guard let self else { return }
-                iconRequests.remove(host)
-                let candidates = urls.isEmpty
-                    ? BrowserMobileFavicons.rankedIconURLs([], pageURL: URL(string: page))
-                    : urls
-                favicons.load(forPage: page, candidates: candidates, fromPage: fromPage)
-            }
-            if fromPage {
-                workspace.iconURLs(tabID: tab.id, completion: finish)
-            } else {
-                finish([])
-            }
-        }
+        favicons.requestIcons(for: workspace.switcherTabs, in: workspace)
     }
 
     @objc private func iconsChanged() {

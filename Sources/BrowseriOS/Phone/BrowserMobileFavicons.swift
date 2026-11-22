@@ -16,6 +16,8 @@ import UIKit
     private var images = [String: UIImage]()
     private var imagesOnDark = [String: UIImage]()
     private var loading = Set<String>()
+    /// Hosts waiting for their page's icon list.
+    private var requests = Set<String>()
     /// Hosts whose page-declared icons all failed.
     private var attempted = Set<String>()
     /// Hosts where only the guessed `/favicon.ico` was tried; a loaded page
@@ -177,6 +179,31 @@ import UIKit
         guard let host = Self.host(forPage: urlString) else { return false }
         return icon(forPage: urlString) == nil && !loading.contains(host) && !attempted.contains(host)
             && (fromPage || !guessed.contains(host))
+    }
+
+    /// Asks for the icons `tabs` lack. The selected tab's page lists its own
+    /// icons once it has loaded; other tabs, which may have no page yet, get
+    /// the site's /favicon.ico. A private tab's site is not saved among the icons.
+    func requestIcons(for tabs: [BrowserMobileTab], in workspace: BrowserMobileWorkspace) {
+        for tab in tabs where !tab.isPrivate {
+            let fromPage = tab.id == workspace.selectedTabID
+            if fromPage, tab.state.isLoading || tab.state.progress < 1 { continue }
+            guard needsIcon(forPage: tab.urlString, fromPage: fromPage),
+                  let host = Self.host(forPage: tab.urlString), requests.insert(host).inserted
+            else { continue }
+            let page = tab.urlString
+            let finish: @MainActor ([URL]) -> Void = { [weak self] urls in
+                guard let self else { return }
+                requests.remove(host)
+                let candidates = urls.isEmpty ? Self.rankedIconURLs([], pageURL: URL(string: page)) : urls
+                load(forPage: page, candidates: candidates, fromPage: fromPage)
+            }
+            if fromPage {
+                workspace.iconURLs(tabID: tab.id, completion: finish)
+            } else {
+                finish([])
+            }
+        }
     }
 
     /// Tries `candidates` in order and keeps the first image that decodes.

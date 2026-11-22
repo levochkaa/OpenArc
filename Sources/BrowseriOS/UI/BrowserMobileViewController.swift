@@ -85,6 +85,8 @@ final class BrowserMobileViewController: UISplitViewController, UISplitViewContr
         pageController.render()
         tabsController.render()
         presentedTabs?.render()
+        // The sidebar lists tabs of every Space a window switches to.
+        BrowserMobileFavicons.shared.requestIcons(for: workspace.tabs, in: workspace)
         javaScriptDialogPresenter.update(workspace.javaScriptDialog)
         httpAuthenticationPresenter.update(workspace.httpAuthentication)
         performPendingAppLink()
@@ -459,6 +461,12 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
             NotificationCenter.default.addObserver(
                 self, selector: #selector(sidebarDragSceneChanged(_:)), name: name, object: nil,
             )
+        }
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(refreshVisibleRows), name: BrowserMobileFavicons.didChange, object: nil,
+        )
+        registerForTraitChanges([UITraitUserInterfaceStyle.self]) { (self: Self, _) in
+            self.refreshVisibleRows()
         }
         spaceButton.accessibilityIdentifier = "browser.spaces"
         spaceButton.titleLabel?.lineBreakMode = .byTruncatingTail
@@ -1553,7 +1561,14 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
             content.secondaryText = site.isEmpty ? nil : site
             content.secondaryTextProperties.numberOfLines = 1
             content.secondaryTextProperties.lineBreakMode = .byTruncatingMiddle
-            content.image = UIImage(systemName: tab.state.error == nil ? "globe" : "exclamationmark.circle")
+            if tab.state.error == nil, let icon = favicon(forPage: tab.urlString) {
+                content.image = icon
+                content.imageProperties.maximumSize = CGSize(width: 22, height: 22)
+                content.imageProperties.cornerRadius = 4
+            } else {
+                content.image = UIImage(systemName: tab.state.error == nil ? "globe" : "exclamationmark.circle")
+            }
+            content.imageProperties.reservedLayoutSize = CGSize(width: 24, height: 24)
             cell.indentationLevel = depth
             cell.accessoryType = !isSelectingRows && selectedTabID == id ? .checkmark : .none
             cell.accessibilityIdentifier = "browser.tab." + id
@@ -1589,6 +1604,24 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         cell.contentConfiguration = content
     }
 
+    /// The site's icon; a mark too dark for a dark list sits on a light plate.
+    private func favicon(forPage urlString: String?) -> UIImage? {
+        let favicons = BrowserMobileFavicons.shared
+        return traitCollection.userInterfaceStyle == .dark
+            ? favicons.iconOnDark(forPage: urlString)
+            : favicons.icon(forPage: urlString)
+    }
+
+    /// Shows icons that arrived, or that suit a new light or dark style, in the rows on screen.
+    @objc private func refreshVisibleRows() {
+        guard isViewLoaded, !isHoldingRows, !tableView.hasUncommittedUpdates else { return }
+        for index in tableView.indexPathsForVisibleRows ?? [] {
+            if let cell = tableView.cellForRow(at: index) {
+                configure(cell, at: index)
+            }
+        }
+    }
+
     private func stylePhoneSheet(
         _ cell: UITableViewCell, content: inout UIListContentConfiguration, row: Row?, selectedTabID: String?,
     ) {
@@ -1605,11 +1638,6 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         var background = UIBackgroundConfiguration.clear()
         switch row {
         case .tab(let id, _):
-            if let tab = renderedTabs[id], tab.state.error == nil,
-               let icon = BrowserMobileFavicons.shared.iconOnDark(forPage: tab.urlString)
-            {
-                content.image = icon
-            }
             if !isSelectingRows {
                 cell.accessoryType = .none
                 if selectedTabID == id {
