@@ -25,6 +25,11 @@ final class BrowserMobilePhoneViewController: UIViewController {
     /// The stack shows two cards; the others hide behind the back one.
     private static let hiddenStackSlot = 2
 
+    /// How long after a switch, or after its page stops loading, a tab's last
+    /// picture keeps deciding the bar: WebKit reports its empty background
+    /// for a moment after the page finishes.
+    private static let backdropSettleDelay: CFTimeInterval = 0.6
+
     override var canBecomeFirstResponder: Bool { true }
 
     override var keyCommands: [UIKeyCommand]? {
@@ -145,6 +150,10 @@ final class BrowserMobilePhoneViewController: UIViewController {
     private let thumbnails = BrowserMobileTabThumbnails.shared
     private let favicons = BrowserMobileFavicons.shared
     private var isBackdropSampleScheduled = false
+    /// A tab just switched to: until its page has loaded and drawn for a
+    /// moment, its last picture decides the bar, not WebKit's empty background.
+    private var settlingTab: (id: String, until: CFTimeInterval)?
+    private var isSettledSampleScheduled = false
     private var renderedTabID: String?
     private var wasLoading = [String: Bool]()
     private var didAutoOpenSearch = false
@@ -367,6 +376,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
                 capturePageIfFullScreen(previous)
             }
             renderedTabID = tab?.id
+            settlingTab = tab.map { ($0.id, CACurrentMediaTime() + Self.backdropSettleDelay) }
             observeScrolling()
             removeLoadingCover()
             setBarCollapsed(false, animated: false)
@@ -382,6 +392,9 @@ final class BrowserMobilePhoneViewController: UIViewController {
             }
         }
         if let tab { wasLoading[tab.id] = tab.state.isLoading }
+        if let tab, tab.state.isLoading, let settling = settlingTab, settling.id == tab.id {
+            settlingTab?.until = max(settling.until, CACurrentMediaTime() + Self.backdropSettleDelay)
+        }
         sampleBackdrop()
         updateTabStack()
         bar.insecureBadge.isHidden = tab?.state.url?.scheme?.lowercased() != "http"
@@ -503,6 +516,21 @@ final class BrowserMobilePhoneViewController: UIViewController {
             setBackdropDark(showsHome || traitCollection.userInterfaceStyle == .dark)
             return
         }
+        if let settling = settlingTab, settling.id == tab.id {
+            let wait = settling.until - CACurrentMediaTime()
+            if wait > 0, let dark = pictureBarDark(tab.id) {
+                setBackdropDark(dark)
+                if !isSettledSampleScheduled {
+                    isSettledSampleScheduled = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + wait + 0.02) { [weak self] in
+                        self?.isSettledSampleScheduled = false
+                        self?.sampleBackdrop()
+                    }
+                }
+                return
+            }
+            if wait <= 0 { settlingTab = nil }
+        }
         if let dark = Self.isDark(tab.state) {
             setBackdropDark(dark)
             return
@@ -583,14 +611,21 @@ final class BrowserMobilePhoneViewController: UIViewController {
             setBackdropDark(dark)
             return
         }
-        guard let image = thumbnails.image(for: tabID)?.cgImage, image.height > 0 else { return }
+        if let dark = pictureBarDark(tabID) {
+            setBackdropDark(dark)
+        }
+    }
+
+    /// Whether the page is dark under the bar in a tab's last picture.
+    private func pictureBarDark(_ tabID: String) -> Bool? {
+        guard let image = thumbnails.image(for: tabID)?.cgImage, image.height > 0 else { return nil }
         let screenHeight = view.bounds.height * CGFloat(image.width) / view.bounds.width
         let barHeight = expandedBarHeight * CGFloat(image.width) / view.bounds.width
         let bottom = min(CGFloat(image.height), screenHeight)
         guard let strip = image.cropping(to: CGRect(
             x: 0, y: max(0, bottom - barHeight), width: CGFloat(image.width), height: barHeight,
-        )), let luminance = BrowserMobileBackdrop.luminance(of: strip) else { return }
-        setBackdropDark(BrowserMobileBackdrop.isDark(luminance: luminance))
+        )), let luminance = BrowserMobileBackdrop.luminance(of: strip) else { return nil }
+        return BrowserMobileBackdrop.isDark(luminance: luminance)
     }
 
     /// How much the dark panel looks like the bar: 1 is the bar's own
