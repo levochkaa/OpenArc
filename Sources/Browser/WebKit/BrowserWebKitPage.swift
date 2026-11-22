@@ -43,9 +43,28 @@ import WebKit
 /// One tab's page in WebKit, for sites that play protected video with FairPlay.
 /// Each profile keeps its own persistent website data; a private window keeps none.
 @MainActor @objc final class BrowserWebKitPage: NSObject {
+    /// `window.print()` posts here: WKWebView has no public delegate call for it.
+    static let printMessageName = "openArcPrint"
+
     // MARK: Private
 
     private static let mediaMessageName = "openArcMedia"
+
+    // MARK: Private
+
+    private static let mediaMessageName = "openArcMedia"
+
+    /// Hands `window.print()` to the app, which shows the same print panel as File › Print.
+    private static let printScript = """
+    (() => {
+      'use strict';
+      if (window.top !== window) return;
+      const print = function () { try { window.webkit.messageHandlers.\(
+          printMessageName
+      ).postMessage(null); } catch (e) {} };
+      Object.defineProperty(window, 'print', { value: print, configurable: true, writable: true });
+    })();
+    """
 
     private static let ephemeralStore = WKWebsiteDataStore.nonPersistent()
 
@@ -165,6 +184,7 @@ import WebKit
             )
         }
         controller.add(BrowserWebKitMessageProxy(page: self), name: Self.mediaMessageName)
+        controller.add(BrowserWebKitMessageProxy(page: self), name: Self.printMessageName)
         webView.page = self
         webView.navigationDelegate = self
         webView.uiDelegate = self
@@ -195,7 +215,8 @@ import WebKit
         boosts: [BrowserBoost],
     ) {
         controller.removeAllUserScripts()
-        for source in [mediaObserverScript(token: mediaToken)] + BrowserBoostScript.webKitUserScripts(for: boosts) {
+        let ownScripts = [mediaObserverScript(token: mediaToken), printScript]
+        for source in ownScripts + BrowserBoostScript.webKitUserScripts(for: boosts) {
             controller.addUserScript(WKUserScript(
                 source: source,
                 injectionTime: .atDocumentStart,
@@ -749,7 +770,13 @@ extension BrowserWebKitPage: WKUIDelegate {
 
 /// Tells its page when it takes the keyboard, so a click in a Split View pane focuses it.
 final class BrowserWebKitWebView: WKWebView {
+    override var undoManager: UndoManager? { pageUndoManager }
+
     weak var page: BrowserWebKitPage?
+
+    /// Text edits in the page undo on their own. The window's manager holds tab actions and never groups by
+    /// event, and WebKit registers an edit outside any group, which that manager refuses with an exception.
+    private let pageUndoManager = UndoManager()
 
     override func becomeFirstResponder() -> Bool {
         let accepted = super.becomeFirstResponder()
@@ -777,7 +804,11 @@ private final class BrowserWebKitMessageProxy: NSObject, WKScriptMessageHandler 
     func userContentController(_: WKUserContentController, didReceive message: WKScriptMessage) {
         MainActor.assumeIsolated {
             guard message.frameInfo.isMainFrame else { return }
-            page?.receiveMediaMessage(message.body)
+            if message.name == BrowserWebKitPage.printMessageName {
+                page?.print()
+            } else {
+                page?.receiveMediaMessage(message.body)
+            }
         }
     }
 }
