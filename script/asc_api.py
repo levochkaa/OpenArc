@@ -196,6 +196,20 @@ def cmd_get(args: argparse.Namespace) -> None:
         print(json.dumps(request("GET", args.path, query), indent=2))
 
 
+def read_body(source: str) -> dict:
+    """A JSON request body: inline, `@file`, or `-` for stdin."""
+    if source == "-":
+        return json.load(sys.stdin)
+    if source.startswith("@"):
+        with open(source[1:], encoding="utf-8") as handle:
+            return json.load(handle)
+    return json.loads(source)
+
+
+def cmd_write(args: argparse.Namespace) -> None:
+    print(json.dumps(request(args.method, args.path, body=read_body(args.body)), indent=2))
+
+
 def cmd_team_id(args: argparse.Namespace) -> None:
     bundle = find_bundle_id(args.bundle_id)
     if bundle is None:
@@ -547,6 +561,12 @@ def main() -> None:
     get.add_argument("query", nargs="*", help="key=value query pairs")
     get.add_argument("--all", action="store_true", help="follow pagination")
     get.set_defaults(func=cmd_get)
+
+    for method in ("PATCH", "POST"):
+        write = commands.add_parser(method.lower(), help=f"{method} a JSON body to an API path and print the reply")
+        write.add_argument("path")
+        write.add_argument("body", help="JSON body, @file, or - for stdin")
+        write.set_defaults(func=cmd_write, method=method)
 
     team = commands.add_parser("team-id", help="print the team ID that owns a bundle ID")
     team.add_argument("bundle_id")
