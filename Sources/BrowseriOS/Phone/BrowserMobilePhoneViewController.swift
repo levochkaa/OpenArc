@@ -2041,6 +2041,14 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
             case up
         }
 
+        struct PulledCard {
+            var center: CGPoint
+            var scale: CGFloat
+            var contentHeight: CGFloat
+            var angle: CGFloat
+            var radius: CGFloat
+        }
+
         let kind: Kind
         let fromID: String
         let toID: String?
@@ -2055,6 +2063,15 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
         var isRow = false
         /// The finger has let go and the cards are on their way.
         var isSettling = false
+        /// Where the finger is, and where it first touched.
+        var finger = CGPoint.zero
+        var fingerStart: CGPoint?
+        /// The pulled-out card of an up swipe: where it heads and where it
+        /// is, trailing the finger.
+        var pullTarget: PulledCard?
+        var pullNow: PulledCard?
+        var pullLink: CADisplayLink?
+        var pullLastTime: CFTimeInterval = 0
 
         init(
             kind: Kind, fromID: String, toID: String?, direction: CGFloat,
@@ -2092,6 +2109,15 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
 
     /// How far up the finger goes for the page to reach its smallest card.
     private static let upSwipeTravel: CGFloat = 380
+    /// The page's card in an up swipe: its left edge and its bottom's
+    /// distance above the bar.
+    private static let pullCardLeft: CGFloat = 24
+    private static let pullCardBottomGap: CGFloat = 23
+    /// The pulled card at its full size, as a share of the screen's width;
+    /// the point of it the finger holds; how long it takes to catch up.
+    private static let pullCardScale: CGFloat = 0.4
+    private static let pullGrip = CGPoint(x: 0.65, y: 0.28)
+    private static let pullLag: CFTimeInterval = 0.12
 
     func gestureRecognizerShouldBegin(_ gesture: UIGestureRecognizer) -> Bool {
         guard let pan = gesture as? UIPanGestureRecognizer else { return true }
@@ -2130,12 +2156,17 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
                       !bar.isCollapsed
             {
                 beginTabSwipe(.up, toPrevious: true)
+                let location = gesture.location(in: view)
+                let translation = gesture.translation(in: view)
+                swipe?.finger = location
+                swipe?.fingerStart = CGPoint(x: location.x - translation.x, y: location.y - translation.y)
             } else if beginSearch(text: "", replacesPage: false, followsFinger: true), let surface {
                 surfaceDragStartTop = surface.frame.minY
             }
         case .changed:
             let translation = gesture.translation(in: view)
             if let swipe {
+                swipe.finger = gesture.location(in: view)
                 updateSwipe(progress: swipeProgress(swipe, translation: translation))
             } else if mode == .search, let surface, surfacePan != nil {
                 dragSearchUp(surface, by: translation.y)
@@ -2259,6 +2290,11 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
         swipe.incomingCard.isHidden = target == nil
         view.insertSubview(swipe.incomingCard, belowSubview: bar)
         view.insertSubview(swipe.outgoingCard, belowSubview: bar)
+        if kind == .up, target != nil {
+            // The stack's front card itself comes out, over the page and the bar.
+            view.insertSubview(swipe.incomingCard, aboveSubview: bar)
+            bar.tabStack.front.isHidden = true
+        }
         pageContainer.isHidden = true
         self.swipe = swipe
         if kind == .sideways {
@@ -2303,6 +2339,8 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
                     && -translation.y > 40 && velocity.y < 300
             }
         swipe.isSettling = true
+        swipe.pullLink?.invalidate()
+        swipe.pullLink = nil
         if completes, let toID = swipe.toID {
             // A swipe moves along the row without reordering it.
             if swipe.kind == .sideways {
@@ -2331,6 +2369,7 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
         } completion: { _ in
             swipe.outgoingCard.removeFromSuperview()
             swipe.backdrop.removeFromSuperview()
+            self.bar.tabStack.front.isHidden = false
             self.pageContainer.isHidden = false
             // The picture keeps covering the page before the swipe lets go of it.
             if completes, let toID = swipe.toID {
@@ -2547,29 +2586,90 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
         swipe.outgoingCard.alpha = 0
     }
 
-    /// The page shrinks into a card that rests on the bar while the previous
-    /// tab's picture comes out of the tab stack over it.
+    /// The page shrinks into a card that rests on the bar, its left edge in
+    /// from the screen's, while the stack's front card, the previous tab,
+    /// comes out over it and trails the finger.
     private func layoutUpSwipe(_ swipe: BarSwipe, progress: CGFloat) {
         let bounds = view.bounds
         let p = max(progress, 0)
-        let scale = 1 - 0.28 * p
-        let bottom = bounds.height - (bounds.height - expandedBarFrame.minY + 6) * min(1, p * 2)
+        let early = min(1, p * 2)
+        let scale = 1 - 0.29 * p
+        let top = view.safeAreaInsets.top * early
+        let content = CGRect(x: 0, y: top, width: bounds.width, height: bounds.height - top)
+        let bottom = bounds.height - (bounds.height - expandedBarFrame.minY + Self.pullCardBottomGap) * early
+        let left = Self.pullCardLeft * early
         place(
-            swipe.outgoingCard, content: bounds,
-            center: CGPoint(x: bounds.midX, y: bottom - bounds.height * scale / 2), scale: scale,
-            radius: 44 * min(p * 4, 1),
+            swipe.outgoingCard, content: content,
+            center: CGPoint(
+                x: left + content.width * scale / 2,
+                y: bottom - content.height * scale / 2,
+            ),
+            scale: scale, radius: Self.rowCardRadius * min(p * 4, 1),
         )
         guard swipe.toID != nil else { return }
-        let q = min(p, 1)
-        let stack = bar.convert(bar.tabStack.center, to: view)
-        let startScale = BrowserMobileTabStackButton.cardSize.width / bounds.width
-        let incomingScale = startScale + (0.36 - startScale) * q
-        let target = CGPoint(x: bounds.width * 0.27, y: bounds.height * 0.62)
-        place(
-            swipe.incomingCard, content: bounds,
-            center: CGPoint(x: stack.x + (target.x - stack.x) * q, y: stack.y + (target.y - stack.y) * q),
-            scale: incomingScale, angle: BrowserMobileTabStackButton.frontAngle * (1 - q), radius: 40,
+        let target = pulledCard(for: swipe, progress: swipe.isSettling ? 0 : min(p, 1))
+        swipe.pullTarget = target
+        if swipe.isSettling || swipe.pullNow == nil {
+            swipe.pullNow = target
+            placePulledCard(swipe)
+        } else if swipe.pullLink == nil {
+            let link = CADisplayLink(target: self, selector: #selector(stepPulledCard(_:)))
+            link.add(to: .main, forMode: .common)
+            swipe.pullLink = link
+            swipe.pullLastTime = CACurrentMediaTime()
+        }
+    }
+
+    /// Where the pulled card heads for `q` of the way up: from the stack's
+    /// front card to a card held by the finger near its upper right.
+    private func pulledCard(for swipe: BarSwipe, progress q: CGFloat) -> BarSwipe.PulledCard {
+        let width = view.bounds.width
+        let rowHeight = rowCardContent.height
+        let stackCard = BrowserMobileTabStackButton.cardSize
+        let front = bar.tabStack.convert(bar.tabStack.front.center, to: view)
+        let scale = stackCard.width / width + (Self.pullCardScale - stackCard.width / width) * q
+        // A stack card shows the top of the page; the pulled one grows to all of it.
+        let stackHeight = width * stackCard.height / stackCard.width
+        let contentHeight = stackHeight + (rowHeight - stackHeight) * min(1, q * 1.5)
+        let start = swipe.fingerStart ?? front
+        let size = CGSize(width: width * scale, height: contentHeight * scale)
+        let held = CGPoint(
+            x: swipe.finger.x + (0.5 - Self.pullGrip.x) * size.width + (front.x - start.x) * (1 - q),
+            y: swipe.finger.y + (0.5 - Self.pullGrip.y) * size.height + (front.y - start.y) * (1 - q),
         )
-        swipe.incomingCard.alpha = min(1, 0.4 + q * 3)
+        return BarSwipe.PulledCard(
+            center: q == 0 ? front : held, scale: scale, contentHeight: contentHeight,
+            angle: BrowserMobileTabStackButton.frontAngle * (1 - q), radius: 4 + 12 * q,
+        )
+    }
+
+    private func placePulledCard(_ swipe: BarSwipe) {
+        guard let card = swipe.pullNow else { return }
+        let top = view.safeAreaInsets.top
+        place(
+            swipe.incomingCard,
+            content: CGRect(x: 0, y: top, width: view.bounds.width, height: card.contentHeight),
+            center: card.center, scale: card.scale, angle: card.angle, radius: card.radius,
+        )
+        swipe.incomingCard.alpha = 1
+    }
+
+    /// Moves the pulled card a step toward where it heads, so it trails the finger.
+    @objc private func stepPulledCard(_ link: CADisplayLink) {
+        guard let swipe, swipe.pullLink === link, let target = swipe.pullTarget, var now = swipe.pullNow else {
+            link.invalidate()
+            return
+        }
+        let time = CACurrentMediaTime()
+        let k = 1 - exp(-(time - swipe.pullLastTime) / Self.pullLag)
+        swipe.pullLastTime = time
+        func step(_ a: CGFloat, _ b: CGFloat) -> CGFloat { a + (b - a) * k }
+        now.center = CGPoint(x: step(now.center.x, target.center.x), y: step(now.center.y, target.center.y))
+        now.scale = step(now.scale, target.scale)
+        now.contentHeight = step(now.contentHeight, target.contentHeight)
+        now.angle = step(now.angle, target.angle)
+        now.radius = step(now.radius, target.radius)
+        swipe.pullNow = now
+        placePulledCard(swipe)
     }
 }
