@@ -18,3 +18,10 @@ ThirdParty/chrome-engine/
 research/
 LOCAL.md
 __pycache__/
+
+# Private: App Review contacts, App Store keywords, screenshots and ASO research.
+fastlane/metadata/review_information/
+fastlane/metadata/*/keywords.txt
+fastlane/screenshots/
+fastlane/screenshot-sets/
+docs/aso/
