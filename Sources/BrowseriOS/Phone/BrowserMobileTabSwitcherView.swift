@@ -25,8 +25,6 @@ final class BrowserMobileTabSwitcherView: UIView, UIScrollViewDelegate, UIGestur
     static let backwardStep: CGFloat = 0.18
     static let newestExtraStep: CGFloat = 0.062
     static let cardHeightShare: CGFloat = 0.65
-    /// How much smaller each older card is than the one in the middle, up to two back.
-    static let olderCardShrink: CGFloat = 0.014
     static let cornerRadius: CGFloat = 26
 
     var onOpen: ((String) -> Void)?
@@ -127,6 +125,13 @@ final class BrowserMobileTabSwitcherView: UIView, UIScrollViewDelegate, UIGestur
         return entryIndex(at: pan.location(in: self)) != nil
     }
 
+    /// How much smaller an older card is than the one in the middle, `back`
+    /// steps behind it: a little one back, much more two back.
+    static func olderCardScale(back: CGFloat) -> CGFloat {
+        let back = min(max(back, 0), 2)
+        return 1 - 0.0065 * back - 0.0125 * back * back
+    }
+
     /// Replaces the cards, keeping pictures of tabs that stay.
     func setEntries(_ newEntries: [Entry], focus: CGFloat) {
         let ids = Set(newEntries.map(\.id))
@@ -186,7 +191,7 @@ final class BrowserMobileTabSwitcherView: UIView, UIScrollViewDelegate, UIGestur
         let frame = CGRect(x: x, y: y, width: size.width, height: size.height)
         // Older cards recede a little into the stack: their left edges keep
         // their places in the row, their middles stay level.
-        let shrink = 1 - Self.olderCardShrink * min(max(-offset, 0), 2)
+        let shrink = Self.olderCardScale(back: -offset)
         return CGRect(
             x: frame.minX, y: frame.minY + frame.height * (1 - shrink) / 2,
             width: frame.width * shrink, height: frame.height * shrink,
