@@ -68,7 +68,7 @@ Old writers cannot express the mixed tree:
 - V3 incidental rank normalization preserves existing pinned ranks in Spaces containing folders.
 - V2 full-record updates touching a folder-bearing source/target preserve existing structural fields and pinned home URL while applying page metadata. A new legacy pinned tab appends at the root using server order.
 
-These compatibility restrictions prevent silent flattening; they are not full reorder parity for older clients. The Swift coordinator applies canonical outcomes for rejected operations and removes the acknowledged immutable row. It does not reinterpret a frozen v3 move as a v4 operation.
+These compatibility restrictions prevent silent flattening; they do not give older clients the full reorder behavior. The Swift coordinator applies canonical outcomes for rejected operations and removes the acknowledged immutable row. It does not reinterpret a frozen v3 move as a v4 operation.
 
 ## Swift persistence and upgrade
 
@@ -100,4 +100,4 @@ A remotely received tab can be durable in SQLite before its logical engine callb
 
 This closes two data errors: a cross-Space folder move could previously leave pending children in their old Space and journal `deleteTab`; a reorder beside a pending sibling could choose the wrong neighbor after renumbering only visible rows. Folder actions continue to journal only the root. An escaped pending child survives a later subtree delete, and close/create callback ordering cannot restore a deleted child.
 
-The HTTP fixture can hold a real v4 response after the server transaction, observe requested/returned cursors and register a new device through `/v1/devices`. A paged upgrade test derives the actual page boundary from server history: `server_seq` is global, so 500 events do not imply cursor 500. Existing local edits retain their legacy mutation identity before adoption; rotated devices replay from zero and retry account-scoped receipts. Exact successful runs are recorded in the parity ledger.
+The HTTP fixture can hold a real v4 response after the server transaction, observe requested/returned cursors and register a new device through `/v1/devices`. A paged upgrade test derives the actual page boundary from server history: `server_seq` is global, so 500 events do not imply cursor 500. Existing local edits retain their legacy mutation identity before adoption; rotated devices replay from zero and retry account-scoped receipts.

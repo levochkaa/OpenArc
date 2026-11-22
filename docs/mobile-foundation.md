@@ -2,7 +2,7 @@
 
 ## Scope and references
 
-This is the first working iPhone/iPad slice, not mobile parity. The required path is address/search → page loading → navigation → tabs → persistence → restoration.
+This is the first working iPhone/iPad slice, not the full mobile feature set. The required path is address/search → page loading → navigation → tabs → persistence → restoration.
 
 The old SwiftUI shell was not carried forward. Its default-store-only engine, regenerated restoration IDs and silent persistence errors were unsuitable. The new target reuses the desktop URL resolver, search-engine definitions and translations, plus existing DomainParser credits. Desktop CEF flags stay on macOS targets; mobile commands do not stage CEF or Sparkle.
 
