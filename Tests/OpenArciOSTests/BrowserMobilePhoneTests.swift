@@ -258,6 +258,19 @@ import UIKit
     switcher.setEntries([entries[0]], focus: 0)
     let lone = switcher.cardFrame(index: 0, position: 0)
     #expect(abs(lone.midX - width / 2) < 0.5, "A lone card sits in the middle")
+
+    switcher.setEntries(Array(entries[0..<2]), focus: 0)
+    let first = switcher.cardFrame(index: 0, position: 0)
+    #expect(abs(first.midX - width / 2) < 0.5, "The first card sits in the middle at the row's start")
+    #expect(abs(switcher.cardFrame(index: 1, position: 0).minX - first.minX
+            - width * BrowserMobileTabSwitcherView.forwardStep) < 0.5)
+    let last = switcher.cardFrame(index: 1, position: 1)
+    #expect(abs(last.midX - width / 2) < 0.5, "The last card sits in the middle at the row's end")
+    #expect(
+        last.minX - switcher.cardFrame(index: 0, position: 1).minX
+            < width * BrowserMobileTabSwitcherView.backwardStep,
+        "At the row's end the older card comes closer",
+    )
 }
 
 @Test func mobileFaviconsPlateOnlyIconsThatVanishOnDarkBackgrounds() throws {

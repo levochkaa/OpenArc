@@ -165,17 +165,21 @@ final class BrowserMobileTabSwitcherView: UIView, UIScrollViewDelegate, UIGestur
         let size = cardSize
         let offset = CGFloat(index) - position
         let width = bounds.width
-        // A lone card sits in the middle; with more, the focused one leaves room on the right.
-        let focusedX = entries.count == 1 ? ((width - size.width) / 2).rounded() : width * 0.211
+        // At either end of the row the focused card sits in the middle; between
+        // the ends it moves right to show the older card behind it.
+        let lastIndex = CGFloat(max(entries.count - 1, 0))
+        let between = min(max(position, 0), 1) * min(max(lastIndex - position, 0), 1)
+        let centeredX = ((width - size.width) / 2).rounded()
+        let focusedX = centeredX + (width * 0.211 - centeredX) * between
         let x: CGFloat
         if offset >= 0 {
             x = focusedX + offset * width * Self.forwardStep
                 // The newest card leaves more of the one before it in view.
-                + (index == entries.count - 1 ? min(offset, 1) * width * Self.newestExtraStep : 0)
+                + (index == entries.count - 1 ? min(offset, 1) * between * width * Self.newestExtraStep : 0)
         } else {
-            // The older cards bunch up toward the left edge.
+            // The older cards bunch up toward the left edge, closer still at the row's end.
             let k: CGFloat = 1.5
-            let spread = width * Self.backwardStep / (1 - exp(-k))
+            let spread = width * Self.backwardStep * (0.76 + 0.24 * between) / (1 - exp(-k))
             x = focusedX - spread * (1 - exp(k * offset))
         }
         let y = (bounds.height - size.height) / 2 + bounds.height * 0.0157
