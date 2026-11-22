@@ -169,7 +169,7 @@ final class BrowserMobileTabSwitcherView: UIView, UIScrollViewDelegate, UIGestur
         // the ends it moves right to show the older card behind it.
         let lastIndex = CGFloat(max(entries.count - 1, 0))
         let between = min(max(position, 0), 1) * min(max(lastIndex - position, 0), 1)
-        let centeredX = ((width - size.width) / 2).rounded()
+        let centeredX = (width - size.width) / 2
         let focusedX = centeredX + (width * 0.211 - centeredX) * between
         let x: CGFloat
         if offset >= 0 {
