@@ -1075,18 +1075,18 @@ final class BrowserMobilePhoneViewController: UIViewController {
             self?.closePanel { self?.findInPage() }
         })
         tiles.append(.init(
+            title: String(localized: "Downloads", table: "Mobile"), symbol: "arrow.down.circle",
+            identifier: "browser.downloads", isEnabled: workspace.downloads != nil,
+        ) { [weak self] in
+            self?.closePanel { self?.showDownloads() }
+        })
+        tiles.append(.init(
             title: isPinned ? String(localized: "Unpin", table: "Mobile") : String(localized: "Pin", table: "Mobile"),
             symbol: isPinned ? "pin.slash" : "pin", identifier: "browser.pin",
             isEnabled: document?.canEdit == true && tab?.spaceID != nil && isWebPage,
             menu: isPinned ? nil : pinMenu(),
         ) { [weak self] in
             self?.togglePin()
-        })
-        tiles.append(.init(
-            title: String(localized: "Downloads", table: "Mobile"), symbol: "arrow.down.circle",
-            identifier: "browser.downloads", isEnabled: workspace.downloads != nil,
-        ) { [weak self] in
-            self?.closePanel { self?.showDownloads() }
         })
         tiles.append(.init(
             title: String(localized: "Share", table: "Mobile"), symbol: "square.and.arrow.up",
