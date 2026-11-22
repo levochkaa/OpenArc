@@ -4,6 +4,7 @@
 
 #import "Browser/ChromeEngine/BrowserChromeEngineMain.h"
 #import "Browser/SwiftBridge.h"
+#import "Browser/WebKit/BrowserWebKitEngineMain.h"
 #import <Cocoa/Cocoa.h>
 
 #include "include/cef_application_mac.h"
@@ -102,6 +103,9 @@ static int BrowserRunOnChromeEngine(int argc, char* argv[]) {
 int main(int argc, char* argv[]) {
   // Runs while the engine loads, before a restored page can ask for the same.
   BrowserStartLaunchWarmup();
+  if (BrowserShouldRunWebKitEngine()) {
+    return BrowserRunWebKitEngine(argc, argv);
+  }
   if (BrowserShouldRunChromeEngine()) {
     return BrowserRunOnChromeEngine(argc, argv);
   }

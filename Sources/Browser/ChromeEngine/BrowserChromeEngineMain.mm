@@ -54,7 +54,7 @@ Class<BrowserChromeEngine> BrowserChromeEngineClass(void) {
 }
 
 int BrowserShouldRunChromeEngine(void) {
-  return [BrowserEngineChoice currentLaunchEngine] == BrowserChromiumEngineChrome ? 1 : 0;
+  return [BrowserEngineChoice currentLaunchEngine] == BrowserEngineChrome ? 1 : 0;
 }
 
 int BrowserRunChromeEngine(int argc, char* argv[], NSString* cache_root) {
@@ -106,6 +106,17 @@ int BrowserRunChromeEngine(int argc, char* argv[], NSString* cache_root) {
 void BrowserStopApplicationLoop(void) {
   if (!gUsesChromeEngine) {
     [NSApp stop:nil];
+    // -stop: ends the loop after the next event; outside one, this event is it.
+    [NSApp postEvent:[NSEvent otherEventWithType:NSEventTypeApplicationDefined
+                                        location:NSZeroPoint
+                                   modifierFlags:0
+                                       timestamp:0
+                                    windowNumber:0
+                                         context:nil
+                                         subtype:0
+                                           data1:0
+                                           data2:0]
+             atStart:NO];
     return;
   }
   // The app's windows and pages are put away by now; Chrome closes its own and quits in order.

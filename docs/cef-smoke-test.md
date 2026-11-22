@@ -10,6 +10,11 @@
     ./script/chrome_engine.sh pull && ./build.sh build
     script/cef_smoke_test.sh .build/xcode/Build/Products/Debug/OpenArc.app --engine chrome
 
+`--engine webkit` starts the copy with `--openarc-engine=webkit` ([webkit-engine.md](webkit-engine.md)), on a full
+build or one made with `OPENARC_STAGE_CEF=0`. chromium-engine then checks that no Chromium runs: no helper process
+from the bundle, and neither CEF nor the Chrome engine among the main process's open files. engine-version expects
+Safari's user agent, webkit-engine expects WebKit on both ports, and the checks of Chromium's own features skip.
+
 It prints a report and a JSON summary, and writes `report.json`, `app.log`, `notification-log.txt` and screenshots to the report folder (`--out DIR`, by default a new folder in `$TMPDIR`). Exit status: 0 when no check failed, 1 when one did, 2 when the copy did not start. A check is PASS, WARN (works, with a note on what it could not prove), FAIL or SKIP (with the reason). `--help` lists the options.
 
 Needs: an Apple Development signing identity, `cua-driver` with Accessibility and Screen Recording (without it, `--no-gui` runs the rest), and the network for translation.
@@ -35,7 +40,7 @@ It starts the copy through LaunchServices with `open -g` and `--no-activate`, `-
 | passkeys | `isUserVerifyingPlatformAuthenticatorAvailable()` and `getClientCapabilities()` resolve. False is a WARN: the copy has no webauthn keychain group. |
 | media-devices | `navigator.mediaDevices` exists, `getDisplayMedia` is a function, `enumerateDevices` resolves. |
 | history | The visited fixture URLs are in the profile's `History` database, which OpenArc's history reads; the CLI has no history command. |
-| webkit-engine | The copy's `browser.settings.siteEngines` sends a second fixture port to WebKit. The CLI can't run scripts in WebKit tabs, so the fixture writes the engine it sees into its title: `Engine webkit 42` there, `Engine chromium 42` on the other port. |
+| webkit-engine | The copy's `browser.settings.siteEngines` sends a second fixture port to WebKit. The fixture writes the engine it sees into its title, which `openarc tabs` lists: `Engine webkit 42` there, `Engine chromium 42` on the other port. |
 | print-preview | `window.print()` opens a "Print" window over the browser window; Escape, sent in the background, closes it and the page still runs scripts. |
 | screen-share-picker | `getDisplayMedia` from a click opens OpenArc's picker sheet. With Screen Recording allowed for the copy it shares the first source and checks the track, then stops it; otherwise it presses Cancel and expects `NotAllowedError`. |
 | extension-popup | Extensions > OpenArc Smoke Test, pressed through accessibility, opens the popup; its `chrome.tabs.query({active: true, currentWindow: true})` sees the selected tab. |

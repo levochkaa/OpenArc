@@ -4,8 +4,8 @@
 <body>
 <h1>Engine check</h1>
 <script>
-  // The agent CLI can't run scripts in WebKit tabs, so the page reports through
-  // its title, which `openarc tabs` lists.
+  // The page reports through its title, which `openarc tabs` lists, so the
+  // check reads both engines the same way.
   const ua = navigator.userAgent;
   const engine = ua.includes("Chrome/") ? "chromium" : ua.includes("AppleWebKit") ? "webkit" : "other";
   document.title = "Engine " + engine + " " + String(6 * 7);

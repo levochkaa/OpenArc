@@ -49,7 +49,7 @@ struct ExtensionBridgeSymbols {
 
 void* ChromiumEmbeddedFrameworkHandle() {
   // On the Chrome engine CEF must never load: it would start a second Chromium in this process.
-  if (BrowserUsesChromeEngine()) {
+  if (!BrowserUsesCEF()) {
     return nullptr;
   }
   BrowserRuntimeConfiguration* configuration =

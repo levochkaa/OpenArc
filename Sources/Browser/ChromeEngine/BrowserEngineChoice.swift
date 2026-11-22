@@ -2,23 +2,46 @@
 
 import Foundation
 
-// MARK: - BrowserChromiumEngine
+// MARK: - BrowserEngine
 
-/// What draws Chromium pages: CEF, or Chrome's own framework with OpenArc's layer (Chromium/engine).
-@objc enum BrowserChromiumEngine: Int {
+/// What draws the app's pages: CEF, Chrome's own framework with OpenArc's layer (Chromium/engine), or WebKit,
+/// which loads no Chromium at all (docs/webkit-engine.md).
+@objc enum BrowserEngine: Int {
     case cef
     case chrome
+    case webKit
+
+    /// The value of the setting and of `--openarc-engine=`.
+    var key: String {
+        switch self {
+        case .cef: "cef"
+        case .chrome: "chrome"
+        case .webKit: "webkit"
+        }
+    }
+
+    init?(key: some StringProtocol) {
+        switch key {
+        case "cef": self = .cef
+        case "chrome": self = .chrome
+        case "webkit": self = .webKit
+        default: return nil
+        }
+    }
 }
 
 // MARK: - BrowserEngineChoice
 
 /// The engine setting. The process runs on one engine from launch to quit, so a change takes effect at the
-/// next launch. CEF stays the default, and a build without the Chrome engine's framework always runs on CEF.
+/// next launch. CEF stays the default. A build without the Chrome engine's framework runs Chrome's choice on
+/// CEF, and a build without CEF (one for the Mac App Store) runs on WebKit.
 @objcMembers final class BrowserEngineChoice: NSObject {
     static let defaultsKey = "BrowserChromiumEngine"
-    /// `--openarc-engine=chrome` or `--openarc-engine=cef` overrides the setting for one launch.
+    static let webKitDefaultsKey = "BrowserWebKitEngine"
+    /// `--openarc-engine=cef`, `chrome` or `webkit` overrides the setting for one launch.
     static let argumentPrefix = "--openarc-engine="
     static let frameworkName = "OpenArc Framework"
+    static let cefFrameworkName = "Chromium Embedded Framework"
     static let entryPointName = "OpenArcChromeEngineMain"
     /// Settings asks the app to relaunch on the engine just chosen.
     static let relaunchRequestedNotification = Notification.Name("BrowserEngineChoiceRelaunchRequested")
@@ -32,34 +55,74 @@ import Foundation
         frameworkBinaryPath(bundlePath: Bundle.main.bundlePath) != nil
     }
 
-    /// The engine the user chose, whatever this build carries.
-    static func preferredEngine(defaults: UserDefaults = .standard) -> BrowserChromiumEngine {
-        defaults.string(forKey: defaultsKey) == "chrome" ? .chrome : .cef
+    /// The bundle carries CEF. A Mac App Store build leaves it out and runs on WebKit only.
+    static var isCEFAvailable: Bool {
+        cefFrameworkAvailable(bundlePath: Bundle.main.bundlePath)
     }
 
-    static func setPreferredEngine(_ engine: BrowserChromiumEngine, defaults: UserDefaults = .standard) {
+    /// The engine the user chose, whatever this build carries: WebKit while its toggle is on, else the
+    /// Chromium engine.
+    static func preferredEngine(defaults: UserDefaults = .standard) -> BrowserEngine {
+        defaults.bool(forKey: webKitDefaultsKey) ? .webKit : preferredChromiumEngine(defaults: defaults)
+    }
+
+    /// CEF or Chrome, the Chromium engine the app runs on while WebKit is off.
+    static func preferredChromiumEngine(defaults: UserDefaults = .standard) -> BrowserEngine {
+        defaults.string(forKey: defaultsKey) == BrowserEngine.chrome.key ? .chrome : .cef
+    }
+
+    /// CEF or Chrome for Chromium pages; WebKit keeps its own toggle.
+    static func setPreferredChromiumEngine(_ engine: BrowserEngine, defaults: UserDefaults = .standard) {
         if engine == .chrome {
-            defaults.set("chrome", forKey: defaultsKey)
+            defaults.set(BrowserEngine.chrome.key, forKey: defaultsKey)
         } else {
             defaults.removeObject(forKey: defaultsKey)
         }
     }
 
-    /// The engine a launch runs on: the argument's, else the setting's, and CEF without the Chrome framework.
+    /// The WebKit toggle. Off, the app goes back to the Chromium engine chosen before.
+    static func isWebKitPreferred(defaults: UserDefaults = .standard) -> Bool {
+        defaults.bool(forKey: webKitDefaultsKey)
+    }
+
+    static func setWebKitPreferred(_ preferred: Bool, defaults: UserDefaults = .standard) {
+        if preferred {
+            defaults.set(true, forKey: webKitDefaultsKey)
+        } else {
+            defaults.removeObject(forKey: webKitDefaultsKey)
+        }
+    }
+
+    /// The engine a launch runs on: the argument's, else the setting's. Chrome without its framework runs on
+    /// CEF, and CEF without its framework on WebKit.
     static func launchEngine(
         arguments: [String],
-        preferred: BrowserChromiumEngine,
+        preferred: BrowserEngine,
         chromeEngineAvailable: Bool,
-    ) -> BrowserChromiumEngine {
+        cefAvailable: Bool = true,
+    ) -> BrowserEngine {
         var engine = preferred
-        if let argument = arguments.last(where: { $0.hasPrefix(argumentPrefix) }) {
-            switch argument.dropFirst(argumentPrefix.count) {
-            case "chrome": engine = .chrome
-            case "cef": engine = .cef
-            default: break
-            }
+        if let argument = arguments.last(where: { $0.hasPrefix(argumentPrefix) }),
+           let chosen = BrowserEngine(key: argument.dropFirst(argumentPrefix.count))
+        {
+            engine = chosen
         }
-        return engine == .chrome && chromeEngineAvailable ? .chrome : .cef
+        if engine == .chrome, !chromeEngineAvailable {
+            engine = .cef
+        }
+        if engine == .cef, !cefAvailable {
+            engine = .webKit
+        }
+        return engine
+    }
+
+    /// `Contents/Frameworks/Chromium Embedded Framework.framework` holds CEF's binary.
+    static func cefFrameworkAvailable(bundlePath: String, fileManager: FileManager = .default) -> Bool {
+        let binary = URL(fileURLWithPath: bundlePath, isDirectory: true)
+            .appendingPathComponent("Contents/Frameworks/\(cefFrameworkName).framework", isDirectory: true)
+            .appendingPathComponent(cefFrameworkName, isDirectory: false)
+            .resolvingSymlinksInPath()
+        return fileManager.fileExists(atPath: binary.path)
     }
 
     /// The framework's binary in an app bundle, `Contents/Frameworks/OpenArc Framework.framework/Versions/<v>/…`,
@@ -78,11 +141,12 @@ import Foundation
     }
 
     /// For main(): the engine this launch runs on.
-    @objc(currentLaunchEngine) static func currentLaunchEngine() -> BrowserChromiumEngine {
+    @objc(currentLaunchEngine) static func currentLaunchEngine() -> BrowserEngine {
         launchEngine(
             arguments: ProcessInfo.processInfo.arguments,
             preferred: preferredEngine(),
             chromeEngineAvailable: isChromeEngineAvailable,
+            cefAvailable: isCEFAvailable,
         )
     }
 

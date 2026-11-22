@@ -36,6 +36,9 @@ import WebKit
     func webKitPage(_ page: BrowserWebKitPage, didChangeCaptureVideo video: Bool, audio: Bool)
     func webKitPage(_ page: BrowserWebKitPage, didFindMatch found: Bool)
     func webKitPageDidBecomeFocused(_ page: BrowserWebKitPage)
+    /// A download the page started, in the dictionary `BrowserChromePageDelegate` reports downloads in. The page
+    /// may be closed by then.
+    func webKitPage(_ page: BrowserWebKitPage?, didUpdateDownload info: [String: Any])
 }
 
 // MARK: - BrowserWebKitPage
@@ -45,10 +48,6 @@ import WebKit
 @MainActor @objc final class BrowserWebKitPage: NSObject {
     /// `window.print()` posts here: WKWebView has no public delegate call for it.
     static let printMessageName = "openArcPrint"
-
-    // MARK: Private
-
-    private static let mediaMessageName = "openArcMedia"
 
     // MARK: Private
 
@@ -208,6 +207,57 @@ import WebKit
         ))
     }
 
+    /// Sets cookies another browser's profile gave into the profile's WebKit store, as the CEF import does into
+    /// Chromium's. Returns how many cookies were valid; the store takes them a moment later.
+    static func importCookies(_ cookies: [BrowserImportedCookie], profileKey: String?, ephemeral: Bool) -> Int {
+        let incoming = cookies.compactMap { cookie -> HTTPCookie? in
+            let sameSite: BrowserChromiumCookie.SameSite =
+                switch cookie.sameSite {
+                case 0: .none
+                case 1: .lax
+                case 2: .strict
+                default: .unspecified
+                }
+            return BrowserChromiumCookie(
+                name: cookie.name,
+                value: cookie.value,
+                domain: cookie.host,
+                path: cookie.path,
+                isSecure: cookie.isSecure,
+                isHTTPOnly: cookie.isHTTPOnly,
+                expires: cookie.expires == 0 ? nil : cookie.expires,
+                sameSite: sameSite,
+            ).httpCookie()
+        }
+        let store = (ephemeral ? ephemeralStore : dataStore(forProfileKey: profileKey ?? "")).httpCookieStore
+        Task { @MainActor in
+            for cookie in incoming {
+                await store.setCookie(cookie)
+            }
+        }
+        return incoming.count
+    }
+
+    /// `Runtime.evaluate`'s answer for WebKit's result: the value, or the exception's message.
+    static func devToolsEvaluationJSON(_ result: Result<Any, any Error>) -> String? {
+        let answer: [String: Any]
+        switch result {
+        case .success(let value):
+            let jsonValue: Any =
+                switch value {
+                case is NSNull: NSNull()
+                case _ where JSONSerialization.isValidJSONObject([value]): value
+                default: String(describing: value)
+                }
+            answer = ["result": ["type": jsonType(of: jsonValue), "value": jsonValue]]
+        case .failure(let error):
+            let message = (error as NSError).userInfo["WKJavaScriptExceptionMessage"] as? String
+                ?? error.localizedDescription
+            answer = ["exceptionDetails": ["text": message, "exception": ["description": message]]]
+        }
+        return (try? JSONSerialization.data(withJSONObject: answer)).flatMap { String(data: $0, encoding: .utf8) }
+    }
+
     /// The media observer, then the boosts' scripts, all at document start in every frame.
     private static func installUserScripts(
         in controller: WKUserContentController,
@@ -244,6 +294,13 @@ import WebKit
         configuration.preferences.isFraudulentWebsiteWarningEnabled = true
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
         configuration.defaultWebpagePreferences.preferredContentMode = .desktop
+        // Without CEF, WebKit serves the app's own pages too. A popup's configuration is a copy of its opener's,
+        // handlers included.
+        if BrowserUsesWebKitEngine() != 0 {
+            for scheme in BrowserWebKitInternalPages.schemes {
+                configuration.setURLSchemeHandler(BrowserWebKitInternalPages.shared, forURLScheme: scheme)
+            }
+        }
         return configuration
     }
 
@@ -342,6 +399,15 @@ import WebKit
         return NSBitmapImageRep(cgImage: cgImage).representation(using: .png, properties: [:])
     }
 
+    private static func jsonType(of value: Any) -> String {
+        switch value {
+        case is NSNull: "object"
+        case let number as NSNumber: CFGetTypeID(number) == CFBooleanGetTypeID() ? "boolean" : "number"
+        case is String: "string"
+        default: "object"
+        }
+    }
+
     /// An extension asked for a link in a new tab.
     func openInNewTab(url: URL, inBackground: Bool) {
         delegate?.webKitPage(self, openURLStringInNewTab: url.absoluteString, inBackground: inBackground)
@@ -406,6 +472,41 @@ import WebKit
     @objc func evaluate(_ script: String, completion: @escaping @MainActor (String?) -> Void) {
         webView.evaluateJavaScript(script) { value, _ in
             completion(Self.text(of: value))
+        }
+    }
+
+    /// The DevTools protocol methods the agent CLI needs from a WebKit page, answered as Chromium answers them:
+    /// `Runtime.evaluate`, whose expression runs in the page's global scope with a returned promise awaited, and
+    /// `Page.captureScreenshot` of the visible page as PNG. Other methods answer nil, as a page without DevTools
+    /// does.
+    @objc func executeDevToolsMethod(
+        _ method: String,
+        params paramsJSON: String,
+        completion: @escaping @MainActor (String?) -> Void,
+    ) {
+        if method == "Page.captureScreenshot" {
+            capturePicture { png in
+                let answer = png.map { ["data": $0.base64EncodedString()] }
+                completion(answer.flatMap { try? JSONSerialization.data(withJSONObject: $0) }
+                    .flatMap { String(data: $0, encoding: .utf8) })
+            }
+            return
+        }
+        guard method == "Runtime.evaluate",
+              let data = paramsJSON.data(using: .utf8),
+              let params = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let expression = params["expression"] as? String
+        else {
+            completion(nil)
+            return
+        }
+        webView.callAsyncJavaScript(
+            "return await (0, eval)(__openArcExpression);",
+            arguments: ["__openArcExpression": expression],
+            in: nil,
+            in: .page,
+        ) { result in
+            completion(Self.devToolsEvaluationJSON(result))
         }
     }
 
@@ -614,7 +715,8 @@ extension BrowserWebKitPage: WKNavigationDelegate {
         let request = navigationAction.request
         guard let url = request.url else { return .cancel }
         let scheme = url.scheme?.lowercased() ?? ""
-        if !["http", "https", "about", "blob", "data", "file", "javascript"].contains(scheme) {
+        let servesInternalPages = BrowserUsesWebKitEngine() != 0 && BrowserWebKitInternalPages.schemes.contains(scheme)
+        if !["http", "https", "about", "blob", "data", "file", "javascript"].contains(scheme), !servesInternalPages {
             // Another app's link, such as mailto: or an app's own scheme.
             if navigationAction.navigationType == .linkActivated || navigationAction.targetFrame?.isMainFrame != false {
                 NSWorkspace.shared.open(url)
@@ -642,11 +744,11 @@ extension BrowserWebKitPage: WKNavigationDelegate {
     }
 
     func webView(_: WKWebView, navigationAction _: WKNavigationAction, didBecome download: WKDownload) {
-        download.delegate = BrowserWebKitDownloads.shared
+        BrowserWebKitDownloads.shared.start(download, page: self)
     }
 
     func webView(_: WKWebView, navigationResponse _: WKNavigationResponse, didBecome download: WKDownload) {
-        download.delegate = BrowserWebKitDownloads.shared
+        BrowserWebKitDownloads.shared.start(download, page: self)
     }
 
     func webView(_: WKWebView, didFinish _: WKNavigation!) {
@@ -815,17 +917,115 @@ private final class BrowserWebKitMessageProxy: NSObject, WKScriptMessageHandler 
 
 // MARK: - BrowserWebKitDownloads
 
-/// Saves files WebKit pages download into the download folder, under a name not yet taken.
-@MainActor final class BrowserWebKitDownloads: NSObject, WKDownloadDelegate {
-    static let shared = BrowserWebKitDownloads()
+/// Saves files WebKit pages download into the download folder, under a name not yet taken, and reports them to
+/// the tab controller of the page that started them, which lists them with Chromium's downloads.
+@MainActor @objc final class BrowserWebKitDownloads: NSObject, WKDownloadDelegate {
+    // MARK: Private
+
+    private final class Tracked {
+        let id: String
+        weak var page: BrowserWebKitPage?
+        weak var delegate: BrowserWebKitPageDelegate?
+        var urlString = ""
+        var fileName = ""
+        var destination: URL?
+        var progressObservation: NSKeyValueObservation?
+        var lastBytes: Int64 = 0
+        var lastReport = Date()
+        var speed: Int64 = 0
+
+        init(id: String, page: BrowserWebKitPage, delegate: BrowserWebKitPageDelegate?) {
+            self.id = id
+            self.page = page
+            self.delegate = delegate
+        }
+    }
+
+    // MARK: Internal
+
+    @objc static let shared = BrowserWebKitDownloads()
+
+    private var downloads = [ObjectIdentifier: Tracked]()
+    private var byID = [String: WKDownload]()
+    private var nextID = 0
+
+    /// Takes over a download a page started.
+    func start(_ download: WKDownload, page: BrowserWebKitPage) {
+        nextID += 1
+        let tracked = Tracked(id: "webkit-\(nextID)", page: page, delegate: page.delegate)
+        tracked.urlString = download.originalRequest?.url?.absoluteString ?? ""
+        downloads[ObjectIdentifier(download)] = tracked
+        byID[tracked.id] = download
+        download.delegate = self
+        tracked.progressObservation = download.progress.observe(\.completedUnitCount) { [weak self] _, _ in
+            MainActor.assumeIsolated { self?.report(download, state: "inProgress") }
+        }
+    }
+
+    /// Stops a download `start` took over; false for an ID this object never gave.
+    @objc(cancelWithID:) @discardableResult func cancel(id: String) -> Bool {
+        guard let download = byID[id] else { return false }
+        download.cancel { _ in }
+        report(download, state: "canceled")
+        forget(download)
+        return true
+    }
 
     func download(
-        _: WKDownload,
+        _ download: WKDownload,
         decideDestinationUsing _: URLResponse,
         suggestedFilename: String,
         completionHandler: @escaping @MainActor (URL?) -> Void,
     ) {
-        completionHandler(destination(suggestedFilename: suggestedFilename))
+        let destination = destination(suggestedFilename: suggestedFilename)
+        if let tracked = downloads[ObjectIdentifier(download)] {
+            tracked.destination = destination
+            tracked.fileName = destination?.lastPathComponent ?? suggestedFilename
+        }
+        completionHandler(destination)
+        report(download, state: "inProgress")
+    }
+
+    func downloadDidFinish(_ download: WKDownload) {
+        report(download, state: "completed")
+        forget(download)
+    }
+
+    func download(_ download: WKDownload, didFailWithError _: any Error, resumeData _: Data?) {
+        report(download, state: "interrupted")
+        forget(download)
+    }
+
+    private func report(_ download: WKDownload, state: String) {
+        guard let tracked = downloads[ObjectIdentifier(download)] else { return }
+        let received = download.progress.completedUnitCount
+        let total = download.progress.totalUnitCount
+        let now = Date()
+        let elapsed = now.timeIntervalSince(tracked.lastReport)
+        if elapsed >= 0.5 {
+            tracked.speed = Int64(Double(max(0, received - tracked.lastBytes)) / elapsed)
+            tracked.lastBytes = received
+            tracked.lastReport = now
+        } else if state == "inProgress", received != total {
+            // KVO fires for every chunk; the list needs a few updates a second.
+            return
+        }
+        tracked.delegate?.webKitPage(tracked.page, didUpdateDownload: [
+            "id": tracked.id,
+            "fileName": tracked.fileName,
+            "url": tracked.urlString,
+            "fullPath": tracked.destination?.path ?? "",
+            "receivedBytes": NSNumber(value: received),
+            "totalBytes": NSNumber(value: max(total, 0)),
+            "currentSpeed": NSNumber(value: state == "inProgress" ? tracked.speed : 0),
+            "state": state,
+        ])
+    }
+
+    private func forget(_ download: WKDownload) {
+        guard let tracked = downloads.removeValue(forKey: ObjectIdentifier(download)) else { return }
+        tracked.progressObservation = nil
+        byID[tracked.id] = nil
     }
 
     private func destination(suggestedFilename: String) -> URL? {

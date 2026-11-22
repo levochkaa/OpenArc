@@ -4660,8 +4660,8 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
                 [weakSelf reapplyEnginePolicy];
               }];
   CenterPageModalWindowsOver(hostView);
-  if (BrowserUsesChromeEngine()) {
-    // Chrome engine pages take their profile from profileCachePath themselves.
+  if (!BrowserUsesCEF()) {
+    // Chrome engine and WebKit pages take their profile from profileCachePath themselves.
   } else if (usesEphemeralRequestContext) {
     CefRequestContextSettings settings;
     _requestContext = CefRequestContext::CreateContext(settings, nullptr);
@@ -4680,7 +4680,7 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
   std::string tabKey = ToStdString(tabID);
 
   TabRecord record;
-  if (!BrowserUsesChromeEngine()) {
+  if (BrowserUsesCEF()) {
     record.client = new BrowserTabClient(self, tabKey);
     record.requestContext = [self requestContextForNewTab];
   }
@@ -4713,6 +4713,10 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
 #pragma mark - WebKit pages
 
 - (BrowserPageEngine)engineForURLString:(NSString *)urlString {
+  // Without Chromium, every page is a WebKit page, whatever its address.
+  if (BrowserUsesWebKitEngine()) {
+    return BrowserPageEngineWebKit;
+  }
   if (!self.webKitPagesEnabled || _autoResizesPages ||
       !([urlString hasPrefix:@"https://"] || [urlString hasPrefix:@"http://"])) {
     return BrowserPageEngineChromium;
@@ -4900,7 +4904,8 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
 /// the new one loads the address once ready.
 - (void)switchTabWithID:(NSString *)tabID toEngine:(BrowserPageEngine)engine {
   auto it = _tabRecords.find(ToStdString(tabID));
-  if (it == _tabRecords.end() || it->second.isClosing) {
+  if (it == _tabRecords.end() || it->second.isClosing ||
+      (engine == BrowserPageEngineChromium && BrowserUsesWebKitEngine())) {
     return;
   }
   TabRecord &record = it->second;
@@ -5028,7 +5033,9 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
 
 - (BOOL)activeTabCanSwitchEngine {
   auto it = _tabRecords.find(ToStdString(_activeTabID));
-  if (it == _tabRecords.end() || it->second.isClosing || !self.webKitPagesEnabled || _autoResizesPages) {
+  // Without Chromium there is no other engine to move to.
+  if (it == _tabRecords.end() || it->second.isClosing || !self.webKitPagesEnabled || _autoResizesPages ||
+      BrowserUsesWebKitEngine()) {
     return NO;
   }
   NSString *urlString = it->second.peerPage != nil ? it->second.peerPage.urlString
@@ -5545,6 +5552,10 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
   [self dismissSitePermissionPromptWithID:promptID];
 }
 
+- (void)webKitPage:(nullable BrowserWebKitPage *)page didUpdateDownload:(NSDictionary<NSString *, id> *)info {
+  [self chromePage:page didUpdateDownload:info];
+}
+
 - (void)chromePage:(id)page didUpdateDownload:(NSDictionary<NSString *, id> *)info {
   [self handleDownloadUpdateWithID:info[@"id"]
                           fileName:info[@"fileName"]
@@ -5567,8 +5578,10 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
   // selection, and admit exactly one new attempt from that terminal state.
   it->second.creationState = BrowserTabEngineCreationStateCreating;
   it->second.creationTimedOut = false;
-  it->second.client = new BrowserTabClient(self, ToStdString(tabID));
-  it->second.requestContext = [self requestContextForNewTab];
+  if (BrowserUsesCEF()) {
+    it->second.client = new BrowserTabClient(self, ToStdString(tabID));
+    it->second.requestContext = [self requestContextForNewTab];
+  }
   NSString *resolvedURLString =
       urlString.length > 0 ? [urlString copy] : @"about:blank";
   it->second.latestURL = ToStdString(resolvedURLString);
@@ -5581,6 +5594,10 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
 
 - (void)startBrowserCreationForTabID:(NSString *)tabID
                          URLString:(NSString *)urlString {
+  if (BrowserUsesWebKitEngine()) {
+    [self startWebKitPageForTabID:tabID page:nil];
+    return;
+  }
   if (BrowserUsesChromeEngine()) {
     [self startChromePageForTabID:tabID page:nil];
     return;
@@ -6413,7 +6430,7 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
   }
 
   it->second.navigationDrainScheduled = true;
-  if (BrowserUsesChromeEngine()) {
+  if (!BrowserUsesCEF()) {
     __weak BrowserTabController *weakSelf = self;
     NSString *drainTabID = [tabID copy];
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -6654,8 +6671,8 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
 
 - (NSInteger)importCookies:(NSArray<NSDictionary<NSString *, id> *> *)cookies
           profileCachePath:(NSString *)profileCachePath {
-  if (BrowserUsesChromeEngine()) {
-    NSLog(@"OpenArc: cookie import needs CEF; the Chrome engine does not import cookies yet");
+  if (!BrowserUsesCEF()) {
+    NSLog(@"OpenArc: cookie import needs CEF; the Chrome engine and WebKit do not import cookies yet");
     return 0;
   }
   // The window's own context, not a tab's: a tab may belong to a Space on another profile.
@@ -6706,6 +6723,10 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
   if (it != _tabRecords.end()) {
     if (id<BrowserChromePage> page = ChromePageOfRecord(it->second)) {
       [page executeDevToolsMethod:method params:paramsJSON completion:completion];
+      return;
+    }
+    if (IsWebKitRecord(it->second)) {
+      [(BrowserWebKitPage *)it->second.peerPage executeDevToolsMethod:method params:paramsJSON completion:completion];
       return;
     }
   }
@@ -6952,6 +6973,10 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
 }
 
 - (void)cancelDownloadWithID:(NSString *)downloadID {
+  // WebKit pages' downloads, in every mode: their IDs never collide with CEF's numbers or Chrome's.
+  if ([BrowserWebKitDownloads.shared cancelWithID:downloadID] || BrowserUsesWebKitEngine()) {
+    return;
+  }
   if (BrowserUsesChromeEngine()) {
     [BrowserChromeEngineClass() cancelDownloadWithID:downloadID];
     return;
@@ -7047,6 +7072,11 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
     [weakSelf finishPictureInPictureAttemptForTabKey:tabKey];
   };
   CefRefPtr<CefBrowser> browser = it->second.browser;
+  // The Chrome engine's and WebKit's pages have no CEF browser, and CEF may not be loaded.
+  if (!browser) {
+    done();
+    return;
+  }
   CefPostTask(TID_UI, CefCreateClosureTask(base::BindOnce(^(CefRefPtr<CefBrowser> target) {
     SetPictureInPicture(target, active, done);
   }, browser)));
@@ -7071,9 +7101,9 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
   [self updateBrowserVisibilityFocusingActiveTab:NO];
 }
 
-// Peek cards and small windows are CEF pages of their own; on the Chrome engine the page opens as a tab.
+// Peek cards and small windows are CEF pages of their own; on the Chrome engine and WebKit the page opens as a tab.
 - (void)showPeekWithURLString:(NSString *)urlString {
-  if (BrowserUsesChromeEngine()) {
+  if (!BrowserUsesCEF()) {
     [self createTabWithURLString:urlString makeActive:YES];
     return;
   }
@@ -7081,7 +7111,7 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
 }
 
 - (void)showLittleWindowWithURLString:(NSString *)urlString {
-  if (BrowserUsesChromeEngine()) {
+  if (!BrowserUsesCEF()) {
     [self createTabWithURLString:urlString makeActive:YES];
     return;
   }
@@ -7089,8 +7119,8 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
 }
 
 - (void)showSignInWindowWithURLString:(NSString *)urlString {
-  if (BrowserUsesChromeEngine()) {
-    NSLog(@"OpenArc: web sign-in needs CEF; the Chrome engine has no sign-in window yet");
+  if (!BrowserUsesCEF()) {
+    NSLog(@"OpenArc: web sign-in needs CEF; the Chrome engine and WebKit have no sign-in window yet");
     return;
   }
   [self presentPeekWithURLString:urlString standalone:YES];
@@ -7098,7 +7128,7 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
 }
 
 - (void)showNewLittleWindow {
-  if (BrowserUsesChromeEngine()) {
+  if (!BrowserUsesCEF()) {
     [self createTabWithURLString:@"about:blank" makeActive:YES];
     return;
   }
@@ -7525,7 +7555,7 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
   if (it == _tabRecords.end() || !it->second.closeRequestID.empty()) {
     return;
   }
-  if (BrowserUsesChromeEngine()) {
+  if (!BrowserUsesCEF()) {
     [ChromePageOfRecord(it->second) showDevToolsPanel:nil];
     return;
   }
@@ -7541,7 +7571,7 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
 
 /// The next page's data store: its Space's profile, or the window's own.
 - (CefRefPtr<CefRequestContext>)requestContextForNewTab {
-  if (BrowserUsesChromeEngine()) {
+  if (!BrowserUsesCEF()) {
     return nullptr;
   }
   if (self.profileCachePathForNewTabs.length == 0) {
@@ -7569,7 +7599,7 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
   if (it == _tabRecords.end() || !it->second.closeRequestID.empty()) {
     return;
   }
-  if (BrowserUsesChromeEngine()) {
+  if (!BrowserUsesCEF()) {
     [ChromePageOfRecord(it->second) showDevToolsPanel:@"inspect"];
     return;
   }
@@ -7610,7 +7640,7 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
   if (it == _tabRecords.end() || !it->second.closeRequestID.empty()) {
     return;
   }
-  if (BrowserUsesChromeEngine()) {
+  if (!BrowserUsesCEF()) {
     // `panel` is a JSON string, as CEF's preference takes it: "\"console\"".
     NSString *name = [@(panel) stringByTrimmingCharactersInSet:[NSCharacterSet characterSetWithCharactersInString:@"\""]];
     [ChromePageOfRecord(it->second) showDevToolsPanel:name];
@@ -7950,7 +7980,7 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
 
 /// The data store of the page on screen, which its Space's profile decides.
 - (CefRefPtr<CefRequestContext>)activeTabRequestContext {
-  if (BrowserUsesChromeEngine()) {
+  if (!BrowserUsesCEF()) {
     return nullptr;
   }
   auto it = _tabRecords.find(ToStdString(_activeTabID));

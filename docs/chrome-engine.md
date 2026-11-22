@@ -3,7 +3,9 @@
 OpenArc can draw Chromium pages with Chrome's own framework (`//chrome:chrome_framework`) instead of CEF.
 Settings ▸ Advanced ▸ Engine ▸ "Use Chrome's engine" switches it; CEF stays the default. The process runs on one
 engine from launch to quit, so the switch takes effect after a relaunch, which the setting offers. A launch with
-`--openarc-engine=chrome` or `--openarc-engine=cef` overrides the setting once.
+`--openarc-engine=chrome` or `--openarc-engine=cef` overrides the setting once. "Use WebKit for every page", a
+toggle of its own beside it, runs the app with no Chromium at all ([webkit-engine.md](webkit-engine.md)); while it is
+on, this setting waits for it to be turned off.
 
 ## Why
 

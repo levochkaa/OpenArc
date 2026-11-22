@@ -41,6 +41,17 @@ CHROME_ENGINE_GAPS = {
     "notification-after-site-permission": "site permission prompts in OpenArc's own card",
     "translate-in-place": "translation",
 }
+# Checks of what only Chromium has; they skip when the copy runs on WebKit alone (docs/webkit-engine.md).
+WEBKIT_ENGINE_GAPS = {
+    "extension-sees-tabs": "--load-extension loads a Chromium extension",
+    "history": "WebKit pages write no Chromium History database",
+    "print-preview": "the agent CLI clicks through DevTools' DOM methods, which WebKit pages lack",
+    "screen-share-picker": "the agent CLI clicks through DevTools' DOM methods, which WebKit pages lack",
+    "extension-popup": "the toolbar button of a Chromium extension",
+    "notification-after-site-permission": "the agent CLI clicks through DevTools' DOM methods, which WebKit "
+                                          "pages lack",
+    "translate-in-place": "translation is Chromium's",
+}
 SYSTEM_TCC = Path("/Library/Application Support/com.apple.TCC/TCC.db")
 LSREGISTER = ("/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/"
               "lsregister")
@@ -57,7 +68,9 @@ What it does:
   Contents/Resources/bin/openarc; window checks read and press the copy's
   windows in the background with cua-driver. --engine chrome starts the copy on
   the Chrome engine (OpenArc Framework.framework, docs/chrome-engine.md) with
-  --openarc-engine=chrome, and checks that its pages run there. Afterwards the copy is killed with
+  --openarc-engine=chrome, and checks that its pages run there. --engine webkit
+  starts it on WebKit alone (docs/webkit-engine.md) and checks that no Chromium
+  loads; checks of Chromium's own features skip. Afterwards the copy is killed with
   SIGKILL, and its app copy, CEF- and Session- data and defaults are deleted.
   One run at a time.
 
@@ -635,8 +648,10 @@ class SmokeTest:
     # Recording
 
     def check(self, name: str, function) -> None:
-        if self.options.engine == "chrome" and name in CHROME_ENGINE_GAPS:
-            reason = f"not on the Chrome engine yet: {CHROME_ENGINE_GAPS[name]}"
+        gaps = {"chrome": CHROME_ENGINE_GAPS, "webkit": WEBKIT_ENGINE_GAPS}.get(self.options.engine, {})
+        if name in gaps:
+            prefix = "not on the Chrome engine yet" if self.options.engine == "chrome" else "Chromium only"
+            reason = f"{prefix}: {gaps[name]}"
             log(f"• {name}: SKIP, {reason}")
             self.results.append({"name": name, "status": "skip", "evidence": reason, "details": {}})
             return
@@ -698,7 +713,8 @@ class SmokeTest:
     # Flow
 
     def run(self) -> int:
-        major = self.options.expect_chrome_major or expected_chrome_major()
+        major = None if self.options.engine == "webkit" else (self.options.expect_chrome_major
+                                                              or expected_chrome_major())
         self.facts.update(app=str(self.options.app), engine=self.options.engine, expected_chrome_major=major,
                           bundle_id=COPY_BUNDLE_ID,
                           fixture_port=self.server.port, webkit_port=self.webkit_server.port,
@@ -840,6 +856,8 @@ class SmokeTest:
     def check_chromium_engine(self) -> dict:
         """Pages run where --engine says: renderers from the Chrome engine's framework, or CEF's helpers."""
         frameworks = self.instance.app / "Contents" / "Frameworks"
+        if self.options.engine == "webkit":
+            return self.check_no_chromium(frameworks)
         engine_helpers = str(self.instance.engine_framework()) + "/"
 
         def renderers():
@@ -862,7 +880,35 @@ class SmokeTest:
                               details)
         return {"evidence": f"{len(found)} renderers run from CEF's helpers", **details}
 
+    def check_no_chromium(self, frameworks: Path) -> dict:
+        """On WebKit, no Chromium loads: no helper process from the bundle and neither framework in the app."""
+        time.sleep(2)
+        helpers = [line for line in run(["/usr/bin/pgrep", "-fl", "--", str(frameworks)], check=False)
+                   .stdout.splitlines() if line.strip()]
+        mapped = run(["/usr/sbin/lsof", "-p", str(self.instance.pid), "-Fn"], check=False, timeout=30).stdout
+        loaded = sorted({name for name in ("Chromium Embedded Framework", "OpenArc Framework")
+                         if f"/{name}.framework/" in mapped})
+        details = {"helper_processes": helpers, "loaded_frameworks": loaded,
+                   "method": "processes started from the copy's Contents/Frameworks, and the main process's "
+                             "open files (lsof) for CEF's and the Chrome engine's frameworks"}
+        if helpers or loaded:
+            raise CheckFailed(f"Chromium runs on WebKit: {len(helpers)} helper process(es), frameworks loaded: "
+                              f"{loaded or 'none'}", details)
+        return {"evidence": "no helper process from the bundle; neither CEF nor the Chrome engine is loaded",
+                **details}
+
+    def check_webkit_version(self) -> dict:
+        tab = self.tabs["start"]
+        user_agent = self.instance.eval("navigator.userAgent", tab)
+        details = {"userAgent": user_agent}
+        if "Chrome/" in (user_agent or "") or not re.search(r"AppleWebKit/[\d.]+.*Version/[\d.]+ Safari/",
+                                                            user_agent or ""):
+            raise CheckFailed(f"the user agent is not Safari's: {user_agent!r}", details)
+        return {"evidence": f"Safari's user agent, no Chrome token: {user_agent}", **details}
+
     def check_engine(self, major: int | None) -> dict:
+        if self.options.engine == "webkit":
+            return self.check_webkit_version()
         tab = self.tabs["start"]
         user_agent = self.instance.eval("navigator.userAgent", tab)
         brands = self.instance.eval(
@@ -1048,8 +1094,7 @@ class SmokeTest:
         chromium_url = self.server.url("webkit.html")
         details = {"method": f"the copy's defaults route {url.rsplit('/', 1)[0]} to WebKit "
                              "(browser.settings.siteEngines, the rule Settings writes); the fixture's script puts "
-                             "the engine it sees into the title, which `openarc tabs` lists, since the agent CLI "
-                             "can't run scripts in WebKit tabs"}
+                             "the engine it sees into the title, which `openarc tabs` lists"}
         tab = self.open_tab("webkit", url)
         control = self.open_tab("webkit-control", chromium_url)
 
@@ -1065,6 +1110,11 @@ class SmokeTest:
         self.instance.cli("close", control)
         if not pair:
             raise CheckFailed("the fixture's script did not set the titles within 15 s", details)
+        if self.options.engine == "webkit":
+            if pair != ("Engine webkit 42", "Engine webkit 42"):
+                raise CheckFailed(f"titles {pair}, expected 'Engine webkit 42' for both sites", details)
+            return {"evidence": "both the WebKit-routed site and the other one reported 'Engine webkit 42'",
+                    **details}
         if pair != ("Engine webkit 42", "Engine chromium 42"):
             raise CheckFailed(f"titles {pair}, expected ('Engine webkit 42', 'Engine chromium 42')", details)
         return {"evidence": "the WebKit-routed site's script reported 'Engine webkit 42'; the same page on "
@@ -1398,9 +1448,9 @@ def main() -> int:
                              "for it and no-notification-request-at-launch is conclusive; the screen-share check "
                              "then skips, and macOS keeps a notification settings entry for that id")
     parser.add_argument("--keep", action="store_true", help="leave the copy running and its data in place")
-    parser.add_argument("--engine", choices=("cef", "chrome"), default="cef",
+    parser.add_argument("--engine", choices=("cef", "chrome", "webkit"), default="cef",
                         help="the engine the copy runs pages on (default cef); chrome needs a build that "
-                             f"carries {CHROME_ENGINE_FRAMEWORK}")
+                             f"carries {CHROME_ENGINE_FRAMEWORK}; webkit loads no Chromium")
     options = parser.parse_args()
     options.app = options.app.resolve()
     if not (options.app / "Contents" / "MacOS" / "OpenArc").exists():

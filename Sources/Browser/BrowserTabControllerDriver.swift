@@ -58,6 +58,9 @@ import Foundation
     /// Peek sessions showing a prompt.
     private var promptingPeekSessions = Set<Int>()
 
+    /// The window's own profile, which WebKit's cookie import falls back to.
+    private let profileCachePath: String?
+
     var profileCachePathForNewTabs: String? {
         get { controller.profileCachePathForNewTabs }
         set { controller.profileCachePathForNewTabs = newValue }
@@ -81,6 +84,7 @@ import Foundation
         profileCachePath: String? = nil,
     ) {
         self.browserHostView = hostView
+        self.profileCachePath = profileCachePath
         self.controller = BrowserTabController(
             hostView: hostView,
             usesEphemeralRequestContext: usesEphemeralRequestContext,
@@ -364,7 +368,14 @@ import Foundation
     }
 
     @discardableResult func importCookies(_ cookies: [BrowserImportedCookie], profileCachePath: String?) -> Int {
-        controller.importCookies(cookies.map {
+        if BrowserUsesWebKitEngine() != 0 {
+            return BrowserWebKitPage.importCookies(
+                cookies,
+                profileKey: profileCachePath ?? self.profileCachePath,
+                ephemeral: controller.usesEphemeralRequestContext,
+            )
+        }
+        return controller.importCookies(cookies.map {
             [
                 "url": $0.urlString, "host": $0.host, "name": $0.name, "value": $0.value, "path": $0.path,
                 "expires": $0.expires, "secure": $0.isSecure, "httpOnly": $0.isHTTPOnly, "sameSite": $0.sameSite,

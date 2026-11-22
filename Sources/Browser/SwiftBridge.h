@@ -16,7 +16,11 @@ int BrowserEndTrace(const char* path, void (^completion)(void));
 void BrowserPrepareApplicationForCefShutdown(void);
 /// 1 when this process runs on the Chrome engine (Chrome's own framework), 0 on CEF. Fixed at launch.
 int BrowserUsesChromeEngine(void);
-/// Ends the app's run loop: CEF's, or Chrome's orderly quit on the Chrome engine.
+/// 1 when this process runs on WebKit alone, with no Chromium loaded. Fixed at launch.
+int BrowserUsesWebKitEngine(void);
+/// 1 when CEF is loaded: neither the Chrome engine nor WebKit. Only then may CEF's functions run.
+int BrowserUsesCEF(void);
+/// Ends the app's run loop: CEF's or WebKit's, or Chrome's orderly quit on the Chrome engine.
 void BrowserStopApplicationLoop(void);
 
 #ifdef __OBJC__

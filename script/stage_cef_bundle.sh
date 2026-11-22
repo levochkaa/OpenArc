@@ -27,6 +27,12 @@ HELPER_DEST="$APP_FRAMEWORKS_DIR/OpenArc Helper.app"
 CHROME_ENGINE_NAME="OpenArc Framework.framework"
 CHROME_ENGINE_DEST="$APP_FRAMEWORKS_DIR/$CHROME_ENGINE_NAME"
 RESOURCE_HELPER_DEST="$APP_RESOURCES_DIR/OpenArc Helper.app"
+HELPER_VARIANTS=(
+  "$APP_FRAMEWORKS_DIR/OpenArc Helper (Alerts).app"
+  "$APP_FRAMEWORKS_DIR/OpenArc Helper (GPU).app"
+  "$APP_FRAMEWORKS_DIR/OpenArc Helper (Plugin).app"
+  "$APP_FRAMEWORKS_DIR/OpenArc Helper (Renderer).app"
+)
 
 validate_cef_configuration() {
   case "$CEF_CONFIGURATION" in
@@ -183,15 +189,13 @@ sign_app_bundle() {
 
   # The CEF runtime is copied after Xcode's normal dependency processing, so
   # seal nested code here using the active Xcode identity when available.
-  /usr/bin/codesign --force --deep --sign "$identity" --timestamp=none "$CEF_FRAMEWORK_DEST"
-  if [[ -d "$CHROME_ENGINE_DEST" ]]; then
-    /usr/bin/codesign --force --deep --sign "$identity" --timestamp=none "$CHROME_ENGINE_DEST"
-  fi
-  /usr/bin/codesign --force --deep --sign "$identity" --timestamp=none "$HELPER_DEST"
-  /usr/bin/codesign --force --deep --sign "$identity" --timestamp=none "$APP_FRAMEWORKS_DIR/OpenArc Helper (Alerts).app"
-  /usr/bin/codesign --force --deep --sign "$identity" --timestamp=none "$APP_FRAMEWORKS_DIR/OpenArc Helper (GPU).app"
-  /usr/bin/codesign --force --deep --sign "$identity" --timestamp=none "$APP_FRAMEWORKS_DIR/OpenArc Helper (Plugin).app"
-  /usr/bin/codesign --force --deep --sign "$identity" --timestamp=none "$APP_FRAMEWORKS_DIR/OpenArc Helper (Renderer).app"
+  # A WebKit-only bundle carries none of the Chromium parts.
+  local chromium_part
+  for chromium_part in "$CEF_FRAMEWORK_DEST" "$CHROME_ENGINE_DEST" "$HELPER_DEST" "${HELPER_VARIANTS[@]}"; do
+    if [[ -d "$chromium_part" ]]; then
+      /usr/bin/codesign --force --deep --sign "$identity" --timestamp=none "$chromium_part"
+    fi
+  done
   if [[ -d "$SPARKLE_FRAMEWORK_DEST" ]]; then
     /usr/bin/codesign --force --deep --sign "$identity" --timestamp=none "$SPARKLE_FRAMEWORK_DEST"
   fi
@@ -230,6 +234,16 @@ if [[ ! -d "$HELPER_BUNDLE" ]]; then
   exit 1
 fi
 
+# OPENARC_STAGE_CEF=0 stages no Chromium at all: the app then runs on WebKit only (docs/webkit-engine.md), as a
+# Mac App Store build must.
+if [[ "${OPENARC_STAGE_CEF:-1}" == "0" ]]; then
+  rm -rf "$CEF_FRAMEWORK_DEST" "$CHROME_ENGINE_DEST" "$HELPER_DEST" "$RESOURCE_HELPER_DEST" "${HELPER_VARIANTS[@]}"
+  rm -f "$APP_RESOURCES_DIR/CEFCredits.html"
+  echo "note: OPENARC_STAGE_CEF=0; this build carries no Chromium and runs on WebKit only"
+  sign_app_bundle
+  exit 0
+fi
+
 if [[ ! -f "$CHROMIUM_FORK_MARKER" ]]; then
   echo "error: OpenArc Chromium fork marker not found at $CHROMIUM_FORK_MARKER" >&2
   echo "Run ./script/chromium_source.sh package $CEF_CONFIGURATION first, then ./script/chromium.sh root $CEF_CONFIGURATION." >&2
@@ -252,10 +266,7 @@ mkdir -p "$APP_FRAMEWORKS_DIR"
 mkdir -p "$APP_RESOURCES_DIR"
 rm -rf "$CEF_FRAMEWORK_DEST" "$HELPER_DEST"
 rm -rf "$RESOURCE_HELPER_DEST"
-rm -rf "$APP_FRAMEWORKS_DIR/OpenArc Helper (Alerts).app"
-rm -rf "$APP_FRAMEWORKS_DIR/OpenArc Helper (GPU).app"
-rm -rf "$APP_FRAMEWORKS_DIR/OpenArc Helper (Plugin).app"
-rm -rf "$APP_FRAMEWORKS_DIR/OpenArc Helper (Renderer).app"
+rm -rf "${HELPER_VARIANTS[@]}"
 
 ditto "$CEF_FRAMEWORK_SOURCE" "$CEF_FRAMEWORK_DEST"
 create_versioned_cef_framework "$CEF_FRAMEWORK_DEST"

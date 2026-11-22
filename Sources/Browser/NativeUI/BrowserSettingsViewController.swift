@@ -93,6 +93,7 @@ struct BrowserSettingsIcon {
         "fairplay-in-chromium": .init("lock.shield.fill", .systemIndigo),
         "site-engines-reset": .init("arrow.uturn.backward", .systemGray),
         "chrome-engine": .init("cpu.fill", .systemOrange),
+        "webkit-engine": .init("safari.fill", .systemBlue),
         "share-theme-with-websites": .init("paintpalette.fill", .systemPurple),
         "agent-access": .init("terminal.fill", .systemGray),
         // Accounts
@@ -1666,7 +1667,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                     },
                 ),
             ]),
-            section(BrowserStrings.settingsEngineSection, rows: [engineRow()]),
+            section(BrowserStrings.settingsEngineSection, rows: [engineRow(), webKitEngineRow()]),
             section(BrowserStrings.settingsSitePermissionsTitle, body: sitePermissionsBody),
             section(BrowserStrings.settingsBoostsTitle, rows: [
                 toggle(
@@ -1704,22 +1705,46 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
         ])
     }
 
-    /// The Chrome engine instead of CEF, from the next launch. Off and dimmed in a build without its framework.
+    /// The Chrome engine instead of CEF, from the next launch. Off and dimmed in a build without its framework,
+    /// and dimmed while WebKit draws every page, which keeps this choice for when it is turned off.
     private func engineRow() -> NSView {
-        let available = BrowserEngineChoice.isChromeEngineAvailable
+        let available = BrowserEngineChoice.isChromeEngineAvailable && BrowserEngineChoice.isCEFAvailable
         let control = BrowserActionToggle()
         control.setAccessibilityLabel(BrowserStrings.settingsChromeEngine)
         control.setAccessibilityIdentifier("browser.settings.chrome-engine")
-        control.isEnabled = available
         control.onChange = { [weak self] isOn in
-            BrowserEngineChoice.setPreferredEngine(isOn ? .chrome : .cef)
+            BrowserEngineChoice.setPreferredChromiumEngine(isOn ? .chrome : .cef)
             self?.offerRelaunchForEngineChange()
         }
         updateBindings.append { [weak control] in
-            control?.state = available && BrowserEngineChoice.preferredEngine() == .chrome ? .on : .off
+            let webKit = BrowserEngineChoice.isWebKitPreferred()
+            control?.isEnabled = available && !webKit
+            control?.state = available && !webKit && BrowserEngineChoice.preferredChromiumEngine() == .chrome
+                ? .on
+                : .off
         }
         let detail = available ? BrowserStrings.settingsChromeEngineDetail : BrowserStrings.settingsChromeEngineMissing
         return row(BrowserStrings.settingsChromeEngine, detail: detail, icon: "chrome-engine", control: control)
+    }
+
+    /// WebKit for every page, with no Chromium loaded, from the next launch. A separate toggle: off, the app goes
+    /// back to CEF or Chrome as chosen above. On and dimmed in a build without CEF, which runs on WebKit only.
+    private func webKitEngineRow() -> NSView {
+        let cefAvailable = BrowserEngineChoice.isCEFAvailable
+        let control = BrowserActionToggle()
+        control.setAccessibilityLabel(BrowserStrings.settingsWebKitEngine)
+        control.setAccessibilityIdentifier("browser.settings.webkit-engine")
+        control.isEnabled = cefAvailable
+        control.onChange = { [weak self] isOn in
+            BrowserEngineChoice.setWebKitPreferred(isOn)
+            self?.syncControls()
+            self?.offerRelaunchForEngineChange()
+        }
+        updateBindings.append { [weak control] in
+            control?.state = !cefAvailable || BrowserEngineChoice.isWebKitPreferred() ? .on : .off
+        }
+        let detail = cefAvailable ? BrowserStrings.settingsWebKitEngineDetail : BrowserStrings.settingsWebKitEngineOnly
+        return row(BrowserStrings.settingsWebKitEngine, detail: detail, icon: "webkit-engine", control: control)
     }
 
     /// The engine changes only at launch, so the setting offers to relaunch now.

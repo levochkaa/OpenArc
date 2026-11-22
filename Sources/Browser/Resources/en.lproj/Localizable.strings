@@ -1043,6 +1043,11 @@
 "browser.settings.engine.chrome" = "Use Chrome's engine";
 "browser.settings.engine.chrome.detail" = "Pages run on Chrome's own framework instead of CEF, with the same profile, so tabs, sign-ins and extensions stay. Experimental: Peek cards, small windows and some page features still need CEF. Takes effect after a relaunch.";
 "browser.settings.engine.chrome.missing" = "This build doesn't include Chrome's engine.";
+"browser.settings.engine.webkit" = "Use WebKit for every page";
+"browser.settings.engine.webkit.detail" = "Pages run on Safari's engine, and no Chromium loads. WebKit keeps its own cookies and data, so sites ask you to sign in again. Extensions run where WebKit supports them; Peek cards, small windows, Developer Tools and Chromium's own pages, such as its settings and history, are not available. Takes effect after a relaunch.";
+"browser.settings.engine.webkit.only" = "This build runs on WebKit only.";
+"browser.webkit_engine.internal_page.title" = "Not Available in WebKit";
+"browser.webkit_engine.internal_page" = "This page belongs to Chromium and isn't available while OpenArc runs on WebKit.";
 "browser.settings.engine.relaunch.title" = "Relaunch to change the engine?";
 "browser.settings.engine.relaunch.message" = "OpenArc switches engines when it starts. Your windows and tabs open again after the relaunch.";
 "browser.settings.engine.relaunch" = "Relaunch Now";

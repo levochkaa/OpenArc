@@ -69,6 +69,26 @@ enum BrowserStrings {
         "browser.settings.engine.chrome.missing",
         comment: "Shown under the Chrome engine toggle in a build without the engine.",
     )
+    static let settingsWebKitEngine = NSLocalizedString(
+        "browser.settings.engine.webkit",
+        comment: "Settings toggle: draw every page with WebKit, with no Chromium engine.",
+    )
+    static let settingsWebKitEngineDetail = NSLocalizedString(
+        "browser.settings.engine.webkit.detail",
+        comment: "Explains the WebKit engine toggle.",
+    )
+    static let settingsWebKitEngineOnly = NSLocalizedString(
+        "browser.settings.engine.webkit.only",
+        comment: "Shown under the WebKit engine toggle in a build without CEF, such as the Mac App Store one.",
+    )
+    static let webKitEngineInternalPageTitle = NSLocalizedString(
+        "browser.webkit_engine.internal_page.title",
+        comment: "Tab title of a Chromium page such as chrome://settings while the app runs on WebKit.",
+    )
+    static let webKitEngineInternalPageMessage = NSLocalizedString(
+        "browser.webkit_engine.internal_page",
+        comment: "Shown on a Chromium page such as chrome://settings while the app runs on WebKit.",
+    )
     static let settingsChromeEngineRelaunchTitle = NSLocalizedString(
         "browser.settings.engine.relaunch.title",
         comment: "Alert title after the engine setting changed.",

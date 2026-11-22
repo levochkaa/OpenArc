@@ -9,11 +9,58 @@ struct BrowserEngineChoiceTests {
     @Test func cefIsTheDefaultAndChromeIsRemembered() throws {
         let defaults = try scratchDefaults()
         #expect(BrowserEngineChoice.preferredEngine(defaults: defaults) == .cef)
-        BrowserEngineChoice.setPreferredEngine(.chrome, defaults: defaults)
+        BrowserEngineChoice.setPreferredChromiumEngine(.chrome, defaults: defaults)
         #expect(BrowserEngineChoice.preferredEngine(defaults: defaults) == .chrome)
-        BrowserEngineChoice.setPreferredEngine(.cef, defaults: defaults)
+        BrowserEngineChoice.setPreferredChromiumEngine(.cef, defaults: defaults)
         #expect(BrowserEngineChoice.preferredEngine(defaults: defaults) == .cef)
         #expect(defaults.object(forKey: BrowserEngineChoice.defaultsKey) == nil)
+    }
+
+    @Test func theWebKitToggleKeepsTheChromiumChoiceForWhenItIsOff() throws {
+        let defaults = try scratchDefaults()
+        BrowserEngineChoice.setPreferredChromiumEngine(.chrome, defaults: defaults)
+        BrowserEngineChoice.setWebKitPreferred(true, defaults: defaults)
+        #expect(BrowserEngineChoice.preferredEngine(defaults: defaults) == .webKit)
+        #expect(BrowserEngineChoice.preferredChromiumEngine(defaults: defaults) == .chrome)
+        BrowserEngineChoice.setWebKitPreferred(false, defaults: defaults)
+        #expect(BrowserEngineChoice.preferredEngine(defaults: defaults) == .chrome)
+        #expect(defaults.object(forKey: BrowserEngineChoice.webKitDefaultsKey) == nil)
+    }
+
+    @Test func aLaunchRunsOnWebKitWhenChosenOrWithoutCEF() {
+        #expect(BrowserEngineChoice.launchEngine(arguments: [], preferred: .webKit, chromeEngineAvailable: true)
+            == .webKit)
+        #expect(BrowserEngineChoice.launchEngine(
+            arguments: [],
+            preferred: .cef,
+            chromeEngineAvailable: false,
+            cefAvailable: false,
+        ) == .webKit)
+        // Chrome's choice without its framework falls to CEF, and without CEF on to WebKit.
+        #expect(BrowserEngineChoice.launchEngine(
+            arguments: [],
+            preferred: .chrome,
+            chromeEngineAvailable: false,
+            cefAvailable: false,
+        ) == .webKit)
+        #expect(BrowserEngineChoice.launchEngine(
+            arguments: [],
+            preferred: .chrome,
+            chromeEngineAvailable: true,
+            cefAvailable: false,
+        ) == .chrome)
+    }
+
+    @Test func theCEFFrameworkIsFoundByItsBinary() throws {
+        let fileManager = FileManager.default
+        let bundle = fileManager.temporaryDirectory.appendingPathComponent("EngineChoice-\(UUID().uuidString).app")
+        defer { try? fileManager.removeItem(at: bundle) }
+        #expect(!BrowserEngineChoice.cefFrameworkAvailable(bundlePath: bundle.path))
+        let framework = bundle.appendingPathComponent("Contents/Frameworks/Chromium Embedded Framework.framework")
+        try fileManager.createDirectory(at: framework, withIntermediateDirectories: true)
+        #expect(!BrowserEngineChoice.cefFrameworkAvailable(bundlePath: bundle.path))
+        try Data().write(to: framework.appendingPathComponent("Chromium Embedded Framework"))
+        #expect(BrowserEngineChoice.cefFrameworkAvailable(bundlePath: bundle.path))
     }
 
     @Test func aLaunchRunsOnChromeOnlyWhenChosenAndCarried() {
@@ -34,7 +81,12 @@ struct BrowserEngineChoiceTests {
             == .cef)
         #expect(BrowserEngineChoice.launchEngine(arguments: chrome, preferred: .cef, chromeEngineAvailable: false)
             == .cef)
-        let unknown = ["OpenArc", "--openarc-engine=webkit"]
+        let webKit = ["OpenArc", "--openarc-engine=webkit"]
+        #expect(BrowserEngineChoice.launchEngine(arguments: webKit, preferred: .chrome, chromeEngineAvailable: true)
+            == .webKit)
+        #expect(BrowserEngineChoice.launchEngine(arguments: cef, preferred: .webKit, chromeEngineAvailable: true)
+            == .cef)
+        let unknown = ["OpenArc", "--openarc-engine=gecko"]
         #expect(BrowserEngineChoice.launchEngine(arguments: unknown, preferred: .chrome, chromeEngineAvailable: true)
             == .chrome)
     }
