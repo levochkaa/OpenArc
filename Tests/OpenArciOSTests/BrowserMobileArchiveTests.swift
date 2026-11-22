@@ -60,6 +60,18 @@ extension BrowserMobileUITests {
         }
     }
 
+    @Test func closingATabReturnsItsArchiveEntryToBringItBackBy() async throws {
+        try await withMobileArchiveFixture { f in
+            let workspace = await f.workspace(engine: MobileArchiveEngine(), scene: "first")
+            let archiveID = try #require(workspace.closeTab(id: "a"))
+            #expect(try f.store.loadArchivePage().entries.map(\.id) == [archiveID])
+            let restoredID = try #require(workspace.restoreArchivedTab(id: archiveID))
+            #expect(workspace.selectedTabID == restoredID)
+            #expect(workspace.switcherTabs.last?.id == restoredID, "The tab comes back as the newest")
+            #expect(try f.store.loadArchivePage().entries.isEmpty)
+        }
+    }
+
     @Test func archiveRestoreRequiresExplicitLiveSpaceAfterOriginalWasDeleted() async throws {
         try await withMobileArchiveFixture { f in
             let workspace = await f.workspace(engine: MobileArchiveEngine(), scene: "first")

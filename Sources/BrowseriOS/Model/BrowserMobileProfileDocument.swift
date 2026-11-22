@@ -344,17 +344,22 @@ import Foundation
     /// Only an explicit Today close creates an archive entry. The entry uses the
     /// current shared row, never a stale sidebar or another scene's URL.
     @discardableResult func archiveTab(id: String, displayTitle: String? = nil) -> Bool {
+        archiveTabEntry(id: id, displayTitle: displayTitle) != nil
+    }
+
+    /// Archives the tab and returns its archive entry's ID, to restore it by.
+    @discardableResult func archiveTabEntry(id: String, displayTitle: String? = nil) -> String? {
         guard canRestoreArchivedTab,
               let tab = snapshot.tabs.first(where: { $0.id == id }), tab.placement == .temporary
-        else { return false }
+        else { return nil }
         let archiveID = idProvider()
-        guard !archiveID.isEmpty else { return false }
+        guard !archiveID.isEmpty else { return nil }
         let entry = BrowserTabArchiveEntry(
             id: archiveID, tab: tab, archivedAt: dateProvider().timeIntervalSince1970,
             title: Self.nonempty(displayTitle),
         )
         archiveError = nil
-        return apply([.deleteTab(id: id)], archiveAction: .insert(entry))
+        return apply([.deleteTab(id: id)], archiveAction: .insert(entry)) ? archiveID : nil
     }
 
     /// Restoring is a new logical tab. A deleted Space is never implicitly

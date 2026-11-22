@@ -200,6 +200,9 @@ final class BrowserMobilePhoneViewController: UIViewController {
 
     /// Bar swipe between tabs.
     private var swipe: BarSwipe?
+    /// Tabs a swipe in from the left edge closed, the last one last: the
+    /// right edge brings one back while its neighbor is still showing.
+    private var edgeClosedTabs = [EdgeClosedTab]()
     /// The last picture of a tab that was switched to while its page still
     /// loads, so a cold tab does not flash blank.
     private var loadingCover: (view: UIView, tabID: String)?
@@ -2094,10 +2097,23 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
     /// tab stack, left to the next one from the side; up from the tab stack,
     /// it pulls the previous tab out of the stack while the page shrinks
     /// into a card. Each picture rides in a card that clips and rounds it.
+    fileprivate struct EdgeClosedTab {
+        let archiveID: String
+        /// The tab that showed once it closed.
+        let revealedID: String
+    }
+
     @MainActor fileprivate final class BarSwipe {
         enum Kind {
             case sideways
             case up
+        }
+
+        /// What a swipe in from the screen's edge does as it lands, on a page
+        /// with no history that way.
+        enum EdgeAction {
+            case close
+            case reopen(EdgeClosedTab)
         }
 
         struct PulledCard {
@@ -2118,6 +2134,7 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
         let outgoing: UIView
         let outgoingCard: UIView
         let backdrop: UIView
+        var edgeAction: EdgeAction?
         /// The page has turned into a card in the row.
         var isRow = false
         /// The finger has let go and the cards are on their way.
@@ -2179,6 +2196,9 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
     private static let pullLag: CFTimeInterval = 0.12
 
     func gestureRecognizerShouldBegin(_ gesture: UIGestureRecognizer) -> Bool {
+        if let edgePan = gesture as? UIScreenEdgePanGestureRecognizer {
+            return edgeAction(for: edgePan.edges) != nil
+        }
         guard let pan = gesture as? UIPanGestureRecognizer else { return true }
         let velocity = pan.velocity(in: view)
         if pan === surfacePan {
@@ -2196,13 +2216,55 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
     ) -> Bool {
         // The suggestions scroll only when a drag does not move the panel;
         // their other gestures, such as a row's menu, do not wait for it.
-        gesture === surfacePan && other === (other.view as? UIScrollView)?.panGestureRecognizer
+        // A page scrolls only once a swipe from the screen's edge fails.
+        (gesture === surfacePan || gesture is UIScreenEdgePanGestureRecognizer && gesture.view === view)
+            && other === (other.view as? UIScrollView)?.panGestureRecognizer
     }
 
     private func configureBarSwipe() {
         let pan = UIPanGestureRecognizer(target: self, action: #selector(barSwiped(_:)))
         pan.delegate = self
         bar.addGestureRecognizer(pan)
+        for edges in [UIRectEdge.left, .right] {
+            let edgePan = UIScreenEdgePanGestureRecognizer(target: self, action: #selector(edgeSwiped(_:)))
+            edgePan.edges = edges
+            edgePan.delegate = self
+            view.addGestureRecognizer(edgePan)
+        }
+    }
+
+    /// With no page to go back to, a swipe in from the left edge closes the
+    /// tab as it moves to the previous one; with none to go forward to, one
+    /// from the right brings back the tab it closed, the same way reversed.
+    private func edgeAction(for edges: UIRectEdge) -> BarSwipe.EdgeAction? {
+        guard mode == .browsing, swipe == nil, surface == nil, let tab = workspace.selectedTab else { return nil }
+        if edges == .left {
+            let tabs = workspace.switcherTabs
+            guard !tab.state.canGoBack, let index = tabs.firstIndex(where: { $0.id == tab.id }), index > 0
+            else { return nil }
+            return .close
+        }
+        guard !tab.state.canGoForward, workspace.canRestoreArchivedTab, let closed = edgeClosedTabs.last,
+              closed.revealedID == tab.id
+        else { return nil }
+        return .reopen(closed)
+    }
+
+    @objc private func edgeSwiped(_ gesture: UIScreenEdgePanGestureRecognizer) {
+        switch gesture.state {
+        case .began:
+            guard let action = edgeAction(for: gesture.edges) else { return }
+            beginTabSwipe(.sideways, toPrevious: gesture.edges == .left, edge: action)
+        case .changed:
+            if let swipe {
+                updateSwipe(progress: swipeProgress(swipe, translation: gesture.translation(in: view)))
+            }
+        case .cancelled, .ended, .failed:
+            if swipe?.edgeAction != nil {
+                endTabSwipe(gesture)
+            }
+        default: break
+        }
     }
 
     @objc private func barSwiped(_ gesture: UIPanGestureRecognizer) {
@@ -2324,16 +2386,21 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
         )
     }
 
-    private func beginTabSwipe(_ kind: BarSwipe.Kind, toPrevious: Bool) {
+    private func beginTabSwipe(_ kind: BarSwipe.Kind, toPrevious: Bool, edge: BarSwipe.EdgeAction? = nil) {
         guard mode == .browsing, swipe == nil, let current = workspace.selectedTabID else { return }
         let tabs = workspace.switcherTabs
         let index = tabs.firstIndex { $0.id == current }
         // Right and up go back in time, left forward; past either end the
-        // page only rubber-bands.
-        let target = index.flatMap { index in
-            let next = toPrevious ? index - 1 : index + 1
-            return tabs.indices.contains(next) ? tabs[next].id : nil
-        }
+        // page only rubber-bands. The tab coming back is its archived picture.
+        let target: String? =
+            if case .reopen(let closed)? = edge {
+                closed.archiveID
+            } else {
+                index.flatMap { index in
+                    let next = toPrevious ? index - 1 : index + 1
+                    return tabs.indices.contains(next) ? tabs[next].id : nil
+                }
+            }
         thumbnails.capture(current, workspace: workspace, width: thumbnailWidth)
         // The app's backdrop shows behind the cards.
         let backdrop = BrowserMobileAppBackdrop(frame: view.bounds)
@@ -2346,6 +2413,7 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
             kind: kind, fromID: current, toID: target, direction: toPrevious ? 1 : -1,
             incoming: incoming, outgoing: outgoing, backdrop: backdrop,
         )
+        swipe.edgeAction = edge
         swipe.incomingCard.isHidden = target == nil
         view.insertSubview(swipe.incomingCard, belowSubview: bar)
         view.insertSubview(swipe.outgoingCard, belowSubview: bar)
@@ -2400,14 +2468,9 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
         swipe.isSettling = true
         swipe.pullLink?.invalidate()
         swipe.pullLink = nil
-        if completes, let toID = swipe.toID {
-            // A swipe moves along the row without reordering it.
-            if swipe.kind == .sideways {
-                workspace.selectTabInPlace(id: toID)
-            } else {
-                workspace.selectTab(id: toID)
-            }
-            matchBackdrop(toPictureOf: toID)
+        let landedID = completes ? land(swipe) : nil
+        if let landedID {
+            matchBackdrop(toPictureOf: landedID)
             updateStatusBand()
         }
         UIView.animate(withDuration: 0.2) { self.setNeedsStatusBarAppearanceUpdate() }
@@ -2429,15 +2492,48 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
             swipe.outgoingCard.removeFromSuperview()
             swipe.backdrop.removeFromSuperview()
             self.bar.tabStack.front.isHidden = false
+            self.bar.tabStack.back.isHidden = false
             self.pageContainer.isHidden = false
             // The picture keeps covering the page before the swipe lets go of it.
-            if completes, let toID = swipe.toID {
-                self.coverWhileLoading(toID, with: swipe.incomingCard)
+            if let landedID {
+                self.coverWhileLoading(landedID, with: swipe.incomingCard)
             } else {
                 swipe.incomingCard.removeFromSuperview()
             }
             if self.swipe === swipe { self.swipe = nil }
             self.render()
+        }
+    }
+
+    /// Selects the tab a finished swipe lands on and returns it: closing the
+    /// page's tab or bringing back a closed one for a swipe from the edge.
+    private func land(_ swipe: BarSwipe) -> String? {
+        guard let toID = swipe.toID else { return nil }
+        switch swipe.edgeAction {
+        case .close:
+            workspace.selectTabInPlace(id: toID)
+            if let archiveID = workspace.closeTab(id: swipe.fromID) {
+                if let image = thumbnails.image(for: swipe.fromID) {
+                    thumbnails.store(image, for: archiveID, persist: false)
+                }
+                edgeClosedTabs.append(EdgeClosedTab(archiveID: archiveID, revealedID: toID))
+            }
+            return toID
+        case .reopen(let closed):
+            edgeClosedTabs.removeAll { $0.archiveID == closed.archiveID }
+            guard let restoredID = workspace.restoreArchivedTab(id: closed.archiveID) else { return nil }
+            if let image = thumbnails.image(for: closed.archiveID) {
+                thumbnails.store(image, for: restoredID)
+            }
+            return restoredID
+        case nil:
+            // A swipe moves along the row without reordering it.
+            if swipe.kind == .sideways {
+                workspace.selectTabInPlace(id: toID)
+            } else {
+                workspace.selectTab(id: toID)
+            }
+            return toID
         }
     }
 
@@ -2625,24 +2721,53 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
         }
     }
 
-    /// The other tab's card grows to fill the screen while the page's card
-    /// drops into the tab stack.
+    /// The other tab's card grows to fill the screen. Going back, the row
+    /// carries the page's card off to the right; otherwise it drops into the
+    /// tab stack where the tab now sits, over the bar.
     private func landSwipe(_ swipe: BarSwipe) {
         let bounds = view.bounds
-        // The tab coming in grows over the one going into the stack.
-        view.insertSubview(swipe.incomingCard, aboveSubview: swipe.outgoingCard)
+        let intoStack = swipe.kind == .up || swipe.direction < 0
+        if intoStack {
+            // The page's card drops over the bar, which stays over the tab
+            // coming in.
+            view.insertSubview(swipe.outgoingCard, aboveSubview: bar)
+            view.insertSubview(swipe.incomingCard, belowSubview: bar)
+        } else {
+            view.insertSubview(swipe.incomingCard, aboveSubview: swipe.outgoingCard)
+        }
         swipe.incomingCard.alpha = 1
         place(
             swipe.incomingCard, content: bounds, center: CGPoint(x: bounds.midX, y: bounds.midY), scale: 1,
             radius: 0,
         )
-        let stack = bar.convert(bar.tabStack.center, to: view)
+        guard intoStack else {
+            let scale = rowCardScale
+            let content = rowCardContent
+            place(
+                swipe.outgoingCard, content: content,
+                center: CGPoint(x: bounds.midX + content.width * scale + Self.rowCardGap, y: rowCardCenterY),
+                scale: scale, radius: Self.rowCardRadius,
+            )
+            return
+        }
+        let others = workspace.switcherTabs.filter { $0.id != workspace.selectedTabID }.map(\.id)
+        let isBack = others.last != swipe.fromID && others.dropLast().last == swipe.fromID
+        let stackCard = isBack ? bar.tabStack.back : bar.tabStack.front
+        let lands = others.suffix(2).contains(swipe.fromID)
+        // The stack shows the tab already; its card waits for this one to land.
+        stackCard.isHidden = lands
+        let card = BrowserMobileTabStackButton.cardSize
         place(
-            swipe.outgoingCard, content: swipe.kind == .sideways ? rowCardContent : bounds, center: stack,
-            scale: BrowserMobileTabStackButton.cardSize.width / bounds.width,
-            angle: BrowserMobileTabStackButton.frontAngle, radius: 4,
+            swipe.outgoingCard,
+            content: CGRect(
+                x: 0, y: view.safeAreaInsets.top, width: bounds.width, height: bounds.width * card.height / card.width,
+            ),
+            center: bar.tabStack.convert(stackCard.center, to: view), scale: card.width / bounds.width,
+            angle: isBack ? BrowserMobileTabStackButton.backAngle : BrowserMobileTabStackButton.frontAngle, radius: 4,
         )
-        swipe.outgoingCard.alpha = 0
+        if !lands {
+            swipe.outgoingCard.alpha = 0
+        }
     }
 
     /// The page shrinks into a card that rests on the bar, its left edge in

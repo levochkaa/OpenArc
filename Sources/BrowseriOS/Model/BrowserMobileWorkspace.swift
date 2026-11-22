@@ -538,8 +538,10 @@ struct BrowserMobileTab: Identifiable, Equatable {
         notify()
     }
 
-    func closeTab(id: String) {
-        guard canEdit, let tab = tabs.first(where: { $0.id == id }) else { return }
+    /// Closes the tab; returns the archive entry's ID when it went to the
+    /// archive, to restore it by.
+    @discardableResult func closeTab(id: String) -> String? {
+        guard canEdit, let tab = tabs.first(where: { $0.id == id }) else { return nil }
         let previousID = selectedTabID
         defer {
             if selectedTabID != previousID {
@@ -550,28 +552,31 @@ struct BrowserMobileTab: Identifiable, Equatable {
             // Closing discards it: nothing is archived or saved.
             removePrivateTab(tab)
             engine.closeTab(id: tab.runtimeID)
-            return
+            return nil
         }
         if let profileDocument {
             if tab.placement == .temporary {
                 if profileDocument.supportsArchive {
                     let current = profileDocument.snapshot.tabs.first { $0.id == id }
                     let title = current?.urlString == tab.urlString ? tab.title : nil
-                    if !profileDocument.archiveTab(id: id, displayTitle: title) {
+                    guard let archiveID = profileDocument.archiveTabEntry(id: id, displayTitle: title) else {
                         navigationError = profileDocument.archiveError
                         updateProfileError()
                         notify()
+                        return nil
                     }
+                    return archiveID
                 } else {
                     profileDocument.removeTab(id: id)
                 }
             } else {
                 unloadPersistentTab(tab)
             }
-            return
+            return nil
         }
         removeTab(runtimeID: tab.runtimeID)
         engine.closeTab(id: tab.runtimeID)
+        return nil
     }
 
     func goBack() {
