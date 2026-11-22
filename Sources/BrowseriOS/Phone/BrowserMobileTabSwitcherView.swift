@@ -47,8 +47,8 @@ final class BrowserMobileTabSwitcherView: UIView, UIScrollViewDelegate, UIGestur
         didSet { cards.values.forEach(applyCrop) }
     }
 
-    /// The status bar's strip above the page; a live picture of the screen
-    /// leaves it out at rest, as the tabs' pictures of their pages do.
+    /// The status bar's strip above the page, which the tabs' pictures
+    /// include and their cards leave out at rest.
     var pageTopInset: CGFloat = 0 {
         didSet { cards.values.forEach(applyCrop) }
     }
@@ -572,7 +572,8 @@ extension BrowserMobileTabSwitcherView {
             let scale = bounds.width / max(pageWidth - left - right, 1)
             let width = pageWidth * scale
             imageView.frame = CGRect(
-                x: -left * scale, y: 0, width: width, height: width * picture.size.height / picture.size.width,
+                x: -left * scale, y: -crop.top * cut * scale,
+                width: width, height: width * picture.size.height / picture.size.width,
             )
         }
     }
