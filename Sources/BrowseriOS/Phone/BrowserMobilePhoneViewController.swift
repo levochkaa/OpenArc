@@ -187,6 +187,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
     private lazy var searchPanel = BrowserMobileSearchPanel()
     private var searchReplacesPage = false
     private var keyboardTop: CGFloat?
+    private var laidOutSize = CGSize.zero
 
     /// Switcher.
     private var switcher: BrowserMobileTabSwitcherView?
@@ -332,6 +333,10 @@ final class BrowserMobilePhoneViewController: UIViewController {
         homeLogo.bounds = CGRect(origin: .zero, size: logoSize)
         homeLogo.center = CGPoint(x: view.bounds.midX, y: view.bounds.midY)
         updateStatusCorner()
+        if laidOutSize != view.bounds.size {
+            laidOutSize = view.bounds.size
+            layoutOpenPanel()
+        }
         layoutPage()
         if surface == nil {
             layoutBar()
@@ -486,8 +491,12 @@ final class BrowserMobilePhoneViewController: UIViewController {
     }
 
     private func layoutPage() {
-        guard pageContainer.transform.isIdentity else { return }
-        pageContainer.frame = view.bounds
+        if pageContainer.transform.isIdentity {
+            pageContainer.frame = view.bounds
+        } else if pageContainer.bounds.size != view.bounds.size {
+            // The search card scales a screen-sized page; any other size is mid-animation.
+            return
+        }
         // Pages start below the status bar, which the band covers, so the
         // viewport units of a page leave it out.
         let top = view.safeAreaInsets.top
@@ -512,6 +521,25 @@ final class BrowserMobilePhoneViewController: UIViewController {
 
     private func layoutBar() {
         bar.frame = barFrame
+    }
+
+    /// Folding, unfolding or turning with a panel up: the panel and the
+    /// page's search card take the new size.
+    private func layoutOpenPanel() {
+        guard let surface, surfacePan.map({ $0.state != .began && $0.state != .changed }) ?? true else { return }
+        let size = view.bounds.size
+        switch mode {
+        case .search:
+            let top = searchPanelTop(keyboardTop: keyboardTop ?? size.height * 0.655)
+            surface.frame = CGRect(x: 0, y: top, width: size.width, height: size.height - top)
+            applyPageCard(searchCardFrame())
+        case .pageMenu:
+            let height = pagePanel.contentHeight + safeBottom
+            surface.frame = CGRect(x: 0, y: size.height - height, width: size.width, height: height)
+            pagePanel.frame.size = CGSize(width: size.width, height: height)
+            updateVerticalBar(pageMenuHeight: height)
+        case .browsing, .switcher: break
+        }
     }
 
     // MARK: Theme, icons, tab stack
@@ -905,6 +933,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
         setBarCollapsed(false, animated: false)
         layoutBar()
         let catcher = UIControl(frame: view.bounds)
+        catcher.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         catcher.accessibilityIdentifier = "browser.dismissPanel"
         catcher.accessibilityLabel = String(localized: "Close", table: "Mobile")
         catcher.addAction(UIAction { [weak self] _ in self?.closePanel() }, for: .touchUpInside)
