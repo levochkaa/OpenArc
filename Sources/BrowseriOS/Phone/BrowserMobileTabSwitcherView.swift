@@ -24,7 +24,9 @@ final class BrowserMobileTabSwitcherView: UIView, UIScrollViewDelegate, UIGestur
     /// How far the card left of the focused one sits, as a share of the width.
     static let backwardStep: CGFloat = 0.18
     static let newestExtraStep: CGFloat = 0.062
-    static let cardWidthShare: CGFloat = 0.644
+    static let cardWidthShare: CGFloat = 0.65
+    /// How much smaller each older card is than the one in the middle, up to two back.
+    static let olderCardShrink: CGFloat = 0.014
     static let cornerRadius: CGFloat = 26
 
     var onOpen: ((String) -> Void)?
@@ -42,6 +44,12 @@ final class BrowserMobileTabSwitcherView: UIView, UIScrollViewDelegate, UIGestur
     /// The page's side insets on screen, such as the strip beside the
     /// camera on iPhone Duo; card pictures leave them out.
     var pageSideInsets: (left: CGFloat, right: CGFloat) = (0, 0) {
+        didSet { cards.values.forEach(applyCrop) }
+    }
+
+    /// The status bar's strip above the page; a live picture of the screen
+    /// leaves it out at rest, as the tabs' pictures of their pages do.
+    var pageTopInset: CGFloat = 0 {
         didSet { cards.values.forEach(applyCrop) }
     }
 
@@ -163,8 +171,15 @@ final class BrowserMobileTabSwitcherView: UIView, UIScrollViewDelegate, UIGestur
             let spread = width * Self.backwardStep / (1 - exp(-k))
             x = focusedX - spread * (1 - exp(k * offset))
         }
-        let y = (bounds.height - size.height) / 2 + bounds.height * 0.017
-        return CGRect(x: x, y: y, width: size.width, height: size.height)
+        let y = (bounds.height - size.height) / 2 + bounds.height * 0.0157
+        let frame = CGRect(x: x, y: y, width: size.width, height: size.height)
+        // Older cards recede a little into the stack: their left edges keep
+        // their places in the row, their middles stay level.
+        let shrink = 1 - Self.olderCardShrink * min(max(-offset, 0), 2)
+        return CGRect(
+            x: frame.minX, y: frame.minY + frame.height * (1 - shrink) / 2,
+            width: frame.width * shrink, height: frame.height * shrink,
+        )
     }
 
     /// Moves cards into `host`, a view over the ones above the switcher, so
@@ -197,8 +212,11 @@ final class BrowserMobileTabSwitcherView: UIView, UIScrollViewDelegate, UIGestur
             let offset = CGFloat(index) - position
             // The neighbors keep their icons; only the middle card shows its title,
             // which ends before the next card's icon.
-            card.titleAlpha = min(1, max(0, 2 - abs(offset)))
+            // Older cards' icons fade into the stack and the cards darken;
+            // the newer ones stay bright.
+            card.titleAlpha = offset < 0 ? max(0, 1 - 0.32 * -offset) : min(1, max(0, 2 - offset))
             card.nameAlpha = max(0, 1 - abs(offset) * 1.4)
+            card.depthDim = 0.17 * min(max(-offset, 0), 2)
             card.titleRoom = index + 1 < entries.count
                 ? cardFrame(index: index + 1, position: position).minX - frame.minX
                 : nil
@@ -239,7 +257,7 @@ final class BrowserMobileTabSwitcherView: UIView, UIScrollViewDelegate, UIGestur
 
     private func applyCrop(_ card: Card) {
         card.crop = Card.Crop(
-            left: pageSideInsets.left, right: pageSideInsets.right,
+            left: pageSideInsets.left, right: pageSideInsets.right, top: pageTopInset,
             screenWidth: bounds.width, restingWidth: cardSize.width,
         )
     }
@@ -371,6 +389,7 @@ extension BrowserMobileTabSwitcherView {
         struct Crop: Equatable {
             var left: CGFloat = 0
             var right: CGFloat = 0
+            var top: CGFloat = 0
             var screenWidth: CGFloat = 0
             var restingWidth: CGFloat = 0
         }
@@ -423,7 +442,13 @@ extension BrowserMobileTabSwitcherView {
             }
         }
 
+        /// How much darker an older card is than the one in the middle.
+        var depthDim: CGFloat = 0 {
+            didSet { dim.alpha = depthDim }
+        }
+
         private let clip = UIView()
+        private let dim = UIView()
         private let imageView = UIImageView()
         private let placeholderIcon = UIImageView()
         private let header = UIView()
@@ -450,11 +475,15 @@ extension BrowserMobileTabSwitcherView {
             placeholderIcon.contentMode = .scaleAspectFit
             placeholderIcon.tintColor = .secondaryLabel
             clip.addSubview(placeholderIcon)
+            dim.backgroundColor = .black
+            dim.alpha = 0
+            dim.isUserInteractionEnabled = false
+            clip.addSubview(dim)
             icon.contentMode = .scaleAspectFit
             icon.layer.cornerRadius = 4
             icon.layer.cornerCurve = .continuous
             icon.clipsToBounds = true
-            titleLabel.font = .systemFont(ofSize: 15, weight: .medium)
+            titleLabel.font = .systemFont(ofSize: 12, weight: .medium)
             titleLabel.textColor = .white
             privateGlyph.tintColor = UIColor(white: 1, alpha: 0.75)
             privateGlyph.contentMode = .center
@@ -472,6 +501,7 @@ extension BrowserMobileTabSwitcherView {
         override func layoutSubviews() {
             super.layoutSubviews()
             clip.frame = bounds
+            dim.frame = clip.bounds
             layer.shadowPath = UIBezierPath(
                 roundedRect: bounds, cornerRadius: BrowserMobileTabSwitcherView.cornerRadius,
             ).cgPath
@@ -534,7 +564,7 @@ extension BrowserMobileTabSwitcherView {
                 let scale = bounds.width / max(pageWidth - left - right, 1)
                 livePicture.transform = CGAffineTransform(scaleX: scale, y: scale)
                 livePicture.center = CGPoint(
-                    x: (pageWidth / 2 - left) * scale, y: livePicture.bounds.height * scale / 2,
+                    x: (pageWidth / 2 - left) * scale, y: (livePicture.bounds.height / 2 - crop.top * cut) * scale,
                 )
             }
             guard let picture, picture.size.width > 0 else { return }

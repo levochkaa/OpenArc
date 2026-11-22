@@ -1470,6 +1470,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
         let switcher = BrowserMobileTabSwitcherView(frame: view.bounds)
         wireSwitcher(switcher)
         switcher.pageSideInsets = (view.safeAreaInsets.left, view.safeAreaInsets.right)
+        switcher.pageTopInset = view.safeAreaInsets.top
         let currentIndex = entries.firstIndex { $0.id == currentID } ?? entries.count - 1
         let focus = CGFloat(max(currentIndex - 1, 0))
         switcher.setEntries(entries, focus: focus)
@@ -1612,6 +1613,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
         UIView.animate(springDuration: 0.26, bounce: 0, initialSpringVelocity: 0, delay: 0, options: []) {
             card.bounds.size = self.view.bounds.size
             card.center = CGPoint(x: self.view.bounds.midX, y: self.view.bounds.midY)
+            card.depthDim = 0
             card.layoutIfNeeded()
             self.flyIntoStack(others)
         } completion: { _ in
@@ -1637,6 +1639,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
         UIView.animate(springDuration: 0.26, bounce: 0, initialSpringVelocity: 0, delay: 0, options: []) {
             card.bounds.size = self.view.bounds.size
             card.center = to
+            card.depthDim = 0
             card.layoutIfNeeded()
             for other in others {
                 other.titleAlpha = 0
@@ -1672,6 +1675,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
             card.titleAlpha = 0
             card.bounds.size = self.view.bounds.size
             card.center = CGPoint(x: self.view.bounds.midX, y: self.view.bounds.midY)
+            card.depthDim = 0
             card.layoutIfNeeded()
             self.flyIntoStack(others)
         } completion: { _ in
