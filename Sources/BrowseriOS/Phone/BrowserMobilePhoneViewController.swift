@@ -148,6 +148,8 @@ final class BrowserMobilePhoneViewController: UIViewController {
     private var renderedTabID: String?
     private var wasLoading = [String: Bool]()
     private var didAutoOpenSearch = false
+    /// What the Home Screen widget asked for, done once the tabs are ready.
+    private var pendingAppLink: BrowserMobileAppLink?
     private var shownOpenedLinkCount: Int
     private var iconRequests = Set<String>()
 
@@ -399,6 +401,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
             didAutoOpenSearch = true
             showOpenedLink()
         }
+        performPendingAppLink()
         // A launch opens search over the last tab too, unless Settings turn that off.
         if !didAutoOpenSearch, workspace.isReady, mode == .browsing, view.window != nil,
            tab == nil || tab?.urlString == "about:blank" || BrowserMobileAutoOpenKeyboardSetting.isOn()
@@ -1977,6 +1980,27 @@ final class BrowserMobilePhoneViewController: UIViewController {
         guard mode == .browsing else { return }
         let url = workspace.selectedTab?.urlString
         openSearch(text: url == nil || url == "about:blank" ? "" : url!, replacesPage: true)
+    }
+
+    /// The Home Screen widget's search, voice search or new tab.
+    func open(_ link: BrowserMobileAppLink) {
+        pendingAppLink = link
+        didAutoOpenSearch = true
+        performPendingAppLink()
+    }
+
+    private func performPendingAppLink() {
+        guard let link = pendingAppLink, workspace.isReady, view.window != nil else { return }
+        pendingAppLink = nil
+        if presentedViewController != nil {
+            dismiss(animated: false)
+        }
+        if mode != .search {
+            newTab()
+        }
+        if link == .voiceSearch {
+            searchPanel.startDictation()
+        }
     }
 
     @objc private func newTab() {

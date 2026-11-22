@@ -83,6 +83,29 @@ enum BrowserMobileDefaultBrowser {
     }
 }
 
+// MARK: - BrowserMobileSupport
+
+/// Where Settings sends questions and the legal pages.
+enum BrowserMobileSupport {
+    static let address = "support@openarc.su"
+    static let privacyPolicyURL = URL(string: "https://openarc.su/privacy/")!
+    static let termsURL = URL(string: "https://openarc.su/terms/")!
+
+    /// A new email to the team, its subject naming the app's version and the
+    /// device, so a reply needs no questions about them.
+    @MainActor static func contactURL(
+        version: String = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "",
+        build: String = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "",
+        system: String = "\(UIDevice.current.systemName) \(UIDevice.current.systemVersion)",
+    ) -> URL {
+        var components = URLComponents()
+        components.scheme = "mailto"
+        components.path = address
+        components.queryItems = [URLQueryItem(name: "subject", value: "OpenArc \(version) (\(build)), \(system)")]
+        return components.url ?? URL(string: "mailto:\(address)")!
+    }
+}
+
 // MARK: - BrowserMobilePhoneSettingsViewController
 
 final class BrowserMobilePhoneSettingsViewController: UITableViewController {
@@ -174,6 +197,30 @@ final class BrowserMobilePhoneSettingsViewController: UITableViewController {
             ],
             [
                 .init(
+                    title: String(localized: "Change App Icon", table: "Mobile"),
+                    symbol: "app.badge.fill",
+                    color: .systemBlue,
+                    id: "browser.settings.appIcon",
+                    isEnabled: UIApplication.shared.supportsAlternateIcons,
+                    opensPage: false,
+                ) { [weak self] in
+                    guard let self else { return }
+                    BrowserMobileAppIconViewController.present(from: self)
+                },
+                .init(
+                    title: String(localized: "Add to Home Screen", table: "Mobile"),
+                    symbol: "apps.iphone",
+                    color: .systemPurple,
+                    id: "browser.settings.addToHomeScreen",
+                    isEnabled: true,
+                    opensPage: false,
+                ) { [weak self] in
+                    guard let self else { return }
+                    BrowserMobileHomeScreenViewController.present(from: self)
+                },
+            ],
+            [
+                .init(
                     title: String(localized: "Search Engine", table: "Mobile"),
                     symbol: "magnifyingglass",
                     color: .systemBlue,
@@ -182,6 +229,20 @@ final class BrowserMobilePhoneSettingsViewController: UITableViewController {
                     value: BrowserMobileSearchEngineSetting.current(defaults).title,
                 )
                     { [weak self] in self?.showSearchEngines() },
+                .init(
+                    title: String(localized: "Languages", table: "Mobile"),
+                    symbol: "character.bubble.fill",
+                    color: .systemGreen,
+                    id: "browser.settings.languages",
+                    isEnabled: true,
+                ) { [weak self] in
+                    guard let self else { return }
+                    navigationController?.pushViewController(
+                        BrowserMobileLanguagesViewController(defaults: defaults), animated: true,
+                    )
+                },
+            ],
+            [
                 .init(
                     title: String(localized: "Auto-Open Keyboard", table: "Mobile"),
                     symbol: "keyboard.fill",
@@ -215,7 +276,7 @@ final class BrowserMobilePhoneSettingsViewController: UITableViewController {
             ],
         ]
         if BrowserMobileDefaultBrowser.isAvailable {
-            rows.insert([
+            rows[1].insert(
                 .init(
                     title: String(localized: "Default Browser", table: "Mobile"),
                     symbol: "safari.fill",
@@ -224,7 +285,8 @@ final class BrowserMobilePhoneSettingsViewController: UITableViewController {
                     isEnabled: true,
                     value: BrowserMobileDefaultBrowser.isDefault() ? "OpenArc" : nil,
                 ) { BrowserMobileDefaultBrowser.openSystemSettings() },
-            ], at: 0)
+                at: 0,
+            )
             NotificationCenter.default.addObserver(
                 self, selector: #selector(refreshDefaultBrowser),
                 name: UIApplication.didBecomeActiveNotification, object: nil,
@@ -246,6 +308,38 @@ final class BrowserMobilePhoneSettingsViewController: UITableViewController {
             ])
         }
         rows.append([
+            .init(
+                title: String(localized: "Contact the Team", table: "Mobile"),
+                symbol: "envelope.fill",
+                color: .systemGray,
+                id: "browser.settings.contact",
+                isEnabled: true,
+                opensPage: false,
+            ) { UIApplication.shared.open(BrowserMobileSupport.contactURL()) },
+            .init(
+                title: String(localized: "Show Onboarding", table: "Mobile"),
+                symbol: "hand.wave.fill",
+                color: .systemGray,
+                id: "browser.settings.onboarding",
+                isEnabled: true,
+                opensPage: false,
+            ) { [weak self] in self?.showOnboarding() },
+            .init(
+                title: String(localized: "Privacy Policy", table: "Mobile"),
+                symbol: "hand.raised.fill",
+                color: .systemGray,
+                id: "browser.settings.privacyPolicy",
+                isEnabled: true,
+                opensPage: false,
+            ) { [weak self] in self?.openInNewTab(BrowserMobileSupport.privacyPolicyURL) },
+            .init(
+                title: String(localized: "Terms of Use", table: "Mobile"),
+                symbol: "doc.plaintext.fill",
+                color: .systemGray,
+                id: "browser.settings.terms",
+                isEnabled: true,
+                opensPage: false,
+            ) { [weak self] in self?.openInNewTab(BrowserMobileSupport.termsURL) },
             .init(
                 title: String(localized: "Open Source Licenses", table: "Mobile"),
                 symbol: "doc.text.fill",
@@ -387,16 +481,27 @@ final class BrowserMobilePhoneSettingsViewController: UITableViewController {
     /// Settings › Extensions; a store link closes Settings and opens in a new tab.
     func showExtensions(animated: Bool) {
         let controller = BrowserMobileExtensionsViewController()
-        controller.openURL = { [weak self] url in
-            guard let self else { return }
-            let workspace = workspace
-            let opened = didOpenTab
-            dismiss(animated: true) {
-                workspace.openLinkInNewTab(url, inBackground: false)
-                opened?()
-            }
-        }
+        controller.openURL = { [weak self] url in self?.openInNewTab(url) }
         navigationController?.pushViewController(controller, animated: animated)
+    }
+
+    /// Closes Settings and opens the page in a new tab.
+    private func openInNewTab(_ url: URL) {
+        let workspace = workspace
+        let opened = didOpenTab
+        dismiss(animated: true) {
+            workspace.openLinkInNewTab(url, inBackground: false)
+            opened?()
+        }
+    }
+
+    /// Closes Settings and shows the welcome over the browser.
+    private func showOnboarding() {
+        guard let host = navigationController?.presentingViewController ?? presentingViewController else { return }
+        let defaults = defaults
+        host.dismiss(animated: true) {
+            BrowserMobileOnboardingViewController.present(over: host, defaults: defaults)
+        }
     }
 
     @objc private func close() {

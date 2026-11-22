@@ -31,6 +31,14 @@
         <string>https</string>
       </array>
     </dict>
+    <dict>
+      <key>CFBundleURLName</key>
+      <string>OpenArc</string>
+      <key>CFBundleURLSchemes</key>
+      <array>
+        <string>openarc</string>
+      </array>
+    </dict>
   </array>
   <key>OpenArcDefaultBrowser</key>
   <string>$(OPENARC_DEFAULT_BROWSER)</string>

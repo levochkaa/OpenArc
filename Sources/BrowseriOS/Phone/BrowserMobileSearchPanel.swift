@@ -564,6 +564,12 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
         updateAccessories(animated: true)
     }
 
+    /// Starts listening, as the microphone button does.
+    func startDictation() {
+        guard !dictation.isListening else { return }
+        toggleDictation()
+    }
+
     private func toggleDictation() {
         if dictation.isListening {
             dictation.stop()
@@ -572,7 +578,7 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
         field.keepCompletion()
         let typed = field.text ?? ""
         dictationPrefix = typed.isEmpty || typed.hasSuffix(" ") ? typed : typed + " "
-        dictation.start(language: field.textInputMode?.primaryLanguage)
+        dictation.start(language: BrowserMobileVoiceSearchLanguages.language(keyboard: field.textInputMode?.primaryLanguage))
     }
 
     private func toggleIncognito() {

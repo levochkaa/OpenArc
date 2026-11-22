@@ -52,7 +52,12 @@ final class BrowserSceneDelegate: UIResponder, UIWindowSceneDelegate {
             connectionTask = nil
             let links = pendingLinks
             pendingLinks = []
-            links.forEach(connection.workspace.openLinkFromAnotherApp)
+            open(links, in: connection)
+            if links.isEmpty, let root = window.rootViewController {
+                DispatchQueue.main.async {
+                    BrowserMobileOnboardingViewController.presentIfNeeded(over: root)
+                }
+            }
         }
     }
 
@@ -64,7 +69,7 @@ final class BrowserSceneDelegate: UIResponder, UIWindowSceneDelegate {
             pendingLinks += links
             return
         }
-        links.forEach(connection.workspace.openLinkFromAnotherApp)
+        open(links, in: connection)
     }
 
     func sceneDidBecomeActive(_ scene: UIScene) {
@@ -81,6 +86,21 @@ final class BrowserSceneDelegate: UIResponder, UIWindowSceneDelegate {
         guard connectionScene === scene, let connection else { return }
         BrowserMobileSceneSessions.shared.setActive(false, for: connection)
         BrowserMobileSceneSessions.shared.flush(connection)
+    }
+
+    /// Web links open as pages; the widget's `openarc://` links go to the browser's controller.
+    private func open(_ links: [URL], in connection: BrowserMobileSceneSessions.Connection) {
+        for url in links {
+            if let link = BrowserMobileAppLink(url: url) {
+                switch window?.rootViewController {
+                case let phone as BrowserMobilePhoneViewController: phone.open(link)
+                case let pad as BrowserMobileViewController: pad.open(link)
+                default: break
+                }
+            } else {
+                connection.workspace.openLinkFromAnotherApp(url)
+            }
+        }
     }
 
     func sceneDidDisconnect(_ scene: UIScene) {

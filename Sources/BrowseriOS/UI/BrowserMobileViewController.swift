@@ -29,6 +29,7 @@ final class BrowserMobileViewController: UISplitViewController, UISplitViewContr
 
     let workspace: BrowserMobileWorkspace
     let pageController: BrowserMobilePageViewController
+    private var pendingAppLink: BrowserMobileAppLink?
     let tabsController: BrowserMobileTabsViewController
 
     lazy var javaScriptDialogPresenter =
@@ -86,6 +87,23 @@ final class BrowserMobileViewController: UISplitViewController, UISplitViewContr
         presentedTabs?.render()
         javaScriptDialogPresenter.update(workspace.javaScriptDialog)
         httpAuthenticationPresenter.update(workspace.httpAuthentication)
+        performPendingAppLink()
+    }
+
+    /// The Home Screen widget's links: each opens a new tab with its address field focused.
+    func open(_ link: BrowserMobileAppLink) {
+        pendingAppLink = link
+        performPendingAppLink()
+    }
+
+    private func performPendingAppLink() {
+        guard pendingAppLink != nil, workspace.isReady else { return }
+        pendingAppLink = nil
+        if presentedViewController != nil {
+            dismiss(animated: false)
+        }
+        workspace.newTab()
+        pageController.focusAddress()
     }
 
     func splitViewController(_: UISplitViewController, topColumnForCollapsingToProposedTopColumn _: Column) -> Column {

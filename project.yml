@@ -377,6 +377,8 @@ targets:
       - path: Sources/Browser/Resources/filter-list-easylist-cookie.txt
     dependencies:
       - package: DomainParser
+      - target: OpenArcWidgets
+        embed: true
     settings:
       base:
         PRODUCT_NAME: OpenArc
@@ -387,6 +389,9 @@ targets:
         # on request; it shows Settings ▸ Default Browser.
         OPENARC_DEFAULT_BROWSER: NO
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # Settings ▸ Change App Icon; script/app_icon/make_icons.py draws them.
+        ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES: >-
+          AppIcon-Candy AppIcon-Neon AppIcon-Hologram AppIcon-Sunset AppIcon-Sticker AppIcon-Monochrome
         SUPPORTS_MACCATALYST: NO
         TARGETED_DEVICE_FAMILY: "1,2"
         SWIFT_STRICT_CONCURRENCY: complete
@@ -395,6 +400,24 @@ targets:
       gatherCoverageData: false
       testTargets:
         - OpenArciOSTests
+  OpenArcWidgets:
+    type: app-extension
+    platform: iOS
+    productName: OpenArcWidgets
+    sources:
+      - path: Sources/OpenArcWidgets
+      # The widget's links are the app's own.
+      - path: Sources/BrowseriOS/Model/BrowserMobileAppLink.swift
+    settings:
+      base:
+        PRODUCT_NAME: OpenArcWidgets
+        PRODUCT_BUNDLE_IDENTIFIER: com.levochkaa.OpenArc.widgets
+        INFOPLIST_FILE: Support/OpenArcWidgets-Info.plist
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SUPPORTS_MACCATALYST: NO
+        SWIFT_STRICT_CONCURRENCY: complete
+        SWIFT_EMIT_LOC_STRINGS: NO
+        SKIP_INSTALL: YES
   BrowserMobileTestHost:
     type: application
     platform: iOS

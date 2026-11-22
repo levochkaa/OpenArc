@@ -2,8 +2,9 @@
 """Draws OpenArc's app icons from the mark in mark.py.
 
 Writes the bundle icon set (the Original colors), the iOS app icon in Icon
-Composer's format, one 1024 px PNG for each icon Settings offers, and the
-website's favicon. Needs `rsvg-convert` (Homebrew librsvg).
+Composer's format, one 1024 px PNG for each icon Settings offers, the iOS
+alternate icons with their small pictures for the icon picker and the
+widget, and the website's favicon. Needs `rsvg-convert` (Homebrew librsvg) and Pillow.
 
     script/app_icon/make_icons.py
 """
@@ -22,6 +23,8 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 ICON_SET = ROOT / "Sources/Browser/Assets.xcassets/AppIcon.appiconset"
 IOS_ICON = ROOT / "Sources/BrowseriOS/AppIcon.icon"
 RESOURCES = ROOT / "Sources/Browser/Resources"
+IOS_ASSETS = ROOT / "Sources/BrowseriOS/Assets.xcassets"
+WIDGET_ASSETS = ROOT / "Sources/OpenArcWidgets/Assets.xcassets"
 FAVICON = ROOT / "Website/public/favicon.svg"
 
 # macOS icon grid: a 824 px body with a 100 px margin on a 1024 px canvas.
@@ -51,7 +54,14 @@ def gradient(gid, stops, x1=0, y1=0, x2=0, y2=1):
     )
 
 
+# iOS draws its own rounded square over a full square icon, so its icons
+# fill the canvas, with no margin, corner or shadow of their own.
+FULL_BLEED = False
+
+
 def body(fill, stroke="#000000", stroke_opacity=0.08):
+    if FULL_BLEED:
+        return f'<rect width="{CANVAS}" height="{CANVAS}" fill="{fill}"/>'
     return (
         f'<rect x="{MARGIN}" y="{MARGIN}" width="{BODY}" height="{BODY}" rx="{RADIUS}" fill="{fill}" '
         f'filter="url(#body-shadow)"/>'
@@ -159,6 +169,16 @@ def neon():
     return svg(defs, content)
 
 
+def sheen():
+    """The hologram's light over the top half of its body."""
+    if FULL_BLEED:
+        return f'<rect width="{CANVAS}" height="{CANVAS / 2}" fill="url(#sheen)" opacity="0.35"/>'
+    return (
+        f'<rect x="{MARGIN}" y="{MARGIN}" width="{BODY}" height="{BODY / 2}" rx="{RADIUS}" '
+        'fill="url(#sheen)" opacity="0.35"/>'
+    )
+
+
 def hologram():
     defs = (
         gradient(
@@ -171,8 +191,7 @@ def hologram():
     line = 'fill="#FFFFFF" fill-opacity="0.35" stroke="#1E2230" stroke-width="26" stroke-linejoin="round"'
     content = (
         body("url(#bg)", "#FFFFFF", 0.6)
-        + f'<rect x="{MARGIN}" y="{MARGIN}" width="{BODY}" height="{BODY / 2}" rx="{RADIUS}" '
-        'fill="url(#sheen)" opacity="0.35"/>'
+        + sheen()
         + shapes(line, line)
     )
     return svg(defs, content)
@@ -315,6 +334,55 @@ def render(source, size, destination):
     )
 
 
+# The icon picker's pictures: 64 pt at 3x.
+IOS_PREVIEW_SIZE = 192
+
+
+def opaque_png(source, size, destination):
+    """Renders the SVG without an alpha channel, which iOS app icons may not have."""
+    from PIL import Image
+
+    render(source, size, destination)
+    Image.open(destination).convert("RGB").save(destination, optimize=True)
+
+
+def contents(images):
+    return json.dumps({"images": images, "info": {"author": "xcode", "version": 1}}, indent=2) + "\n"
+
+
+def write_ios_alternates(temporary):
+    """An app icon set for each alternate icon, and an image set with its
+    picture for the picker, the Original's too."""
+    global FULL_BLEED
+    FULL_BLEED = True
+    try:
+        for name, draw in VARIANTS.items():
+            source = pathlib.Path(temporary) / f"ios-{name}.svg"
+            source.write_text(draw())
+            title = name.capitalize()
+            preview = IOS_ASSETS / f"AppIconPreview-{title}.imageset"
+            preview.mkdir(parents=True, exist_ok=True)
+            opaque_png(source, IOS_PREVIEW_SIZE, preview / "preview.png")
+            (preview / "Contents.json").write_text(
+                contents([{"filename": "preview.png", "idiom": "universal"}])
+            )
+            if name == "original":
+                # The Home Screen widget shows the Original beside its search field.
+                mark = WIDGET_ASSETS / "AppMark.imageset"
+                mark.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(preview / "preview.png", mark / "mark.png")
+                (mark / "Contents.json").write_text(contents([{"filename": "mark.png", "idiom": "universal"}]))
+                continue
+            icon_set = IOS_ASSETS / f"AppIcon-{title}.appiconset"
+            icon_set.mkdir(parents=True, exist_ok=True)
+            opaque_png(source, CANVAS, icon_set / "icon.png")
+            (icon_set / "Contents.json").write_text(
+                contents([{"filename": "icon.png", "idiom": "universal", "platform": "ios", "size": "1024x1024"}])
+            )
+    finally:
+        FULL_BLEED = False
+
+
 def main():
     FAVICON.write_text(favicon())
     write_ios_icon()
@@ -327,6 +395,7 @@ def main():
                     render(source, size, ICON_SET / f"icon_{size}.png")
             else:
                 render(source, CANVAS, RESOURCES / f"openarc-icon-{name}.png")
+        write_ios_alternates(temporary)
 
 
 if __name__ == "__main__":
