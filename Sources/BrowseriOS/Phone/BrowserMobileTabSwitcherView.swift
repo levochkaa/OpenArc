@@ -353,7 +353,7 @@ final class BrowserMobileTabSwitcherView: UIView, UIScrollViewDelegate, UIGestur
         card.isDetached = true
         let distance = card.center.y + card.bounds.height
         // Keeps the flick's speed until the card is off the screen.
-        let duration = min(0.25, max(0.12, Double(distance / max(abs(velocity), 1))))
+        let duration = min(0.16, max(0.1, Double(distance / max(abs(velocity), 1))))
         UIView.animate(withDuration: duration, delay: 0, options: [.curveLinear]) {
             card.center.y = -card.bounds.height / 2 - 40
         } completion: { _ in
@@ -362,12 +362,12 @@ final class BrowserMobileTabSwitcherView: UIView, UIScrollViewDelegate, UIGestur
         cards.removeValue(forKey: id)
         guard let index = entries.firstIndex(where: { $0.id == id }) else { return }
         entries.remove(at: index)
-        // The cards to the left move up to fill the gap: the focus stays on the
-        // card that slid into place.
+        // The cards to the left move up to fill the gap while the card is
+        // still leaving: the focus stays on the card that slid into place.
         let newPosition = clampedPosition(position > CGFloat(index) || index == entries.count ? position - 1 : position)
         let step = bounds.width * Self.forwardStep
         UIView.animate(
-            withDuration: 0.32, delay: 0, usingSpringWithDamping: 0.9, initialSpringVelocity: 0,
+            springDuration: 0.16, bounce: 0, initialSpringVelocity: 0, delay: 0,
             options: [.allowUserInteraction, .beginFromCurrentState],
         ) {
             self.position = newPosition
