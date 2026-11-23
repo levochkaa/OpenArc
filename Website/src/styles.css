@@ -486,7 +486,9 @@ a {
 
 .release-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  /* Three columns fill the 1100 px section; fewer cards sit in the middle. */
+  grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 356px));
+  justify-content: center;
   gap: 16px;
   margin-top: 40px;
 }
