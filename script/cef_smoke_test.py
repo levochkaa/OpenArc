@@ -916,6 +916,8 @@ class SmokeTest:
         sandbox_check = ctypes.CDLL("/usr/lib/libSystem.B.dylib").sandbox_check
         sandbox_check.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int]
         sandbox_check.restype = ctypes.c_int
+        if self.options.engine == "ladybird":
+            return self.check_ladybird_sandbox(sandbox_check)
         processes, unsandboxed = [], []
         for line in run(["/bin/ps", "-axww", "-o", "pid=,command="], check=False).stdout.splitlines():
             pid, _, command = line.strip().partition(" ")
@@ -981,6 +983,33 @@ class SmokeTest:
                               details)
         return {"evidence": f"{len(found)} WebContent process(es) from {LADYBIRD_ENGINE_FRAMEWORK}; no Chromium "
                             "renderer, and only Ladybird's framework is loaded", **details}
+
+    def check_ladybird_sandbox(self, sandbox_check) -> dict:
+        """Ladybird's helpers that handle pages, images, requests and drawing run inside the macOS sandbox."""
+        helpers = str(self.instance.app / "Contents" / "Frameworks" / LADYBIRD_ENGINE_FRAMEWORK) + "/"
+        sandboxed_kinds = ("WebContent", "WebWorker", "ImageDecoder", "RequestServer", "Compositor", "MediaServer",
+                           "WasmCompiler")
+        processes, unsandboxed = [], []
+        for line in run(["/bin/ps", "-axww", "-o", "pid=,command="], check=False).stdout.splitlines():
+            pid, _, command = line.strip().partition(" ")
+            if helpers not in command:
+                continue
+            name = command.split("/Helpers/", 1)[-1].split(" ", 1)[0]
+            if name not in sandboxed_kinds:
+                continue
+            processes.append(name)
+            if sandbox_check(int(pid), None, 0) != 1:
+                unsandboxed.append(f"{pid} {name}")
+        details = {"processes": sorted(processes), "unsandboxed": unsandboxed,
+                   "method": "sandbox_check() on every page, worker, image, request, media and drawing helper of "
+                             "the copy's Ladybird framework"}
+        if "WebContent" not in processes:
+            raise CheckFailed("no WebContent process of the copy was found", details)
+        if unsandboxed:
+            raise CheckFailed(f"{len(unsandboxed)} of {len(processes)} Ladybird helpers run without a sandbox",
+                              details)
+        return {"evidence": f"all {len(processes)} Ladybird helpers ({', '.join(sorted(set(processes)))}) run in "
+                            "the sandbox", **details}
 
     def check_ladybird_version(self) -> dict:
         tab = self.tabs["start"]

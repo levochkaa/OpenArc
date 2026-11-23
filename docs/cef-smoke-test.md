@@ -17,7 +17,8 @@ Safari's user agent, webkit-engine expects WebKit on both ports, and the checks 
 
 `--engine ladybird` starts the copy with `--openarc-engine=ladybird` ([ladybird-engine.md](ladybird-engine.md)) for a
 build that carries `OpenArc Ladybird.framework`. chromium-engine then checks that pages run in WebContent helpers
-from that framework, that no Chromium renderer runs and that the main process loaded no framework but Ladybird's.
+from that framework, that no Chromium renderer runs and that the main process loaded no framework but Ladybird's;
+sandbox checks that Ladybird's page, worker, image, request, media and drawing helpers run in the macOS sandbox.
 engine-version expects Ladybird's user agent, webkit-engine expects WebKit for the site routed there and Ladybird
 for the other, and the checks of what Ladybird lacks skip.
 
