@@ -208,7 +208,12 @@ struct BrowserAgentError: Error {
         // A navigation may not have started when the first answer comes back.
         try? await Task.sleep(for: .milliseconds(150))
         while Date().timeIntervalSince(start) < timeout {
-            if let state = try? await run(model, tabID, script: "document.readyState") as? String, state == "complete" {
+            // Ladybird keeps the old document until the new one's response arrives, but marks the tab loading at once.
+            let loading = model.tabs.first { $0.id == tabID }?.isLoading ?? false
+            if !loading,
+               let state = try? await run(model, tabID, script: "document.readyState") as? String,
+               state == "complete"
+            {
                 return
             }
             try? await Task.sleep(for: .milliseconds(200))
