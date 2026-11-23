@@ -96,7 +96,7 @@ What it does:
 
 Checks:
   chromium-engine, sandbox, no-notification-request-at-launch, engine-version, page-load-js-navigation,
-  proprietary-codecs, extension-sees-tabs, passkeys, media-devices, history,
+  webassembly, proprietary-codecs, extension-sees-tabs, passkeys, media-devices, history,
   webkit-engine, print-preview, screen-share-picker, extension-popup,
   notification-after-site-permission, translate-in-place, background-launch,
   stability.
@@ -628,19 +628,20 @@ class LogWatch:
 
 
 def new_crash_reports(since: float, app_path: Path) -> list[str]:
+    # Any process of the copy counts, helpers too (a helper's report is named after the helper). An .ips report is
+    # JSON with its slashes escaped, and macOS writes the home folder as /Users/USER with the folders below it
+    # starred, so the bundle's name decides.
     found = []
+    markers = (str(app_path), str(app_path.resolve()), f"/{app_path.name}/Contents/")
     for directory in CRASH_DIRS:
         for path in directory.glob("*"):
-            name = path.name
-            if not (name.startswith("OpenArc") or "OpenArc" in name):
-                continue
             try:
                 if path.stat().st_mtime < since:
                     continue
-                text = path.read_text(errors="replace")[:20000]
+                text = path.read_text(errors="replace")[:20000].replace("\\/", "/")
             except OSError:
                 continue
-            if str(app_path) in text or str(app_path.resolve()) in text:
+            if any(marker in text for marker in markers):
                 found.append(str(path))
     return found
 
@@ -766,6 +767,7 @@ class SmokeTest:
         self.check("no-notification-request-at-launch", self.check_notifications_at_launch)
         self.check("engine-version", lambda: self.check_engine(major))
         self.check("page-load-js-navigation", self.check_navigation)
+        self.check("webassembly", self.check_webassembly)
         self.check("proprietary-codecs", self.check_codecs)
         self.check("extension-sees-tabs", self.check_extension_tabs)
         self.check("passkeys", self.check_passkeys)
@@ -1073,6 +1075,24 @@ class SmokeTest:
             raise CheckFailed(f"unexpected values: {wrong}", {"steps": steps})
         return {"evidence": "script wrote 42; navigate → 'Smoke Two'; back → 'Smoke One'; forward → 'Smoke Two'; "
                             f"history.length {steps['history_length']}", "steps": steps}
+
+    def check_webassembly(self) -> dict:
+        """A page compiles and runs a WebAssembly module (on Ladybird, through WasmCompiler's own compiler)."""
+        tab = self.open_tab("wasm", self.server.url("media.html"))
+        # (module (func (export "add") (param i32 i32) (result i32) local.get 0 local.get 1 i32.add))
+        module = [0, 97, 115, 109, 1, 0, 0, 0, 1, 7, 1, 96, 2, 127, 127, 1, 127, 3, 2, 1, 0, 7, 7, 1, 3, 97, 100, 100,
+                  0, 0, 10, 9, 1, 7, 0, 32, 0, 32, 1, 106, 11]
+        since = time.time()
+        value = self.instance.eval(
+            f"WebAssembly.instantiate(new Uint8Array({module})).then(m => m.instance.exports.add(40, 2))", tab)
+        time.sleep(2)
+        reports = new_crash_reports(since, self.instance.app)
+        details = {"value": value, "crash_reports": reports,
+                   "method": "WebAssembly.instantiate of a module that adds two numbers, then crash reports of the "
+                             "copy's processes written meanwhile"}
+        if value != 42 or reports:
+            raise CheckFailed(f"add(40, 2) returned {value!r}; crash reports: {reports or 'none'}", details)
+        return {"evidence": "add(40, 2) = 42 in a compiled module, with no crash report", **details}
 
     def check_codecs(self) -> dict:
         tab = self.open_tab("media", self.server.url("media.html"))

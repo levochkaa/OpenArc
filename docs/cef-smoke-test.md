@@ -46,6 +46,7 @@ It starts the copy through LaunchServices with `open -g` and `--no-activate`, `-
 | no-notification-request-at-launch | `Notification.permission` is `default` and `permissions.query` is `prompt` on a page; the system log, streamed from before launch, has no `Requesting authorization` from the copy and no `Sending request for permission` from `usernoted` for its bundle ids; no NotificationCenter banner names "OpenArc Smoke" in the first 10 s. |
 | engine-version | `navigator.userAgent` and `userAgentData` report the `CHROME_VERSION_MAJOR` of `ThirdParty/cef/export/include/cef_version.h`. |
 | page-load-js-navigation | A fixture page runs its script; `navigate`, `back` and `forward` land on the right titles. |
+| webassembly | A page compiles a WebAssembly module and runs it, and no process of the copy wrote a crash report meanwhile (on Ladybird the module goes through WasmCompiler's compiler). |
 | proprietary-codecs | `canPlayType` is `probably` for H.264 (`avc1.42E01E`) and AAC (`mp4a.40.2`); `fixtures/h264-aac.mp4` (2 s, 96x64, made with ffmpeg's `testsrc` and `sine` sources) plays and `currentTime` advances. |
 | extension-sees-tabs | The test extension's service worker answers `chrome.tabs.query({})`; the count matches `openarc tabs`, including a tab that was never shown. |
 | passkeys | `isUserVerifyingPlatformAuthenticatorAvailable()` and `getClientCapabilities()` resolve. False is a WARN: the copy has no webauthn keychain group. |
@@ -58,7 +59,7 @@ It starts the copy through LaunchServices with `open -g` and `--no-activate`, `-
 | notification-after-site-permission | A click calls `Notification.requestPermission()`; the script presses Allow on OpenArc's prompt. The copy must turn to macOS only after that. The page gets `granted` whatever macOS answers, and the notification fires `onshow`; whether macOS shows it depends on the copy's notification settings and Focus. |
 | translate-in-place | `openarc command translatePage` on a German page changes the text at the same address; the command again brings the original back. |
 | background-launch | `lsappinfo front` never names the copy during the run. |
-| stability | The main process is alive at the end, and no crash report newer than the launch names the copy's path. |
+| stability | The main process is alive at the end, and no crash report newer than the launch names the copy's bundle, a helper's included. |
 
 ## Set up once per Mac
 
