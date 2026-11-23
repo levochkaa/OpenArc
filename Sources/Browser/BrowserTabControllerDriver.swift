@@ -13,6 +13,7 @@ import Foundation
     var onTabUpdated: ((String, String?, String?, String?) -> Void)?
     var onTabCloseRequestFinished: ((String, String, BrowserTabCloseOutcome) -> Void)?
     var onTabCloseConfirmationPresented: ((String) -> Void)?
+    var tabToShowAfterClosing: ((String) -> String?)?
     var onTabClosed: ((String) -> Void)?
     var onDownloadWithoutPage: ((String) -> Void)?
     var onStatusChanged: ((String, String) -> Void)?
@@ -522,6 +523,7 @@ import Foundation
         onTabUpdated = nil
         onTabCloseRequestFinished = nil
         onTabCloseConfirmationPresented = nil
+        tabToShowAfterClosing = nil
         onTabClosed = nil
         onStatusChanged = nil
         onNavigationStateChanged = nil
@@ -727,6 +729,13 @@ extension BrowserTabControllerDriver: BrowserTabControllerDelegate {
 
     nonisolated func browserTabController(_: BrowserTabController, willConfirmCloseForTabWithID tabID: String) {
         MainActor.assumeIsolated { onTabCloseConfirmationPresented?(tabID) }
+    }
+
+    nonisolated func browserTabController(
+        _: BrowserTabController,
+        tabIDToShowAfterClosingTabWithID tabID: String,
+    ) -> String? {
+        MainActor.assumeIsolated { tabToShowAfterClosing?(tabID) }
     }
 
     nonisolated func browserTabController(

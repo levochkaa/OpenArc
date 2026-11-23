@@ -1157,6 +1157,9 @@ enum BrowserWindowMode: Equatable {
             // The page asks the user, so its row stays while the question is open.
             self?.tabsLeavingSidebar.remove(tabID)
         }
+        tabDriver.tabToShowAfterClosing = { [weak self] tabID in
+            self?.tabToShowAfterEngineClose(id: tabID)
+        }
         tabDriver.onTabCloseRequestFinished = { [weak self] tabID, requestID, outcome in
             self?.handleTabCloseRequestFinished(id: tabID, requestID: requestID, outcome: outcome)
         }
@@ -7875,6 +7878,17 @@ extension BrowserChromeModel: BrowserSyncExpiryScheduling {
         }
 
         return visibleTabs.first?.id
+    }
+
+    /// The tab `finishTabClose` will select when the engine reports the shown tab closed, so the engine shows it in
+    /// the same pass instead of an empty pane first. Nil when the tab is not the shown one or the next tab lives in
+    /// a window of its own.
+    func tabToShowAfterEngineClose(id: String) -> String? {
+        guard selectedTabID == id, let closingTab = tabs.first(where: { $0.id == id }),
+              let fallback = fallbackTabID(afterClosingDormantTab: closingTab, excluding: [id]),
+              !tabUsesWindowedBrowser(id: fallback)
+        else { return nil }
+        return fallback
     }
 
     func tabUsesWindowedBrowser(id: String) -> Bool {

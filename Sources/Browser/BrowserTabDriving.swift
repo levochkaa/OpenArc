@@ -85,6 +85,8 @@ enum BrowserPageTranslationState: Int {
     var onTabUpdated: ((String, String?, String?, String?) -> Void)? { get set }
     var onTabCloseRequestFinished: ((String, String, BrowserTabCloseOutcome) -> Void)? { get set }
     var onTabCloseConfirmationPresented: ((String) -> Void)? { get set }
+    /// The tab to show at once when the shown tab's page closes, the one the model selects after; nil for none.
+    var tabToShowAfterClosing: ((String) -> String?)? { get set }
     var onTabClosed: ((String) -> Void)? { get set }
     /// A tab that never showed a page only started a download, which has now ended.
     var onDownloadWithoutPage: ((String) -> Void)? { get set }

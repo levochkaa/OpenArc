@@ -4262,6 +4262,7 @@ id<BrowserChromePage> ChromePageOfRecord(const TabRecord &record) {
 - (void)expectDevToolsForTabID:(NSString *)tabID;
 - (void)updateBrowserVisibility;
 - (void)updateBrowserVisibilityFocusingActiveTab:(BOOL)focusActive;
+- (void)showSuccessorOfClosedActiveTabWithID:(NSString *)tabID;
 - (NSWindow *)tabWindow;
 - (void)handleFocusForTabID:(NSString *)tabID;
 - (void)requestSitePermissionForTabID:(NSString *)tabID
@@ -5720,6 +5721,24 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
   // stays suspended until cancellation clears isClosing.
   it->second.initialNavigationEnabled = true;
   [self scheduleNavigationForTabID:tabID];
+}
+
+// The shown tab's page is gone and the model selects the next tab only on its next turn of the main queue. The
+// tab it will select shows now, in the same pass, as a switch does; without one, the other Spaces' pages kept
+// drawn below stay hidden until the model selects, so none of them flashes in its place.
+- (void)showSuccessorOfClosedActiveTabWithID:(NSString *)tabID {
+  id<BrowserTabControllerDelegate> delegate = self.delegate;
+  NSString *next = nil;
+  if ([delegate respondsToSelector:@selector(browserTabController:tabIDToShowAfterClosingTabWithID:)]) {
+    next = [delegate browserTabController:self tabIDToShowAfterClosingTabWithID:tabID];
+  }
+  if (next.length > 0 && _tabRecords.find(ToStdString(next)) != _tabRecords.end()) {
+    _activeTabID = [next copy];
+    _activeTabClosedAwaitingSelection = NO;
+    return;
+  }
+  _activeTabID = nil;
+  _activeTabClosedAwaitingSelection = YES;
 }
 
 - (void)selectTabWithID:(NSString *)tabID {
@@ -8195,7 +8214,7 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
     if (it == _tabRecords.end()) return YES;
     _tabRecords.erase(it);
     if (wasActive) {
-      _activeTabClosedAwaitingSelection = YES;
+      [self showSuccessorOfClosedActiveTabWithID:tabID];
     }
     [self notifyCloseRequestForTabID:tabID requestID:requestID
                             outcome:BrowserTabCloseRequestOutcomeClosed];
@@ -8572,7 +8591,7 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
   }
   _tabRecords.erase(tabKey);
   if (wasActive) {
-    _activeTabClosedAwaitingSelection = YES;
+    [self showSuccessorOfClosedActiveTabWithID:tabID];
   }
   [self.delegate browserTabController:self didCloseTabWithID:tabID];
   [self updateBrowserVisibilityFocusingActiveTab:wasActive];
@@ -8996,9 +9015,7 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
   [self forgetPageFullscreenForTabID:tabID];
 
   if (wasActive) {
-    // The model picks the next tab of the same Space once it hears of the close.
-    _activeTabID = nil;
-    _activeTabClosedAwaitingSelection = YES;
+    [self showSuccessorOfClosedActiveTabWithID:tabID];
   }
 
   [self notifyCloseRequestForTabID:tabID requestID:requestID

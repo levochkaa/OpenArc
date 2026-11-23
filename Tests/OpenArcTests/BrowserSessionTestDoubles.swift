@@ -53,6 +53,7 @@ import Foundation
     var onStatusChanged: ((String, String) -> Void)?
     var onTabCloseRequestFinished: ((String, String, BrowserTabCloseOutcome) -> Void)?
     var onTabCloseConfirmationPresented: ((String) -> Void)?
+    var tabToShowAfterClosing: ((String) -> String?)?
     var onNavigationStateChanged: ((String, Bool, Bool) -> Void)?
     var onLoadingStateChanged: ((String, Bool) -> Void)?
     var onFindResultChanged: ((String, Int, Int, Bool) -> Void)?
@@ -185,6 +186,9 @@ import Foundation
     private(set) var capturedTabRegions = [(tabID: String, fraction: CGRect)]()
     /// What a live Easel capture's page returns.
     var tabRegionPNG: Data?
+
+    /// What a picture of the shown page returns.
+    var pagePicturePNG: Data?
 
     private var pendingCreateRequests = [CreatedTabRequest]()
     private var nextTabNumber = 0
@@ -380,9 +384,6 @@ import Foundation
     func cancelDownload(id: String) {
         canceledDownloadIDs.append(id)
     }
-
-    /// What a picture of the shown page returns.
-    var pagePicturePNG: Data?
 
     func captureActiveTabPicture(completion: @escaping @MainActor (Data?) -> Void) {
         completion(pagePicturePNG)

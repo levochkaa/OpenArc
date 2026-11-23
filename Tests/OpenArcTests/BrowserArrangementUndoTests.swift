@@ -225,3 +225,22 @@ extension SidebarDragFixture {
         }
     }
 }
+
+/// The engine shows the next tab in the same pass as a closed shown tab, before the model hears of the close: it
+/// must be the tab the model selects then, or a wrong page shows for a moment.
+@MainActor @Test func tabShownAfterEngineCloseIsTheOneTheModelSelects() throws {
+    let f = SidebarDragFixture(temporary: ["x", "y", "z"])
+    f.driver.automaticallyConfirmsCloseRequests = false
+    f.model.selectTab(id: f.id("x"))
+    f.model.selectTab(id: f.id("z"))
+    f.model.selectTab(id: f.id("y"))
+    f.model.closeTab(id: f.id("y"))
+    let request = try #require(f.driver.confirmedCloseRequests.last)
+
+    let shown = f.driver.tabToShowAfterClosing?(request.id)
+    #expect(shown == f.id("z"))
+    #expect(f.driver.tabToShowAfterClosing?(f.id("x")) == nil)
+
+    f.driver.emitCloseRequestOutcome(id: request.id, requestID: request.requestID, outcome: .closed)
+    #expect(f.model.selectedTabID == shown)
+}

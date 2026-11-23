@@ -105,6 +105,10 @@ typedef NS_ENUM(NSInteger, BrowserTabCloseRequestOutcome) {
 // The page asks the user before closing, on the main thread.
 - (void)browserTabController:(BrowserTabController *)controller
     willConfirmCloseForTabWithID:(NSString *)tabID;
+// The shown tab's page has closed: the tab to show in its place now, the one the model will select once it hears
+// of the close, or nil when it has none. Asked on the main thread.
+- (nullable NSString *)browserTabController:(BrowserTabController *)controller
+           tabIDToShowAfterClosingTabWithID:(NSString *)tabID;
 // Emitted before didCloseTabWithID for a confirmed manual request.
 - (void)browserTabController:(BrowserTabController *)controller
     didFinishCloseRequestForTabWithID:(NSString *)tabID
