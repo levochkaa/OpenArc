@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import ctypes
 import datetime as dt
 import glob
 import http.server
@@ -51,7 +52,10 @@ WEBKIT_ENGINE_GAPS = {
     "notification-after-site-permission": "the agent CLI clicks through DevTools' DOM methods, which WebKit "
                                           "pages lack",
     "translate-in-place": "translation is Chromium's",
+    "sandbox": "no Chromium process runs",
 }
+# Utility services Chromium itself starts without a sandbox on macOS: video capture opens the cameras.
+UNSANDBOXED_SERVICES = {"video_capture.mojom.VideoCaptureService"}
 SYSTEM_TCC = Path("/Library/Application Support/com.apple.TCC/TCC.db")
 LSREGISTER = ("/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/"
               "lsregister")
@@ -75,7 +79,7 @@ What it does:
   One run at a time.
 
 Checks:
-  chromium-engine, no-notification-request-at-launch, engine-version, page-load-js-navigation,
+  chromium-engine, sandbox, no-notification-request-at-launch, engine-version, page-load-js-navigation,
   proprietary-codecs, extension-sees-tabs, passkeys, media-devices, history,
   webkit-engine, print-preview, screen-share-picker, extension-popup,
   notification-after-site-permission, translate-in-place, background-launch,
@@ -740,6 +744,7 @@ class SmokeTest:
             return 2
 
         self.check("chromium-engine", self.check_chromium_engine)
+        self.check("sandbox", self.check_sandbox)
         self.check("no-notification-request-at-launch", self.check_notifications_at_launch)
         self.check("engine-version", lambda: self.check_engine(major))
         self.check("page-load-js-navigation", self.check_navigation)
@@ -879,6 +884,35 @@ class SmokeTest:
             raise CheckFailed(f"{len(found)} renderers, {len(on_chrome)} from the Chrome engine's framework",
                               details)
         return {"evidence": f"{len(found)} renderers run from CEF's helpers", **details}
+
+    def check_sandbox(self) -> dict:
+        """Chromium's processes run inside the macOS sandbox, so a page that breaks the engine stays locked in."""
+        frameworks = str(self.instance.app / "Contents" / "Frameworks") + "/"
+        sandbox_check = ctypes.CDLL("/usr/lib/libSystem.B.dylib").sandbox_check
+        sandbox_check.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int]
+        sandbox_check.restype = ctypes.c_int
+        processes, unsandboxed = [], []
+        for line in run(["/bin/ps", "-axww", "-o", "pid=,command="], check=False).stdout.splitlines():
+            pid, _, command = line.strip().partition(" ")
+            kind = re.search(r"--type=([a-z-]+)", command)
+            if frameworks not in command or not kind or kind.group(1) not in ("renderer", "gpu-process", "utility"):
+                continue
+            service = re.search(r"--utility-sub-type=(\S+)", command)
+            name = kind.group(1) + (f" {service.group(1)}" if service else "")
+            if service and service.group(1) in UNSANDBOXED_SERVICES:
+                continue
+            processes.append(name)
+            if "--no-sandbox" in command or sandbox_check(int(pid), None, 0) != 1:
+                unsandboxed.append(f"{pid} {name}")
+        details = {"processes": sorted(processes), "unsandboxed": unsandboxed,
+                   "skipped_services": sorted(UNSANDBOXED_SERVICES),
+                   "method": "sandbox_check() on every renderer, GPU and utility process of the copy, and no "
+                             "--no-sandbox on their command lines"}
+        if not any(name == "renderer" for name in processes):
+            raise CheckFailed("no renderer process of the copy was found", details)
+        if unsandboxed:
+            raise CheckFailed(f"{len(unsandboxed)} of {len(processes)} processes run without the sandbox", details)
+        return {"evidence": f"all {len(processes)} renderer, GPU and utility processes run in the sandbox", **details}
 
     def check_no_chromium(self, frameworks: Path) -> dict:
         """On WebKit, no Chromium loads: no helper process from the bundle and neither framework in the app."""

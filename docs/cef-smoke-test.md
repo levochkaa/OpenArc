@@ -32,6 +32,7 @@ It starts the copy through LaunchServices with `open -g` and `--no-activate`, `-
 | Check | How |
 | --- | --- |
 | chromium-engine | The copy's renderer processes run from the engine `--engine` names: CEF's helpers in `Contents/Frameworks`, or the helpers inside `OpenArc Framework.framework`. |
+| sandbox | `sandbox_check()` returns 1 for every renderer, GPU and utility process of the copy, and none has `--no-sandbox`: a page that breaks the engine stays inside the macOS sandbox. Chromium starts `VideoCaptureService` without a sandbox on macOS, so it is left out. |
 | no-notification-request-at-launch | `Notification.permission` is `default` and `permissions.query` is `prompt` on a page; the system log, streamed from before launch, has no `Requesting authorization` from the copy and no `Sending request for permission` from `usernoted` for its bundle ids; no NotificationCenter banner names "OpenArc Smoke" in the first 10 s. |
 | engine-version | `navigator.userAgent` and `userAgentData` report the `CHROME_VERSION_MAJOR` of `ThirdParty/cef/export/include/cef_version.h`. |
 | page-load-js-navigation | A fixture page runs its script; `navigate`, `back` and `forward` land on the right titles. |
