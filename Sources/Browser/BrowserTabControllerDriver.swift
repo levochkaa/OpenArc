@@ -369,6 +369,16 @@ import Foundation
     }
 
     @discardableResult func importCookies(_ cookies: [BrowserImportedCookie], profileCachePath: String?) -> Int {
+        if BrowserUsesLadybirdEngine() != 0 {
+            // Ladybird keeps one cookie store for the process, whatever the profile.
+            return BrowserLadybirdImportCookies(cookies.map {
+                [
+                    "url": $0.urlString, "host": $0.host, "name": $0.name, "value": $0.value, "path": $0.path,
+                    "expires": $0.expires, "secure": $0.isSecure, "httpOnly": $0.isHTTPOnly,
+                    "sameSite": $0.sameSite,
+                ]
+            })
+        }
         if BrowserUsesWebKitEngine() != 0 {
             return BrowserWebKitPage.importCookies(
                 cookies,

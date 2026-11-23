@@ -21,7 +21,7 @@ int BrowserUsesWebKitEngine(void) {
 }
 
 int BrowserUsesCEF(void) {
-  return !BrowserUsesChromeEngine() && !BrowserUsesWebKitEngine() ? 1 : 0;
+  return !BrowserUsesChromeEngine() && !BrowserUsesWebKitEngine() && !BrowserUsesLadybirdEngine() ? 1 : 0;
 }
 
 int BrowserShouldRunWebKitEngine(void) {

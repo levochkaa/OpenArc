@@ -12,6 +12,8 @@
 
 #import "Browser/ChromeEngine/BrowserChromeEngine.h"
 #import "Browser/ChromeEngine/BrowserChromeEngineMain.h"
+#import "Browser/LadybirdEngine/BrowserLadybirdEngine.h"
+#import "Browser/LadybirdEngine/BrowserLadybirdEngineMain.h"
 
 #import "OpenArc-Swift.h"
 #import "Browser/SwiftBridge.h"
@@ -4714,7 +4716,7 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
 
   if ([self engineForURLString:resolvedURLString] == BrowserPageEngineWebKit) {
     [self startWebKitPageForTabID:tabID page:nil];
-  } else if (BrowserUsesChromeEngine()) {
+  } else if (BrowserUsesChromeEngine() || BrowserUsesLadybirdEngine()) {
     [self startChromePageForTabID:tabID page:nil];
   } else {
     [self startBrowserCreationForTabID:tabID URLString:resolvedURLString];
@@ -4792,7 +4794,7 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
   [self startPeerPage:(id<BrowserPeerPage>)page forTabID:tabID];
 }
 
-/// Shows the tab's page on the Chrome engine: a new page, or one a page's link or script opened.
+/// Shows the tab's page on the Chrome engine or on Ladybird: a new page, or one a page's link or script opened.
 - (void)startChromePageForTabID:(NSString *)tabID page:(nullable id<BrowserChromePage>)existingPage {
   auto it = _tabRecords.find(ToStdString(tabID));
   if (it == _tabRecords.end() || it->second.isClosing) {
@@ -4801,10 +4803,14 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
   id<BrowserChromePage> page = existingPage;
   if (page == nil) {
     NSString *profilePath = it->second.profileCachePath ?: _profileCachePath;
-    page = [BrowserChromeEngineClass() pageWithURLString:@""
-                                             profilePath:profilePath
-                                               ephemeral:_usesEphemeralRequestContext
-                                                delegate:self];
+    page = BrowserUsesLadybirdEngine() ? [BrowserLadybirdEngineClass() pageWithURLString:@""
+                                                                           profilePath:profilePath
+                                                                             ephemeral:_usesEphemeralRequestContext
+                                                                              delegate:self]
+                                       : [BrowserChromeEngineClass() pageWithURLString:@""
+                                                                           profilePath:profilePath
+                                                                             ephemeral:_usesEphemeralRequestContext
+                                                                              delegate:self];
   }
   if (page == nil) {
     it->second.creationState = BrowserTabEngineCreationStateFailed;
@@ -4957,7 +4963,7 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
     return;
   }
   next.creationState = BrowserTabEngineCreationStateCreating;
-  if (BrowserUsesChromeEngine()) {
+  if (BrowserUsesChromeEngine() || BrowserUsesLadybirdEngine()) {
     [self startChromePageForTabID:tabID page:nil];
     return;
   }
@@ -5635,7 +5641,7 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
     [self startWebKitPageForTabID:tabID page:nil];
     return;
   }
-  if (BrowserUsesChromeEngine()) {
+  if (BrowserUsesChromeEngine() || BrowserUsesLadybirdEngine()) {
     [self startChromePageForTabID:tabID page:nil];
     return;
   }
@@ -6527,7 +6533,8 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
   it->second.hasIssuedNavigation = true;
   if (it->second.peerPage != nil) {
     NSString *urlString = ToNSString(target);
-    if (ChromePageOfRecord(it->second) != nil) {
+    // Ladybird's page maps openarc:// to its own pages itself.
+    if (ChromePageOfRecord(it->second) != nil && !BrowserUsesLadybirdEngine()) {
       urlString = [BrowserChromeEngineInternalURLs loadURLStringFor:urlString];
     }
     [it->second.peerPage loadWithUrlString:urlString];
@@ -7051,6 +7058,10 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
   }
   if (BrowserUsesChromeEngine()) {
     [BrowserChromeEngineClass() cancelDownloadWithID:downloadID];
+    return;
+  }
+  if (BrowserUsesLadybirdEngine()) {
+    [BrowserLadybirdEngineClass() cancelDownloadWithID:downloadID];
     return;
   }
   const uint32_t identifier = static_cast<uint32_t>(downloadID.longLongValue);

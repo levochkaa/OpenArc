@@ -61,6 +61,30 @@ import WebKit
         }
     }
 
+    /// The page for an internal address on Ladybird, which shows its own settings, history and bookmarks and
+    /// takes the rest from here: the Easel's and the note's empty pages, the credits, and a short page for
+    /// Chromium's pages Ladybird has no counterpart for (extensions, passwords). Its status code goes to
+    /// `statusCode`.
+    @objc(ladybirdPageHTMLForURLString:statusCode:)
+    static func ladybirdPageHTML(forURLString urlString: String, statusCode: UnsafeMutablePointer<Int>) -> String {
+        guard let url = URL(string: urlString) else {
+            statusCode.pointee = notFound.statusCode
+            return String(decoding: notFound.body, as: UTF8.self)
+        }
+        switch url.host?.lowercased() ?? "" {
+        case BrowserInternalURLNormalizer.extensionsHost, BrowserInternalURLNormalizer.passwordManagerHost:
+            statusCode.pointee = 200
+            return unavailablePage(
+                title: BrowserStrings.ladybirdEngineInternalPageTitle,
+                message: BrowserStrings.ladybirdEngineInternalPageMessage,
+            )
+        default:
+            let page = response(for: url)
+            statusCode.pointee = page.statusCode
+            return String(decoding: page.body, as: UTF8.self)
+        }
+    }
+
     private static func html(_ source: String) -> Response {
         Response(statusCode: 200, mimeType: "text/html", body: Data(source.utf8))
     }

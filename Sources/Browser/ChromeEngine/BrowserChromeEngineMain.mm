@@ -14,6 +14,8 @@
 
 #import "Browser/BrowserSchemeHandlers.h"
 #import "Browser/ChromeEngine/BrowserChromeEngine.h"
+#import "Browser/LadybirdEngine/BrowserLadybirdEngine.h"
+#import "Browser/LadybirdEngine/BrowserLadybirdEngineMain.h"
 #import "Browser/SwiftBridge.h"
 #import "OpenArc-Swift.h"
 
@@ -104,6 +106,12 @@ int BrowserRunChromeEngine(int argc, char* argv[], NSString* cache_root) {
 }
 
 void BrowserStopApplicationLoop(void) {
+  if (BrowserUsesLadybirdEngine()) {
+    // The app's windows and pages are put away by now; Ladybird stops its helpers and ends the loop.
+    BrowserPrepareApplicationForCefShutdown();
+    [BrowserLadybirdEngineClass() quit];
+    return;
+  }
   if (!gUsesChromeEngine) {
     [NSApp stop:nil];
     // -stop: ends the loop after the next event; outside one, this event is it.

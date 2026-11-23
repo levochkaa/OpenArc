@@ -18,9 +18,11 @@ void BrowserPrepareApplicationForCefShutdown(void);
 int BrowserUsesChromeEngine(void);
 /// 1 when this process runs on WebKit alone, with no Chromium loaded. Fixed at launch.
 int BrowserUsesWebKitEngine(void);
-/// 1 when CEF is loaded: neither the Chrome engine nor WebKit. Only then may CEF's functions run.
+/// 1 when this process runs on Ladybird, with no Chromium loaded. Fixed at launch.
+int BrowserUsesLadybirdEngine(void);
+/// 1 when CEF is loaded: neither the Chrome engine, WebKit nor Ladybird. Only then may CEF's functions run.
 int BrowserUsesCEF(void);
-/// Ends the app's run loop: CEF's or WebKit's, or Chrome's orderly quit on the Chrome engine.
+/// Ends the app's run loop: CEF's or WebKit's, Chrome's orderly quit on the Chrome engine, or Ladybird's.
 void BrowserStopApplicationLoop(void);
 
 #ifdef __OBJC__
@@ -36,6 +38,10 @@ BOOL BrowserLoadRuntimeConfiguration(NSString** helper_path,
                                      NSString** root_cache_path,
                                      NSString** cache_path);
 NSString* BrowserChromiumVersionString(void);
+/// The Ladybird engine's version, nil unless this process runs on Ladybird.
+NSString* BrowserLadybirdVersionString(void);
+/// Stores cookies (BrowserTabControllerDriver.importCookies's dictionaries) in Ladybird's cookie jar; 0 off Ladybird.
+NSInteger BrowserLadybirdImportCookies(NSArray<NSDictionary<NSString*, id>*>* cookies);
 void BrowserSetBatterySaverModeEnabled(BOOL enabled);
 
 void BrowserRequestNotificationPermission(NSString* origin,

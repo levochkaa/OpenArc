@@ -4,7 +4,8 @@ OpenArc can run every page in WebKit, with no Chromium loaded. Settings ▸ Adva
 page" turns it on. It is a toggle of its own: off, the app goes back to CEF or the Chrome engine, whichever "Use
 Chrome's engine" chose. Like the Chrome engine ([chrome-engine.md](chrome-engine.md)), the process runs on one engine
 from launch to quit, so the switch takes effect after a relaunch, which the setting offers. `--openarc-engine=webkit`
-(or `cef`, `chrome`) overrides the setting for one launch.
+(or `cef`, `chrome`, `ladybird`) overrides the setting for one launch. "Use Ladybird for every page"
+([ladybird-engine.md](ladybird-engine.md)) is the other such toggle; turning one on turns the other off.
 
 A bundle without `Chromium Embedded Framework.framework` always runs on WebKit, whatever the setting or the argument
 says. That is the base of a Mac App Store build (below).

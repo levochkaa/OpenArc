@@ -1,0 +1,72 @@
+diff --git a/UI/AppKit/Interface/LadybirdWebView.h b/UI/AppKit/Interface/LadybirdWebView.h
+index a6e9de0785..e45a48bf89 100644
+--- a/UI/AppKit/Interface/LadybirdWebView.h
++++ b/UI/AppKit/Interface/LadybirdWebView.h
+@@ -75,6 +75,9 @@
+ - (void)findInPageNextMatch;
+ - (void)findInPagePreviousMatch;
+ 
++// The last frame the page presented, copied, at device pixels; NULL before the first frame.
++- (CGImageRef)copyCurrentFrame CF_RETURNS_RETAINED;
++
+ - (void)requestClose;
+ - (Function<void()>)prepareForImmediateClose;
+ - (BOOL)needsBeforeUnloadCheck;
+diff --git a/UI/AppKit/Interface/LadybirdWebView.mm b/UI/AppKit/Interface/LadybirdWebView.mm
+index 0d06c49bde..202c450ad7 100644
+--- a/UI/AppKit/Interface/LadybirdWebView.mm
++++ b/UI/AppKit/Interface/LadybirdWebView.mm
+@@ -22,6 +22,7 @@
+ #import <Interface/LadybirdWebView.h>
+ #import <Interface/Menu.h>
+ #import <Interface/SelectDropdown.h>
++#import <IOSurface/IOSurface.h>
+ #import <Metal/Metal.h>
+ #import <QuartzCore/CAMetalLayer.h>
+ #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
+@@ -345,6 +346,45 @@ - (void)findInPagePreviousMatch
+     m_web_view_bridge->find_in_page_previous_match();
+ }
+ 
++- (CGImageRef)copyCurrentFrame
++{
++    auto paintable = m_web_view_bridge->paintable();
++    if (!paintable.has_value() || !paintable->shared_image_buffer)
++        return nullptr;
++    auto [shared_image_buffer, bitmap_size] = *paintable;
++    if (bitmap_size.is_empty())
++        return nullptr;
++
++    // The backing store is reused for later frames, so the picture keeps a copy of its pixels: from the CPU bitmap,
++    // or from the IOSurface WebContent painted on the GPU.
++    CFDataRef data = nullptr;
++    size_t pitch = 0;
++    auto width = static_cast<size_t>(bitmap_size.width());
++    auto height = static_cast<size_t>(bitmap_size.height());
++    if (auto bitmap = shared_image_buffer->bitmap_if_present(); bitmap && bitmap->format() == Gfx::BitmapFormat::BGRA8888) {
++        width = min(width, static_cast<size_t>(bitmap->width()));
++        height = min(height, static_cast<size_t>(bitmap->height()));
++        pitch = bitmap->pitch();
++        data = CFDataCreate(nullptr, bitmap->scanline_u8(0), pitch * height);
++    } else if (auto* surface = (IOSurfaceRef)shared_image_buffer->iosurface_handle().core_foundation_pointer()) {
++        IOSurfaceLock(surface, kIOSurfaceLockReadOnly, nullptr);
++        width = min(width, IOSurfaceGetWidth(surface));
++        height = min(height, IOSurfaceGetHeight(surface));
++        pitch = IOSurfaceGetBytesPerRow(surface);
++        data = CFDataCreate(nullptr, static_cast<UInt8 const*>(IOSurfaceGetBaseAddress(surface)), pitch * height);
++        IOSurfaceUnlock(surface, kIOSurfaceLockReadOnly, nullptr);
++    }
++    if (!data)
++        return nullptr;
++    auto* provider = CGDataProviderCreateWithCFData(data);
++    static auto* color_space = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
++    auto* image = CGImageCreate(width, height, 8, 32, pitch, color_space,
++        kCGBitmapByteOrder32Little | kCGImageAlphaFirst, provider, nullptr, NO, kCGRenderingIntentDefault);
++    CGDataProviderRelease(provider);
++    CFRelease(data);
++    return image;
++}
++
+ - (void)requestClose
+ {
+     m_web_view_bridge->request_close();

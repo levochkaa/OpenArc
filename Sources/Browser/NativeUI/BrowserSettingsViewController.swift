@@ -95,6 +95,7 @@ struct BrowserSettingsIcon {
         "site-engines-reset": .init("arrow.uturn.backward", .systemGray),
         "chrome-engine": .init("cpu.fill", .systemOrange),
         "webkit-engine": .init("safari.fill", .systemBlue),
+        "ladybird-engine": .init("ladybug.fill", .systemRed),
         "share-theme-with-websites": .init("paintpalette.fill", .systemPurple),
         "agent-access": .init("terminal.fill", .systemGray),
         // Accounts
@@ -1778,7 +1779,10 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                     },
                 ),
             ]),
-            section(BrowserStrings.settingsEngineSection, rows: [engineRow(), webKitEngineRow()]),
+            section(
+                BrowserStrings.settingsEngineSection,
+                rows: [engineRow(), webKitEngineRow(), ladybirdEngineRow()],
+            ),
             section(BrowserStrings.settingsSitePermissionsTitle, body: sitePermissionsBody),
             section(BrowserStrings.settingsBoostsTitle, rows: [
                 toggle(
@@ -1820,7 +1824,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
     }
 
     /// The Chrome engine instead of CEF, from the next launch. Off and dimmed in a build without its framework,
-    /// and dimmed while WebKit draws every page, which keeps this choice for when it is turned off.
+    /// and dimmed while WebKit or Ladybird draws every page, which keeps this choice for when it is turned off.
     private func engineRow() -> NSView {
         let available = BrowserEngineChoice.isChromeEngineAvailable && BrowserEngineChoice.isCEFAvailable
         let control = BrowserActionToggle()
@@ -1831,7 +1835,7 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
             self?.offerRelaunchForEngineChange()
         }
         updateBindings.append { [weak control] in
-            let webKit = BrowserEngineChoice.isWebKitPreferred()
+            let webKit = BrowserEngineChoice.isWebKitPreferred() || BrowserEngineChoice.isLadybirdPreferred()
             control?.isEnabled = available && !webKit
             control?.state = available && !webKit && BrowserEngineChoice.preferredChromiumEngine() == .chrome
                 ? .on
@@ -1859,6 +1863,28 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
         }
         let detail = cefAvailable ? BrowserStrings.settingsWebKitEngineDetail : BrowserStrings.settingsWebKitEngineOnly
         return row(BrowserStrings.settingsWebKitEngine, detail: detail, icon: "webkit-engine", control: control)
+    }
+
+    /// Ladybird for every page, with no Chromium loaded, from the next launch. A separate toggle like WebKit's;
+    /// turning one on turns the other off. Off and dimmed in a build without Ladybird's framework.
+    private func ladybirdEngineRow() -> NSView {
+        let available = BrowserEngineChoice.isLadybirdEngineAvailable
+        let control = BrowserActionToggle()
+        control.setAccessibilityLabel(BrowserStrings.settingsLadybirdEngine)
+        control.setAccessibilityIdentifier("browser.settings.ladybird-engine")
+        control.isEnabled = available
+        control.onChange = { [weak self] isOn in
+            BrowserEngineChoice.setLadybirdPreferred(isOn)
+            self?.syncControls()
+            self?.offerRelaunchForEngineChange()
+        }
+        updateBindings.append { [weak control] in
+            control?.state = available && BrowserEngineChoice.isLadybirdPreferred() ? .on : .off
+        }
+        let detail = available
+            ? BrowserStrings.settingsLadybirdEngineDetail
+            : BrowserStrings.settingsLadybirdEngineMissing
+        return row(BrowserStrings.settingsLadybirdEngine, detail: detail, icon: "ladybird-engine", control: control)
     }
 
     /// The engine changes only at launch, so the setting offers to relaunch now.

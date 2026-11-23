@@ -3,6 +3,7 @@
 #include "Shared/Main.h"
 
 #import "Browser/ChromeEngine/BrowserChromeEngineMain.h"
+#import "Browser/LadybirdEngine/BrowserLadybirdEngineMain.h"
 #import "Browser/SwiftBridge.h"
 #import "Browser/WebKit/BrowserWebKitEngineMain.h"
 #import <Cocoa/Cocoa.h>
@@ -100,9 +101,23 @@ static int BrowserRunOnChromeEngine(int argc, char* argv[]) {
   }
 }
 
+/// The Ladybird engine runs the whole process on Ladybird's libraries; no Chromium loads.
+static int BrowserRunOnLadybirdEngine(int argc, char* argv[]) {
+  @autoreleasepool {
+    NSString* cache_root = nil;
+    if (!BrowserLoadRuntimeConfiguration(nullptr, nullptr, nullptr, &cache_root, nullptr)) {
+      return 1;
+    }
+    return BrowserRunLadybirdEngine(argc, argv, cache_root);
+  }
+}
+
 int main(int argc, char* argv[]) {
   // Runs while the engine loads, before a restored page can ask for the same.
   BrowserStartLaunchWarmup();
+  if (BrowserShouldRunLadybirdEngine()) {
+    return BrowserRunOnLadybirdEngine(argc, argv);
+  }
   if (BrowserShouldRunWebKitEngine()) {
     return BrowserRunWebKitEngine(argc, argv);
   }

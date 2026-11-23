@@ -1056,6 +1056,12 @@
 "browser.settings.engine.webkit.only" = "This build runs on WebKit only.";
 "browser.webkit_engine.internal_page.title" = "Not Available in WebKit";
 "browser.webkit_engine.internal_page" = "This page belongs to Chromium and isn't available while OpenArc runs on WebKit.";
+"browser.settings.engine.ladybird" = "Use Ladybird for every page";
+"browser.settings.engine.ladybird.detail" = "Pages run on Ladybird, an independent engine with its own HTML, CSS and JavaScript, and no Chromium loads. Ladybird keeps its own cookies and data, so sites ask you to sign in again. Experimental: many sites still break, and extensions, Peek cards, small windows, protected video and picture in picture are not available. Takes effect after a relaunch.";
+"browser.settings.engine.ladybird.missing" = "This build doesn't include Ladybird.";
+"browser.ladybird_engine.internal_page.title" = "Not Available in Ladybird";
+"browser.ladybird_engine.internal_page" = "This page belongs to Chromium and isn't available while OpenArc runs on Ladybird.";
+"browser.about.ladybird_version" = "Ladybird %@";
 "browser.settings.engine.relaunch.title" = "Relaunch to change the engine?";
 "browser.settings.engine.relaunch.message" = "OpenArc switches engines when it starts. Your windows and tabs open again after the relaunch.";
 "browser.settings.engine.relaunch" = "Relaunch Now";

@@ -15,6 +15,15 @@ build or one made with `OPENARC_STAGE_CEF=0`. chromium-engine then checks that n
 from the bundle, and neither CEF nor the Chrome engine among the main process's open files. engine-version expects
 Safari's user agent, webkit-engine expects WebKit on both ports, and the checks of Chromium's own features skip.
 
+`--engine ladybird` starts the copy with `--openarc-engine=ladybird` ([ladybird-engine.md](ladybird-engine.md)) for a
+build that carries `OpenArc Ladybird.framework`. chromium-engine then checks that pages run in WebContent helpers
+from that framework, that no Chromium renderer runs and that the main process loaded no framework but Ladybird's.
+engine-version expects Ladybird's user agent, webkit-engine expects WebKit for the site routed there and Ladybird
+for the other, and the checks of what Ladybird lacks skip.
+
+    ./script/ladybird_engine.sh all && ./build.sh build
+    script/cef_smoke_test.sh .build/xcode/Build/Products/Debug/OpenArc.app --engine ladybird
+
 It prints a report and a JSON summary, and writes `report.json`, `app.log`, `notification-log.txt` and screenshots to the report folder (`--out DIR`, by default a new folder in `$TMPDIR`). Exit status: 0 when no check failed, 1 when one did, 2 when the copy did not start. A check is PASS, WARN (works, with a note on what it could not prove), FAIL or SKIP (with the reason). `--help` lists the options.
 
 Needs: an Apple Development signing identity, `cua-driver` with Accessibility and Screen Recording (without it, `--no-gui` runs the rest), and the network for translation.

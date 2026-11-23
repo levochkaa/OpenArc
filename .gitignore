@@ -13,6 +13,7 @@ OpenArc.xcodeproj/
 ThirdParty/cef/*
 !ThirdParty/cef/.gitkeep
 ThirdParty/chrome-engine/
+ThirdParty/ladybird-engine/
 
 # Local notes, kept out of the repository
 research/

@@ -89,6 +89,26 @@ enum BrowserStrings {
         "browser.webkit_engine.internal_page",
         comment: "Shown on a Chromium page such as chrome://settings while the app runs on WebKit.",
     )
+    static let settingsLadybirdEngine = NSLocalizedString(
+        "browser.settings.engine.ladybird",
+        comment: "Settings toggle: draw every page with the Ladybird engine, with no Chromium engine.",
+    )
+    static let settingsLadybirdEngineDetail = NSLocalizedString(
+        "browser.settings.engine.ladybird.detail",
+        comment: "Explains the Ladybird engine toggle.",
+    )
+    static let settingsLadybirdEngineMissing = NSLocalizedString(
+        "browser.settings.engine.ladybird.missing",
+        comment: "Shown under the Ladybird engine toggle in a build without the Ladybird engine.",
+    )
+    static let ladybirdEngineInternalPageTitle = NSLocalizedString(
+        "browser.ladybird_engine.internal_page.title",
+        comment: "Tab title of a Chromium page such as chrome://extensions while the app runs on Ladybird.",
+    )
+    static let ladybirdEngineInternalPageMessage = NSLocalizedString(
+        "browser.ladybird_engine.internal_page",
+        comment: "Shown on a Chromium page such as chrome://extensions while the app runs on Ladybird.",
+    )
     static let settingsChromeEngineRelaunchTitle = NSLocalizedString(
         "browser.settings.engine.relaunch.title",
         comment: "Alert title after the engine setting changed.",
@@ -4879,6 +4899,16 @@ enum BrowserStrings {
                 comment: "Chromium version text with the Chromium version placeholder.",
             ),
             chromiumVersion,
+        )
+    }
+
+    static func aboutLadybirdVersion(_ ladybirdVersion: String) -> String {
+        String(
+            format: NSLocalizedString(
+                "browser.about.ladybird_version",
+                comment: "Ladybird version text with the Ladybird version placeholder.",
+            ),
+            ladybirdVersion,
         )
     }
 

@@ -20,7 +20,8 @@ import AppKit
                 marketingVersion: marketingVersion,
                 buildVersion: buildVersion,
             ),
-            chromiumVersionText: BrowserStrings.aboutChromiumVersion(BrowserChromiumVersionString()),
+            chromiumVersionText: BrowserLadybirdVersionString().map(BrowserStrings.aboutLadybirdVersion)
+                ?? BrowserStrings.aboutChromiumVersion(BrowserChromiumVersionString()),
             copyrightText: copyright,
             icon: NSApp.applicationIconImage,
         )

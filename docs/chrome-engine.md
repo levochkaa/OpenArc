@@ -5,7 +5,7 @@ Settings ▸ Advanced ▸ Engine ▸ "Use Chrome's engine" switches it; CEF stay
 engine from launch to quit, so the switch takes effect after a relaunch, which the setting offers. A launch with
 `--openarc-engine=chrome` or `--openarc-engine=cef` overrides the setting once. "Use WebKit for every page", a
 toggle of its own beside it, runs the app with no Chromium at all ([webkit-engine.md](webkit-engine.md)); while it is
-on, this setting waits for it to be turned off.
+on, this setting waits for it to be turned off; so does "Use Ladybird for every page" ([ladybird-engine.md](ladybird-engine.md)).
 
 ## Why
 

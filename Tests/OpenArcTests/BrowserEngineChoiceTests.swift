@@ -145,6 +145,96 @@ struct BrowserEngineChoiceTests {
             .path)
     }
 
+    @Test func theLadybirdToggleTurnsWebKitOffAndKeepsTheChromiumChoice() throws {
+        let defaults = try scratchDefaults()
+        BrowserEngineChoice.setPreferredChromiumEngine(.chrome, defaults: defaults)
+        BrowserEngineChoice.setWebKitPreferred(true, defaults: defaults)
+        BrowserEngineChoice.setLadybirdPreferred(true, defaults: defaults)
+        #expect(BrowserEngineChoice.preferredEngine(defaults: defaults) == .ladybird)
+        #expect(!BrowserEngineChoice.isWebKitPreferred(defaults: defaults))
+        BrowserEngineChoice.setWebKitPreferred(true, defaults: defaults)
+        #expect(!BrowserEngineChoice.isLadybirdPreferred(defaults: defaults))
+        #expect(BrowserEngineChoice.preferredEngine(defaults: defaults) == .webKit)
+        BrowserEngineChoice.setLadybirdPreferred(true, defaults: defaults)
+        BrowserEngineChoice.setLadybirdPreferred(false, defaults: defaults)
+        #expect(BrowserEngineChoice.preferredEngine(defaults: defaults) == .chrome)
+        #expect(defaults.object(forKey: BrowserEngineChoice.ladybirdDefaultsKey) == nil)
+    }
+
+    @Test func aLaunchRunsOnLadybirdOnlyWhenChosenAndCarried() {
+        #expect(BrowserEngineChoice.launchEngine(
+            arguments: [],
+            preferred: .ladybird,
+            chromeEngineAvailable: true,
+            ladybirdAvailable: true,
+        ) == .ladybird)
+        // Without its framework, Ladybird's choice runs on the Chromium engine chosen before.
+        #expect(BrowserEngineChoice.launchEngine(
+            arguments: [],
+            preferred: .ladybird,
+            chromeEngineAvailable: true,
+            ladybirdAvailable: false,
+            preferredChromium: .chrome,
+        ) == .chrome)
+        #expect(BrowserEngineChoice.launchEngine(
+            arguments: [],
+            preferred: .ladybird,
+            chromeEngineAvailable: false,
+            cefAvailable: false,
+            ladybirdAvailable: false,
+        ) == .webKit)
+        // Ladybird needs no CEF.
+        #expect(BrowserEngineChoice.launchEngine(
+            arguments: [],
+            preferred: .ladybird,
+            chromeEngineAvailable: false,
+            cefAvailable: false,
+            ladybirdAvailable: true,
+        ) == .ladybird)
+        let ladybird = ["OpenArc", "--openarc-engine=ladybird"]
+        #expect(BrowserEngineChoice.launchEngine(
+            arguments: ladybird,
+            preferred: .cef,
+            chromeEngineAvailable: true,
+            ladybirdAvailable: true,
+        ) == .ladybird)
+        #expect(BrowserEngineChoice.launchEngine(
+            arguments: ["OpenArc", "--openarc-engine=cef"],
+            preferred: .ladybird,
+            chromeEngineAvailable: true,
+            ladybirdAvailable: true,
+        ) == .cef)
+    }
+
+    @Test func theLadybirdFrameworkIsFoundByItsBinary() throws {
+        let fileManager = FileManager.default
+        let bundle = fileManager.temporaryDirectory.appendingPathComponent("EngineChoice-\(UUID().uuidString).app")
+        defer { try? fileManager.removeItem(at: bundle) }
+        #expect(BrowserEngineChoice.ladybirdFrameworkBinaryPath(bundlePath: bundle.path) == nil)
+        let version = bundle.appendingPathComponent("Contents/Frameworks/OpenArc Ladybird.framework/Versions/A")
+        try fileManager.createDirectory(at: version, withIntermediateDirectories: true)
+        let binary = version.appendingPathComponent("OpenArc Ladybird")
+        try Data().write(to: binary)
+        try fileManager.createSymbolicLink(
+            atPath: bundle.appendingPathComponent("Contents/Frameworks/OpenArc Ladybird.framework/OpenArc Ladybird")
+                .path,
+            withDestinationPath: "Versions/A/OpenArc Ladybird",
+        )
+        // Not executable yet: not a framework the app can load.
+        #expect(BrowserEngineChoice.ladybirdFrameworkBinaryPath(bundlePath: bundle.path) == nil)
+        try fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: binary.path)
+        #expect(BrowserEngineChoice.ladybirdFrameworkBinaryPath(bundlePath: bundle.path) == binary
+            .resolvingSymlinksInPath()
+            .path)
+    }
+
+    @Test func ladybirdKeepsItsProfileBesideChromiumsData() {
+        #expect(BrowserEngineChoice.ladybirdDataPath(cacheRoot: "/Users/me/Library/Application Support/OpenArc/CEF")
+            == "/Users/me/Library/Application Support/OpenArc/Ladybird")
+        #expect(BrowserEngineChoice
+            .ladybirdDataPath(cacheRoot: "/data/OpenArc/CEF-smoke") == "/data/OpenArc/Ladybird-smoke")
+    }
+
     private func scratchDefaults() throws -> UserDefaults {
         let name = "BrowserEngineChoiceTests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: name))

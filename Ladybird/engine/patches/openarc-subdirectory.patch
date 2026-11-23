@@ -1,0 +1,16 @@
+diff --git a/UI/CMakeLists.txt b/UI/CMakeLists.txt
+index 03701714fc..ca217f84b5 100644
+--- a/UI/CMakeLists.txt
++++ b/UI/CMakeLists.txt
+@@ -102,6 +102,11 @@ else()
+ endif()
+ 
+ add_dependencies(ladybird ${ladybird_helper_processes})
++
++# OpenArc's Ladybird engine (Ladybird/engine in OpenArc), when its layer is in the tree.
++if (APPLE AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/OpenArc/CMakeLists.txt")
++    add_subdirectory(OpenArc)
++endif()
+ # FIXME: Increase support for building targets on Windows
+ if (NOT WIN32)
+     add_dependencies(WebDriver ladybird)

@@ -4,12 +4,13 @@ import Foundation
 
 // MARK: - BrowserEngine
 
-/// What draws the app's pages: CEF, Chrome's own framework with OpenArc's layer (Chromium/engine), or WebKit,
-/// which loads no Chromium at all (docs/webkit-engine.md).
+/// What draws the app's pages: CEF, Chrome's own framework with OpenArc's layer (Chromium/engine), WebKit, which
+/// loads no Chromium at all (docs/webkit-engine.md), or Ladybird, also without Chromium (docs/ladybird-engine.md).
 @objc enum BrowserEngine: Int {
     case cef
     case chrome
     case webKit
+    case ladybird
 
     /// The value of the setting and of `--openarc-engine=`.
     var key: String {
@@ -17,6 +18,7 @@ import Foundation
         case .cef: "cef"
         case .chrome: "chrome"
         case .webKit: "webkit"
+        case .ladybird: "ladybird"
         }
     }
 
@@ -25,6 +27,7 @@ import Foundation
         case "cef": self = .cef
         case "chrome": self = .chrome
         case "webkit": self = .webKit
+        case "ladybird": self = .ladybird
         default: return nil
         }
     }
@@ -34,15 +37,19 @@ import Foundation
 
 /// The engine setting. The process runs on one engine from launch to quit, so a change takes effect at the
 /// next launch. CEF stays the default. A build without the Chrome engine's framework runs Chrome's choice on
-/// CEF, and a build without CEF (one for the Mac App Store) runs on WebKit.
+/// CEF, a build without Ladybird's framework runs Ladybird's choice on the Chromium engine, and a build without
+/// CEF (one for the Mac App Store) runs on WebKit.
 @objcMembers final class BrowserEngineChoice: NSObject {
     static let defaultsKey = "BrowserChromiumEngine"
     static let webKitDefaultsKey = "BrowserWebKitEngine"
-    /// `--openarc-engine=cef`, `chrome` or `webkit` overrides the setting for one launch.
+    static let ladybirdDefaultsKey = "BrowserLadybirdEngine"
+    /// `--openarc-engine=cef`, `chrome`, `webkit` or `ladybird` overrides the setting for one launch.
     static let argumentPrefix = "--openarc-engine="
     static let frameworkName = "OpenArc Framework"
     static let cefFrameworkName = "Chromium Embedded Framework"
     static let entryPointName = "OpenArcChromeEngineMain"
+    static let ladybirdFrameworkName = "OpenArc Ladybird"
+    static let ladybirdEntryPointName = "OpenArcLadybirdEngineMain"
     /// Settings asks the app to relaunch on the engine just chosen.
     static let relaunchRequestedNotification = Notification.Name("BrowserEngineChoiceRelaunchRequested")
 
@@ -58,15 +65,22 @@ import Foundation
         frameworkBinaryPath(bundlePath: Bundle.main.bundlePath) != nil
     }
 
+    static var isLadybirdEngineAvailable: Bool {
+        ladybirdFrameworkBinaryPath(bundlePath: Bundle.main.bundlePath) != nil
+    }
+
     /// The bundle carries CEF. A Mac App Store build leaves it out and runs on WebKit only.
     static var isCEFAvailable: Bool {
         cefFrameworkAvailable(bundlePath: Bundle.main.bundlePath)
     }
 
-    /// The engine the user chose, whatever this build carries: WebKit while its toggle is on, else the
-    /// Chromium engine.
+    /// The engine the user chose, whatever this build carries: Ladybird or WebKit while its toggle is on, else
+    /// the Chromium engine.
     static func preferredEngine(defaults: UserDefaults = .standard) -> BrowserEngine {
-        defaults.bool(forKey: webKitDefaultsKey) ? .webKit : preferredChromiumEngine(defaults: defaults)
+        if defaults.bool(forKey: ladybirdDefaultsKey) {
+            return .ladybird
+        }
+        return defaults.bool(forKey: webKitDefaultsKey) ? .webKit : preferredChromiumEngine(defaults: defaults)
     }
 
     /// CEF or Chrome, the Chromium engine the app runs on while WebKit is off.
@@ -88,27 +102,48 @@ import Foundation
         defaults.bool(forKey: webKitDefaultsKey)
     }
 
+    /// WebKit and Ladybird each draw every page, so turning one on turns the other off.
     static func setWebKitPreferred(_ preferred: Bool, defaults: UserDefaults = .standard) {
         if preferred {
             defaults.set(true, forKey: webKitDefaultsKey)
+            defaults.removeObject(forKey: ladybirdDefaultsKey)
         } else {
             defaults.removeObject(forKey: webKitDefaultsKey)
         }
     }
 
-    /// The engine a launch runs on: the argument's, else the setting's. Chrome without its framework runs on
-    /// CEF, and CEF without its framework on WebKit.
+    /// The Ladybird toggle. Off, the app goes back to the Chromium engine chosen before.
+    static func isLadybirdPreferred(defaults: UserDefaults = .standard) -> Bool {
+        defaults.bool(forKey: ladybirdDefaultsKey)
+    }
+
+    static func setLadybirdPreferred(_ preferred: Bool, defaults: UserDefaults = .standard) {
+        if preferred {
+            defaults.set(true, forKey: ladybirdDefaultsKey)
+            defaults.removeObject(forKey: webKitDefaultsKey)
+        } else {
+            defaults.removeObject(forKey: ladybirdDefaultsKey)
+        }
+    }
+
+    /// The engine a launch runs on: the argument's, else the setting's. Ladybird without its framework runs on
+    /// the Chromium engine, Chrome without its framework on CEF, and CEF without its framework on WebKit.
     static func launchEngine(
         arguments: [String],
         preferred: BrowserEngine,
         chromeEngineAvailable: Bool,
         cefAvailable: Bool = true,
+        ladybirdAvailable: Bool = false,
+        preferredChromium: BrowserEngine = .cef,
     ) -> BrowserEngine {
         var engine = preferred
         if let argument = arguments.last(where: { $0.hasPrefix(argumentPrefix) }),
            let chosen = BrowserEngine(key: argument.dropFirst(argumentPrefix.count))
         {
             engine = chosen
+        }
+        if engine == .ladybird, !ladybirdAvailable {
+            engine = preferredChromium
         }
         if engine == .chrome, !chromeEngineAvailable {
             engine = .cef
@@ -143,6 +178,16 @@ import Foundation
         return fileManager.isExecutableFile(atPath: binary.path) ? binary.path : nil
     }
 
+    /// The Ladybird framework's binary in an app bundle, `Contents/Frameworks/OpenArc Ladybird.framework/Versions/A/…`,
+    /// or nil when the bundle doesn't carry the Ladybird engine.
+    static func ladybirdFrameworkBinaryPath(bundlePath: String, fileManager: FileManager = .default) -> String? {
+        let binary = URL(fileURLWithPath: bundlePath, isDirectory: true)
+            .appendingPathComponent("Contents/Frameworks/\(ladybirdFrameworkName).framework", isDirectory: true)
+            .appendingPathComponent(ladybirdFrameworkName, isDirectory: false)
+            .resolvingSymlinksInPath()
+        return fileManager.isExecutableFile(atPath: binary.path) ? binary.path : nil
+    }
+
     /// For main(): the engine this launch runs on.
     @objc(currentLaunchEngine) static func currentLaunchEngine() -> BrowserEngine {
         launchEngine(
@@ -150,7 +195,19 @@ import Foundation
             preferred: preferredEngine(),
             chromeEngineAvailable: isChromeEngineAvailable,
             cefAvailable: isCEFAvailable,
+            ladybirdAvailable: isLadybirdEngineAvailable,
+            preferredChromium: preferredChromiumEngine(),
         )
+    }
+
+    /// Where Ladybird keeps its profile: cookies, history and caches, apart from Chromium's and WebKit's. The
+    /// runtime's data folder (`…/OpenArc/CEF`, or `CEF-<suffix>` for an isolated runtime) holds Chromium's;
+    /// Ladybird's sits beside it with the same suffix.
+    @objc(ladybirdDataPathForCacheRoot:) static func ladybirdDataPath(cacheRoot: String) -> String {
+        let root = URL(fileURLWithPath: cacheRoot, isDirectory: true)
+        let name = root.lastPathComponent
+        let suffix = name.hasPrefix("CEF") ? String(name.dropFirst("CEF".count)) : "-\(name)"
+        return root.deletingLastPathComponent().appendingPathComponent("Ladybird\(suffix)", isDirectory: true).path
     }
 
     /// Chrome's switches for a launch on its framework: OpenArc's data folder as Chrome's user data, and none

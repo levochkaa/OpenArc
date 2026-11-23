@@ -34,6 +34,7 @@ COPY_BUNDLE_ID = "com.levochkaa.OpenArc.smoketest"
 COPY_NAME = "OpenArc Smoke"
 COPY_DIR = Path.home() / "Library" / "Caches" / "OpenArcSmokeTest"
 CHROME_ENGINE_FRAMEWORK = "OpenArc Framework.framework"
+LADYBIRD_ENGINE_FRAMEWORK = "OpenArc Ladybird.framework"
 # Checks of features the Chrome engine does not have yet (docs/chrome-engine.md); they skip on it.
 CHROME_ENGINE_GAPS = {
     "extension-sees-tabs": "extensions also see the blank tab of the engine's hidden window",
@@ -56,6 +57,20 @@ WEBKIT_ENGINE_GAPS = {
 }
 # Utility services Chromium itself starts without a sandbox on macOS: video capture opens the cameras.
 UNSANDBOXED_SERVICES = {"video_capture.mojom.VideoCaptureService"}
+# Checks of what Ladybird does not have (docs/ladybird-engine.md); they skip when the copy runs on Ladybird.
+LADYBIRD_ENGINE_GAPS = {
+    "no-notification-request-at-launch": "the check reads navigator.permissions, which Ladybird lacks",
+    "media-devices": "Ladybird has no navigator.mediaDevices",
+    "extension-sees-tabs": "--load-extension loads a Chromium extension",
+    "passkeys": "Ladybird has no WebAuthn",
+    "history": "Ladybird pages write no Chromium History database",
+    "print-preview": "the agent CLI clicks through DevTools' DOM methods, which Ladybird pages lack",
+    "screen-share-picker": "the agent CLI clicks through DevTools' DOM methods, which Ladybird pages lack",
+    "extension-popup": "the toolbar button of a Chromium extension",
+    "notification-after-site-permission": "the agent CLI clicks through DevTools' DOM methods, which Ladybird "
+                                          "pages lack",
+    "translate-in-place": "translation is Chromium's",
+}
 SYSTEM_TCC = Path("/Library/Application Support/com.apple.TCC/TCC.db")
 LSREGISTER = ("/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/"
               "lsregister")
@@ -74,7 +89,9 @@ What it does:
   the Chrome engine (OpenArc Framework.framework, docs/chrome-engine.md) with
   --openarc-engine=chrome, and checks that its pages run there. --engine webkit
   starts it on WebKit alone (docs/webkit-engine.md) and checks that no Chromium
-  loads; checks of Chromium's own features skip. Afterwards the copy is killed with
+  loads; checks of Chromium's own features skip. --engine ladybird starts it on
+  Ladybird (OpenArc Ladybird.framework, docs/ladybird-engine.md) and checks
+  that its pages run in Ladybird's WebContent helpers and no Chromium loads. Afterwards the copy is killed with
   SIGKILL, and its app copy, CEF- and Session- data and defaults are deleted.
   One run at a time.
 
@@ -652,9 +669,11 @@ class SmokeTest:
     # Recording
 
     def check(self, name: str, function) -> None:
-        gaps = {"chrome": CHROME_ENGINE_GAPS, "webkit": WEBKIT_ENGINE_GAPS}.get(self.options.engine, {})
+        gaps = {"chrome": CHROME_ENGINE_GAPS, "webkit": WEBKIT_ENGINE_GAPS,
+                "ladybird": LADYBIRD_ENGINE_GAPS}.get(self.options.engine, {})
         if name in gaps:
-            prefix = "not on the Chrome engine yet" if self.options.engine == "chrome" else "Chromium only"
+            prefix = {"chrome": "not on the Chrome engine yet", "ladybird": "not on Ladybird"}.get(
+                self.options.engine, "Chromium only")
             reason = f"{prefix}: {gaps[name]}"
             log(f"• {name}: SKIP, {reason}")
             self.results.append({"name": name, "status": "skip", "evidence": reason, "details": {}})
@@ -717,7 +736,7 @@ class SmokeTest:
     # Flow
 
     def run(self) -> int:
-        major = None if self.options.engine == "webkit" else (self.options.expect_chrome_major
+        major = None if self.options.engine in ("webkit", "ladybird") else (self.options.expect_chrome_major
                                                               or expected_chrome_major())
         self.facts.update(app=str(self.options.app), engine=self.options.engine, expected_chrome_major=major,
                           bundle_id=COPY_BUNDLE_ID,
@@ -863,6 +882,8 @@ class SmokeTest:
         frameworks = self.instance.app / "Contents" / "Frameworks"
         if self.options.engine == "webkit":
             return self.check_no_chromium(frameworks)
+        if self.options.engine == "ladybird":
+            return self.check_ladybird_processes(frameworks)
         engine_helpers = str(self.instance.engine_framework()) + "/"
 
         def renderers():
@@ -931,6 +952,40 @@ class SmokeTest:
         return {"evidence": "no helper process from the bundle; neither CEF nor the Chrome engine is loaded",
                 **details}
 
+    def check_ladybird_processes(self, frameworks: Path) -> dict:
+        """On Ladybird, pages run in WebContent helpers from Ladybird's framework, and no Chromium loads."""
+        helpers_dir = str(frameworks / LADYBIRD_ENGINE_FRAMEWORK) + "/"
+
+        def web_content():
+            lines = run(["/usr/bin/pgrep", "-fl", "--", "WebContent"], check=False).stdout.splitlines()
+            ours = [line for line in lines if helpers_dir in line]
+            return ours or None
+
+        found = wait_until(web_content, 20, 0.5) or []
+        chromium = [line for line in run(["/usr/bin/pgrep", "-fl", "--", "--type=renderer"], check=False)
+                    .stdout.splitlines() if str(frameworks) in line]
+        mapped = run(["/usr/sbin/lsof", "-p", str(self.instance.pid), "-Fn"], check=False, timeout=30).stdout
+        loaded = sorted({name for name in ("Chromium Embedded Framework", "OpenArc Framework", "OpenArc Ladybird")
+                         if f"/{name}.framework/" in mapped})
+        details = {"web_content": found, "chromium_renderers": chromium, "loaded_frameworks": loaded,
+                   "method": "WebContent processes started from the copy's Ladybird framework, Chromium renderers "
+                             "from the bundle, and the main process's open files (lsof)"}
+        if not found:
+            raise CheckFailed("no WebContent process from the Ladybird framework", details)
+        if chromium or loaded != ["OpenArc Ladybird"]:
+            raise CheckFailed(f"Chromium runs on Ladybird: {len(chromium)} renderer(s), frameworks loaded: {loaded}",
+                              details)
+        return {"evidence": f"{len(found)} WebContent process(es) from {LADYBIRD_ENGINE_FRAMEWORK}; no Chromium "
+                            "renderer, and only Ladybird's framework is loaded", **details}
+
+    def check_ladybird_version(self) -> dict:
+        tab = self.tabs["start"]
+        user_agent = self.instance.eval("navigator.userAgent", tab)
+        details = {"userAgent": user_agent}
+        if "Ladybird/" not in (user_agent or ""):
+            raise CheckFailed(f"the user agent is not Ladybird's: {user_agent!r}", details)
+        return {"evidence": f"Ladybird's user agent: {user_agent}", **details}
+
     def check_webkit_version(self) -> dict:
         tab = self.tabs["start"]
         user_agent = self.instance.eval("navigator.userAgent", tab)
@@ -943,6 +998,8 @@ class SmokeTest:
     def check_engine(self, major: int | None) -> dict:
         if self.options.engine == "webkit":
             return self.check_webkit_version()
+        if self.options.engine == "ladybird":
+            return self.check_ladybird_version()
         tab = self.tabs["start"]
         user_agent = self.instance.eval("navigator.userAgent", tab)
         brands = self.instance.eval(
@@ -1144,6 +1201,13 @@ class SmokeTest:
         self.instance.cli("close", control)
         if not pair:
             raise CheckFailed("the fixture's script did not set the titles within 15 s", details)
+        if self.options.engine == "ladybird":
+            # Ladybird's user agent names no engine the fixture knows, or Chrome for compatibility.
+            if not pair or pair[0] != "Engine webkit 42" or pair[1] not in ("Engine other 42", "Engine chromium 42"):
+                raise CheckFailed(f"titles {pair}, expected 'Engine webkit 42' and Ladybird's for the other site",
+                                  details)
+            return {"evidence": f"the WebKit-routed site's script reported 'Engine webkit 42'; the same page on "
+                                f"Ladybird reported {pair[1]!r}", **details}
         if self.options.engine == "webkit":
             if pair != ("Engine webkit 42", "Engine webkit 42"):
                 raise CheckFailed(f"titles {pair}, expected 'Engine webkit 42' for both sites", details)
@@ -1482,9 +1546,10 @@ def main() -> int:
                              "for it and no-notification-request-at-launch is conclusive; the screen-share check "
                              "then skips, and macOS keeps a notification settings entry for that id")
     parser.add_argument("--keep", action="store_true", help="leave the copy running and its data in place")
-    parser.add_argument("--engine", choices=("cef", "chrome", "webkit"), default="cef",
+    parser.add_argument("--engine", choices=("cef", "chrome", "webkit", "ladybird"), default="cef",
                         help="the engine the copy runs pages on (default cef); chrome needs a build that "
-                             f"carries {CHROME_ENGINE_FRAMEWORK}; webkit loads no Chromium")
+                             f"carries {CHROME_ENGINE_FRAMEWORK}; webkit loads no Chromium; ladybird needs a build "
+                             f"that carries {LADYBIRD_ENGINE_FRAMEWORK}")
     options = parser.parse_args()
     options.app = options.app.resolve()
     if not (options.app / "Contents" / "MacOS" / "OpenArc").exists():
@@ -1495,6 +1560,9 @@ def main() -> int:
     options.out = options.out.resolve()
     if options.engine == "chrome" and not (options.app / "Contents" / "Frameworks" / CHROME_ENGINE_FRAMEWORK).exists():
         parser.error(f"{options.app} carries no {CHROME_ENGINE_FRAMEWORK}; see docs/chrome-engine.md")
+    if options.engine == "ladybird" and not (options.app / "Contents" / "Frameworks" /
+                                             LADYBIRD_ENGINE_FRAMEWORK).exists():
+        parser.error(f"{options.app} carries no {LADYBIRD_ENGINE_FRAMEWORK}; see docs/ladybird-engine.md")
     options.identity = options.identity or find_identity()
     if options.fresh_identity:
         global COPY_BUNDLE_ID

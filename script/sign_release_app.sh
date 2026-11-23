@@ -117,6 +117,19 @@ if [[ -d "$engine" ]]; then
   sign "$engine"
 fi
 
+# The Ladybird engine (script/ladybird_engine.sh), when the build carries it: its libraries, then its helpers with
+# the entitlements Ladybird signs them with, then the framework.
+ladybird="$frameworks/OpenArc Ladybird.framework"
+if [[ -d "$ladybird" ]]; then
+  for library in "$ladybird/Versions/A/Libraries/"*.dylib; do
+    [[ -e "$library" ]] && sign "$library"
+  done
+  for tool in "$ladybird/Versions/A/Helpers/"*; do
+    [[ -f "$tool" && -x "$tool" ]] && sign --entitlements "$ROOT_DIR/Support/OpenArcLadybirdHelper.entitlements" "$tool"
+  done
+  sign "$ladybird"
+fi
+
 # Sparkle's documented order; Downloader keeps its own entitlements.
 sparkle="$frameworks/Sparkle.framework"
 if [[ -d "$sparkle" ]]; then

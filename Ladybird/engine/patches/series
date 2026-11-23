@@ -1,0 +1,4 @@
+# OpenArc changes to Ladybird, applied in order by apply.sh
+openarc-subdirectory.patch
+web-view-current-frame.patch
+context-menu-position.patch

@@ -1,0 +1,13 @@
+diff --git a/UI/AppKit/Interface/Event.mm b/UI/AppKit/Interface/Event.mm
+index c7f08595a5..b510afdd16 100644
+--- a/UI/AppKit/Interface/Event.mm
++++ b/UI/AppKit/Interface/Event.mm
+@@ -158,7 +158,7 @@ explicit DragData(Vector<URL::URL> urls)
+ NSEvent* create_context_menu_mouse_event(NSView* view, NSPoint position)
+ {
+     return [NSEvent mouseEventWithType:NSEventTypeRightMouseUp
+-                              location:[view convertPoint:position fromView:nil]
++                              location:[view convertPoint:position toView:nil]
+                          modifierFlags:0
+                              timestamp:0
+                           windowNumber:[[view window] windowNumber]

@@ -26,6 +26,8 @@ SENTRY_FRAMEWORK_DEST="$APP_FRAMEWORKS_DIR/Sentry.framework"
 HELPER_DEST="$APP_FRAMEWORKS_DIR/OpenArc Helper.app"
 CHROME_ENGINE_NAME="OpenArc Framework.framework"
 CHROME_ENGINE_DEST="$APP_FRAMEWORKS_DIR/$CHROME_ENGINE_NAME"
+LADYBIRD_ENGINE_NAME="OpenArc Ladybird.framework"
+LADYBIRD_ENGINE_DEST="$APP_FRAMEWORKS_DIR/$LADYBIRD_ENGINE_NAME"
 RESOURCE_HELPER_DEST="$APP_RESOURCES_DIR/OpenArc Helper.app"
 HELPER_VARIANTS=(
   "$APP_FRAMEWORKS_DIR/OpenArc Helper (Alerts).app"
@@ -162,6 +164,56 @@ stage_chrome_engine() {
   cp -cR "$source" "$CHROME_ENGINE_DEST" 2>/dev/null || ditto "$source" "$CHROME_ENGINE_DEST"
 }
 
+# The Ladybird engine's framework (script/ladybird_engine.sh pull), from this checkout or the primary one. It needs
+# no Chromium, so a build without CEF carries it too. A build without it shows the engine as missing in Settings.
+ladybird_engine_export() {
+  if [[ -n "${OPENARC_LADYBIRD_ENGINE_EXPORT:-}" ]]; then
+    printf '%s\n' "$OPENARC_LADYBIRD_ENGINE_EXPORT"
+    return
+  fi
+  local candidate="$ROOT_DIR/ThirdParty/ladybird-engine/export"
+  if [[ ! -d "$candidate/$LADYBIRD_ENGINE_NAME" ]]; then
+    local common_git_dir
+    common_git_dir="$(git -C "$ROOT_DIR" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
+    if [[ -n "$common_git_dir" && "$(basename "$common_git_dir")" == ".git" ]]; then
+      candidate="$(dirname "$common_git_dir")/ThirdParty/ladybird-engine/export"
+    fi
+  fi
+  printf '%s\n' "$candidate"
+}
+
+stage_ladybird_engine() {
+  rm -rf "$LADYBIRD_ENGINE_DEST"
+  if [[ "${OPENARC_STAGE_LADYBIRD_ENGINE:-1}" == "0" ]]; then
+    return
+  fi
+  local source
+  source="$(ladybird_engine_export)/$LADYBIRD_ENGINE_NAME"
+  if [[ ! -d "$source" ]]; then
+    echo "note: no Ladybird engine at $source; Settings shows it as missing"
+    return
+  fi
+  mkdir -p "$APP_FRAMEWORKS_DIR"
+  cp -cR "$source" "$LADYBIRD_ENGINE_DEST" 2>/dev/null || ditto "$source" "$LADYBIRD_ENGINE_DEST"
+}
+
+# Ladybird's helpers run as their own processes; each is signed before the framework that holds them.
+sign_ladybird_engine() {
+  local identity="$1"
+  [[ -d "$LADYBIRD_ENGINE_DEST" ]] || return 0
+  local entitlements="$ROOT_DIR/Support/OpenArcLadybirdHelper.entitlements"
+  local file
+  for file in "$LADYBIRD_ENGINE_DEST/Versions/A/Libraries/"*.dylib; do
+    [[ -e "$file" ]] || continue
+    /usr/bin/codesign --force --sign "$identity" --timestamp=none "$file"
+  done
+  for file in "$LADYBIRD_ENGINE_DEST/Versions/A/Helpers/"*; do
+    [[ -f "$file" && -x "$file" ]] || continue
+    /usr/bin/codesign --force --sign "$identity" --timestamp=none --options runtime --entitlements "$entitlements" "$file"
+  done
+  /usr/bin/codesign --force --sign "$identity" --timestamp=none "$LADYBIRD_ENGINE_DEST"
+}
+
 signing_identity() {
   if [[ "${CODE_SIGNING_ALLOWED:-NO}" == "YES" ]]; then
     if [[ -n "${EXPANDED_CODE_SIGN_IDENTITY:-}" && "${EXPANDED_CODE_SIGN_IDENTITY:-}" != "-" ]]; then
@@ -196,6 +248,7 @@ sign_app_bundle() {
       /usr/bin/codesign --force --deep --sign "$identity" --timestamp=none "$chromium_part"
     fi
   done
+  sign_ladybird_engine "$identity"
   if [[ -d "$SPARKLE_FRAMEWORK_DEST" ]]; then
     /usr/bin/codesign --force --deep --sign "$identity" --timestamp=none "$SPARKLE_FRAMEWORK_DEST"
   fi
@@ -239,7 +292,8 @@ fi
 if [[ "${OPENARC_STAGE_CEF:-1}" == "0" ]]; then
   rm -rf "$CEF_FRAMEWORK_DEST" "$CHROME_ENGINE_DEST" "$HELPER_DEST" "$RESOURCE_HELPER_DEST" "${HELPER_VARIANTS[@]}"
   rm -f "$APP_RESOURCES_DIR/CEFCredits.html"
-  echo "note: OPENARC_STAGE_CEF=0; this build carries no Chromium and runs on WebKit only"
+  echo "note: OPENARC_STAGE_CEF=0; this build carries no Chromium and runs on WebKit or Ladybird only"
+  stage_ladybird_engine
   sign_app_bundle
   exit 0
 fi
@@ -282,4 +336,5 @@ create_helper_variant " (Plugin)" ".plugin"
 create_helper_variant " (Renderer)" ".renderer"
 
 stage_chrome_engine
+stage_ladybird_engine
 sign_app_bundle
