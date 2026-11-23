@@ -59,7 +59,6 @@ WEBKIT_ENGINE_GAPS = {
 UNSANDBOXED_SERVICES = {"video_capture.mojom.VideoCaptureService"}
 # Checks of what Ladybird does not have (docs/ladybird-engine.md); they skip when the copy runs on Ladybird.
 LADYBIRD_ENGINE_GAPS = {
-    "no-notification-request-at-launch": "the check reads navigator.permissions, which Ladybird lacks",
     "media-devices": "Ladybird has no navigator.mediaDevices",
     "extension-sees-tabs": "--load-extension loads a Chromium extension",
     "passkeys": "Ladybird has no WebAuthn",
@@ -839,9 +838,12 @@ class SmokeTest:
 
     def check_notifications_at_launch(self) -> dict:
         tab = self.open_tab("start", self.server.url("index.html"))
-        permission = self.instance.eval("Notification.permission", tab)
+        permission = self.instance.eval(
+            "typeof Notification === 'function' && Notification.permission ? Notification.permission"
+            " : 'unsupported'", tab)
         query = self.instance.eval(
-            "navigator.permissions.query({name: 'notifications'}).then(s => s.state)", tab)
+            "navigator.permissions ? navigator.permissions.query({name: 'notifications'}).then(s => s.state)"
+            " : 'unsupported'", tab)
         # The prompt came about four seconds after launch when the engine asked at startup.
         remaining = self.instance.started_at + 10 - time.time()
         if remaining > 0:
@@ -859,9 +861,11 @@ class SmokeTest:
                              f"for {COPY_BUNDLE_ID} and its helpers; for the first 10 s, macOS's NotificationCenter "
                              f"window is read every second (cua-driver) for prompts naming {COPY_NAME!r}"}
         problems = []
-        if permission != "default":
+        # Ladybird has neither notifications nor the Permissions API; the system log and the banners still tell.
+        unsupported = "unsupported" if self.options.engine == "ladybird" else None
+        if permission not in ("default", unsupported):
             problems.append(f"Notification.permission is {permission!r}")
-        if query != "prompt":
+        if query not in ("prompt", unsupported):
             problems.append(f"permissions.query is {query!r}")
         if requests:
             problems.append(f"the copy asked macOS for notification permission at launch: "
