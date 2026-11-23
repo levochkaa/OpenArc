@@ -294,10 +294,13 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
     func controlTextDidChange(_ notification: Notification) {
         guard notification.object as? BrowserCommandNSTextField === queryField,
               !queryField.isApplyingPresentation else { return }
+        queryField.clearFocusSelectionRequest()
         if model.query != queryField.stringValue {
             model.query = queryField.stringValue
+            // The key replaced the completed part; put the completion back
+            // before the field draws, or it shows the bare text for a frame.
+            refresh()
         }
-        queryField.clearFocusSelectionRequest()
     }
 
     func control(_: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {

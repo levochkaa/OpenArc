@@ -226,6 +226,49 @@ import Testing
         editor.unmarkText()
     }
 
+    @Test func typingOverACompletionKeepsItInTheSameKeystroke() throws {
+        let page = BrowserCommandSuggestion(
+            kind: .history,
+            displayText: "Shopify",
+            detailText: "shopify.com",
+            resolvedURLString: "https://shopify.com",
+        )
+        let model = BrowserCommandBarModel(
+            suggestionProvider: FakeSuggestionProvider(suggestionsByQuery: [:]),
+            suggestionDebounceNanoseconds: 0,
+            localSuggestionProvider: { query, _ in "shopify.com".hasPrefix(query) ? [page] : [] },
+            remoteSuggestionsEnabledProvider: { false },
+            submitHandler: { _ in },
+        )
+        let view = BrowserCommandBarNSView(model: model, faviconCache: BrowserFaviconCache(dataLoader: { _ in nil }))
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1000, height: 700),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false,
+        )
+        window.isReleasedWhenClosed = false
+        view.frame = NSRect(x: 0, y: 0, width: 1000, height: 700)
+        window.contentView = view
+        defer { window.makeFirstResponder(nil)
+            window.contentView = nil
+            window.close()
+        }
+        model.present()
+        view.queryField.focusPermission = { false }
+        #expect(window.makeFirstResponder(view.queryField))
+        let editor = try #require(view.queryField.currentEditor() as? NSTextView)
+        // An address completes from the second letter. No run loop pass
+        // between the keys: the field must already show the completion when
+        // the key's event ends, or it draws without it once.
+        editor.insertText("s", replacementRange: editor.selectedRange())
+        for (typed, key) in [(2, "h"), (3, "o"), (4, "p")] {
+            editor.insertText(key, replacementRange: editor.selectedRange())
+            #expect(editor.string == "shopify.com", "\(key): \(editor.string)")
+            #expect(editor.selectedRange() == NSRange(location: typed, length: 11 - typed))
+        }
+    }
+
     @Test func shortSuggestionTitlesAndShortcutBadgesFitWithoutEllipses() throws {
         let row = BrowserCommandSuggestionNSView(frame: NSRect(x: 0, y: 0, width: 704, height: 42))
         row.update(
