@@ -136,15 +136,10 @@ function App() {
     };
   }, []);
 
-  // Until a stable release ships, downloads offer the newest beta.
-  const latestDownloadRelease = useMemo(
-    () => releases.find((release) => release.channel === "stable") ?? releases[0],
-    [releases],
-  );
-  // The repository is private, so its GitHub pages are not a download yet.
-  const latestDownloadUrl = getPrimaryMacOSAsset(latestDownloadRelease?.assets ?? [])?.downloadURL ?? fallbackDownloadUrl;
-  // Betas are for people who opt in from the app; the page lists stable releases only.
+  // Betas are for people who opt in from the app; the page lists and downloads stable releases only.
   const stableReleases = useMemo(() => releases.filter((release) => release.channel === "stable"), [releases]);
+  // Without a stable release in the list, downloads go to GitHub's latest release, which skips pre-releases.
+  const latestDownloadUrl = getPrimaryMacOSAsset(stableReleases[0]?.assets ?? [])?.downloadURL ?? fallbackDownloadUrl;
   const hasReleases = stableReleases.length > 0;
 
   return (

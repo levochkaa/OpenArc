@@ -118,7 +118,7 @@ describe("App", () => {
     ]);
   });
 
-  it("downloads the newest beta and hides the release list until a stable release ships", async () => {
+  it("never downloads a beta and hides the release list until a stable release ships", async () => {
     mockFetchResponse({
       releases: [
         {
@@ -142,11 +142,12 @@ describe("App", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByRole("link", { name: /download for macos/i })).toHaveAttribute(
-        "href",
-        "https://api.openarc.su/downloads/OpenArc-0.3.0-3.zip",
-      );
+      expect(fetch).toHaveBeenCalled();
     });
+    expect(screen.getByRole("link", { name: /download for macos/i })).toHaveAttribute(
+      "href",
+      "https://github.com/levochkaa/OpenArc/releases/latest",
+    );
     expect(screen.queryByRole("heading", { name: /what’s new/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Releases" })).not.toBeInTheDocument();
   });
