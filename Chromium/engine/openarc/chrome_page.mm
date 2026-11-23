@@ -1228,10 +1228,22 @@ void CancelDownload(NSString* downloadID) {
 }
 
 - (void)reloadWithIgnoringCache:(BOOL)ignoringCache {
-  if (_contents) {
-    _contents->GetController().Reload(
-        ignoringCache ? content::ReloadType::BYPASSING_CACHE : content::ReloadType::NORMAL, true);
+  if (!_contents) {
+    return;
   }
+  content::NavigationController& controller = _contents->GetController();
+  // A new address still loading is what the tab shows: it loads again. Chrome's reload would drop it for the
+  // last committed page, the empty first document of a tab that never finished a load.
+  content::NavigationEntry* pending = controller.GetPendingEntry();
+  if (pending && controller.GetPendingEntryIndex() == -1 && pending->GetURL().is_valid() &&
+      !pending->GetHasPostData()) {
+    content::NavigationController::LoadURLParams params(pending->GetURL());
+    params.transition_type = pending->GetTransitionType();
+    params.referrer = pending->GetReferrer();
+    controller.LoadURLWithParams(params);
+    return;
+  }
+  controller.Reload(ignoringCache ? content::ReloadType::BYPASSING_CACHE : content::ReloadType::NORMAL, true);
 }
 
 - (void)stopLoading {
