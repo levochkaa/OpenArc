@@ -54,6 +54,12 @@ for one launch. A bundle without the framework runs Ladybird's choice on the Chr
     (`about:settings` …) and show under `openarc://`. The Easel's and the note's empty pages, the credits and a
     short "Not Available in Ladybird" page for extensions and passwords come from the app
     (`BrowserWebKitInternalPages.ladybirdPageHTML`). A shared page's Add to OpenArc button goes to the app.
+  - **Sign-ins.** The layer watches a page's password fields with a script of its own: the app learns a page has a
+    sign-in form, offers to save what a sent form held (on submit, or when a page with typed fields navigates away), and
+    fills a saved sign-in into the fields, as on the Chrome engine.
+  - **Location.** A site's `navigator.geolocation` request goes through OpenArc's site permission prompt first, and the
+    answer holds for the site until quit; an allowed request reads Core Location, which asks macOS once for the app.
+    Ladybird answers only a document that is visible, so a page loaded in a covered window waits until it shows.
   - **Print.** Ladybird does not print; File › Print prints the whole page as Ladybird draws it.
   - **Developer Tools.** Ladybird speaks Firefox's DevTools protocol. The Developer Tools commands start Ladybird's
     DevTools server and say where to connect from Firefox's `about:debugging`.
@@ -102,12 +108,12 @@ sessions. OpenArc's own data (Spaces, tabs, notes, Easels, boosts, bookmarks, sy
   battery saver throttling and tracing.
 - Protected video (no EME/FairPlay) and picture in picture. Sites whose rule sends them to WebKit still open in
   WebKit tabs.
-- Passwords and passkeys: OpenArc's saved sign-ins do not fill, and Ladybird has no passkeys.
-- OpenArc's site permission prompts: Ladybird asks for what it supports (location, notifications) itself.
+- Passkeys (Ladybird has no WebAuthn) and the passwords page, which belongs to Chromium.
+- Site permissions besides location: camera, microphone, notifications and the rest are not offered, and
+  `navigator.permissions` and `navigator.mediaDevices` are missing.
 - Developer Tools docked beside the page; Ladybird's open in Firefox.
 - A page's certificate chain in the site info.
 - Accessibility inside pages: VoiceOver and the accessibility tree see the page as one view.
-- `navigator.permissions` and `navigator.mediaDevices`.
 - A page in a window covered by others is not drawn (Ladybird skips occluded pages, as Chromium does), so a capture
   of it gives no picture until the window shows.
 

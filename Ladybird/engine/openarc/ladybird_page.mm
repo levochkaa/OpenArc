@@ -17,7 +17,10 @@
 #include <LibWebView/Application.h>
 #include <LibWebView/Menu.h>
 #include <LibWebView/URL.h>
+#include <LibWebCommon/Geolocation/GeolocationPositionErrorCode.h>
+#include <LibWebView/Settings.h>
 #include <LibWebView/ViewImplementation.h>
+#include <LibWebView/WebContentPage.h>
 
 #import <Interface/Event.h>
 #import <Interface/LadybirdWebView.h>
@@ -32,6 +35,9 @@
 static NSString* (^s_scheme_page_provider)(NSString*, NSInteger*) = nil;
 static __weak OpenArcLadybirdPage* s_last_focused_page = nil;
 static NSHashTable<OpenArcLadybirdPage*>* s_open_pages = nil;
+// Each site's answer to OpenArc's location prompt, for as long as the app runs.
+static NSMutableDictionary<NSString*, NSNumber*>* s_location_decisions = nil;
+static uint64_t s_next_permission_prompt_id = 0;
 // Ladybird asks for a new page's handle by reference; the new page stays alive here until the run loop turns,
 // even if the tab controller had no tab for it.
 static NSMutableArray<OpenArcLadybirdPage*>* s_pages_being_opened = nil;
@@ -149,6 +155,32 @@ void open_url_in_new_tab_from_page(OpenArcLadybirdPage* page, NSString* url_stri
 
 }
 
+static NSString* json_string(NSString* string)
+{
+    auto* data = [NSJSONSerialization dataWithJSONObject:string ?: @"" options:NSJSONWritingFragmentsAllowed error:nil];
+    return data ? [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] : @"\"\"";
+}
+
+// Keeps what the page's sign-in fields hold, and whether a form with them was sent, in window.__openArcSignIn; answers
+// whether the document has a password field, and its address.
+static NSString* const s_sign_in_watch_script = @"(() => {"
+     " const field = (root) => [...(root || document).querySelectorAll('input[type=password]')];"
+     " const userFor = (pass) => { const inputs = [...(pass.form || document).querySelectorAll('input')];"
+     "   return inputs.slice(0, inputs.indexOf(pass)).reverse().find((i) => i.autocomplete === 'username' || /^(text|email|tel)$/.test(i.type)); };"
+     " if (!window.__openArcSignIn) {"
+     "   window.__openArcSignIn = { u: '', p: '', submitted: false };"
+     "   const grab = (root) => { const pass = field(root).find((i) => i.value); if (!pass) return false;"
+     "     const user = userFor(pass); const state = window.__openArcSignIn;"
+     "     state.u = user ? user.value : state.u; state.p = pass.value; state.url = location.href; return true; };"
+     "   document.addEventListener('input', () => { grab(); }, true);"
+     "   document.addEventListener('submit', (e) => { if (grab(e.target)) window.__openArcSignIn.submitted = true; }, true);"
+     "   document.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target && e.target.type === 'password' && grab()) window.__openArcSignIn.submitted = true; }, true);"
+     "   document.addEventListener('click', (e) => { const b = e.target && e.target.closest && e.target.closest('button, input[type=submit]');"
+     "     if (b && grab()) window.__openArcSignIn.submitted = true; }, true);"
+     " }"
+     " return JSON.stringify({ form: field().length > 0, url: location.href, state: window.__openArcSignIn });"
+     "})()";
+
 static NSData* png_data_for_image(NSImage* image)
 {
     auto* cg_image = [image CGImageForProposedRect:nil context:nil hints:nil];
@@ -157,6 +189,16 @@ static NSData* png_data_for_image(NSImage* image)
     auto* representation = [[NSBitmapImageRep alloc] initWithCGImage:cg_image];
     return [representation representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
 }
+
+// Ladybird's geolocation handler, shared by the blocks that wait for OpenArc's prompt.
+struct RefCountedFunction final : public RefCounted<RefCountedFunction> {
+    explicit RefCountedFunction(Function<void(WebView::WebContentPage&, u64)> function)
+        : function(move(function))
+    {
+    }
+
+    Function<void(WebView::WebContentPage&, u64)> function;
+};
 
 // Reports Back and Forward turning on or off as the page's navigation state.
 struct NavigationActionObserver final : public WebView::Action::Observer {
@@ -198,6 +240,12 @@ struct PendingEvaluation {
     u64 _evaluationGeneration;
     double _mediaVolume;
     BOOL _audioMuted;
+    // Sign-ins: the page has a password field, the address it was reported for, and what its fields held last.
+    NSTimer* _signInTimer;
+    NSString* _reportedPasswordFormURL;
+    NSString* _signInURL;
+    NSString* _signInUsername;
+    NSString* _signInPassword;
 }
 
 @synthesize delegate = _delegate;
@@ -207,6 +255,7 @@ struct PendingEvaluation {
     if (self == [OpenArcLadybirdPage class]) {
         s_open_pages = [NSHashTable weakObjectsHashTable];
         s_pages_being_opened = [NSMutableArray array];
+        s_location_decisions = [NSMutableDictionary dictionary];
     }
 }
 
@@ -335,6 +384,38 @@ struct PendingEvaluation {
         [self.delegate chromePage:self renderProcessTerminatedWithErrorCode:2];
     };
 
+    // A site's location goes through OpenArc's prompt first, as on the other engines; Ladybird reads it from Core
+    // Location once the site may have it.
+    using GeolocationHandler = Function<void(WebView::WebContentPage&, u64)>;
+    auto gate_location = [weak_self](GeolocationHandler handler) {
+        auto shared_handler = make_ref_counted<RefCountedFunction>(move(handler));
+        return [weak_self, shared_handler](WebView::WebContentPage& requesting_page, u64 request_id) {
+            OpenArcLadybirdPage* self = weak_self;
+            NonnullRefPtr<WebView::WebContentPage> page = requesting_page;
+            auto deny = [page, request_id] {
+                if (page->is_open())
+                    page->async_geolocation_position_response(request_id, {}, to_underlying(Web::Geolocation::GeolocationPositionErrorCode::PermissionDenied));
+            };
+            if (self == nil) {
+                deny();
+                return;
+            }
+            [self askForLocationThen:^(BOOL allowed) {
+                if (!allowed) {
+                    deny();
+                    return;
+                }
+                if (!page->is_open())
+                    return;
+                if (!WebView::Application::settings().geolocation_enabled())
+                    WebView::Application::settings().set_geolocation_enabled(true);
+                shared_handler->function(*page, request_id);
+            }];
+        };
+    };
+    view.on_request_geolocation_position = gate_location(move(view.on_request_geolocation_position));
+    view.on_start_geolocation_position_watch = gate_location(move(view.on_start_geolocation_position_watch));
+
     // The navigation state follows the back and forward actions Ladybird keeps for its toolbar.
     view.navigate_back_action().add_observer(make<NavigationActionObserver>(self));
     view.navigate_forward_action().add_observer(make<NavigationActionObserver>(self));
@@ -383,6 +464,8 @@ struct PendingEvaluation {
 
 - (void)onLoadStart
 {
+    // A sign-in form usually sends itself by navigating; what its fields held goes to the app before the page goes.
+    [self reportSignInIfSent:YES];
     [self.delegate webKitPageDidChangeLoading:self];
 }
 
@@ -393,6 +476,12 @@ struct PendingEvaluation {
     // again.
     [self.delegate webKitPageDidChangeURL:self];
     [self.delegate webKitPageDidChangeTitle:self];
+    [self watchForSignIn];
+    // Pages that build their sign-in form with script get a second look.
+    __weak OpenArcLadybirdPage* weak_self = self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 1500 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
+        [weak_self watchForSignIn];
+    });
     [self.delegate webKitPageDidChangeNavigationState:self];
     [self applyMediaVolume];
 }
@@ -461,6 +550,131 @@ struct PendingEvaluation {
                didFindMatches:static_cast<NSInteger>(total)
                 activeOrdinal:total > 0 ? static_cast<NSInteger>(current_match_index) : 0
                   finalUpdate:YES];
+}
+
+#pragma mark - Site permissions
+
+- (NSString*)siteOrigin
+{
+    NSURLComponents* components = [NSURLComponents componentsWithString:self.urlString];
+    if (components.scheme.length == 0 || components.host.length == 0)
+        return self.urlString;
+    NSString* origin = [NSString stringWithFormat:@"%@://%@", components.scheme, components.host];
+    return components.port ? [origin stringByAppendingFormat:@":%@", components.port] : origin;
+}
+
+// Runs `then` with the site's answer to OpenArc's location prompt: remembered, or asked now. A page OpenArc cannot ask
+// for (no tab) gets no location.
+- (void)askForLocationThen:(void (^)(BOOL allowed))then
+{
+    NSString* origin = [self siteOrigin];
+    if (NSNumber* decision = s_location_decisions[origin]) {
+        then(decision.boolValue);
+        return;
+    }
+    id<BrowserChromePageDelegate> delegate = self.delegate;
+    BOOL asked = [delegate chromePage:self
+          requestSitePermissionPrompt:++s_next_permission_prompt_id
+                               origin:origin
+                                kinds:@[ @"location" ]
+                             decision:^(NSNumber* _Nullable allowed) {
+                                 if (allowed != nil)
+                                     s_location_decisions[origin] = allowed;
+                                 then(allowed.boolValue);
+                             }];
+    if (!asked)
+        then(NO);
+}
+
+#pragma mark - Sign-ins
+
+// Looks for a password field, tells the app once per document, and follows the fields while there is one.
+- (void)watchForSignIn
+{
+    if (_closed)
+        return;
+    __weak OpenArcLadybirdPage* weak_self = self;
+    [self evaluate:s_sign_in_watch_script completion:^(NSString* _Nullable text) {
+        OpenArcLadybirdPage* self = weak_self;
+        if (self == nil || self->_closed || text == nil)
+            return;
+        NSDictionary* answer = [NSJSONSerialization JSONObjectWithData:[text dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
+        if (![answer isKindOfClass:[NSDictionary class]])
+            return;
+        [self takeSignInState:answer[@"state"]];
+        NSString* url = answer[@"url"];
+        BOOL has_form = [answer[@"form"] boolValue];
+        if (has_form && [url isKindOfClass:[NSString class]] && ![url isEqualToString:self->_reportedPasswordFormURL]) {
+            self->_reportedPasswordFormURL = url;
+            if ([self.delegate respondsToSelector:@selector(chromePage:didFindPasswordFormInFrame:urlString:)])
+                [self.delegate chromePage:self didFindPasswordFormInFrame:@"" urlString:url];
+        }
+        if (has_form && self->_signInTimer == nil) {
+            self->_signInTimer = [NSTimer scheduledTimerWithTimeInterval:1 repeats:YES block:^(NSTimer* timer) {
+                (void)timer;
+                [weak_self watchForSignIn];
+            }];
+        } else if (!has_form && self->_signInPassword.length == 0) {
+            [self->_signInTimer invalidate];
+            self->_signInTimer = nil;
+        }
+        [self reportSignInIfSent:NO];
+    }];
+}
+
+- (void)takeSignInState:(id)state
+{
+    if (![state isKindOfClass:[NSDictionary class]])
+        return;
+    NSString* password = state[@"p"];
+    if (![password isKindOfClass:[NSString class]] || password.length == 0)
+        return;
+    _signInPassword = [password copy];
+    _signInUsername = [state[@"u"] isKindOfClass:[NSString class]] ? [state[@"u"] copy] : @"";
+    _signInURL = [state[@"url"] isKindOfClass:[NSString class]] ? [state[@"url"] copy] : self.urlString;
+    if ([state[@"submitted"] boolValue])
+        _signInURL = [_signInURL stringByAppendingString:@"\n"];
+}
+
+// Hands a sent sign-in to the app, which asks whether to keep it: one the page marked sent, or with `leaving`, the
+// last one typed into a page that is navigating away.
+- (void)reportSignInIfSent:(BOOL)leaving
+{
+    BOOL sent = [_signInURL hasSuffix:@"\n"];
+    if (_signInPassword.length == 0 || (!sent && !leaving))
+        return;
+    NSString* url = sent ? [_signInURL substringToIndex:_signInURL.length - 1] : _signInURL;
+    NSString* username = _signInUsername ?: @"";
+    NSString* password = _signInPassword;
+    _signInPassword = nil;
+    _signInUsername = nil;
+    _signInURL = nil;
+    _reportedPasswordFormURL = nil;
+    [_signInTimer invalidate];
+    _signInTimer = nil;
+    if (!sent)
+        [_webView view].run_javascript("window.__openArcSignIn = undefined"_string);
+    else
+        [self evaluate:@"(() => { window.__openArcSignIn = { u: '', p: '', submitted: false }; return 1; })()" completion:^(NSString*) {}];
+    if ([self.delegate respondsToSelector:@selector(chromePage:didSubmitPasswordWithURLString:username:password:)])
+        [self.delegate chromePage:self didSubmitPasswordWithURLString:url ?: self.urlString username:username password:password];
+}
+
+// Fills a saved sign-in into the main frame while it is still on the sign-in's site, as the fields' own typing would.
+- (void)fillPasswordInFrame:(NSString*)frameID urlPrefix:(NSString*)urlPrefix username:(NSString*)username password:(NSString*)password
+{
+    if (frameID.length > 0)
+        return;
+    auto* script = [NSString stringWithFormat:
+                                 @"((prefix, u, p) => { const href = location.href;"
+                                  " if (!href.startsWith(prefix) || (href.length > prefix.length && !'/:'.includes(href[prefix.length]))) return false;"
+                                  " const pass = [...document.querySelectorAll('input[type=password]')].find((i) => !i.disabled) ; if (!pass) return false;"
+                                  " const inputs = [...(pass.form || document).querySelectorAll('input')];"
+                                  " const user = inputs.slice(0, inputs.indexOf(pass)).reverse().find((i) => i.autocomplete === 'username' || /^(text|email|tel)$/.test(i.type));"
+                                  " const set = (el, v) => { el.focus(); el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); };"
+                                  " if (user && u) set(user, u); set(pass, p); return true; })(%@, %@, %@)",
+                             json_string(urlPrefix), json_string(username), json_string(password)];
+    [self evaluate:script completion:^(NSString*) {}];
 }
 
 #pragma mark - Focus and keys
@@ -1004,6 +1218,8 @@ struct PendingEvaluation {
     if (_closed)
         return;
     _closed = YES;
+    [_signInTimer invalidate];
+    _signInTimer = nil;
     if (s_last_focused_page == self)
         s_last_focused_page = nil;
     [s_open_pages removeObject:self];

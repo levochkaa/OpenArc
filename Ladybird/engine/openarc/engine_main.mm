@@ -20,6 +20,7 @@
 #include <LibWebView/CookieJar.h>
 #include <LibWebView/FileDownloader.h>
 #include <LibWebView/URL.h>
+#include <LibWebView/Settings.h>
 #include <LibWebView/Utilities.h>
 #include <LibWebView/ViewImplementation.h>
 
@@ -419,6 +420,10 @@ extern "C" int OpenArcLadybirdEngineMain(int argc, char const** argv, char const
     }
     s_application = application.release_value();
     s_downloads_observer = make<OpenArc::DownloadsObserver>();
+    // Pages ask the app for their location; each site's answer comes from OpenArc's prompt (OpenArcLadybirdPage), so
+    // Ladybird's own switch stays on.
+    if (!WebView::Application::settings().geolocation_enabled())
+        WebView::Application::settings().set_geolocation_enabled(true);
 
     // Ladybird's services are up once the run loop turns; the app starts in its first turn, as on CEF.
     dispatch_async(dispatch_get_main_queue(), ^{
