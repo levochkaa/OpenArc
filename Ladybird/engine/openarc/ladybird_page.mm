@@ -389,6 +389,10 @@ struct PendingEvaluation {
 - (void)onLoadFinish
 {
     [self.delegate webKitPageDidChangeLoading:self];
+    // A navigation that turned into a download leaves the document and its title as they were; the tab shows them
+    // again.
+    [self.delegate webKitPageDidChangeURL:self];
+    [self.delegate webKitPageDidChangeTitle:self];
     [self.delegate webKitPageDidChangeNavigationState:self];
     [self applyMediaVolume];
 }

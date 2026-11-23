@@ -45,9 +45,11 @@ for one launch. A bundle without the framework runs Ladybird's choice on the Chr
     dialogs, the Metal-presented page). Ladybird's link status, `window.close()` and its requests to move or resize
     the window go to the tab controller instead of Ladybird's own window. A page's `window.open` becomes an OpenArc
     tab with its opener intact (`initAsChild`), as on the Chrome engine.
-  - **Scripts.** `evaluate:` and the agent CLI's `Runtime.evaluate` run through Ladybird's console input; a returned
-    promise is awaited by reading its result back from the page. `Page.captureScreenshot` and the tab's picture use
-    Ladybird's own screenshots.
+  - **Scripts.** `evaluate:` and the agent CLI's `Runtime.evaluate` run as Ladybird's console input, which a page's
+    Content Security Policy does not block. An expression runs inside a wrapper that keeps its value, or its promise's
+    result, in the page as JSON, read back until it settles; statements do not parse there and run as they are, with
+    the completion value the console reports. `Page.captureScreenshot` and the tab's picture copy the frame the view
+    shows (`--full` asks WebContent for the whole page).
   - **`openarc://` addresses.** Settings, history, bookmarks, downloads and version open Ladybird's own pages
     (`about:settings` …) and show under `openarc://`. The Easel's and the note's empty pages, the credits and a
     short "Not Available in Ladybird" page for extensions and passwords come from the app
@@ -57,7 +59,14 @@ for one launch. A bundle without the framework runs Ladybird's choice on the Chr
     DevTools server and say where to connect from Firefox's `about:debugging`.
 - **Ladybird's code.** The layer pins Ladybird to `Ladybird/engine/LADYBIRD_COMMIT`, the last commit with the AppKit
   port (Ladybird removed it on 2026-09-29 for its Qt port). `patches/series` lists OpenArc's changes to Ladybird
-  itself; `openarc-subdirectory.patch` adds the layer to Ladybird's CMake build.
+  itself:
+  - `openarc-subdirectory.patch` adds the layer to Ladybird's CMake build;
+  - `web-view-current-frame.patch` lets the page copy the frame its view shows, for captures of a page WebContent
+    does not paint on request;
+  - `context-menu-position.patch` opens context and select menus at the pointer when the web view does not start at
+    the window's origin;
+  - `request-finish-reentrancy.patch` keeps a request's read notifier alive until its activation returns; a download
+    from a server without range requests crashed Ladybird's own browser too.
 
 ## Building
 
@@ -97,3 +106,13 @@ sessions. OpenArc's own data (Spaces, tabs, notes, Easels, boosts, bookmarks, sy
 - OpenArc's site permission prompts: Ladybird asks for what it supports (location, notifications) itself.
 - Developer Tools docked beside the page; Ladybird's open in Firefox.
 - A page's certificate chain in the site info.
+- Accessibility inside pages: VoiceOver and the accessibility tree see the page as one view.
+- `navigator.permissions` and `navigator.mediaDevices`.
+- A page in a window covered by others is not drawn (Ladybird skips occluded pages, as Chromium does), so a capture
+  of it gives no picture until the window shows.
+
+## First launch
+
+Ladybird looks through the Downloads folder for unfinished downloads when it starts. An app the user never let into
+Downloads waits there for macOS's prompt before its first window; OpenArc itself already has the permission. Isolated
+test copies with their own bundle id see the prompt once, as long as they are signed with the same identity.

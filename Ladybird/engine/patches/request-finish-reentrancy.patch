@@ -1,0 +1,15 @@
+diff --git a/Libraries/LibRequests/Request.cpp b/Libraries/LibRequests/Request.cpp
+index 721d3e1e4a..06a637c76f 100644
+--- a/Libraries/LibRequests/Request.cpp
++++ b/Libraries/LibRequests/Request.cpp
+@@ -342,8 +342,8 @@ void Request::set_up_internal_stream_data(DataReceived on_data_available)
+         if (!m_internal_stream_data->user_finish_called && (!m_internal_stream_data->read_stream || m_internal_stream_data->read_stream->is_eof() || has_received_all_reported_bytes)) {
+             m_internal_stream_data->user_finish_called = true;
+             m_internal_stream_data->read_notifier->close();
+-            m_internal_stream_data->read_notifier = nullptr;
+-            m_internal_stream_data->read_stream = nullptr;
++            // The notifier's activation may be what finished the request; it goes away once that call returns.
++            Core::deferred_invoke([notifier = move(m_internal_stream_data->read_notifier), stream = move(m_internal_stream_data->read_stream)] {});
+             // The request has finished for its owner, so a stop or transfer that follows has nothing left to report.
+             m_on_stop = nullptr;
+             user_on_finish(m_internal_stream_data->total_size, m_internal_stream_data->timing_info, m_internal_stream_data->network_error);

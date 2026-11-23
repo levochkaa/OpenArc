@@ -2,3 +2,4 @@
 openarc-subdirectory.patch
 web-view-current-frame.patch
 context-menu-position.patch
+request-finish-reentrancy.patch
