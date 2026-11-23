@@ -31,6 +31,7 @@ chromium_artifact_source="${OPENARC_CHROMIUM_ARTIFACT_SOURCE:-}"
 runtime_suffix="${OPENARC_RUNTIME_SUFFIX:-}"
 passthrough_args=()
 passthrough_arg_count=0
+test_all=0
 
 usage() {
   cat <<'EOF'
@@ -55,6 +56,9 @@ Options:
   --release             Build the Release configuration.
   --full-output         Print complete xcodebuild output instead of warnings/errors only.
   --skip-build          For run/debug/logs/telemetry/verify, launch the existing app bundle.
+  --all                 For test, also run the tests that need the active app (key windows, focus).
+                        They take the keyboard and the front app, so run them before a pre-release
+                        or when the Mac is free. Without it, the test process can never become active.
   --runtime-suffix ID   Override the stable per-worktree CEF/session identity.
                         Such an instance syncs only when OPENARC_SYNC_BASE_URL is set.
   --ios-destination DEST
@@ -134,6 +138,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --skip-build)
       skip_build=1
+      shift
+      ;;
+    --all)
+      test_all=1
       shift
       ;;
     --runtime-suffix)
@@ -510,6 +518,12 @@ build_app() {
 test_app() {
   prepare_build_environment
   xcodebuild_arguments
+  # xcodebuild hands TEST_RUNNER_-prefixed variables to the test process without the prefix.
+  if [[ "$test_all" -eq 1 ]]; then
+    export TEST_RUNNER_OPENARC_TESTS_FOCUS=1
+  else
+    unset TEST_RUNNER_OPENARC_TESTS_FOCUS
+  fi
   run_with_xcode_output xcodebuild "${XCODEBUILD_ARGS[@]}" test
   echo "$APP_NAME $CONFIGURATION tests succeeded"
 }

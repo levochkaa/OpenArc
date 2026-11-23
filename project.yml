@@ -346,6 +346,7 @@ targets:
       base:
         BUNDLE_LOADER: ""
         GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_NSPrincipalClass: OpenArcTestsSetup
         PRODUCT_NAME: OpenArcTests
         TEST_HOST: ""
     dependencies:
