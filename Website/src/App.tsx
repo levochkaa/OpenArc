@@ -46,7 +46,6 @@ const importItems = [
   "History",
   "Sign-ins",
   "Extensions",
-  "Site searches",
 ];
 
 const agentLines = [
