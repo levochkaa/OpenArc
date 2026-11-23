@@ -122,7 +122,6 @@ int main(int argc, char* argv[]) {
 
     ClientManager manager;
     CefSettings settings;
-    settings.no_sandbox = true;
     settings.log_severity = LOGSEVERITY_INFO;
 
     NSString* helper_path = nil;

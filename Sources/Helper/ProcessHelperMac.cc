@@ -3,11 +3,20 @@
 #include "Shared/AppFactory.h"
 #include "Shared/MainUtil.h"
 
+#include "include/cef_sandbox_mac.h"
 #include "include/wrapper/cef_library_loader.h"
 
 namespace shared {
 
 int main(int argc, char* argv[]) {
+  // Enter the seatbelt sandbox the browser process asked for before the engine
+  // loads, so web content never runs with the user's full access. A process
+  // started without one passes through.
+  CefScopedSandboxContext sandbox_context;
+  if (!sandbox_context.Initialize(argc, argv)) {
+    return 1;
+  }
+
   CefScopedLibraryLoader library_loader;
   if (!library_loader.LoadInHelper()) {
     return 1;

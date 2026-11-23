@@ -129,7 +129,7 @@ build_wrapper_library() {
     -G Xcode \
     -DPROJECT_ARCH="$PROJECT_ARCH" \
     -DDOXYGEN_EXECUTABLE="$DOXYGEN_STUB" \
-    -DUSE_SANDBOX=OFF
+    -DUSE_SANDBOX=ON
 
   cmake \
     --build "$WRAPPER_BUILD_DIR" \
