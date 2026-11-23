@@ -367,8 +367,8 @@ enum BrowserOnboardingImportItem: String, CaseIterable {
 
     private func welcomeStep() -> NSView {
         let mark = BrowserOnboardingArchMark(color: Palette.cream)
-        mark.widthAnchor.constraint(equalToConstant: 44).isActive = true
-        mark.heightAnchor.constraint(equalToConstant: 40).isActive = true
+        mark.widthAnchor.constraint(equalToConstant: 56).isActive = true
+        mark.heightAnchor.constraint(equalToConstant: 32).isActive = true
         let title = text(
             BrowserStrings.onboardingWelcomeTitle,
             size: 46,
@@ -766,8 +766,8 @@ enum BrowserOnboardingImportItem: String, CaseIterable {
         grid.alignment = .leading
         grid.spacing = 12
         let mark = BrowserOnboardingArchMark(color: Palette.cream)
-        mark.widthAnchor.constraint(equalToConstant: 34).isActive = true
-        mark.heightAnchor.constraint(equalToConstant: 31).isActive = true
+        mark.widthAnchor.constraint(equalToConstant: 44).isActive = true
+        mark.heightAnchor.constraint(equalToConstant: 25).isActive = true
         let field = blueStep([
             mark,
             text(
@@ -866,8 +866,63 @@ final class BrowserOnboardingPaper: NSView {
 
 // MARK: - BrowserOnboardingArchMark
 
-/// The arch from the app icon and the site's top bar.
+/// The app icon's arch over a shorter leg, in one color, as on the site's top bar.
 final class BrowserOnboardingArchMark: NSView {
+    /// The icon's leg and arch, in its 1020 × 600 box with y pointing down.
+    private static let pieces: CGPath = {
+        let path = CGMutablePath()
+        // Leg
+        path.move(to: CGPoint(x: 195, y: 300))
+        path.addCurve(
+            to: CGPoint(x: 330, y: 225),
+            control1: CGPoint(x: 220.8, y: 257.4),
+            control2: CGPoint(x: 278.9, y: 225),
+        )
+        path.addCurve(
+            to: CGPoint(x: 453, y: 282),
+            control1: CGPoint(x: 359.5, y: 225),
+            control2: CGPoint(x: 453, y: 257.2),
+        )
+        path.addCurve(
+            to: CGPoint(x: 424, y: 313),
+            control1: CGPoint(x: 453, y: 288.1),
+            control2: CGPoint(x: 431.4, y: 300.8),
+        )
+        path.addLine(to: CGPoint(x: 273.76, y: 557.63))
+        path.addQuadCurve(to: CGPoint(x: 257, y: 567), control: CGPoint(x: 268, y: 567))
+        path.addLine(to: CGPoint(x: 44, y: 567))
+        path.addQuadCurve(to: CGPoint(x: 38.71, y: 557.6), control: CGPoint(x: 33, y: 567))
+        path.closeSubpath()
+        // Arch
+        path.move(to: CGPoint(x: 584, y: 300))
+        path.addCurve(
+            to: CGPoint(x: 360, y: 165),
+            control1: CGPoint(x: 537.8, y: 223.9),
+            control2: CGPoint(x: 447.6, y: 165),
+        )
+        path.addCurve(
+            to: CGPoint(x: 273, y: 178),
+            control1: CGPoint(x: 325.2, y: 165),
+            control2: CGPoint(x: 305.2, y: 170),
+        )
+        path.addCurve(
+            to: CGPoint(x: 508, y: 26),
+            control1: CGPoint(x: 313, y: 89.1),
+            control2: CGPoint(x: 408.1, y: 26),
+        )
+        path.addCurve(
+            to: CGPoint(x: 738, y: 168),
+            control1: CGPoint(x: 615.1, y: 26),
+            control2: CGPoint(x: 684.6, y: 80.1),
+        )
+        path.addLine(to: CGPoint(x: 975.28, y: 557.61))
+        path.addQuadCurve(to: CGPoint(x: 970, y: 567), control: CGPoint(x: 981, y: 567))
+        path.addLine(to: CGPoint(x: 757, y: 567))
+        path.addQuadCurve(to: CGPoint(x: 740.29, y: 557.6), control: CGPoint(x: 746, y: 567))
+        path.closeSubpath()
+        return path
+    }()
+
     override var isFlipped: Bool { true }
 
     private let color: NSColor
@@ -882,43 +937,19 @@ final class BrowserOnboardingArchMark: NSView {
     @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     override func draw(_: NSRect) {
-        // The site's 40 × 36 logo path.
-        let path = NSBezierPath()
-        path.move(to: NSPoint(x: 20, y: 3))
-        path.curve(
-            to: NSPoint(x: 27.5, y: 10),
-            controlPoint1: NSPoint(x: 24, y: 3),
-            controlPoint2: NSPoint(x: 26, y: 6),
+        let box = Self.pieces.boundingBoxOfPath
+        let scale = min(bounds.width / box.width, bounds.height / box.height)
+        let transform = CGAffineTransform(
+            translationX: (bounds.width - box.width * scale) / 2,
+            y: (bounds.height - box.height * scale) / 2,
         )
-        path.line(to: NSPoint(x: 35, y: 28))
-        path.curve(to: NSPoint(x: 32, y: 33), controlPoint1: NSPoint(x: 36, y: 30.5), controlPoint2: NSPoint(
-            x: 34.5,
-            y: 33,
-        ))
-        path.curve(to: NSPoint(x: 28, y: 29.6), controlPoint1: NSPoint(x: 30, y: 33), controlPoint2: NSPoint(
-            x: 29,
-            y: 31.8,
-        ))
-        path.line(to: NSPoint(x: 20, y: 12))
-        path.line(to: NSPoint(x: 12, y: 29.6))
-        path.curve(
-            to: NSPoint(x: 8, y: 33),
-            controlPoint1: NSPoint(x: 11, y: 31.8),
-            controlPoint2: NSPoint(x: 10, y: 33),
-        )
-        path.curve(
-            to: NSPoint(x: 5, y: 28),
-            controlPoint1: NSPoint(x: 5.5, y: 33),
-            controlPoint2: NSPoint(x: 4, y: 30.5),
-        )
-        path.line(to: NSPoint(x: 12.5, y: 10))
-        path.curve(to: NSPoint(x: 20, y: 3), controlPoint1: NSPoint(x: 14, y: 6), controlPoint2: NSPoint(x: 16, y: 3))
-        path.close()
-        let scale = min(bounds.width / 40, bounds.height / 36)
-        let transform = AffineTransform(scale: scale)
-        path.transform(using: transform)
-        color.setFill()
-        path.fill()
+        .scaledBy(x: scale, y: scale)
+        .translatedBy(x: -box.minX, y: -box.minY)
+        guard let context = NSGraphicsContext.current?.cgContext,
+              let placed = Self.pieces.copy(using: [transform]) else { return }
+        context.addPath(placed)
+        context.setFillColor(color.cgColor)
+        context.fillPath()
     }
 }
 
