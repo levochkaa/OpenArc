@@ -391,7 +391,7 @@ function ReleaseList({ releases }: { releases: BrowserRelease[] }) {
 
 /** Release notes are Markdown with `##` headings, `-` lists and `code`; nothing else is rendered. */
 function ReleaseNotes({ notes }: { notes: string }) {
-  const blocks: { kind: "heading" | "list" | "paragraph"; lines: string[] }[] = [];
+  const blocks: ReleaseNotesBlock[] = [];
   notes.split("\n").forEach((rawLine) => {
     const line = rawLine.trim();
     const last = blocks.at(-1);
@@ -413,30 +413,54 @@ function ReleaseNotes({ notes }: { notes: string }) {
     }
   });
   const shownBlocks = blocks.filter((block) => block.lines.length > 0);
+  const [showsDetails, setShowsDetails] = useState(false);
 
   if (shownBlocks.length === 0) {
     return <p className="release-notes">Fixes and improvements.</p>;
   }
 
+  // The card shows the opening summary; headings and lists after it wait behind More.
+  const firstDetailIndex = shownBlocks.findIndex((block) => block.kind !== "paragraph");
+  const summaryBlocks = firstDetailIndex === -1 ? shownBlocks : shownBlocks.slice(0, firstDetailIndex);
+  const detailBlocks = firstDetailIndex === -1 ? [] : shownBlocks.slice(firstDetailIndex);
+
   return (
     <div className="release-notes">
-      {shownBlocks.map((block, index) => {
-        if (block.kind === "heading") {
-          return <h4 key={index}>{renderInline(block.lines[0])}</h4>;
-        }
-        if (block.kind === "list") {
-          return (
-            <ul key={index}>
-              {block.lines.map((item, itemIndex) => (
-                <li key={itemIndex}>{renderInline(item)}</li>
-              ))}
-            </ul>
-          );
-        }
-        return <p key={index}>{renderInline(block.lines.join(" "))}</p>;
-      })}
+      {summaryBlocks.length === 0 ? <p>Fixes and improvements.</p> : renderBlocks(summaryBlocks, "summary")}
+      {showsDetails && renderBlocks(detailBlocks, "details")}
+      {detailBlocks.length > 0 && (
+        <button
+          aria-expanded={showsDetails}
+          className="release-details-toggle"
+          type="button"
+          onClick={() => setShowsDetails((shows) => !shows)}
+        >
+          {showsDetails ? "Less" : "More"}
+        </button>
+      )}
     </div>
   );
+}
+
+type ReleaseNotesBlock = { kind: "heading" | "list" | "paragraph"; lines: string[] };
+
+function renderBlocks(blocks: ReleaseNotesBlock[], keyPrefix: string) {
+  return blocks.map((block, blockIndex) => {
+    const index = `${keyPrefix}-${blockIndex}`;
+    if (block.kind === "heading") {
+      return <h4 key={index}>{renderInline(block.lines[0])}</h4>;
+    }
+    if (block.kind === "list") {
+      return (
+        <ul key={index}>
+          {block.lines.map((item, itemIndex) => (
+            <li key={itemIndex}>{renderInline(item)}</li>
+          ))}
+        </ul>
+      );
+    }
+    return <p key={index}>{renderInline(block.lines.join(" "))}</p>;
+  });
 }
 
 function renderInline(text: string) {

@@ -556,6 +556,23 @@ a {
   font: 700 13px var(--mono);
 }
 
+.release-details-toggle {
+  display: block;
+  margin-top: 14px;
+  padding: 0;
+  border: 0;
+  font: 700 12px/1 var(--mono);
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--blue);
+  background: none;
+  cursor: pointer;
+}
+
+.release-details-toggle:hover {
+  text-decoration: underline;
+}
+
 .release-more {
   text-align: center;
 }

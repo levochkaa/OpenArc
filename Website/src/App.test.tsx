@@ -163,8 +163,14 @@ describe("App", () => {
     expect(releaseCard).not.toBeNull();
     expect(within(releaseCard!).getByText("Latest")).toBeInTheDocument();
     expect(within(releaseCard!).getByText("Workspace polish and signed update fixes.")).toBeInTheDocument();
+    expect(within(releaseCard!).queryByRole("heading", { name: "Tabs" })).not.toBeInTheDocument();
+    expect(within(releaseCard!).queryByRole("listitem")).not.toBeInTheDocument();
+
+    fireEvent.click(within(releaseCard!).getByRole("button", { name: "More" }));
+
     expect(within(releaseCard!).getByRole("heading", { name: "Tabs" })).toBeInTheDocument();
     expect(within(releaseCard!).getByRole("listitem")).toHaveTextContent("Typed localhost:3000 opens.");
+    expect(within(releaseCard!).getByRole("button", { name: "Less" })).toHaveAttribute("aria-expanded", "true");
     expect(within(releaseCard!).queryByRole("link")).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "OpenArc 1.5 Beta 1" })).not.toBeInTheDocument();
 
@@ -196,7 +202,7 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Show 2 more" }));
 
     expect(screen.getByRole("heading", { name: "OpenArc 1.1" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /more/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^show \d+ more$/i })).not.toBeInTheDocument();
   });
 
   it("points primary download actions at the DMG asset when a non-DMG asset is listed first", async () => {
