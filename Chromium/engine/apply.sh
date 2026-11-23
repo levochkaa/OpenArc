@@ -2,7 +2,8 @@
 # apply.sh <chromium src>: puts OpenArc's Chrome engine layer into a plain Chromium checkout. Safe to re-run.
 #   - copies Chromium/engine/openarc to <src>/openarc (linked into Chrome's framework as //openarc:core) with
 #     the app's contract header (Sources/Browser/ChromeEngine/BrowserChromeEngine.h)
-#   - copies the hooks headers to chrome/browser (openarc_engine_hooks.h, openarc_permission_hooks.h)
+#   - copies the hooks headers to chrome/browser (openarc_engine_hooks.h, openarc_permission_hooks.h) and
+#     components/password_manager/content/browser (openarc_password_hooks.h)
 #   - OpenArc's branding (the framework is "OpenArc Framework", its helpers "OpenArc Helper (…)")
 #   - the Chromium/chromium_src files listed in overrides (OpenArc's changes to Chromium shared with CEF)
 #   - OpenArc's changes to Chrome's own code (patches/series); a patch already in is left alone
@@ -26,6 +27,8 @@ done
 copy_if_changed "$ROOT/Sources/Browser/ChromeEngine/BrowserChromeEngine.h" "$SRC/openarc/BrowserChromeEngine.h"
 copy_if_changed "$HERE/hooks/openarc_engine_hooks.h" "$SRC/chrome/browser/openarc_engine_hooks.h"
 copy_if_changed "$HERE/hooks/openarc_permission_hooks.h" "$SRC/chrome/browser/openarc_permission_hooks.h"
+copy_if_changed "$HERE/hooks/openarc_password_hooks.h" \
+  "$SRC/components/password_manager/content/browser/openarc_password_hooks.h"
 copy_if_changed "$HERE/branding/BRANDING" "$SRC/chrome/app/theme/chromium/BRANDING"
 
 grep -v '^#' "$HERE/overrides" | while read -r override; do

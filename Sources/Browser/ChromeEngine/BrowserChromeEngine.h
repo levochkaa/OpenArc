@@ -104,6 +104,16 @@ NS_ASSUME_NONNULL_BEGIN
 /// Chrome took the prompt back (a navigation, the page closing, a request ahead of it); its `decision` does
 /// nothing now.
 - (void)chromePage:(id)page didWithdrawSitePermissionPrompt:(uint64_t)promptID;
+@optional
+/// A frame of the page has a password form, once per document. `frameID` names the frame for
+/// `fillPasswordInFrame:urlPrefix:username:password:`; `urlString` is the frame's own address.
+- (void)chromePage:(id)page didFindPasswordFormInFrame:(NSString *)frameID urlString:(NSString *)urlString;
+/// A sign-in Chrome's password manager saw sent and would ask to save. The app asks instead and keeps it in its
+/// own store; Chrome shows nothing and saves nothing. `urlString` is the address of the frame whose form sent it.
+- (void)chromePage:(id)page
+    didSubmitPasswordWithURLString:(NSString *)urlString
+                          username:(NSString *)username
+                          password:(NSString *)password;
 @end
 
 /// A Chrome engine page, as the layer makes it.
@@ -123,6 +133,13 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)setPageVisible:(BOOL)visible;
 /// Sends a Cocoa action such as `copy:` to the page's view. NO without such a view.
 - (BOOL)sendAction:(SEL)action;
+@optional
+/// Fills a saved sign-in into the frame `frameID` named (an empty one is the main frame), only while the frame's
+/// address still starts with `urlPrefix`, the saved sign-in's origin.
+- (void)fillPasswordInFrame:(NSString *)frameID
+                  urlPrefix:(NSString *)urlPrefix
+                   username:(NSString *)username
+                   password:(NSString *)password;
 @end
 
 /// The engine's entry points, as class methods of OpenArcChromeEngine in the framework.

@@ -19,6 +19,7 @@
 #include <vector>
 
 #include "base/functional/bind.h"
+#include "base/json/json_writer.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/process/kill.h"
@@ -42,6 +43,7 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/tabs/tab_strip_model_observer.h"
 #include "chrome/common/chrome_constants.h"
+#include "chrome/common/chrome_isolated_world_ids.h"
 #include "components/download/public/common/download_item.h"
 #include "components/favicon/content/content_favicon_driver.h"
 #include "components/favicon/core/favicon_driver_observer.h"
@@ -49,12 +51,14 @@
 #include "components/find_in_page/find_tab_helper.h"
 #include "components/find_in_page/find_types.h"
 #include "components/input/native_web_keyboard_event.h"
+#include "components/password_manager/content/browser/openarc_password_hooks.h"
 #include "components/tabs/public/tab_interface.h"
 #include "components/viz/common/frame_sinks/copy_output_result.h"
 #include "components/zoom/zoom_controller.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/download_item_utils.h"
 #include "content/public/browser/download_manager.h"
+#include "content/public/browser/global_routing_id.h"
 #include "content/public/browser/media_player_id.h"
 #include "content/public/browser/media_session.h"
 #include "content/public/browser/navigation_controller.h"
@@ -578,6 +582,93 @@ bool TargetURL(content::WebContents* contents, const GURL& url) {
   return true;
 }
 
+// A sign-in Chrome's password manager would ask to save: OpenArc asks and keeps it in its Keychain store, as on
+// CEF, so Chrome neither shows its prompt nor saves (patches/password-prompts.patch).
+bool PasswordSubmitted(content::WebContents* contents,
+                       const GURL& url,
+                       const std::u16string& username,
+                       const std::u16string& password) {
+  OpenArcChromePage* page = PageFor(contents);
+  id<BrowserChromePageDelegate> delegate = page.delegate;
+  if (!page || ![delegate respondsToSelector:@selector(chromePage:didSubmitPasswordWithURLString:username:password:)]) {
+    return false;
+  }
+  [delegate chromePage:page
+      didSubmitPasswordWithURLString:NS(url.spec())
+                            username:base::SysUTF16ToNSString(username)
+                            password:base::SysUTF16ToNSString(password)];
+  return true;
+}
+
+// The frame a password form was announced from, as the app names it: the frame's process and routing ids.
+NSString* FrameID(content::RenderFrameHost* frame) {
+  content::GlobalRenderFrameHostId id = frame->GetGlobalId();
+  return [NSString stringWithFormat:@"%d:%d", id.child_id.value(), id.frame_routing_id];
+}
+
+content::RenderFrameHost* FrameWithID(NSString* frameID) {
+  NSArray<NSString*>* parts = [frameID componentsSeparatedByString:@":"];
+  if (parts.count != 2) {
+    return nullptr;
+  }
+  return content::RenderFrameHost::FromID(parts[0].intValue, parts[1].intValue);
+}
+
+// A frame of one of OpenArc's pages has a password form: the app offers its saved sign-ins once per document.
+void PasswordFormFound(content::RenderFrameHost* frame) {
+  content::WebContents* contents = content::WebContents::FromRenderFrameHost(frame);
+  OpenArcChromePage* page = contents ? PageFor(contents) : nil;
+  id<BrowserChromePageDelegate> delegate = page.delegate;
+  if (!page || ![delegate respondsToSelector:@selector(chromePage:didFindPasswordFormInFrame:urlString:)]) {
+    return;
+  }
+  // Chrome parses a document's forms again as they change; the frame token and address name the document.
+  static auto* announced = new std::set<std::string>();
+  const std::string key = frame->GetFrameToken().ToString() + " " + frame->GetLastCommittedURL().spec();
+  if (!announced->insert(key).second) {
+    return;
+  }
+  if (announced->size() > 1000) {
+    announced->clear();
+    announced->insert(key);
+  }
+  [delegate chromePage:page
+      didFindPasswordFormInFrame:FrameID(frame)
+                       urlString:NS(frame->GetLastCommittedURL().spec())];
+}
+
+// Fills the first password field of the frame's document and the username field before it, as CEF's renderer
+// does (Sources/Helper/RendererProcessApp.cc). Runs in an isolated world, so the page's scripts never see the
+// call; the page sees input and change events as from typing.
+constexpr char kPasswordFillScript[] = R"JS(
+(function (username, password) {
+  'use strict';
+  const Input = HTMLInputElement;
+  const setValue = Object.getOwnPropertyDescriptor(Input.prototype, 'value').set;
+  const textTypes = new Set(['text', 'email', 'tel', '']);
+  function usernameField(field) {
+    const root = field.form || document;
+    const inputs = Array.from(root.querySelectorAll('input'));
+    const named = inputs.find((i) => /username|email/.test(i.autocomplete || '') && textTypes.has(i.type));
+    if (named) return named;
+    for (let i = inputs.indexOf(field) - 1; i >= 0; i--) {
+      if (textTypes.has(inputs[i].type)) return inputs[i];
+    }
+    return null;
+  }
+  function put(field, value) {
+    setValue.call(field, value);
+    field.dispatchEvent(new Event('input', { bubbles: true }));
+    field.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+  const field = document.querySelector('input[type="password"]');
+  if (!field) return;
+  const user = usernameField(field);
+  if (user && username) put(user, username);
+  put(field, password);
+})
+)JS";
+
 // Downloads of OpenArc's profiles, for the page that started each (else the profile's last page).
 class DownloadsWatch : public content::DownloadManager::Observer, public download::DownloadItem::Observer {
  public:
@@ -718,6 +809,8 @@ void StartPages() {
   g_target_url = &TargetURL;
   g_navigation_throttles = &NavigationThrottles;
   g_permission_prompt = &PagePermissionPrompt;
+  g_password_submitted = &PasswordSubmitted;
+  g_password_form_found = &PasswordFormFound;
 }
 
 void StopPages() {
@@ -1166,6 +1259,37 @@ void CancelDownload(NSString* downloadID) {
         done(TextOfValue(value));
       }),
       content::ISOLATED_WORLD_ID_GLOBAL);
+}
+
+- (void)fillPasswordInFrame:(NSString*)frameID
+                  urlPrefix:(NSString*)urlPrefix
+                   username:(NSString*)username
+                   password:(NSString*)password {
+  if (!_contents) {
+    return;
+  }
+  content::RenderFrameHost* frame = frameID.length ? FrameWithID(frameID) : _contents->GetPrimaryMainFrame();
+  if (!frame || content::WebContents::FromRenderFrameHost(frame) != _contents) {
+    return;
+  }
+  // The frame may have gone somewhere else since the question: it gets nothing then.
+  const std::string url = frame->GetLastCommittedURL().spec();
+  const std::string prefix = UTF8(urlPrefix);
+  if (prefix.empty() || url.rfind(prefix, 0) != 0 ||
+      (url.size() > prefix.size() && url[prefix.size()] != '/' && url[prefix.size()] != ':')) {
+    return;
+  }
+  base::ListValue arguments;
+  arguments.Append(UTF8(username));
+  arguments.Append(UTF8(password));
+  std::optional<std::string> json = base::WriteJson(arguments);
+  if (!json) {
+    return;
+  }
+  // The JSON array's brackets become the call's parentheses.
+  const std::string call = std::string(kPasswordFillScript) + "(" + json->substr(1, json->size() - 2) + ")";
+  frame->ExecuteJavaScriptInIsolatedWorld(base::UTF8ToUTF16(call), base::NullCallback(),
+                                          ISOLATED_WORLD_ID_CHROME_INTERNAL);
 }
 
 - (void)executeDevToolsMethod:(NSString*)method

@@ -33,6 +33,7 @@ source_set("core") {
     "//components/favicon/content",
     "//components/find_in_page",
     "//components/keep_alive_registry",
+    "//components/password_manager/content/browser",
     "//components/permissions",
     "//components/zoom",
     "//content/public/browser",

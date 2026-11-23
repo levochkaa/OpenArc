@@ -11,3 +11,4 @@ fedcm-dialog.patch
 browser-element-checks.patch
 tab-group-sync-closed-window.patch
 page-dialogs.patch
+password-prompts.patch

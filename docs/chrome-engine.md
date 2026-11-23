@@ -100,6 +100,12 @@ on, this setting waits for it to be turned off.
   - `page-dialogs.patch`: centers tab-modal dialogs (alert, confirm, prompt, HTTP sign-in prompt, screen-share
     picker, passkeys, certificates) on the page rather than the whole window so a split pane's alert stays over its
     pane, and closes them before teardown so closing a tab under its sign-in prompt does not crash.
+  - `password-prompts.patch`: hands the page's sign-ins to OpenArc. Chrome's password manager still finds the
+    password forms and decides when a sign-in was sent (forms sent by script and sign-ins in a site's frames
+    included); `ChromePasswordManagerClient` gives the sign-in it would ask about to OpenArc, which asks and keeps
+    it in its Keychain store as on CEF, and Chrome neither shows its prompt nor saves. `ContentPasswordManagerDriver`
+    reports each document with a password field, so OpenArc offers its saved sign-ins; it fills them in an isolated
+    world of that frame. Sign-ins Chrome saved before still fill from Chrome's store.
 - The hooks (`Chromium/engine/hooks`) are null until `OpenArcChromeEngineMain` sets them,
   so the patched code behaves as Chrome's own otherwise.
 - The layer is based on Cra's engine bridge (github.com/VictorKildahl/cra, MIT License), credited in
@@ -146,8 +152,8 @@ rebuilt), and `script/sign_release_app.sh` signs its helpers with the CEF helper
 The CEF code paths stay as they are; on the Chrome engine these answer nothing or fall back:
 
 - Peek cards and small windows open as tabs; web sign-in windows and cookie import need CEF.
-- The renderer-side scripts of `Sources/Helper` (password and address
-  form detection, protected video bridges).
+- The renderer-side scripts of `Sources/Helper` (address and card form detection, protected video bridges):
+  addresses and cards go through Chrome's own autofill and its prompts.
 - Site settings, translate, battery saver throttling, tracing and the extension bridge's CEF exports.
 - OpenArc's screen share picker: `getDisplayMedia` shows no picker in OpenArc's window.
 - Extensions see one more tab in `chrome.tabs.query`: the blank tab of the profile's hidden window.

@@ -5492,6 +5492,31 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
   }
 }
 
+- (void)chromePage:(id)page didFindPasswordFormInFrame:(NSString *)frameID urlString:(NSString *)urlString {
+  NSString *tabID = [self tabIDForWebKitPage:page];
+  id<BrowserTabControllerDelegate> delegate = self.delegate;
+  if (tabID != nil &&
+      [delegate respondsToSelector:@selector(browserTabController:didFindPasswordFormInTabWithID:frameID:urlString:)]) {
+    [delegate browserTabController:self didFindPasswordFormInTabWithID:tabID frameID:frameID urlString:urlString];
+  }
+}
+
+- (void)chromePage:(id)page
+    didSubmitPasswordWithURLString:(NSString *)urlString
+                          username:(NSString *)username
+                          password:(NSString *)password {
+  NSString *tabID = [self tabIDForWebKitPage:page];
+  id<BrowserTabControllerDelegate> delegate = self.delegate;
+  if (tabID != nil &&
+      [delegate respondsToSelector:@selector(browserTabController:didSubmitPasswordInTabWithID:urlString:username:password:)]) {
+    [delegate browserTabController:self
+        didSubmitPasswordInTabWithID:tabID
+                           urlString:urlString
+                            username:username
+                            password:password];
+  }
+}
+
 - (void)chromePage:(id)page renderProcessTerminatedWithErrorCode:(NSInteger)errorCode {
   NSString *tabID = [self tabIDForWebKitPage:page];
   if (tabID != nil) {
@@ -6618,6 +6643,14 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
                          frameID:(NSString *)frameID
                        urlPrefix:(NSString *)urlPrefix
                     forTabWithID:(NSString *)tabID {
+  auto record = _tabRecords.find(ToStdString(tabID));
+  if (record != _tabRecords.end() && record->second.peerPage != nil) {
+    id page = record->second.peerPage;
+    if ([page respondsToSelector:@selector(fillPasswordInFrame:urlPrefix:username:password:)]) {
+      [page fillPasswordInFrame:frameID ?: @"" urlPrefix:urlPrefix username:username password:password];
+    }
+    return;
+  }
   CefRefPtr<CefBrowser> browser = [self browserForCredentialTabID:tabID];
   CefRefPtr<CefFrame> frame = browser ? browser->GetFrameByIdentifier(ToStdString(frameID)) : nullptr;
   // The frame may have gone somewhere else since the question: it gets nothing then.
@@ -6744,6 +6777,13 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
                                   urlPrefix:(NSString *)urlPrefix
                                forTabWithID:(NSString *)tabID {
   auto it = _tabRecords.find(ToStdString(tabID));
+  if (it != _tabRecords.end() && it->second.peerPage != nil) {
+    if (![it->second.peerPage respondsToSelector:@selector(fillPasswordInFrame:urlPrefix:username:password:)]) {
+      return NO;
+    }
+    [self fillPasswordWithUsername:username password:password frameID:@"" urlPrefix:urlPrefix forTabWithID:tabID];
+    return YES;
+  }
   CefRefPtr<CefFrame> frame =
       it != _tabRecords.end() && it->second.browser ? it->second.browser->GetMainFrame() : nullptr;
   if (!frame) {
