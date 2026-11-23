@@ -42,8 +42,11 @@
 #include "chrome/browser/ui/tabs/tab_muted_utils.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/tabs/tab_strip_model_observer.h"
+#include "chrome/browser/webdata_services/web_data_service_factory.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_isolated_world_ids.h"
+#include "components/autofill/core/browser/openarc_autofill_hooks.h"
+#include "components/autofill/core/browser/webdata/autofill_webdata_service.h"
 #include "components/download/public/common/download_item.h"
 #include "components/favicon/content/content_favicon_driver.h"
 #include "components/favicon/core/favicon_driver_observer.h"
@@ -51,6 +54,7 @@
 #include "components/find_in_page/find_tab_helper.h"
 #include "components/find_in_page/find_types.h"
 #include "components/input/native_web_keyboard_event.h"
+#include "components/keyed_service/core/service_access_type.h"
 #include "components/password_manager/content/browser/openarc_password_hooks.h"
 #include "components/tabs/public/tab_interface.h"
 #include "components/viz/common/frame_sinks/copy_output_result.h"
@@ -229,6 +233,15 @@ class PageHost : public TabStripModelObserver {
     browser->GetTabStripModel()->AddObserver(this);
     MakeHostWindow(window());
     StopDrawing();
+    ForgetFormHistory(browser->GetProfile());
+  }
+
+  // Chrome keeps no typed field values for OpenArc's pages (g_form_history_off); those it kept before go.
+  static void ForgetFormHistory(Profile* profile) {
+    if (scoped_refptr<autofill::AutofillWebDataService> data =
+            WebDataServiceFactory::GetAutofillWebDataForProfile(profile, ServiceAccessType::EXPLICIT_ACCESS)) {
+      data->RemoveFormElementsAddedBetween(base::Time(), base::Time::Max());
+    }
   }
 
   // The window is never seen, but on screen (a bubble Chrome anchors to it, an extension's popup, only shows over
@@ -811,6 +824,7 @@ void StartPages() {
   g_permission_prompt = &PagePermissionPrompt;
   g_password_submitted = &PasswordSubmitted;
   g_password_form_found = &PasswordFormFound;
+  g_form_history_off = true;
 }
 
 void StopPages() {

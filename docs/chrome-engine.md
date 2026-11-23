@@ -106,6 +106,9 @@ on, this setting waits for it to be turned off.
     it in its Keychain store as on CEF, and Chrome neither shows its prompt nor saves. `ContentPasswordManagerDriver`
     reports each document with a password field, so OpenArc offers its saved sign-ins; it fills them in an isolated
     world of that frame. Sign-ins Chrome saved before still fill from Chrome's store.
+  - `form-history.patch`: Chrome keeps no values typed into text fields and offers none under a field
+    (`ChromeAutofillClient::IsAutocompleteEnabled`, `AutocompleteHistoryManager`); the layer deletes the ones it kept
+    before when a profile's pages start. Address and card suggestions stay.
 - The hooks (`Chromium/engine/hooks`) are null until `OpenArcChromeEngineMain` sets them,
   so the patched code behaves as Chrome's own otherwise.
 - The layer is based on Cra's engine bridge (github.com/VictorKildahl/cra, MIT License), credited in

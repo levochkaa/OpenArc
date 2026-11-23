@@ -12,3 +12,4 @@ browser-element-checks.patch
 tab-group-sync-closed-window.patch
 page-dialogs.patch
 password-prompts.patch
+form-history.patch

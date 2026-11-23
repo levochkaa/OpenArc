@@ -1,0 +1,47 @@
+1
+diff --git a/chrome/browser/ui/autofill/chrome_autofill_client.cc b/chrome/browser/ui/autofill/chrome_autofill_client.cc
+index 788eb880cdb..92bb28b4633 100644
+--- a/chrome/browser/ui/autofill/chrome_autofill_client.cc
++++ b/chrome/browser/ui/autofill/chrome_autofill_client.cc
+@@ -4,6 +4,8 @@
+ 
+ #include "chrome/browser/ui/autofill/chrome_autofill_client.h"
+ 
++#include "components/autofill/core/browser/openarc_autofill_hooks.h"
++
+ #include <utility>
+ 
+ #include "base/check.h"
+@@ -1121,6 +1123,9 @@ bool ChromeAutofillClient::IsAutofillTypeBlockedByPolicy(
+ }
+ 
+ bool ChromeAutofillClient::IsAutocompleteEnabled() const {
++  if (openarc::g_form_history_off) {
++    return false;
++  }
+   return prefs::IsAutocompleteEnabled(GetPrefs());
+ }
+ 
+diff --git a/components/autofill/core/browser/single_field_fillers/autocomplete/autocomplete_history_manager.cc b/components/autofill/core/browser/single_field_fillers/autocomplete/autocomplete_history_manager.cc
+index 1ced9f6abc5..72fc31c4960 100644
+--- a/components/autofill/core/browser/single_field_fillers/autocomplete/autocomplete_history_manager.cc
++++ b/components/autofill/core/browser/single_field_fillers/autocomplete/autocomplete_history_manager.cc
+@@ -4,6 +4,8 @@
+ 
+ #include "components/autofill/core/browser/single_field_fillers/autocomplete/autocomplete_history_manager.h"
+ 
++#include "components/autofill/core/browser/openarc_autofill_hooks.h"
++
+ #include <algorithm>
+ #include <functional>
+ #include <memory>
+@@ -465,7 +467,8 @@ void AutocompleteHistoryManager::OnGetSingleFieldSuggestions(
+ void AutocompleteHistoryManager::OnWillSubmitFormWithFields(
+     const std::vector<FormFieldData>& fields,
+     const FormStructure* form) {
+-  if (!pref_service_ || !prefs::IsAutocompleteEnabled(pref_service_)) {
++  if (!pref_service_ || !prefs::IsAutocompleteEnabled(pref_service_) ||
++      openarc::g_form_history_off) {
+     return;
+   }
+   std::vector<FormFieldData> autocomplete_saveable_fields;
