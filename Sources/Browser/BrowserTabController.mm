@@ -4263,6 +4263,8 @@ id<BrowserChromePage> ChromePageOfRecord(const TabRecord &record) {
 - (void)updateBrowserVisibility;
 - (void)updateBrowserVisibilityFocusingActiveTab:(BOOL)focusActive;
 - (void)showSuccessorOfClosedActiveTabWithID:(NSString *)tabID;
+- (BOOL)showSuccessorBeforeClosingTabWithID:(NSString *)tabID;
+- (void)runAfterPageCoverOfTabID:(NSString *)tabID block:(dispatch_block_t)block;
 - (NSWindow *)tabWindow;
 - (void)handleFocusForTabID:(NSString *)tabID;
 - (void)requestSitePermissionForTabID:(NSString *)tabID
@@ -4609,6 +4611,11 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
   // The shown tab closed and the model has not picked the next one yet: the other Spaces' pages kept drawn
   // below it stay hidden, so none of them flashes in its place.
   BOOL _activeTabClosedAwaitingSelection;
+  // Closes waiting for their page to stop covering the tab shown in its place.
+  NSMutableArray<dispatch_block_t> *_afterPageCoverBlocks;
+  // Tabs being closed and the tab shown in their place before the close went through; a cancelled close shows the
+  // tab again.
+  NSMutableDictionary<NSString *, NSString *> *_successorsShownBeforeClose;
   BrowserPageBackdrop *_pageBackdrop;
   // The page kept on top of the shown one until that page draws, the page it
   // covers, and the page last shown alone.
@@ -8202,26 +8209,103 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
   }
 
   it->second.closeRequestID = ToStdString(requestID);
+  // The next tab shows first, under this page, as a switch does; the page closes once that tab has drawn.
+  const BOOL showsSuccessor = [self showSuccessorBeforeClosingTabWithID:tabID];
+  it = _tabRecords.find(ToStdString(tabID));
+  if (it == _tabRecords.end()) return YES;
   it->second.isClosing = true;
+  __weak BrowserTabController *weakSelf = self;
+  NSString *closingTabID = [tabID copy];
+  NSString *closingRequestID = [requestID copy];
+  dispatch_block_t close = ^{
+    BrowserTabController *controller = weakSelf;
+    if (controller != nil) {
+      [controller closeRequestedTabWithID:closingTabID requestID:closingRequestID];
+    }
+  };
+  if (showsSuccessor) {
+    [self runAfterPageCoverOfTabID:tabID block:close];
+  } else {
+    close();
+  }
+  return YES;
+}
+
+- (void)closeRequestedTabWithID:(NSString *)tabID requestID:(NSString *)requestID {
+  auto it = _tabRecords.find(ToStdString(tabID));
+  if (it == _tabRecords.end() || it->second.closeRequestID != ToStdString(requestID)) {
+    return;
+  }
   // Retain the latest pending navigation. Cancel must not drop an address
   // accepted before this close, including the initial deferred engine load.
   if (it->second.browser) {
     CloseBrowserAfterPageModalWindows(it->second.browser, false);
-  } else {
-    const BOOL wasActive = [_activeTabID isEqualToString:tabID];
-    [self retirePageForTabID:tabID record:it->second];
-    it = _tabRecords.find(ToStdString(tabID));
-    if (it == _tabRecords.end()) return YES;
-    _tabRecords.erase(it);
-    if (wasActive) {
-      [self showSuccessorOfClosedActiveTabWithID:tabID];
-    }
-    [self notifyCloseRequestForTabID:tabID requestID:requestID
-                            outcome:BrowserTabCloseRequestOutcomeClosed];
-    [self.delegate browserTabController:self didCloseTabWithID:tabID];
-    [self updateBrowserVisibilityFocusingActiveTab:wasActive];
+    return;
   }
+  [_successorsShownBeforeClose removeObjectForKey:tabID];
+  const BOOL wasActive = [_activeTabID isEqualToString:tabID];
+  [self retirePageForTabID:tabID record:it->second];
+  it = _tabRecords.find(ToStdString(tabID));
+  if (it == _tabRecords.end()) return;
+  _tabRecords.erase(it);
+  if (wasActive) {
+    [self showSuccessorOfClosedActiveTabWithID:tabID];
+  }
+  [self notifyCloseRequestForTabID:tabID requestID:requestID
+                          outcome:BrowserTabCloseRequestOutcomeClosed];
+  [self.delegate browserTabController:self didCloseTabWithID:tabID];
+  [self updateBrowserVisibilityFocusingActiveTab:wasActive];
+}
+
+// Shows the tab the model will select after `tabID` closes while `tabID`'s page stays on top as the cover, as a
+// switch does. YES when the page covers it now and the close should wait for it to draw.
+- (BOOL)showSuccessorBeforeClosingTabWithID:(NSString *)tabID {
+  if (![_activeTabID isEqualToString:tabID] || _visibleLayoutTabIDs != nil) {
+    return NO;
+  }
+  id<BrowserTabControllerDelegate> delegate = self.delegate;
+  if (![delegate respondsToSelector:@selector(browserTabController:tabIDToShowAfterClosingTabWithID:)]) {
+    return NO;
+  }
+  NSString *next = [delegate browserTabController:self tabIDToShowAfterClosingTabWithID:tabID];
+  auto nextRecord = next.length > 0 ? _tabRecords.find(ToStdString(next)) : _tabRecords.end();
+  if (nextRecord == _tabRecords.end() || nextRecord->second.isClosing || [next isEqualToString:tabID]) {
+    return NO;
+  }
+  if (_successorsShownBeforeClose == nil) {
+    _successorsShownBeforeClose = [NSMutableDictionary dictionary];
+  }
+  _successorsShownBeforeClose[tabID] = next;
+  _activeTabID = [next copy];
+  _activeTabClosedAwaitingSelection = NO;
+  [self updateBrowserVisibility];
   return YES;
+}
+
+// Runs `block` once `tabID`'s page no longer covers the page shown in its place: that page drew, or the cover gave
+// up. Right away when it covers nothing.
+- (void)runAfterPageCoverOfTabID:(NSString *)tabID block:(dispatch_block_t)block {
+  if (_pageCoverKey != ToStdString(tabID)) {
+    block();
+    return;
+  }
+  if (_afterPageCoverBlocks == nil) {
+    _afterPageCoverBlocks = [NSMutableArray array];
+  }
+  [_afterPageCoverBlocks addObject:[block copy]];
+  // The cover waits 0.25 s for a frame and two more to fade; a cover replaced by another switch never finishes.
+  __weak BrowserTabController *weakSelf = self;
+  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.6 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+    [weakSelf runAfterPageCoverBlocks];
+  });
+}
+
+- (void)runAfterPageCoverBlocks {
+  NSArray<dispatch_block_t> *blocks = _afterPageCoverBlocks;
+  _afterPageCoverBlocks = nil;
+  for (dispatch_block_t block in blocks) {
+    block();
+  }
 }
 
 - (void)notifyCloseRequestForTabID:(NSString *)tabID
@@ -8305,6 +8389,13 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
       current->second.closeRequestID != ToStdString(requestID)) return;
   current->second.closeRequestID.clear();
   current->second.isClosing = false;
+  // The page stays: it shows again in place of the tab shown before its close went through.
+  NSString *shownInstead = _successorsShownBeforeClose[tabID];
+  [_successorsShownBeforeClose removeObjectForKey:tabID];
+  if (shownInstead != nil && [_activeTabID isEqualToString:shownInstead]) {
+    _activeTabID = [tabID copy];
+    [self updateBrowserVisibility];
+  }
   [self notifyCloseRequestForTabID:tabID requestID:requestID
                           outcome:BrowserTabCloseRequestOutcomeCancelled];
   [self scheduleNavigationForTabID:tabID];
@@ -9006,6 +9097,7 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
       !it->second.browser->IsSame(browser)) return;
   NSString *requestID = ToNSString(it->second.closeRequestID);
   BrowserBeforeUnloadConfirmation *confirmation = it->second.closeConfirmation;
+  [_successorsShownBeforeClose removeObjectForKey:tabID];
   [self stopFairPlayForRecord:it->second];
   const BOOL wasActive = [_activeTabID isEqualToString:tabID];
   _tabRecords.erase(it);
@@ -9354,12 +9446,14 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
 - (void)removePageCover {
   if (_pageCoverKey.empty()) {
     [self stopFadingPageCover];
+    [self runAfterPageCoverBlocks];
     return;
   }
   _shownPageKey = _pageCoverIncomingKey;
   _pageCoverKey.clear();
   _pageCoverIncomingKey.clear();
   [self updateBrowserVisibilityFocusingActiveTab:NO];
+  [self runAfterPageCoverBlocks];
 }
 
 - (void)stopFadingPageCover {
