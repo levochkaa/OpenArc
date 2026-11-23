@@ -4264,6 +4264,7 @@ id<BrowserChromePage> ChromePageOfRecord(const TabRecord &record) {
 - (void)updateBrowserVisibilityFocusingActiveTab:(BOOL)focusActive;
 - (void)showSuccessorOfClosedActiveTabWithID:(NSString *)tabID;
 - (BOOL)showSuccessorBeforeClosingTabWithID:(NSString *)tabID;
+- (void)removeClosingPageView:(NSView *)view forTabID:(NSString *)tabID;
 - (void)runAfterPageCoverOfTabID:(NSString *)tabID block:(dispatch_block_t)block;
 - (NSWindow *)tabWindow;
 - (void)handleFocusForTabID:(NSString *)tabID;
@@ -8209,8 +8210,9 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
   }
 
   it->second.closeRequestID = ToStdString(requestID);
-  // The next tab shows first, under this page, as a switch does; the page closes once that tab has drawn.
-  const BOOL showsSuccessor = [self showSuccessorBeforeClosingTabWithID:tabID];
+  // The next tab shows first, under this page, as a switch does; the page closes once that tab has drawn. A CEF
+  // page may still ask before closing, so it does this only once the close goes through (DoClose).
+  const BOOL showsSuccessor = !it->second.browser && [self showSuccessorBeforeClosingTabWithID:tabID];
   it = _tabRecords.find(ToStdString(tabID));
   if (it == _tabRecords.end()) return YES;
   it->second.isClosing = true;
@@ -8278,8 +8280,28 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
   _successorsShownBeforeClose[tabID] = next;
   _activeTabID = [next copy];
   _activeTabClosedAwaitingSelection = NO;
+  // A closing page is never a cover, since its view may go any moment; this one stays until the cover is done.
+  auto closing = _tabRecords.find(ToStdString(tabID));
+  const bool wasClosing = closing != _tabRecords.end() && closing->second.isClosing;
+  if (wasClosing) closing->second.isClosing = false;
   [self updateBrowserVisibility];
+  closing = _tabRecords.find(ToStdString(tabID));
+  if (wasClosing && closing != _tabRecords.end()) closing->second.isClosing = true;
   return YES;
+}
+
+// CEF is about to destroy a tab's page (after any question the page asked): the next tab shows first, and the
+// page's view leaves once that tab has drawn, which lets CEF finish the close.
+- (void)removeClosingPageView:(NSView *)view forTabID:(NSString *)tabID {
+  auto it = _tabRecords.find(ToStdString(tabID));
+  if (it == _tabRecords.end() || it->second.closeRequestID.empty() ||
+      ![self showSuccessorBeforeClosingTabWithID:tabID]) {
+    [view removeFromSuperview];
+    return;
+  }
+  [self runAfterPageCoverOfTabID:tabID block:^{
+    [view removeFromSuperview];
+  }];
 }
 
 // Runs `block` once `tabID`'s page no longer covers the page shown in its place: that page drew, or the cover gave
@@ -10537,7 +10559,12 @@ bool BrowserTabClient::DoClose(CefRefPtr<CefBrowser> browser) {
     // Embedded child browsers must tear down their host NSView here. Returning
     // false asks CEF to close the top-level NSWindow instead, which blocks our
     // tab-level shutdown flow and can deadlock app quit.
-    [browserView removeFromSuperview];
+    BrowserTabController *controller = controller_;
+    if (controller != nil) {
+      [controller removeClosingPageView:browserView forTabID:ToNSString(tab_id_)];
+    } else {
+      [browserView removeFromSuperview];
+    }
     return true;
   }
 
