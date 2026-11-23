@@ -1,0 +1,21 @@
+diff --git a/Libraries/LibSandbox/Sandbox.cpp b/Libraries/LibSandbox/Sandbox.cpp
+index c14364df2c..3f8c4ae022 100644
+--- a/Libraries/LibSandbox/Sandbox.cpp
++++ b/Libraries/LibSandbox/Sandbox.cpp
+@@ -257,6 +257,16 @@ static ErrorOr<void> append_allowed_executables(StringBuilder& builder, Readonly
+     }
+     builder.append(")\n"sv);
+ 
++    // The child starts under this profile, and dyld resolves the paths of its own image and the shared cache with
++    // F_GETPATH; it aborts the child when that fails. It also reads the SIP and Lockdown Mode states.
++    builder.append(R"~~~((allow system-fcntl
++    (fcntl-command F_GETPATH))
++(allow syscall-unix
++    (syscall-number SYS_csrctl))
++(allow sysctl-read
++    (sysctl-name "security.mac.lockdown_mode_state"))
++)~~~"sv);
++
+     return {};
+ }
+ 

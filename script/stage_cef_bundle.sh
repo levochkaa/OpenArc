@@ -209,6 +209,11 @@ sign_ladybird_engine() {
   done
   for file in "$LADYBIRD_ENGINE_DEST/Versions/A/Helpers/"*; do
     [[ -f "$file" && -x "$file" ]] || continue
+    # WebAssembly's compiler only turns modules into machine code for WasmCompiler and needs no exceptions.
+    if [[ "$(basename "$file")" == cranelift-compiler ]]; then
+      /usr/bin/codesign --force --sign "$identity" --timestamp=none --options runtime "$file"
+      continue
+    fi
     /usr/bin/codesign --force --sign "$identity" --timestamp=none --options runtime --entitlements "$entitlements" "$file"
   done
   /usr/bin/codesign --force --sign "$identity" --timestamp=none "$LADYBIRD_ENGINE_DEST"

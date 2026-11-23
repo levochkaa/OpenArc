@@ -106,6 +106,11 @@ package() {
   for helper in "${OPTIONAL_HELPERS[@]}"; do
     if [[ -f "$app/Contents/MacOS/$helper" ]]; then cp "$app/Contents/MacOS/$helper" "$version/Helpers/$helper"; fi
   done
+  # WebAssembly's compiler, which WasmCompiler runs for each module. Ladybird's own app runs it from the build tree;
+  # the layer points WasmCompiler at this copy.
+  if [[ -f "$BUILD_DIR/bin/cranelift-compiler" ]]; then
+    cp "$BUILD_DIR/bin/cranelift-compiler" "$version/Helpers/cranelift-compiler"
+  fi
 
   # The build's binaries find their libraries through absolute rpaths into the build tree; the framework carries the
   # whole closure of @rpath libraries under the names they are loaded by.
@@ -193,7 +198,11 @@ PLIST
     codesign --force --sign - "$file" 2>/dev/null
   done
   for file in "$version/Helpers/"*; do
-    codesign --force --sign - --options runtime --entitlements "$ROOT_DIR/Support/OpenArcLadybirdHelper.entitlements" "$file" 2>/dev/null
+    if [[ "$(basename "$file")" == cranelift-compiler ]]; then
+      codesign --force --sign - --options runtime "$file" 2>/dev/null
+    else
+      codesign --force --sign - --options runtime --entitlements "$ROOT_DIR/Support/OpenArcLadybirdHelper.entitlements" "$file" 2>/dev/null
+    fi
   done
   codesign --force --sign - "$out" 2>/dev/null
   du -sh "$out"

@@ -125,7 +125,13 @@ if [[ -d "$ladybird" ]]; then
     [[ -e "$library" ]] && sign "$library"
   done
   for tool in "$ladybird/Versions/A/Helpers/"*; do
-    [[ -f "$tool" && -x "$tool" ]] && sign --entitlements "$ROOT_DIR/Support/OpenArcLadybirdHelper.entitlements" "$tool"
+    [[ -f "$tool" && -x "$tool" ]] || continue
+    # WebAssembly's compiler only turns modules into machine code for WasmCompiler and needs no exceptions.
+    if [[ "$(basename "$tool")" == cranelift-compiler ]]; then
+      sign "$tool"
+    else
+      sign --entitlements "$ROOT_DIR/Support/OpenArcLadybirdHelper.entitlements" "$tool"
+    fi
   done
   sign "$ladybird"
 fi

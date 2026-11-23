@@ -34,6 +34,8 @@
 #import "openarc/ladybird_page.h"
 
 #include <dlfcn.h>
+#include <stdlib.h>
+#include <unistd.h>
 
 #if !__has_feature(objc_arc)
 #    error "This project requires ARC"
@@ -397,6 +399,12 @@ extern "C" int OpenArcLadybirdEngineMain(int argc, char const** argv, char const
         return 1;
     auto framework_directory = LexicalPath { info.dli_fname }.parent();
     auto helpers_path = LexicalPath::join(framework_directory.string(), "Helpers"sv).string();
+
+    // WasmCompiler runs WebAssembly's compiler from the build tree it was built in unless told otherwise; the helpers
+    // inherit this and run the one in Helpers/, which their sandbox then admits.
+    auto cranelift_compiler = LexicalPath::join(helpers_path, "cranelift-compiler"sv).string();
+    if (access(cranelift_compiler.characters(), X_OK) == 0)
+        setenv("LADYBIRD_CRANELIFT_COMPILER", cranelift_compiler.characters(), 1);
 
     [OpenArcLadybirdApplication sharedApplication];
 

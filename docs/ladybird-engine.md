@@ -25,7 +25,10 @@ for one launch. A bundle without the framework runs Ladybird's choice on the Chr
 - **The framework.** `Versions/A/OpenArc Ladybird` is OpenArc's layer linked with Ladybird's libraries;
   `Versions/A/Libraries` holds those libraries and the vcpkg ones they load (Skia, ICU, HarfBuzz, curl, FFmpeg …);
   `Versions/A/Helpers` holds Ladybird's helper processes, which find `Versions/A/Resources` (fonts, themes, Ladybird's
-  own pages) beside them. Helpers run with the hardened runtime and `Support/OpenArcLadybirdHelper.entitlements`.
+  own pages) beside them, and `cranelift-compiler`, WebAssembly's compiler, which WasmCompiler runs for each module
+  (the layer points it there with `LADYBIRD_CRANELIFT_COMPILER`; Ladybird's own app runs it from its build tree).
+  Helpers run with the hardened runtime and `Support/OpenArcLadybirdHelper.entitlements`; the compiler needs no
+  exceptions and runs with the hardened runtime alone.
 - **The contract** is `Sources/Browser/LadybirdEngine/BrowserLadybirdEngine.h`, which `Ladybird/engine/apply.sh`
   copies into the Ladybird tree with `BrowserChromeEngine.h`. A Ladybird page is a `BrowserChromePage`, so
   `BrowserTabController` keeps it in `TabRecord.peerPage` and shows, navigates, finds, mutes, captures, prints and
@@ -73,6 +76,9 @@ for one launch. A bundle without the framework runs Ladybird's choice on the Chr
     the window's origin;
   - `request-finish-reentrancy.patch` keeps a request's read notifier alive until its activation returns; a download
     from a server without range requests crashed Ladybird's own browser too.
+  - `sandbox-child-dyld.patch` lets a sandboxed helper's child start: dyld in `cranelift-compiler`, which inherits
+    WasmCompiler's sandbox, aborted at launch on macOS 26 without `F_GETPATH`, so every module ran in the interpreter
+    and left a crash report.
 
 ## Building
 
