@@ -4605,6 +4605,9 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
   NSMutableDictionary<NSString *, BrowserScreenSharePicker *> *_screenSharePickers;
   NSString *_lastExtensionTabsJSON;
   NSSet<NSString *> *_warmTabIDs;
+  // The shown tab closed and the model has not picked the next one yet: the other Spaces' pages kept drawn
+  // below it stay hidden, so none of them flashes in its place.
+  BOOL _activeTabClosedAwaitingSelection;
   BrowserPageBackdrop *_pageBackdrop;
   // The page kept on top of the shown one until that page draws, the page it
   // covers, and the page last shown alone.
@@ -5721,6 +5724,7 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
 
 - (void)selectTabWithID:(NSString *)tabID {
   _activeTabID = [tabID copy];
+  _activeTabClosedAwaitingSelection = NO;
   [self updateBrowserVisibility];
 }
 
@@ -6419,6 +6423,7 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
 
 - (void)deselectActiveTab {
   _activeTabID = nil;
+  _activeTabClosedAwaitingSelection = NO;
   [self updateBrowserVisibility];
 }
 
@@ -8189,6 +8194,9 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
     it = _tabRecords.find(ToStdString(tabID));
     if (it == _tabRecords.end()) return YES;
     _tabRecords.erase(it);
+    if (wasActive) {
+      _activeTabClosedAwaitingSelection = YES;
+    }
     [self notifyCloseRequestForTabID:tabID requestID:requestID
                             outcome:BrowserTabCloseRequestOutcomeClosed];
     [self.delegate browserTabController:self didCloseTabWithID:tabID];
@@ -8563,6 +8571,9 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
     [self retirePageForTabID:tabID record:it->second];
   }
   _tabRecords.erase(tabKey);
+  if (wasActive) {
+    _activeTabClosedAwaitingSelection = YES;
+  }
   [self.delegate browserTabController:self didCloseTabWithID:tabID];
   [self updateBrowserVisibilityFocusingActiveTab:wasActive];
 }
@@ -8985,11 +8996,9 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
   [self forgetPageFullscreenForTabID:tabID];
 
   if (wasActive) {
-    if (_tabRecords.empty()) {
-      _activeTabID = nil;
-    } else {
-      _activeTabID = ToNSString(_tabRecords.begin()->first);
-    }
+    // The model picks the next tab of the same Space once it hears of the close.
+    _activeTabID = nil;
+    _activeTabClosedAwaitingSelection = YES;
   }
 
   [self notifyCloseRequestForTabID:tabID requestID:requestID
@@ -9375,7 +9384,7 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
       // switching to it shows its page at once instead of a blank pane. Chromium
       // stops drawing into a hidden or transparent view. Split View leaves gaps
       // between panes that would show it, so only a single page keeps it.
-      const bool warm = !keptVisible && visibleKeys.size() == 1 &&
+      const bool warm = !keptVisible && visibleKeys.size() == 1 && !_activeTabClosedAwaitingSelection &&
                         [_warmTabIDs containsObject:ToNSString(entry.first)];
       browserView.hidden = !keptVisible && !warm;
       if (keptVisible || warm) {
