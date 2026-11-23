@@ -288,6 +288,10 @@ enum BrowserInternalURLNormalizer {
 
         components.scheme = canonicalScheme
         components.host = rawHost
+        if isPasswordsShortcut(host: rawHost, path: components.path) {
+            components.host = passwordManagerHost
+            components.path = "/passwords"
+        }
         if components.path.isEmpty, shouldPreferRootPath(forHost: rawHost) {
             components.path = "/"
         }
@@ -338,6 +342,20 @@ enum BrowserInternalURLNormalizer {
         }
 
         return components.url?.absoluteString
+    }
+
+    /// openarc://passwords and openarc://settings/passwords are the password manager: Chromium has no page at the
+    /// first and shows its settings' first page for the second.
+    private static func isPasswordsShortcut(host: String, path: String) -> Bool {
+        let path = path.lowercased()
+        switch host {
+        case "passwords":
+            return path.isEmpty || path == "/"
+        case settingsHost:
+            return path == "/passwords" || path == "/passwords/"
+        default:
+            return false
+        }
     }
 
     private static func shouldPreferRootPath(forHost host: String) -> Bool {

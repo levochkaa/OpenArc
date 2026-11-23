@@ -119,6 +119,27 @@ private let defaultAISuggestionTitle = BrowserStrings.commandBarAskAI(BrowserAIS
     )
 }
 
+@Test func internalURLNormalizerSendsPasswordsShortcutsToThePasswordManager() {
+    for urlString in [
+        "openarc://passwords",
+        "openarc://passwords/",
+        "chrome://passwords",
+        "arc://passwords",
+        "openarc://settings/passwords",
+        "chrome://settings/passwords",
+    ] {
+        #expect(
+            BrowserInternalURLNormalizer.canonicalURLString(for: urlString) == "openarc://password-manager/passwords",
+            "\(urlString)",
+        )
+    }
+    #expect(BrowserInternalURLNormalizer.canonicalURLString(for: "openarc://settings/") == "openarc://settings/")
+    #expect(
+        BrowserInternalURLNormalizer.canonicalURLString(for: "openarc://settings/autofill")
+            == "openarc://settings/autofill",
+    )
+}
+
 @Test func chromeEngineLoadsChromiumPagesForOpenArcURLs() {
     #expect(BrowserChromeEngineInternalURLs.loadURLString(for: "openarc://extensions/") == "chrome://extensions/")
     #expect(
