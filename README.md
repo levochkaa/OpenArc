@@ -1,8 +1,8 @@
 # OpenArc
 
-OpenArc is an open-source macOS browser. It runs Chromium through the Chromium Embedded Framework with a native AppKit interface. The layout centers on a workspace: a sidebar of Spaces, pinned tabs, and folders, plus a command bar and split view. Accounts are optional. With an account, Spaces, tabs, and Boosts sync across Macs and the iPhone app; without one, all data stays on your device. Settings ▸ Advanced ▸ Engine can also run pages on Chrome's own framework or WebKit.
+OpenArc is an open-source browser for macOS, with an app for iPhone and iPad. It runs Chromium through the Chromium Embedded Framework with a native AppKit interface. The layout centers on a workspace: a sidebar of Spaces, pinned tabs, and folders, plus a command bar and split view. Accounts are optional. With an account, Spaces, tabs, and Boosts sync across Macs, iPhones, and iPads; without one, all data stays on your device. Settings ▸ Advanced ▸ Engine can also run pages on Chrome's own framework or WebKit.
 
-[Lev Poznyakov](https://github.com/levochkaa) created OpenArc. Releases are on the [releases page](https://github.com/levochkaa/OpenArc/releases), and the app updates itself. The iPhone app is in public beta on [TestFlight](https://testflight.apple.com/join/cDCTGXg8).
+[Lev Poznyakov](https://github.com/levochkaa) created OpenArc. Releases are on the [releases page](https://github.com/levochkaa/OpenArc/releases), and the app updates itself. The iPhone and iPad app is on the [App Store](https://apps.apple.com/app/openarc/id6832347016), and its betas are on [TestFlight](https://testflight.apple.com/join/cDCTGXg8).
 
 ## Repository
 
@@ -10,7 +10,7 @@ OpenArc is an open-source macOS browser. It runs Chromium through the Chromium E
 | --- | --- |
 | `Sources/Browser` | macOS app: Swift and AppKit, Objective-C++ where it talks to CEF |
 | `Sources/Helper`, `Sources/Shared` | CEF helper processes and code shared with them |
-| `Sources/BrowseriOS` | iPhone and iPad app; iPhone app is in beta on TestFlight, iPad app is unreleased |
+| `Sources/BrowseriOS` | iPhone and iPad app, on the App Store |
 | `Chromium/chromium_src` | Overrides applied to the Chromium and CEF checkout |
 | `Backend` | Rust server for accounts, sync, and shared links at `api.openarc.su` ([README](Backend/README.md)) |
 | `Website` | The openarc.su site: landing page, privacy policy, terms, and support |
