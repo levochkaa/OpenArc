@@ -64,8 +64,8 @@ a {
 
 .logo-mark {
   display: block;
-  width: 40px;
-  height: 35px;
+  width: 52px;
+  height: 30px;
   fill: currentColor;
 }
 
@@ -615,7 +615,7 @@ a {
 }
 
 .footer-row .logo-mark {
-  width: 45px;
+  width: 52px;
   fill: var(--cream-light);
 }
 
@@ -647,6 +647,12 @@ a {
   .topbar-links {
     position: static;
     margin-left: auto;
+    gap: 18px;
+  }
+
+  .topbar .logo-mark {
+    width: 44px;
+    height: 25px;
   }
 
   .topbar {
