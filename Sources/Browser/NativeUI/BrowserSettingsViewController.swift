@@ -59,6 +59,7 @@ struct BrowserSettingsIcon {
         "mail-previews": .init("envelope.fill", .systemBlue),
         "folder-previews": .init("folder.fill", .systemBlue),
         "warn-before-quitting": .init("exclamationmark.triangle.fill", .systemOrange),
+        "confirm-profile-moves": .init("person.2.fill", .systemTeal),
         "blurred-background": .init("camera.filters", .systemPurple),
         "battery-saver": .init("battery.75percent", .systemGreen),
         "block-ads": .init("hand.raised.fill", .systemRed),
@@ -423,6 +424,8 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
     private let searchField = NSSearchField()
     private var observations = Set<AnyCancellable>()
     private var updateBindings = [() -> Void]()
+    /// Each card's dividers, by card, following its rows' visibility.
+    private var rowDividers = [ObjectIdentifier: BrowserSettingsRowDividers]()
     private var profileDeleteButtons = [(BrowserProfile, BrowserActionButton)]()
     private let passwordsBody = NSStackView()
     private let addressesBody = NSStackView()
@@ -583,6 +586,23 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
         guard let image, provider != .apple else { return image }
         image.size = NSSize(width: 16, height: 16)
         return image
+    }
+
+    /// The installed app's icon at a badge's size, or the import badge when the app is gone.
+    private static func applicationIcon(_ bundleIdentifiers: [String]) -> NSImage {
+        let side = BrowserSettingsIcon.side
+        guard let url = bundleIdentifiers.lazy
+            .compactMap({ NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0) })
+            .first
+        else {
+            return BrowserSettingsIcon("square.and.arrow.down", .systemGray).image
+        }
+        let icon = NSWorkspace.shared.icon(forFile: url.path)
+        return NSImage(size: NSSize(width: side, height: side), flipped: false) { rect in
+            // App icons leave a margin inside their square; drawn a little larger they sit like the badges.
+            icon.draw(in: rect.insetBy(dx: -side * 0.1, dy: -side * 0.1))
+            return true
+        }
     }
 
     func controlTextDidChange(_ notification: Notification) {
@@ -1488,26 +1508,117 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
             )
             return
         }
-        replaceRows(logins.map { login in
-            let host = BrowserNativeControls.label(login.host, size: 13, weight: .medium, color: .labelColor)
-            let name = BrowserNativeControls.label(
-                login.username,
-                size: 12,
-                weight: .regular,
-                color: .secondaryLabelColor,
-            )
-            let text = BrowserNativeControls.stack([host, name], orientation: .vertical, spacing: 1)
-            let copy = BrowserActionButton(BrowserStrings.passwordCopy) {
-                guard let password = store?.password(for: login) else { return }
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(password, forType: .string)
+        replaceRows(logins.map { passwordRow($0, store: store) }, in: passwordsBody)
+    }
+
+    /// A saved sign-in: the site's icon, host and username, then Copy and Edit.
+    private func passwordRow(_ login: BrowserSavedLogin, store: BrowserPasswordStoring?) -> NSView {
+        let favicon = BrowserFaviconNSView()
+        favicon.update(
+            url: BrowserFaviconCache.pageIconURL(forPageURLString: login.origin),
+            pageURLString: login.origin,
+        )
+        favicon.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            favicon.widthAnchor.constraint(equalToConstant: BrowserSettingsIcon.side),
+            favicon.heightAnchor.constraint(equalToConstant: BrowserSettingsIcon.side),
+        ])
+        let label = BrowserNativeControls.stack(
+            [favicon, titleDetail(login.host, detail: login.username.isEmpty ? nil : login.username)],
+            orientation: .horizontal,
+            spacing: 10,
+        )
+        label.alignment = .centerY
+        let copy = BrowserActionButton("") {
+            guard let password = store?.password(for: login) else { return }
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(password, forType: .string)
+        }
+        copy.image = NSImage(systemSymbolName: "doc.on.doc", accessibilityDescription: BrowserStrings.passwordCopy)
+        copy.imagePosition = .imageOnly
+        copy.toolTip = BrowserStrings.passwordCopy
+        copy.setAccessibilityLabel(BrowserStrings.passwordCopy)
+        let edit = BrowserActionButton(BrowserStrings.passwordEdit) { [weak self] in
+            self?.editPassword(login)
+        }
+        edit.setAccessibilityLabel("\(BrowserStrings.passwordEdit) \(login.host)")
+        let controls = BrowserNativeControls.stack([copy, edit], orientation: .horizontal, spacing: 8)
+        return row(label: label, control: controls)
+    }
+
+    /// Asks for Touch ID or the Mac's password, then opens the sign-in in a sheet to change or delete it.
+    private func editPassword(_ login: BrowserSavedLogin) {
+        guard let store = model.passwordStore else { return }
+        Task { @MainActor [weak self] in
+            let reason = String(format: BrowserStrings.passwordEditReason, login.host)
+            guard await BrowserCardAuthentication.ask(reason: reason),
+                  let password = store.password(for: login)
+            else { return }
+            self?.presentPasswordEditor(login, password: password, store: store)
+        }
+    }
+
+    private func presentPasswordEditor(_ login: BrowserSavedLogin, password: String, store: BrowserPasswordStoring) {
+        guard let window = view.window else { return }
+        let username = NSTextField(string: login.username)
+        let secure = NSSecureTextField(string: password)
+        let plain = NSTextField(string: password)
+        plain.isHidden = true
+        for field in [username, secure, plain] {
+            field.translatesAutoresizingMaskIntoConstraints = false
+            field.widthAnchor.constraint(equalToConstant: 240).isActive = true
+        }
+        let passwordField = NSView()
+        for field in [secure, plain] {
+            passwordField.addSubview(field)
+            NSLayoutConstraint.activate([
+                field.leadingAnchor.constraint(equalTo: passwordField.leadingAnchor),
+                field.trailingAnchor.constraint(equalTo: passwordField.trailingAnchor),
+                field.topAnchor.constraint(equalTo: passwordField.topAnchor),
+                field.bottomAnchor.constraint(equalTo: passwordField.bottomAnchor),
+            ])
+        }
+        let show = NSButton(checkboxWithTitle: BrowserStrings.passwordShow, target: nil, action: nil)
+        let toggle = BrowserPasswordVisibilityToggle(secure: secure, plain: plain)
+        show.target = toggle
+        show.action = #selector(BrowserPasswordVisibilityToggle.toggle(_:))
+        let grid = NSGridView(views: [
+            [BrowserNativeControls.label(BrowserStrings.passwordUsername), username],
+            [BrowserNativeControls.label(BrowserStrings.passwordPassword), passwordField],
+            [NSGridCell.emptyContentView, show],
+        ])
+        grid.rowSpacing = 8
+        grid.columnSpacing = 8
+        grid.column(at: 0).xPlacement = .trailing
+        grid.rowAlignment = .firstBaseline
+        grid.frame.size = grid.fittingSize
+
+        let alert = NSAlert()
+        alert.messageText = String(format: BrowserStrings.passwordEditTitle, login.host)
+        alert.accessoryView = grid
+        alert.addButton(withTitle: BrowserStrings.passwordSave)
+        alert.addButton(withTitle: BrowserStrings.cancelAction)
+        let delete = alert.addButton(withTitle: BrowserStrings.passwordDelete)
+        delete.hasDestructiveAction = true
+        alert.window.initialFirstResponder = secure
+        alert.beginSheetModal(for: window) { [weak self] response in
+            withExtendedLifetime(toggle) {}
+            switch response {
+            case .alertFirstButtonReturn:
+                let newPassword = toggle.isShowing ? plain.stringValue : secure.stringValue
+                let newUsername = username.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                if store.update(login, username: newUsername, password: newPassword) == nil {
+                    let failure = NSAlert()
+                    failure.messageText = BrowserStrings.passwordUsernameTaken
+                    failure.beginSheetModal(for: window)
+                }
+            case .alertThirdButtonReturn:
+                store.delete(login)
+            default:
+                return
             }
-            let delete = BrowserActionButton(BrowserStrings.passwordDelete) { [weak self] in
-                store?.delete(login)
-                self?.refreshPasswords()
-            }
-            return BrowserNativeControls.stack([text, NSView(), copy, delete], orientation: .horizontal, spacing: 8)
-        }, in: passwordsBody)
+            self?.refreshPasswords()
+        }
     }
 
     private func configureIcon() {
@@ -1685,7 +1796,11 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                         source.importsFromExportArchive || !source.importProfiles().isEmpty
                     }
                     .map { source in
-                        let button = BrowserActionButton(source.title) { [weak self] in
+                        importRow(
+                            source.browserName,
+                            bundleIdentifiers: source.bundleIdentifiers,
+                            id: "import-\(source.rawValue)",
+                        ) { [weak self] in
                             guard let self else { return }
                             if source == .safari {
                                 guard let url = BrowserSafariBookmarkImportPanel.chooseSourceURL() else { return }
@@ -1694,7 +1809,6 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                                 _ = model.importBookmarks(from: source)
                             }
                         }
-                        return listButton(button, symbol: "square.and.arrow.down")
                     },
             ),
             section(BrowserStrings.settingsAdvancedTab, rows: [
@@ -1764,7 +1878,11 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
     /// Arc's sidebar import, reported in an alert because it adds Spaces.
     private func arcSidebarImportRow() -> NSView {
         let model = model
-        let button = BrowserActionButton(BrowserStrings.settingsImportArcSidebar) { [weak self] in
+        return importRow(
+            BrowserStrings.settingsImportArcSidebar,
+            bundleIdentifiers: BrowserBookmarkImportSource.arc.bundleIdentifiers,
+            id: "import-arc-sidebar",
+        ) { [weak self] in
             let message = model.importSidebarFromDisk(of: .arc)
             let alert = NSAlert()
             alert.messageText = BrowserStrings.settingsImportArcSidebar
@@ -1775,8 +1893,28 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                 alert.runModal()
             }
         }
-        button.setAccessibilityIdentifier("browser.settings.import-arc-sidebar")
-        return listButton(button, symbol: "square.and.arrow.down.on.square")
+    }
+
+    /// A browser to import from: its app icon and name, and an Import button at the row's end.
+    private func importRow(
+        _ title: String,
+        bundleIdentifiers: [String],
+        id: String,
+        action: @escaping () -> Void,
+    ) -> NSView {
+        let button = BrowserActionButton(BrowserStrings.settingsImport, action: action)
+        button.setAccessibilityLabel("\(BrowserStrings.settingsImport) \(title)")
+        button.setAccessibilityIdentifier("browser.settings.\(id)")
+        let icon = NSImageView(image: Self.applicationIcon(bundleIdentifiers))
+        icon.setContentHuggingPriority(.required, for: .horizontal)
+        icon.setContentCompressionResistancePriority(.required, for: .horizontal)
+        let label = BrowserNativeControls.stack(
+            [icon, titleDetail(title, detail: nil)],
+            orientation: .horizontal,
+            spacing: 10,
+        )
+        label.alignment = .centerY
+        return row(label: label, control: button)
     }
 
     private func refreshAccounts() {
@@ -2597,13 +2735,74 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
 
     private func replaceRows(_ rows: [NSView], in stack: NSStackView) {
         var divided = [NSView]()
+        var dividers = [NSView]()
         for (index, row) in rows.enumerated() {
             if index > 0 {
-                divided.append(BrowserNativeControls.divider())
+                let divider = BrowserNativeControls.divider()
+                dividers.append(divider)
+                divided.append(divider)
             }
             divided.append(row)
         }
         BrowserNativeControls.replaceViews(divided, in: stack)
+        let dividerVisibility = BrowserSettingsRowDividers(rows: rows, dividers: dividers)
+        dividerVisibility.update()
+        rowDividers[ObjectIdentifier(stack)] = dividerVisibility
         scrollView.needsLayout = true
+    }
+}
+
+// MARK: - BrowserPasswordVisibilityToggle
+
+/// Swaps a password sheet's secure field for a plain one showing the same text, and back.
+@MainActor final class BrowserPasswordVisibilityToggle: NSObject {
+    private(set) var isShowing = false
+
+    private let secure: NSSecureTextField
+    private let plain: NSTextField
+
+    init(secure: NSSecureTextField, plain: NSTextField) {
+        self.secure = secure
+        self.plain = plain
+    }
+
+    @objc func toggle(_ sender: NSButton) {
+        isShowing = sender.state == .on
+        if isShowing {
+            plain.stringValue = secure.stringValue
+        } else {
+            secure.stringValue = plain.stringValue
+        }
+        plain.isHidden = !isShowing
+        secure.isHidden = isShowing
+    }
+}
+
+// MARK: - BrowserSettingsRowDividers
+
+/// A card's dividers follow its rows: a hidden row hides the divider above it and the first shown row has none,
+/// so a card never shows a line at its edge or two lines in a row.
+@MainActor final class BrowserSettingsRowDividers {
+    private let rows: [NSView]
+    private let dividers: [NSView]
+    private var observations = [NSKeyValueObservation]()
+
+    init(rows: [NSView], dividers: [NSView]) {
+        self.rows = rows
+        self.dividers = dividers
+        self.observations = rows.map { row in
+            row.observe(\.isHidden, options: [.new]) { [weak self] _, _ in
+                MainActor.assumeIsolated { self?.update() }
+            }
+        }
+    }
+
+    func update() {
+        var shownAbove = rows.first.map { !$0.isHidden } ?? false
+        for (index, divider) in dividers.enumerated() where rows.indices.contains(index + 1) {
+            let row = rows[index + 1]
+            divider.isHidden = row.isHidden || !shownAbove
+            shownAbove = shownAbove || !row.isHidden
+        }
     }
 }

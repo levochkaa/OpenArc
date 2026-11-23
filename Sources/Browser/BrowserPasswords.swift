@@ -28,6 +28,25 @@ extension BrowserPasswordStoring {
     func logins(origin: String) -> [BrowserSavedLogin] {
         allLogins().filter { $0.origin == origin }
     }
+
+    /// Saves an edited sign-in. A new username moves the password to a new item and removes the old one,
+    /// unless another saved sign-in for the site already has that username. Returns the sign-in as saved.
+    func update(
+        _ login: BrowserSavedLogin,
+        username: String,
+        password: String,
+    ) -> BrowserSavedLogin? {
+        guard !password.isEmpty else { return nil }
+        let edited = BrowserSavedLogin(origin: login.origin, username: username)
+        if edited != login, logins(origin: login.origin).contains(edited) {
+            return nil
+        }
+        guard save(password, for: edited) else { return nil }
+        if edited != login {
+            delete(login)
+        }
+        return edited
+    }
 }
 
 // MARK: - BrowserKeychainPasswordStore

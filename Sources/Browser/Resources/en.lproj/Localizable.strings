@@ -347,6 +347,7 @@
 "browser.settings.site_search.import.missing" = "This browser has no profile on this Mac.";
 "browser.settings.site_search.import.result" = "Imported %d site searches.";
 "browser.settings.import_arc_sidebar" = "Arc Spaces, Pinned Tabs and Favorites";
+"browser.settings.import" = "Import";
 "browser.sidebar_import.missing" = "%@'s sidebar was not found on this Mac.";
 "browser.sidebar_import.unreadable" = "%@'s sidebar could not be read.";
 "browser.sidebar_import.nothing" = "%@'s sidebar has no Spaces or Favorites to import.";
@@ -942,6 +943,13 @@
 "browser.password.never" = "Never";
 "browser.password.delete" = "Delete";
 "browser.password.copy" = "Copy Password";
+"browser.password.edit" = "Edit";
+"browser.password.edit_title" = "Edit Password for %@";
+"browser.password.edit_reason" = "show the password for %@";
+"browser.password.username" = "Username";
+"browser.password.password" = "Password";
+"browser.password.show" = "Show Password";
+"browser.password.username_taken" = "A password for this username is already saved for this site.";
 "browser.password.none_saved" = "No saved passwords";
 "browser.menu.translate_page" = "Translate Page";
 "browser.address.save_title" = "Save this address?";

@@ -1541,6 +1541,11 @@ enum BrowserStrings {
 
     static let onboardingImport = NSLocalizedString("browser.onboarding.import", comment: "First-run welcome window.")
 
+    static let settingsImport = NSLocalizedString(
+        "browser.settings.import",
+        comment: "Settings: the button at the end of a browser's row under Import Bookmarks.",
+    )
+
     static let onboardingContinue = NSLocalizedString(
         "browser.onboarding.continue",
         comment: "First-run welcome window.",
@@ -2394,6 +2399,25 @@ enum BrowserStrings {
     static let passwordDelete = NSLocalizedString("browser.password.delete", comment: "Button in Settings.")
     static let passwordCopy = NSLocalizedString("browser.password.copy", comment: "Button in Settings.")
     static let passwordNoneSaved = NSLocalizedString("browser.password.none_saved", comment: "Settings, empty list.")
+    static let passwordEdit = NSLocalizedString("browser.password.edit", comment: "Button in Settings.")
+    static let passwordEditTitle = NSLocalizedString(
+        "browser.password.edit_title",
+        comment: "Settings: title of the sheet that edits a saved password. %@ is the site.",
+    )
+    static let passwordEditReason = NSLocalizedString(
+        "browser.password.edit_reason",
+        comment: "Touch ID prompt before showing a saved password to edit. %@ is the site.",
+    )
+    static let passwordUsername = NSLocalizedString("browser.password.username", comment: "Field label in Settings.")
+    static let passwordPassword = NSLocalizedString("browser.password.password", comment: "Field label in Settings.")
+    static let passwordShow = NSLocalizedString(
+        "browser.password.show",
+        comment: "Settings: shows a password field's text.",
+    )
+    static let passwordUsernameTaken = NSLocalizedString(
+        "browser.password.username_taken",
+        comment: "Settings: an edited password's username is already saved for the site.",
+    )
     static let menuTranslatePage = NSLocalizedString("browser.menu.translate_page", comment: "Command.")
     static let menuGoBack = NSLocalizedString("browser.menu.go_back", comment: "Archive menu item.")
     static let menuGoForward = NSLocalizedString("browser.menu.go_forward", comment: "Archive menu item.")
