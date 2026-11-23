@@ -28,6 +28,7 @@ type ReleasesResponse = {
 };
 
 const sourceUrl = "https://github.com/levochkaa/OpenArc";
+const appStoreUrl = "https://apps.apple.com/app/openarc/id6832347016";
 const fallbackDownloadUrl = "https://github.com/levochkaa/OpenArc/releases/latest";
 const releasesApiUrl = import.meta.env.VITE_RELEASES_API_URL ?? "https://api.openarc.su/v1/releases";
 const releaseDateFormatter = new Intl.DateTimeFormat(undefined, {
@@ -157,10 +158,18 @@ function App() {
           <div className="topbar-links">
             {hasReleases && <a href="#releases">Releases</a>}
             <a href={sourceUrl}>Source</a>
+            <a href={appStoreUrl}>App Store</a>
             <a href={latestDownloadUrl}>Download</a>
           </div>
         </nav>
         <div className="hero-copy" id="top">
+          <a className="ticket" href={appStoreUrl}>
+            <img alt="" height={48} src="/app-icon.png" width={48} />
+            <span>
+              <strong>OpenArc for iPhone and iPad is out now!</strong>
+              <span>Download it on the App Store →</span>
+            </span>
+          </a>
           <h1 id="hero-title">
             <span className="quote-mark" aria-hidden="true">
               “
@@ -170,7 +179,7 @@ function App() {
               ”
             </span>
           </h1>
-          <p className="hero-byline">Free · Open source · For Mac</p>
+          <p className="hero-byline">Free · Open source · For Mac, iPhone and iPad</p>
           <div className="hero-actions" aria-label="Download actions">
             <a className="button" href={latestDownloadUrl}>
               Download for macOS
@@ -332,6 +341,7 @@ function App() {
             <a href="/terms/">Terms</a>
             {hasReleases && <a href="#releases">Releases</a>}
             <a href={sourceUrl}>GitHub</a>
+            <a href={appStoreUrl}>App Store</a>
           </div>
           <span>Not affiliated with The Browser Company</span>
         </div>

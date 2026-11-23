@@ -94,6 +94,56 @@ a {
   text-align: center;
 }
 
+/* App Store ticket: a cream stub with notched ends above the headline. */
+
+.ticket {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 40px;
+  padding: 12px 26px 12px 14px;
+  color: var(--blue);
+  text-align: left;
+  text-decoration: none;
+  background: var(--cream-light);
+  -webkit-mask:
+    radial-gradient(circle at 0 50%, transparent 9px, #000 9.5px) left / 51% 100% no-repeat,
+    radial-gradient(circle at 100% 50%, transparent 9px, #000 9.5px) right / 51% 100% no-repeat;
+  mask:
+    radial-gradient(circle at 0 50%, transparent 9px, #000 9.5px) left / 51% 100% no-repeat,
+    radial-gradient(circle at 100% 50%, transparent 9px, #000 9.5px) right / 51% 100% no-repeat;
+  transform: rotate(-2deg);
+  transition: transform 140ms ease;
+}
+
+.ticket:hover {
+  transform: rotate(-2deg) scale(1.04);
+}
+
+.ticket img {
+  flex: none;
+  width: 48px;
+  height: 48px;
+  margin-left: 6px;
+  border-radius: 11px;
+}
+
+.ticket > span {
+  display: grid;
+  gap: 5px;
+}
+
+.ticket strong {
+  font: 700 16px/1.15 var(--display);
+  letter-spacing: -0.2px;
+}
+
+.ticket span span {
+  font: 700 11px/1 var(--mono);
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+
 .hero-copy h1 {
   position: relative;
   padding: 0 32px;
@@ -591,6 +641,15 @@ a {
   .stamp,
   .more {
     display: none;
+  }
+
+  .ticket {
+    gap: 10px;
+    padding: 10px 20px 10px 10px;
+  }
+
+  .ticket strong {
+    font-size: 14px;
   }
 
   .facts-grid {

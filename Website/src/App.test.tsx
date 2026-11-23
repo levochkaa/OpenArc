@@ -82,6 +82,22 @@ describe("App", () => {
     expect(screen.queryByRole("heading", { name: /what’s new/i })).not.toBeInTheDocument();
   });
 
+  it("links the iPhone and iPad app on the App Store from the hero, the top bar and the footer", () => {
+    vi.stubGlobal("fetch", vi.fn(() => new Promise(() => {})));
+
+    render(<App />);
+
+    const appStoreUrl = "https://apps.apple.com/app/openarc/id6832347016";
+    expect(screen.getByRole("link", { name: /openarc for iphone and ipad is out now/i })).toHaveAttribute(
+      "href",
+      appStoreUrl,
+    );
+    const nav = screen.getByRole("navigation", { name: /primary/i });
+    expect(within(nav).getByRole("link", { name: "App Store" })).toHaveAttribute("href", appStoreUrl);
+    const footer = screen.getByRole("contentinfo");
+    expect(within(footer).getByRole("link", { name: "App Store" })).toHaveAttribute("href", appStoreUrl);
+  });
+
   it("shows Peek, Boosts and Picture in Picture as cards with their own clips", () => {
     vi.stubGlobal("fetch", vi.fn(() => new Promise(() => {})));
 
