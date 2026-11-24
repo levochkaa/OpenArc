@@ -394,7 +394,9 @@ private final class DeletionURLProtocol: URLProtocol, @unchecked Sendable {
         defer { stream.close() }
         var data = Data()
         var buffer = [UInt8](repeating: 0, count: 4096)
-        while stream.hasBytesAvailable {
+        // Reads to the end: the client writes the body on its own thread, so hasBytesAvailable can still be false
+        // here, and closing the stream before the last chunk crashes OpenAPIURLSession's body bridge.
+        while true {
             let count = stream.read(&buffer, maxLength: buffer.count)
             guard count > 0 else { break }
             data.append(buffer, count: count)

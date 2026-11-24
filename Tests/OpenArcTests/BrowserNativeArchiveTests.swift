@@ -169,7 +169,12 @@ import Testing
             #expect(!controller.restoreButton.isEnabled)
             #expect(controller.removeButton.isEnabled && controller.clearButton.isEnabled)
             controller.removeButton.performClick(nil)
-            try await nativeArchiveWait { (try? f.store.loadArchiveEntry(id: id)) == nil && !controller.isLoading }
+            // The store drops the entry before the action finishes; Clear stays disabled, and ignores the click,
+            // until it does.
+            try await nativeArchiveWait {
+                (try? f.store.loadArchiveEntry(id: id)) == nil && !controller.isLoading && controller.clearButton
+                    .isEnabled
+            }
             controller.clearButton.performClick(nil)
             try await nativeArchiveWait { controller.pendingClearBoundary != nil }
             alerts.respond(.alertFirstButtonReturn)
