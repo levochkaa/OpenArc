@@ -7,6 +7,8 @@
  */
 
 #include <AK/Base64.h>
+#include <AK/JsonArray.h>
+#include <AK/JsonObject.h>
 #include <AK/JsonValue.h>
 #include <AK/LexicalPath.h>
 #include <AK/String.h>
@@ -66,6 +68,9 @@ static constexpr auto s_internal_hosts = Array { "settings"sv, "history"sv, "boo
 - (void)askForPermission:(NSString*)kind then:(void (^)(NSNumber* _Nullable allowed))then;
 - (void)showNotificationWithTitle:(NSString*)title body:(NSString*)body tag:(NSString*)tag;
 - (void)bringToFront;
+- (NSArray*)accessibilityElementsForWebView:(NSView*)webView;
+- (void)refreshAccessibility;
+- (void)pressElementWithRole:(NSString*)role name:(NSString*)name occurrence:(NSInteger)occurrence;
 - (void)containerDidResize;
 - (void)containerDidMoveToWindow:(NSWindow*)window;
 - (void)windowDidChangeOcclusionState;
@@ -118,7 +123,56 @@ static NSString* const OpenArcLadybirdPageKey = @"OpenArcLadybirdPage";
 
 @end
 
+// One node of a page's accessibility tree, as LibWeb reports it: its role and name, read in document order. Ladybird
+// reports no positions, so each node covers the page; links, buttons and form controls press through the page.
+@interface OpenArcLadybirdAccessibleNode : NSAccessibilityElement
+@property (nonatomic, weak) OpenArcLadybirdPage* page;
+@property (nonatomic, weak) NSView* webView;
+@property (nonatomic, copy) NSString* webRole;
+@property (nonatomic, copy) NSString* name;
+@property (nonatomic) NSInteger occurrence;
+@end
+
+@implementation OpenArcLadybirdAccessibleNode
+
+- (NSRect)accessibilityFrame
+{
+    NSView* view = self.webView;
+    return view.window != nil ? NSAccessibilityFrameInView(view, view.bounds) : NSZeroRect;
+}
+
+- (BOOL)isAccessibilityElement
+{
+    return YES;
+}
+
+- (BOOL)accessibilityPerformPress
+{
+    static NSSet<NSString*>* pressable = [NSSet setWithArray:@[ @"link", @"button", @"checkbox", @"radio", @"switch", @"menuitem", @"tab", @"option" ]];
+    if (![pressable containsObject:self.webRole])
+        return NO;
+    [self.page pressElementWithRole:self.webRole name:self.name occurrence:self.occurrence];
+    return YES;
+}
+
+@end
+
 @implementation OpenArcLadybirdWebView
+
+- (NSAccessibilityRole)accessibilityRole
+{
+    return NSAccessibilityGroupRole;
+}
+
+- (NSString*)accessibilityLabel
+{
+    return self.openArcPage.title;
+}
+
+- (NSArray*)accessibilityChildren
+{
+    return [self.openArcPage accessibilityElementsForWebView:self] ?: @[];
+}
 
 - (BOOL)becomeFirstResponder
 {
@@ -280,6 +334,10 @@ struct PendingEvaluation {
     NSString* _profilePath;
     BOOL _ephemeral;
     BOOL _closed;
+    // The page's accessibility tree as AppKit elements, and when it was last asked for.
+    NSArray* _accessibilityElements;
+    NSDate* _accessibilityRefreshed;
+    BOOL _accessibilityRefreshing;
     BOOL _fullscreen;
     BOOL _visible;
     // openarc:// pages Ladybird shows from the app's HTML: the address the tab shows while the page is up.
@@ -567,6 +625,9 @@ struct PendingEvaluation {
     });
     [self.delegate webKitPageDidChangeNavigationState:self];
     [self applyMediaVolume];
+    _accessibilityRefreshed = nil;
+    if (NSWorkspace.sharedWorkspace.isVoiceOverEnabled)
+        [self refreshAccessibility];
 }
 
 - (void)onURLChange:(URL::URL const&)url
@@ -678,6 +739,140 @@ struct PendingEvaluation {
                              }];
     if (!asked)
         then(nil);
+}
+
+#pragma mark - Accessibility
+
+static NSAccessibilityRole ax_role_for(NSString* role)
+{
+    static NSDictionary<NSString*, NSAccessibilityRole>* roles = @{
+        @"link" : NSAccessibilityLinkRole,
+        @"button" : NSAccessibilityButtonRole,
+        @"heading" : @"AXHeading",
+        @"img" : NSAccessibilityImageRole,
+        @"image" : NSAccessibilityImageRole,
+        @"textbox" : NSAccessibilityTextFieldRole,
+        @"searchbox" : NSAccessibilityTextFieldRole,
+        @"checkbox" : NSAccessibilityCheckBoxRole,
+        @"switch" : NSAccessibilityCheckBoxRole,
+        @"radio" : NSAccessibilityRadioButtonRole,
+        @"combobox" : NSAccessibilityPopUpButtonRole,
+        @"listbox" : NSAccessibilityListRole,
+        @"slider" : NSAccessibilitySliderRole,
+        @"menuitem" : NSAccessibilityMenuItemRole,
+        @"tab" : NSAccessibilityRadioButtonRole,
+        @"option" : NSAccessibilityStaticTextRole,
+    };
+    return roles[role] ?: NSAccessibilityStaticTextRole;
+}
+
+// Flattens the tree LibWeb reports into what a reader goes through in order: each named control, heading, link or
+// image, and the text between them.
+// Elements keep their identity across refreshes (by role, name and position among their namesakes), as assistive
+// apps hold on to the ones they read.
+static void collect_accessible_nodes(JsonObject const& node, NSMutableArray* out, NSMutableDictionary<NSString*, NSNumber*>* counts, NSDictionary<NSString*, OpenArcLadybirdAccessibleNode*>* previous, OpenArcLadybirdPage* page, NSView* web_view)
+{
+    static NSSet<NSString*>* leaves = [NSSet setWithArray:@[ @"link", @"button", @"heading", @"img", @"image", @"textbox", @"searchbox", @"checkbox", @"switch", @"radio", @"combobox", @"slider", @"menuitem", @"tab", @"option" ]];
+    auto string_of = [&](StringView key) -> NSString* {
+        auto value = node.get_string(key);
+        return value.has_value() ? Ladybird::string_to_ns_string(value->bytes_as_string_view()) : @"";
+    };
+    NSString* type = string_of("type"sv);
+    NSString* role = string_of("role"sv);
+    NSString* name = [string_of("name"sv) stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    BOOL is_text = [type isEqualToString:@"text"];
+    if (is_text || [leaves containsObject:role]) {
+        if (is_text && name.length == 0)
+            return;
+        NSString* web_role = is_text ? @"text" : role;
+        NSString* key = [NSString stringWithFormat:@"%@\n%@", web_role, name];
+        NSInteger occurrence = counts[key].integerValue;
+        counts[key] = @(occurrence + 1);
+        if (OpenArcLadybirdAccessibleNode* kept = previous[[NSString stringWithFormat:@"%@\n%ld", key, (long)occurrence]]) {
+            [out addObject:kept];
+            return;
+        }
+        OpenArcLadybirdAccessibleNode* element = [OpenArcLadybirdAccessibleNode accessibilityElementWithRole:ax_role_for(web_role) frame:NSZeroRect label:name parent:web_view];
+        element.page = page;
+        element.webView = web_view;
+        element.webRole = web_role;
+        element.name = name;
+        element.occurrence = occurrence;
+        if (is_text)
+            [element setAccessibilityValue:name];
+        [out addObject:element];
+        return;
+    }
+    if (auto children = node.get_array("children"sv); children.has_value()) {
+        children->for_each([&](JsonValue const& child) {
+            if (child.is_object())
+                collect_accessible_nodes(child.as_object(), out, counts, previous, page, web_view);
+        });
+    }
+}
+
+// What VoiceOver and other assistive apps read: the last tree LibWeb reported, asked for again when it is older than
+// two seconds, which posts a layout change once it arrives.
+- (NSArray*)accessibilityElementsForWebView:(NSView*)webView
+{
+    if (_accessibilityRefreshed == nil || -_accessibilityRefreshed.timeIntervalSinceNow > 2)
+        [self refreshAccessibility];
+    (void)webView;
+    return _accessibilityElements;
+}
+
+- (void)refreshAccessibility
+{
+    if (_closed || _accessibilityRefreshing)
+        return;
+    _accessibilityRefreshing = YES;
+    _accessibilityRefreshed = [NSDate date];
+    __weak OpenArcLadybirdPage* weak_self = self;
+    auto& view = [_webView view];
+    view.on_received_accessibility_tree = [weak_self](JsonObject tree) {
+        OpenArcLadybirdPage* self = weak_self;
+        if (self == nil)
+            return;
+        [self->_webView view].on_received_accessibility_tree = nullptr;
+        self->_accessibilityRefreshing = NO;
+        NSMutableDictionary<NSString*, OpenArcLadybirdAccessibleNode*>* previous = [NSMutableDictionary dictionary];
+        for (OpenArcLadybirdAccessibleNode* element in self->_accessibilityElements)
+            previous[[NSString stringWithFormat:@"%@\n%@\n%ld", element.webRole, element.name, (long)element.occurrence]] = element;
+        NSMutableArray* elements = [NSMutableArray array];
+        collect_accessible_nodes(tree, elements, [NSMutableDictionary dictionary], previous, self, self->_webView);
+        self->_accessibilityElements = elements;
+        NSAccessibilityPostNotification(self->_webView, NSAccessibilityLayoutChangedNotification);
+    };
+    view.inspect_accessibility_tree();
+}
+
+// Presses the `occurrence`th element with this role and accessible name, as the reader saw it: the page finds it by
+// its text, label or title, which is what its accessible name comes from.
+- (void)pressElementWithRole:(NSString*)role name:(NSString*)name occurrence:(NSInteger)occurrence
+{
+    NSDictionary* arguments = @{ @"role" : role, @"name" : name, @"occurrence" : @(occurrence) };
+    NSData* json = [NSJSONSerialization dataWithJSONObject:arguments options:0 error:nil];
+    NSString* script = [NSString stringWithFormat:@"(() => {"
+                                                   "const a = %@;"
+                                                   "const selectors = {link: 'a[href],[role=link]', button: 'button,input[type=button],input[type=submit],input[type=reset],[role=button]',"
+                                                   " checkbox: 'input[type=checkbox],[role=checkbox]', radio: 'input[type=radio],[role=radio]', switch: '[role=switch]',"
+                                                   " menuitem: '[role=menuitem]', tab: '[role=tab]', option: 'option,[role=option]'};"
+                                                   "const norm = s => (s || '').replace(/\\s+/g, ' ').trim();"
+                                                   "const nameOf = e => norm(e.getAttribute('aria-label') || e.innerText || e.value || e.title || e.alt);"
+                                                   "const found = [...document.querySelectorAll(selectors[a.role] || '*')].filter(e => nameOf(e) === norm(a.name));"
+                                                   "const target = found[a.occurrence] || found[0];"
+                                                   "if (!target) return '';"
+                                                   "if (/^(openarc|chrome):/i.test(target.href || '')) return target.href;"
+                                                   "target.focus(); target.click(); return ''; })()",
+                                  [[NSString alloc] initWithData:json encoding:NSUTF8StringEncoding]];
+    // A script's click carries no user activation, so Ladybird would not follow a link to the app's own addresses;
+    // those load here instead, as the app's own navigations do.
+    __weak OpenArcLadybirdPage* weak_self = self;
+    [self evaluate:script
+        completion:^(NSString* _Nullable result) {
+            if ([result hasPrefix:@"openarc:"] || [result hasPrefix:@"chrome:"])
+                [weak_self loadWithUrlString:result];
+        }];
 }
 
 #pragma mark - Notifications

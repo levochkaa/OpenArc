@@ -68,6 +68,12 @@ for one launch. A bundle without the framework runs Ladybird's choice on the Chr
   - **Notifications.** A site's `new Notification(…)` shows as a macOS notification from OpenArc, with the site under
     the title, as a banner even while OpenArc is in front; a tag replaces the site's earlier one. Clicking it brings
     the page's window forward.
+  - **Accessibility.** VoiceOver and other assistive apps read the page from the accessibility tree LibWeb builds
+    (asked for again when it is older than two seconds, and at each load while VoiceOver runs): links, buttons,
+    headings, images, form controls and the text between them, in document order, as children of the web view.
+    Pressing a link, button or check box clicks it in the page.
+  - **Links to `openarc://`** on a page (the passwords page's Open Settings) open in the page's tab, as the app's own
+    navigations do, rather than going to macOS, which would hand them to the default OpenArc.
   - **Print.** Ladybird does not print; File › Print prints the whole page as Ladybird draws it.
   - **Developer Tools.** Ladybird speaks Firefox's DevTools protocol. The Developer Tools commands start Ladybird's
     DevTools server and say where to connect from Firefox's `about:debugging`.
@@ -128,7 +134,9 @@ sessions. OpenArc's own data (Spaces, tabs, notes, Easels, boosts, bookmarks, sy
 - Notification actions, and `show`, `click` and `close` events on the page's `Notification`.
 - Developer Tools docked beside the page; Ladybird's open in Firefox.
 - A page's certificate chain in the site info.
-- Accessibility inside pages: VoiceOver and the accessibility tree see the page as one view.
+- Positions inside pages for assistive apps: LibWeb reports none, so each element covers the page, and VoiceOver
+  outlines the whole page rather than the element it reads. Heading levels, tables and live regions are not
+  reported either.
 - A page in a window covered by others is not drawn (Ladybird skips occluded pages, as Chromium does), so a capture
   of it gives no picture until the window shows.
 
