@@ -148,7 +148,9 @@ instead of the V8 context snapshot.
 
 `script/stage_cef_bundle.sh` stages the framework when the export exists and its Chromium is CEF's
 (`OPENARC_STAGE_CHROME_ENGINE=0` leaves it out; after CEF moves, the build runs on CEF only until the engine is
-rebuilt), and `script/sign_release_app.sh` signs its helpers with the CEF helpers' entitlements.
+rebuilt), and `script/sign_release_app.sh` signs the engine's renderer and GPU helpers with the CEF helpers' entitlements,
+and its base and `(Aperitif)` helpers—which run utility processes including the Widevine CDM—with
+`Support/OpenArcHelper-Utility.entitlements` (disable-library-validation; see [protected-video.md](protected-video.md)).
 
 ## Not yet on the Chrome engine
 

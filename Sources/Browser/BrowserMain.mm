@@ -92,7 +92,7 @@ static void BrowserNameDefaultProfile(NSString* cache_root) {
 static int BrowserRunOnChromeEngine(int argc, char* argv[]) {
   @autoreleasepool {
     NSString* cache_root = nil;
-    if (!BrowserLoadRuntimeConfiguration(nullptr, nullptr, nullptr, &cache_root, nullptr)) {
+    if (!BrowserLoadRuntimeConfiguration(nullptr, nullptr, &cache_root, nullptr)) {
       return 1;
     }
     BrowserRemoveDefaultExtensionManifests(cache_root);
@@ -105,7 +105,7 @@ static int BrowserRunOnChromeEngine(int argc, char* argv[]) {
 static int BrowserRunOnLadybirdEngine(int argc, char* argv[]) {
   @autoreleasepool {
     NSString* cache_root = nil;
-    if (!BrowserLoadRuntimeConfiguration(nullptr, nullptr, nullptr, &cache_root, nullptr)) {
+    if (!BrowserLoadRuntimeConfiguration(nullptr, nullptr, &cache_root, nullptr)) {
       return 1;
     }
     return BrowserRunLadybirdEngine(argc, argv, cache_root);
@@ -139,19 +139,20 @@ int main(int argc, char* argv[]) {
     CefSettings settings;
     settings.log_severity = LOGSEVERITY_INFO;
 
-    NSString* helper_path = nil;
     NSString* framework_path = nil;
     NSString* bundle_path = nil;
     NSString* cache_root = nil;
     NSString* cache_path = nil;
-    if (!BrowserLoadRuntimeConfiguration(&helper_path, &framework_path,
-                                         &bundle_path, &cache_root,
-                                         &cache_path)) {
+    if (!BrowserLoadRuntimeConfiguration(&framework_path, &bundle_path,
+                                         &cache_root, &cache_path)) {
       return 1;
     }
 
-    CefString(&settings.browser_subprocess_path) =
-        std::string(helper_path.UTF8String);
+    // No browser_subprocess_path: with it Chromium starts every child process, renderers too, from that one
+    // helper. Without it CEF picks "OpenArc Helper (Renderer).app" for renderers and the base helper, found
+    // from main_bundle_path, for GPU and utility processes, so only the base helper needs the
+    // disable-library-validation entitlement that loads the Widevine CDM, signed by another team
+    // (script/sign_release_app.sh).
     CefString(&settings.framework_dir_path) =
         std::string(framework_path.UTF8String);
     CefString(&settings.main_bundle_path) =

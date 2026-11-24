@@ -97,7 +97,9 @@ done
 sign "$cef"
 
 # The Chrome engine (script/chrome_engine.sh), when the build carries it: its libraries and helpers
-# first, the renderer and GPU helpers with the same entitlements as CEF's, then the framework.
+# first, the renderer and GPU helpers with the same entitlements as CEF's, then the framework. Utility
+# processes, the Widevine CDM's among them, run in "OpenArc Helper (Aperitif).app", or in the base helper
+# without Chromium's Aperitif helpers; both may load libraries another team signed.
 engine="$frameworks/OpenArc Framework.framework"
 if [[ -d "$engine" ]]; then
   engine_version="$engine/Versions/Current"
@@ -108,6 +110,9 @@ if [[ -d "$engine" ]]; then
     case "$(basename "$helper")" in
       *" Renderer).app" | *"(Renderer).app") sign --entitlements "$ROOT_DIR/Support/OpenArcHelper-Renderer.entitlements" "$helper" ;;
       *" GPU).app" | *"(GPU).app") sign --entitlements "$ROOT_DIR/Support/OpenArcHelper-GPU.entitlements" "$helper" ;;
+      "OpenArc Helper.app" | "OpenArc Helper (Aperitif).app")
+        sign --entitlements "$ROOT_DIR/Support/OpenArcHelper-Utility.entitlements" "$helper"
+        ;;
       *) sign "$helper" ;;
     esac
   done
@@ -149,19 +154,27 @@ if [[ -d "$frameworks/Sentry.framework" ]]; then
   sign "$frameworks/Sentry.framework"
 fi
 
-# The app sets CEF's browser_subprocess_path to this helper, so renderers run in it rather
-# than in the Renderer variant, and V8 needs JIT memory there: without allow-jit every page
-# fails at start with "Failed to reserve virtual memory for CodeRange".
-sign --entitlements "$ROOT_DIR/Support/OpenArcHelper-Renderer.entitlements" "$frameworks/OpenArc Helper.app"
-if ! codesign -d --entitlements - --xml "$frameworks/OpenArc Helper.app" 2>/dev/null \
-  | grep -q "com.apple.security.cs.allow-jit"; then
-  echo "error: OpenArc Helper.app is signed without allow-jit; pages would crash" >&2
-  exit 1
-fi
+# CEF runs GPU and utility processes in the base helper and renderers in the Renderer variant. The base
+# helper needs allow-jit for SwiftShader and disable-library-validation for the Widevine CDM, which Google's
+# team signed: without it the hardened runtime refuses the CDM and every key system request fails with
+# "CreateCdmFunc not available". Renderers keep library validation.
+sign --entitlements "$ROOT_DIR/Support/OpenArcHelper.entitlements" "$frameworks/OpenArc Helper.app"
 sign "$frameworks/OpenArc Helper (Alerts).app"
 sign "$frameworks/OpenArc Helper (Plugin).app"
 sign --entitlements "$ROOT_DIR/Support/OpenArcHelper-GPU.entitlements" "$frameworks/OpenArc Helper (GPU).app"
+# V8 in renderers needs JIT memory: without allow-jit every page fails at start with "Failed to reserve
+# virtual memory for CodeRange".
 sign --entitlements "$ROOT_DIR/Support/OpenArcHelper-Renderer.entitlements" "$frameworks/OpenArc Helper (Renderer).app"
+# Fails the signing when a helper lacks an entitlement it runs on.
+require_entitlement() {
+  if ! codesign -d --entitlements - --xml "$1" 2>/dev/null | grep -q "$2"; then
+    echo "error: $(basename "$1") is signed without $2" >&2
+    exit 1
+  fi
+}
+require_entitlement "$frameworks/OpenArc Helper.app" com.apple.security.cs.allow-jit
+require_entitlement "$frameworks/OpenArc Helper.app" com.apple.security.cs.disable-library-validation
+require_entitlement "$frameworks/OpenArc Helper (Renderer).app" com.apple.security.cs.allow-jit
 sign "$app/Contents/Resources/OpenArc Web App Launcher"
 sign "$app/Contents/Resources/bin/openarc"
 for plugin in "$app/Contents/PlugIns/"*; do

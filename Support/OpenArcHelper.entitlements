@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- CEF's base helper runs the GPU process, where SwiftShader generates code at run time. -->
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+  <!-- It also runs the Widevine CDM's utility process; the CDM is signed by Google's team, so the hardened
+       runtime refuses to load it without this. Renderers run in the Renderer helper and keep library validation. -->
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+</dict>
+</plist>

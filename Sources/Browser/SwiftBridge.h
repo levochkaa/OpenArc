@@ -32,8 +32,7 @@ void BrowserStopApplicationLoop(void);
 
 typedef void (^BrowserPermissionCompletion)(BOOL granted);
 
-BOOL BrowserLoadRuntimeConfiguration(NSString** helper_path,
-                                     NSString** framework_path,
+BOOL BrowserLoadRuntimeConfiguration(NSString** framework_path,
                                      NSString** main_bundle_path,
                                      NSString** root_cache_path,
                                      NSString** cache_path);

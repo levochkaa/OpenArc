@@ -5,7 +5,6 @@ import Foundation
 @objcMembers public final class BrowserRuntimeConfiguration: NSObject {
     // MARK: Public
 
-    public let helperExecutablePath: String
     public let frameworkPath: String
     public let mainBundlePath: String
     public let rootCachePath: String
@@ -13,14 +12,12 @@ import Foundation
     public let sessionStoragePath: String
 
     private init(
-        helperExecutablePath: String,
         frameworkPath: String,
         mainBundlePath: String,
         rootCachePath: String,
         cachePath: String,
         sessionStoragePath: String,
     ) {
-        self.helperExecutablePath = helperExecutablePath
         self.frameworkPath = frameworkPath
         self.mainBundlePath = mainBundlePath
         self.rootCachePath = rootCachePath
@@ -35,9 +32,6 @@ import Foundation
         let bundlePath = webAppConfiguration?.hostBundleURL.path ?? Bundle.main.bundlePath
         let frameworksPath = URL(fileURLWithPath: bundlePath, isDirectory: true)
             .appendingPathComponent("Contents/Frameworks", isDirectory: true)
-        let helperExecutablePath = frameworksPath
-            .appendingPathComponent("OpenArc Helper.app", isDirectory: true)
-            .appendingPathComponent("Contents/MacOS/OpenArc Helper", isDirectory: false)
         let frameworkPath = frameworksPath
             .appendingPathComponent("Chromium Embedded Framework.framework", isDirectory: true)
         guard let applicationSupportPath = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)
@@ -71,7 +65,6 @@ import Foundation
         BrowserNativeMessagingHostInstaller.removeApplePasswordManagerHost(in: rootCachePath, fileManager: fileManager)
 
         return BrowserRuntimeConfiguration(
-            helperExecutablePath: helperExecutablePath.path,
             frameworkPath: frameworkPath.path,
             mainBundlePath: bundlePath,
             rootCachePath: rootCachePath.path,

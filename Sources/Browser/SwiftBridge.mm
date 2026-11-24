@@ -112,8 +112,7 @@ void BrowserPrepareApplicationForCefShutdown(void) {
   gController = nil;
 }
 
-BOOL BrowserLoadRuntimeConfiguration(NSString** helper_path,
-                                     NSString** framework_path,
+BOOL BrowserLoadRuntimeConfiguration(NSString** framework_path,
                                      NSString** main_bundle_path,
                                      NSString** root_cache_path,
                                      NSString** cache_path) {
@@ -123,9 +122,6 @@ BOOL BrowserLoadRuntimeConfiguration(NSString** helper_path,
     return NO;
   }
 
-  if (helper_path) {
-    *helper_path = configuration.helperExecutablePath;
-  }
   if (framework_path) {
     *framework_path = configuration.frameworkPath;
   }
