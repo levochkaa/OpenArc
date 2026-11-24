@@ -16,11 +16,19 @@ import Testing
     }
 
     @Test func chromiumsOwnPagesSayTheyAreUnavailable() throws {
-        for address in ["openarc://settings/", "chrome://history/", "openarc://password-manager/passwords"] {
+        for address in ["openarc://settings/", "chrome://history/"] {
             let page = try BrowserWebKitInternalPages.response(for: #require(URL(string: address)))
             #expect(page.statusCode == 200, "\(address)")
             #expect(String(decoding: page.body, as: UTF8.self).contains("<title>"), "\(address)")
         }
+    }
+
+    @Test func thePasswordsPagePointsAtSettings() throws {
+        let page = try BrowserWebKitInternalPages.response(
+            for: #require(URL(string: "openarc://password-manager/passwords")),
+        )
+        #expect(page.statusCode == 200)
+        #expect(String(decoding: page.body, as: UTF8.self).contains(BrowserStrings.passwordsInSettingsMessage))
     }
 
     @Test func creditsComeFromTheBundleAndOtherAddressesAreNotFound() throws {

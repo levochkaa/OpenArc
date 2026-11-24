@@ -30,7 +30,8 @@ says. That is the base of a Mac App Store build (below).
   `WKWebsiteDataStore(forIdentifier:)`, made from the profile's folder; a private window keeps none.
 - **OpenArc's own addresses.** `BrowserWebKitInternalPages` serves `openarc://` and `chrome://`: the empty pages under
   Easels and notes, the credits, and a short "Not Available in WebKit" page for Chromium's own pages (settings,
-  history, passwords, extensions, bookmarks).
+  history, extensions, bookmarks). The passwords page opens Settings ▸ Profiles, where OpenArc keeps saved sign-ins,
+  and says so.
 - **Downloads** go to the download folder and appear in the downloads list, where they can be cancelled
   (`BrowserWebKitDownloads`). This also holds for WebKit tabs in a CEF build.
 - **Cookie import** from other browsers writes into the profile's WebKit store.

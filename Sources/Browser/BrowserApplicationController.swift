@@ -229,6 +229,14 @@ NSMenuDelegate, NSUserInterfaceValidations {
                 if let id { self?.openShareLink(id: id) }
             }
         }
+        // openarc://passwords on WebKit and Ladybird, which have no passwords page of their own.
+        NotificationCenter.default.addObserver(
+            forName: BrowserWebKitInternalPages.openPasswordSettings,
+            object: nil,
+            queue: .main,
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.presentSettingsWindow(pane: .profiles) }
+        }
     }
 
     isolated deinit {

@@ -1059,6 +1059,7 @@
 "browser.settings.engine.ladybird" = "Use Ladybird for every page";
 "browser.settings.engine.ladybird.detail" = "Pages run on Ladybird, an independent engine with its own HTML, CSS and JavaScript, and no Chromium loads. Ladybird keeps its own cookies and data, so sites ask you to sign in again. Experimental: many sites still break, and extensions, Peek cards, small windows, protected video and picture in picture are not available. Takes effect after a relaunch.";
 "browser.settings.engine.ladybird.missing" = "This build doesn't include Ladybird.";
+"browser.internal_page.passwords_in_settings" = "Your saved passwords are in Settings, under Profiles.";
 "browser.ladybird_engine.internal_page.title" = "Not Available in Ladybird";
 "browser.ladybird_engine.internal_page" = "This page belongs to Chromium and isn't available while OpenArc runs on Ladybird.";
 "browser.about.ladybird_version" = "Ladybird %@";

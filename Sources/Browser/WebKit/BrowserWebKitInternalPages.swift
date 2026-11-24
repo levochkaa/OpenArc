@@ -7,16 +7,19 @@ import WebKit
 
 /// Serves `openarc://` and `chrome://` addresses to WebKit pages when the app runs on WebKit alone, as
 /// `BrowserSchemeHandlers.mm` does for CEF: an empty page under an Easel or a note, which the window draws
-/// over, and the credits. Chromium's own pages (settings, history, passwords, extensions, bookmarks) have no
-/// WebKit counterpart; a short page says so.
+/// over, and the credits. Chromium's own pages (settings, history, extensions, bookmarks) have no WebKit
+/// counterpart; a short page says so. The passwords page points at OpenArc's own, in Settings, which it opens.
 @MainActor final class BrowserWebKitInternalPages: NSObject, WKURLSchemeHandler {
-    // MARK: Internal
-
     struct Response: Equatable {
         let statusCode: Int
         let mimeType: String
         let body: Data
     }
+
+    // MARK: Internal
+
+    /// Posted when a page asks for the passwords page, which OpenArc keeps in Settings rather than a tab.
+    @objc static let openPasswordSettings = Notification.Name("BrowserOpenPasswordSettings")
 
     static let shared = BrowserWebKitInternalPages()
 
@@ -49,9 +52,13 @@ import WebKit
                 }
             }
             return notFound
+        case BrowserInternalURLNormalizer.passwordManagerHost:
+            return html(unavailablePage(
+                title: BrowserStrings.settingsPasswords,
+                message: BrowserStrings.passwordsInSettingsMessage,
+            ))
         case BrowserInternalURLNormalizer.bookmarksHost, BrowserInternalURLNormalizer.extensionsHost,
-             BrowserInternalURLNormalizer.historyHost, BrowserInternalURLNormalizer.passwordManagerHost,
-             BrowserInternalURLNormalizer.settingsHost:
+             BrowserInternalURLNormalizer.historyHost, BrowserInternalURLNormalizer.settingsHost:
             return html(unavailablePage(
                 title: BrowserStrings.webKitEngineInternalPageTitle,
                 message: BrowserStrings.webKitEngineInternalPageMessage,
@@ -63,16 +70,20 @@ import WebKit
 
     /// The page for an internal address on Ladybird, which shows its own settings, history and bookmarks and
     /// takes the rest from here: the Easel's and the note's empty pages, the credits, and a short page for
-    /// Chromium's pages Ladybird has no counterpart for (extensions, passwords). Its status code goes to
-    /// `statusCode`.
+    /// Chromium's pages Ladybird has no counterpart for (extensions). The passwords page opens OpenArc's own, in
+    /// Settings. Its status code goes to `statusCode`.
     @objc(ladybirdPageHTMLForURLString:statusCode:)
     static func ladybirdPageHTML(forURLString urlString: String, statusCode: UnsafeMutablePointer<Int>) -> String {
         guard let url = URL(string: urlString) else {
             statusCode.pointee = notFound.statusCode
             return String(decoding: notFound.body, as: UTF8.self)
         }
-        switch url.host?.lowercased() ?? "" {
-        case BrowserInternalURLNormalizer.extensionsHost, BrowserInternalURLNormalizer.passwordManagerHost:
+        let host = url.host?.lowercased() ?? ""
+        if host == BrowserInternalURLNormalizer.passwordManagerHost {
+            openPasswordSettingsSoon()
+        }
+        switch host {
+        case BrowserInternalURLNormalizer.extensionsHost:
             statusCode.pointee = 200
             return unavailablePage(
                 title: BrowserStrings.ladybirdEngineInternalPageTitle,
@@ -82,6 +93,12 @@ import WebKit
             let page = response(for: url)
             statusCode.pointee = page.statusCode
             return String(decoding: page.body, as: UTF8.self)
+        }
+    }
+
+    private static func openPasswordSettingsSoon() {
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: openPasswordSettings, object: nil)
         }
     }
 
@@ -105,6 +122,9 @@ import WebKit
         guard let url = task.request.url else {
             task.didFailWithError(URLError(.badURL))
             return
+        }
+        if url.host?.lowercased() == BrowserInternalURLNormalizer.passwordManagerHost {
+            Self.openPasswordSettingsSoon()
         }
         let page = Self.response(for: url)
         guard let response = HTTPURLResponse(

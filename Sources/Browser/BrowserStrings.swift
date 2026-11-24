@@ -101,6 +101,10 @@ enum BrowserStrings {
         "browser.settings.engine.ladybird.missing",
         comment: "Shown under the Ladybird engine toggle in a build without the Ladybird engine.",
     )
+    static let passwordsInSettingsMessage = NSLocalizedString(
+        "browser.internal_page.passwords_in_settings",
+        comment: "Shown on openarc://passwords while the app runs on WebKit or Ladybird, which opens Settings beside it.",
+    )
     static let ladybirdEngineInternalPageTitle = NSLocalizedString(
         "browser.ladybird_engine.internal_page.title",
         comment: "Tab title of a Chromium page such as chrome://extensions while the app runs on Ladybird.",
