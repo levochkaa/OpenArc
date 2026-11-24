@@ -372,6 +372,10 @@ class Instance:
         self._write_default("browser.settings.agentAccessEnabled", "-bool", "YES")
         self._write_default("SUEnableAutomaticChecks", "-bool", "NO")
         self._write_default("SUAutomaticallyUpdate", "-bool", "NO")
+        # A copy that crashed while AppKit reopened its windows makes the next launch wait on macOS's modal
+        # "unexpectedly quit while reopening windows" alert, which stalls the main run loop; with this AppKit skips
+        # window restoration and that alert.
+        self._write_default("ApplePersistenceIgnoreState", "-bool", "YES")
         if site_engines:
             args = []
             for site, engine in site_engines.items():
