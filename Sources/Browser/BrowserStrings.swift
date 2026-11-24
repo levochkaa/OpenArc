@@ -103,7 +103,7 @@ enum BrowserStrings {
     )
     static let passwordsInSettingsMessage = NSLocalizedString(
         "browser.internal_page.passwords_in_settings",
-        comment: "Shown on openarc://passwords while the app runs on WebKit or Ladybird, which opens Settings beside it.",
+        comment: "Shown on openarc://passwords while the app runs on WebKit or Ladybird, above a link that opens Settings.",
     )
     static let ladybirdEngineInternalPageTitle = NSLocalizedString(
         "browser.ladybird_engine.internal_page.title",

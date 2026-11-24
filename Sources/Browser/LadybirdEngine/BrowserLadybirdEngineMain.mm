@@ -32,6 +32,9 @@ NSString* SchemePage(NSString* urlString, NSInteger* statusCode) {
     });
     return nil;
   }
+  if ([BrowserWebKitInternalPages takeAppAddress:urlString]) {
+    return nil;
+  }
   return [BrowserWebKitInternalPages ladybirdPageHTMLForURLString:urlString statusCode:statusCode];
 }
 

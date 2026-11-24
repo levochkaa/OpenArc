@@ -75,6 +75,18 @@ static NSString* download_id(u64 id)
 
 namespace OpenArc {
 
+// The handler for OpenArc's own addresses a page links to (openarc://, chrome://): they open in the page's tab, as the
+// app's own navigations do, rather than going to macOS, which would hand them to whichever OpenArc is the default.
+class InternalURLHandler final : public WebView::ExternalURLHandler {
+public:
+    InternalURLHandler()
+        : WebView::ExternalURLHandler("OpenArc"_string, true)
+    {
+    }
+
+    virtual void launch(URL::URL const&, LaunchCallback callback) const override { callback(true); }
+};
+
 // Reports Ladybird's downloads to the tab controller, as the Chrome engine reports Chrome's.
 class DownloadsObserver final : public WebView::FileDownloaderObserver {
 public:
@@ -174,6 +186,14 @@ private:
 
     virtual void resolve_external_url_handler(URL::URL const& url, WebView::ExternalURLHandlerCallback callback) const override
     {
+        if (url.scheme() == "openarc"sv || url.scheme() == "chrome"sv) {
+            NSString* address = Ladybird::string_to_ns_string(url.serialize());
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [last_focused_page() loadWithUrlString:address];
+            });
+            callback(make_ref_counted<InternalURLHandler>());
+            return;
+        }
         Ladybird::resolve_external_url_handler(url, move(callback));
     }
 

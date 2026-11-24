@@ -18,8 +18,11 @@ import WebKit
 
     // MARK: Internal
 
-    /// Posted when a page asks for the passwords page, which OpenArc keeps in Settings rather than a tab.
+    /// Posted when the passwords page's Open Settings link is followed: OpenArc keeps saved sign-ins in Settings.
     @objc static let openPasswordSettings = Notification.Name("BrowserOpenPasswordSettings")
+
+    /// The passwords page's link to Settings, which the app takes rather than a page.
+    static let passwordSettingsURLString = "openarc://\(BrowserInternalURLNormalizer.passwordManagerHost)/open-settings"
 
     static let shared = BrowserWebKitInternalPages()
 
@@ -56,6 +59,7 @@ import WebKit
             return html(unavailablePage(
                 title: BrowserStrings.settingsPasswords,
                 message: BrowserStrings.passwordsInSettingsMessage,
+                link: (BrowserStrings.shareOpenSettings, passwordSettingsURLString),
             ))
         case BrowserInternalURLNormalizer.bookmarksHost, BrowserInternalURLNormalizer.extensionsHost,
              BrowserInternalURLNormalizer.historyHost, BrowserInternalURLNormalizer.settingsHost:
@@ -78,11 +82,7 @@ import WebKit
             statusCode.pointee = notFound.statusCode
             return String(decoding: notFound.body, as: UTF8.self)
         }
-        let host = url.host?.lowercased() ?? ""
-        if host == BrowserInternalURLNormalizer.passwordManagerHost {
-            openPasswordSettingsSoon()
-        }
-        switch host {
+        switch url.host?.lowercased() ?? "" {
         case BrowserInternalURLNormalizer.extensionsHost:
             statusCode.pointee = 200
             return unavailablePage(
@@ -96,25 +96,36 @@ import WebKit
         }
     }
 
-    private static func openPasswordSettingsSoon() {
+    /// Takes an address the app handles instead of a page (the passwords page's Open Settings link): true when it
+    /// did, and the navigation should stop.
+    @objc static func takeAppAddress(_ urlString: String) -> Bool {
+        guard let url = URL(string: urlString), isPasswordSettingsAddress(url) else { return false }
         DispatchQueue.main.async {
             NotificationCenter.default.post(name: openPasswordSettings, object: nil)
         }
+        return true
+    }
+
+    private static func isPasswordSettingsAddress(_ url: URL) -> Bool {
+        url.host?.lowercased() == BrowserInternalURLNormalizer.passwordManagerHost && url.path == "/open-settings"
     }
 
     private static func html(_ source: String) -> Response {
         Response(statusCode: 200, mimeType: "text/html", body: Data(source.utf8))
     }
 
-    private static func unavailablePage(title: String, message: String) -> String {
+    private static func unavailablePage(title: String, message: String, link: (String, String)? = nil) -> String {
         func escaped(_ text: String) -> String {
-            text.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;")
+            text.replacingOccurrences(of: "&", with: "&amp;")
+                .replacingOccurrences(of: "<", with: "&lt;")
+                .replacingOccurrences(of: "\"", with: "&quot;")
         }
+        let linkHTML = link.map { #"<p><a href="\#(escaped($0.1))">\#(escaped($0.0))</a></p>"# } ?? ""
         return """
         <!doctype html><meta charset="utf-8"><meta name="color-scheme" content="light dark">\
         <title>\(escaped(title))</title>\
-        <style>body{font:15px -apple-system,sans-serif;display:grid;place-items:center;height:90vh;margin:0}\
-        p{max-width:28em;text-align:center;opacity:.7}</style><p>\(escaped(message))</p>
+        <style>body{font:15px -apple-system,sans-serif;display:grid;place-content:center;height:90vh;margin:0}\
+        p{max-width:28em;text-align:center;opacity:.7}</style><p>\(escaped(message))</p>\(linkHTML)
         """
     }
 
@@ -123,8 +134,13 @@ import WebKit
             task.didFailWithError(URLError(.badURL))
             return
         }
-        if url.host?.lowercased() == BrowserInternalURLNormalizer.passwordManagerHost {
-            Self.openPasswordSettingsSoon()
+        // A link the app takes leaves the page where it was: no content.
+        if Self.takeAppAddress(url.absoluteString) {
+            if let response = HTTPURLResponse(url: url, statusCode: 204, httpVersion: "HTTP/1.1", headerFields: [:]) {
+                task.didReceive(response)
+            }
+            task.didFinish()
+            return
         }
         let page = Self.response(for: url)
         guard let response = HTTPURLResponse(

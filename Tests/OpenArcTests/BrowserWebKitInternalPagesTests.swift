@@ -28,7 +28,10 @@ import Testing
             for: #require(URL(string: "openarc://password-manager/passwords")),
         )
         #expect(page.statusCode == 200)
-        #expect(String(decoding: page.body, as: UTF8.self).contains(BrowserStrings.passwordsInSettingsMessage))
+        let body = String(decoding: page.body, as: UTF8.self)
+        #expect(body.contains(BrowserStrings.passwordsInSettingsMessage))
+        #expect(body.contains(#"href="\#(BrowserWebKitInternalPages.passwordSettingsURLString)""#))
+        #expect(!BrowserWebKitInternalPages.takeAppAddress("openarc://password-manager/passwords"))
     }
 
     @Test func creditsComeFromTheBundleAndOtherAddressesAreNotFound() throws {
