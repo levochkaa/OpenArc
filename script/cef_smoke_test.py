@@ -59,7 +59,8 @@ WEBKIT_ENGINE_GAPS = {
 UNSANDBOXED_SERVICES = {"video_capture.mojom.VideoCaptureService"}
 # Checks of what Ladybird does not have (docs/ladybird-engine.md); they skip when the copy runs on Ladybird.
 LADYBIRD_ENGINE_GAPS = {
-    "media-devices": "Ladybird has no navigator.mediaDevices",
+    "media-devices": "Ladybird has no getDisplayMedia, and the fixture server's http://127.0.0.1 is no secure context "
+                     "there",
     "extension-sees-tabs": "--load-extension loads a Chromium extension",
     "passkeys": "Ladybird has no WebAuthn",
     "history": "Ladybird pages write no Chromium History database",

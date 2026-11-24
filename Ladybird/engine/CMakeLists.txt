@@ -57,7 +57,7 @@ target_compile_definitions(openarc_ladybird PRIVATE
 target_link_libraries(openarc_ladybird PRIVATE
     AK LibCore LibFileSystem LibGfx LibHTTP LibIPC LibMain LibURL LibUnicode LibWakeLock LibWebView
     OpenSSL::Crypto OpenSSL::SSL
-    "-framework Cocoa -framework Metal -framework QuartzCore -framework UniformTypeIdentifiers -framework ImageIO"
+    "-framework Cocoa -framework Metal -framework QuartzCore -framework UniformTypeIdentifiers -framework ImageIO -framework UserNotifications"
 )
 
 # The framework's binary: OpenArc loads it with dlopen and finds Ladybird's libraries beside it.

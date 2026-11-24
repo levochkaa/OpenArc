@@ -55,14 +55,19 @@ for one launch. A bundle without the framework runs Ladybird's choice on the Chr
     shows (`--full` asks WebContent for the whole page).
   - **`openarc://` addresses.** Settings, history, bookmarks, downloads and version open Ladybird's own pages
     (`about:settings` …) and show under `openarc://`. The Easel's and the note's empty pages, the credits and a
-    short "Not Available in Ladybird" page for extensions and passwords come from the app
-    (`BrowserWebKitInternalPages.ladybirdPageHTML`). A shared page's Add to OpenArc button goes to the app.
+    short "Not Available in Ladybird" page for extensions come from the app
+    (`BrowserWebKitInternalPages.ladybirdPageHTML`). The passwords page opens Settings ▸ Profiles, where OpenArc
+    keeps saved sign-ins. A shared page's Add to OpenArc button goes to the app.
   - **Sign-ins.** The layer watches a page's password fields with a script of its own: the app learns a page has a
     sign-in form, offers to save what a sent form held (on submit, or when a page with typed fields navigates away), and
     fills a saved sign-in into the fields, as on the Chrome engine.
-  - **Location.** A site's `navigator.geolocation` request goes through OpenArc's site permission prompt first, and the
-    answer holds for the site until quit; an allowed request reads Core Location, which asks macOS once for the app.
-    Ladybird answers only a document that is visible, so a page loaded in a covered window waits until it shows.
+  - **Site permissions.** Location, the microphone and notifications go through OpenArc's site permission prompt, and
+    the answer holds for the site until quit (`navigator.permissions.query` reports it). After an Allow the app asks
+    macOS once, as on the other engines; an allowed location reads Core Location. Ladybird answers a location request
+    only for a visible document, so a page loaded in a covered window waits until it shows.
+  - **Notifications.** A site's `new Notification(…)` shows as a macOS notification from OpenArc, with the site under
+    the title, as a banner even while OpenArc is in front; a tag replaces the site's earlier one. Clicking it brings
+    the page's window forward.
   - **Print.** Ladybird does not print; File › Print prints the whole page as Ladybird draws it.
   - **Developer Tools.** Ladybird speaks Firefox's DevTools protocol. The Developer Tools commands start Ladybird's
     DevTools server and say where to connect from Firefox's `about:debugging`.
@@ -76,6 +81,9 @@ for one launch. A bundle without the framework runs Ladybird's choice on the Chr
     the window's origin;
   - `request-finish-reentrancy.patch` keeps a request's read notifier alive until its activation returns; a download
     from a server without range requests crashed Ladybird's own browser too.
+  - `site-permissions.patch` asks the UI process before the microphone and notifications (Ladybird granted the
+    microphone without asking, and had no notification permission or display), exposes `navigator.permissions`, and
+    hands a shown notification to the UI;
   - `sandbox-child-dyld.patch` lets a sandboxed helper's child start: dyld in `cranelift-compiler`, which inherits
     WasmCompiler's sandbox, aborted at launch on macOS 26 without `F_GETPATH`, so every module ran in the interpreter
     and left a crash report.
@@ -114,9 +122,10 @@ sessions. OpenArc's own data (Spaces, tabs, notes, Easels, boosts, bookmarks, sy
   battery saver throttling and tracing.
 - Protected video (no EME/FairPlay) and picture in picture. Sites whose rule sends them to WebKit still open in
   WebKit tabs.
-- Passkeys (Ladybird has no WebAuthn) and the passwords page, which belongs to Chromium.
-- Site permissions besides location: camera, microphone, notifications and the rest are not offered, and
-  `navigator.permissions` and `navigator.mediaDevices` are missing.
+- Passkeys: Ladybird has no WebAuthn.
+- The camera and screen sharing: Ladybird captures audio only and has no `getDisplayMedia`. Pages on plain
+  `http://127.0.0.1` are not a secure context in Ladybird, so they get no `navigator.mediaDevices` either.
+- Notification actions, and `show`, `click` and `close` events on the page's `Notification`.
 - Developer Tools docked beside the page; Ladybird's open in Firefox.
 - A page's certificate chain in the site info.
 - Accessibility inside pages: VoiceOver and the accessibility tree see the page as one view.

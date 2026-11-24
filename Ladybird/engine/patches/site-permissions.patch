@@ -1,0 +1,458 @@
+diff --git a/Libraries/LibWeb/HTML/Navigator.idl b/Libraries/LibWeb/HTML/Navigator.idl
+index 2b568a9ca5..6de40c7f3b 100644
+--- a/Libraries/LibWeb/HTML/Navigator.idl
++++ b/Libraries/LibWeb/HTML/Navigator.idl
+@@ -37,7 +37,7 @@ interface Navigator {
+     [SecureContext, SameObject] readonly attribute XRSystem xr;
+ 
+     // https://w3c.github.io/permissions/#navigator-and-workernavigator-extension
+-    [SameObject, Experimental] readonly attribute Permissions permissions;
++    [SameObject] readonly attribute Permissions permissions;
+ };
+ 
+ // NOTE: As NavigatorContentUtils, NavigatorCookies, NavigatorPlugins, and NavigatorAutomationInformation
+diff --git a/Libraries/LibWeb/HTML/WorkerNavigator.idl b/Libraries/LibWeb/HTML/WorkerNavigator.idl
+index 711afe0f6d..398eaae5d7 100644
+--- a/Libraries/LibWeb/HTML/WorkerNavigator.idl
++++ b/Libraries/LibWeb/HTML/WorkerNavigator.idl
+@@ -11,7 +11,7 @@ interface WorkerNavigator {
+     [SecureContext, SameObject] readonly attribute ServiceWorkerContainer serviceWorker;
+ 
+     // https://w3c.github.io/permissions/#navigator-and-workernavigator-extension
+-    [SameObject, Experimental] readonly attribute Permissions permissions;
++    [SameObject] readonly attribute Permissions permissions;
+ };
+ 
+ Navigator includes GlobalPrivacyControl;
+diff --git a/Libraries/LibWeb/MediaCapture/MediaDevices.cpp b/Libraries/LibWeb/MediaCapture/MediaDevices.cpp
+index 693abc561c..7ef7b50693 100644
+--- a/Libraries/LibWeb/MediaCapture/MediaDevices.cpp
++++ b/Libraries/LibWeb/MediaCapture/MediaDevices.cpp
+@@ -25,7 +25,9 @@
+ #include <LibWeb/MediaCapture/MediaDevices.h>
+ #include <LibWeb/MediaCapture/MediaStream.h>
+ #include <LibWeb/MediaCapture/MediaStreamTrack.h>
++#include <LibWeb/PermissionsAPI/PermissionStore.h>
+ #include <LibWeb/PermissionsAPI/Permissions.h>
++#include <LibWeb/Page/Page.h>
+ #include <LibWeb/Platform/EventLoopPlugin.h>
+ #include <LibWeb/WebIDL/CallbackType.h>
+ #include <LibWeb/WebIDL/DOMException.h>
+@@ -472,6 +474,25 @@ void MediaDevices::queue_get_user_media_task(GC::Ref<WebIDL::Promise> promise, O
+         //        a prompt state into a persisted denied state without a user decision.
+         if (HTML::Window::in_test_mode() && microphone_permission_result == PermissionsAPI::PermissionState::Prompt)
+             microphone_permission_result = PermissionsAPI::request_permission(microphone_permission);
++        // AD-HOC: Ask the user through the UI process, keep their answer in the permission store, and run the request
++        //         again with it.
++        if (microphone_permission_result == PermissionsAPI::PermissionState::Prompt) {
++            auto& settings = HTML::current_settings_object();
++            auto key = PermissionsAPI::permission_key_generation_algorithm(settings.top_level_origin.value(), settings.origin());
++            auto device_ids = requested_device_ids;
++            media_devices->m_window->page().request_permission("microphone"_string, GC::create_function(GC::Heap::the(), [media_devices, promise = GC::Root(*promise), device_ids = move(device_ids), microphone_permission, key](Optional<bool> granted) mutable {
++                if (granted.has_value())
++                    PermissionsAPI::PermissionStore::the().set_permission_store_entry(microphone_permission, key, *granted ? PermissionsAPI::PermissionState::Granted : PermissionsAPI::PermissionState::Denied);
++                if (granted.value_or(false)) {
++                    media_devices->queue_get_user_media_task(*promise, move(device_ids));
++                    return;
++                }
++                auto& realm = WebIDL::promise_realm(*promise);
++                HTML::TemporaryExecutionContext execution_context { realm, HTML::TemporaryExecutionContext::CallbacksEnabled::Yes };
++                WebIDL::reject_promise(*promise, WebIDL::NotAllowedError::create("Permission denied"_utf16));
++            }));
++            return;
++        }
+         // 11.5.2 If the result of the request is "denied", jump to the step labeled Permission Failure below.
+         if (microphone_permission_result == PermissionsAPI::PermissionState::Denied) {
+             reject_permission_failure();
+diff --git a/Libraries/LibWeb/NotificationsAPI/Notification.cpp b/Libraries/LibWeb/NotificationsAPI/Notification.cpp
+index 69eb36345d..23f5ae2f84 100644
+--- a/Libraries/LibWeb/NotificationsAPI/Notification.cpp
++++ b/Libraries/LibWeb/NotificationsAPI/Notification.cpp
+@@ -11,7 +11,17 @@
+ #include <LibJS/Runtime/VM.h>
+ #include <LibWeb/HTML/Scripting/Environments.h>
+ #include <LibWeb/HTML/StructuredSerialize.h>
++#include <LibWeb/HTML/EventLoop/EventLoop.h>
++#include <LibWeb/HTML/EventLoop/Task.h>
++#include <LibWeb/HTML/Scripting/TemporaryExecutionContext.h>
++#include <LibWeb/HTML/Window.h>
+ #include <LibWeb/NotificationsAPI/Notification.h>
++#include <LibWeb/Page/Page.h>
++#include <LibWeb/PermissionsAPI/PermissionStore.h>
++#include <LibWeb/PermissionsAPI/Permissions.h>
++#include <LibWeb/WebIDL/AbstractOperations.h>
++#include <LibWeb/WebIDL/CallbackType.h>
++#include <LibWeb/WebIDL/Promise.h>
+ #include <LibWeb/ServiceWorker/ServiceWorkerGlobalScope.h>
+ 
+ namespace Web::NotificationsAPI {
+@@ -233,16 +243,91 @@ WebIDL::ExceptionOr<GC::Ref<Notification>> Notification::create_with_global_scop
+     auto this_notification = GC::Heap::the().allocate<Notification>();
+     this_notification->m_notification = notification;
+ 
+-    // FIXME: 5. Run these steps in parallel:
+-
+-    // FIXME: 1. If the result of getting the notifications permission state is not "granted",
++    // 5. Run these steps in parallel:
++    // 1. If the result of getting the notifications permission state is not "granted",
+     // then queue a task to fire an event named error on this, and abort these steps.
+-
+-    // FIXME: 2. Run the notification show steps for notification.
++    // FIXME: Fire the error event.
++    // 2. Run the notification show steps for notification.
++    // AD-HOC: The UI process shows it; a window's notifications only, as workers have no page to ask.
++    if (permission() == Bindings::NotificationPermission::Granted) {
++        if (auto* window = as_if<HTML::Window>(global_scope.this_impl())) {
++            auto icon_url = notification.icon_url.has_value() ? notification.icon_url->serialize() : String {};
++            window->page().client().page_did_request_show_notification(notification.title, notification.body.to_utf8_but_should_be_ported_to_utf16(), notification.tag.to_utf8_but_should_be_ported_to_utf16(), icon_url);
++        }
++    }
+ 
+     return this_notification;
+ }
+ 
++static Bindings::NotificationPermission notification_permission_from(PermissionsAPI::PermissionState state)
++{
++    switch (state) {
++    case PermissionsAPI::PermissionState::Granted:
++        return Bindings::NotificationPermission::Granted;
++    case PermissionsAPI::PermissionState::Denied:
++        return Bindings::NotificationPermission::Denied;
++    default:
++        return Bindings::NotificationPermission::Default;
++    }
++}
++
++// https://notifications.spec.whatwg.org/#get-the-notifications-permission-state
++Bindings::NotificationPermission Notification::permission()
++{
++    PermissionsAPI::PermissionDescriptor descriptor { "notifications"_utf16 };
++    return notification_permission_from(PermissionsAPI::permission_state(descriptor));
++}
++
++// https://notifications.spec.whatwg.org/#dom-notification-requestpermission
++GC::Ref<WebIDL::Promise> Notification::request_permission(JS::VM& vm, GC::Ptr<WebIDL::CallbackType> deprecated_callback)
++{
++    auto& realm = *vm.current_realm();
++
++    // 1. Let global be the current global object.
++    auto& global = HTML::current_global_object();
++
++    // 2. Let promise be a new promise in this’s relevant Realm.
++    auto promise = WebIDL::create_promise(realm);
++
++    // 4. Queue a global task on the DOM manipulation task source given global to run these steps:
++    //    1. If deprecatedCallback is given, then invoke deprecatedCallback with « permissionState » and "report".
++    //    2. Resolve promise with permissionState.
++    auto finish = GC::create_function(GC::Heap::the(), [global = GC::Ref { global }, promise, deprecated_callback](Bindings::NotificationPermission permission_state) {
++        HTML::queue_global_task(HTML::Task::Source::DOMManipulation, global, GC::create_function(GC::Heap::the(), [promise, deprecated_callback, permission_state] {
++            auto& realm = WebIDL::promise_realm(promise);
++            HTML::TemporaryExecutionContext execution_context { realm, HTML::TemporaryExecutionContext::CallbacksEnabled::Yes };
++            auto value = JS::PrimitiveString::create(realm.vm(), Bindings::idl_enum_to_string(permission_state));
++            if (deprecated_callback)
++                (void)WebIDL::invoke_callback(*deprecated_callback, {}, { { value } });
++            WebIDL::resolve_promise(promise, value);
++        }));
++    });
++
++    // 3. Run these steps in parallel:
++    //    1. Let permissionState be the result of requesting permission to use "notifications".
++    PermissionsAPI::PermissionDescriptor descriptor { "notifications"_utf16 };
++    auto state = PermissionsAPI::permission_state(descriptor);
++    auto* window = HTML::window_from_global_object(global);
++    if (state != PermissionsAPI::PermissionState::Prompt || !window) {
++        finish->function()(notification_permission_from(state));
++        return promise;
++    }
++
++    // AD-HOC: The user answers in the UI process; their answer stays in the permission store, a dismissal does not.
++    auto& settings = HTML::current_settings_object();
++    auto key = PermissionsAPI::permission_key_generation_algorithm(settings.top_level_origin.value(), settings.origin());
++    window->page().request_permission("notifications"_string, GC::create_function(GC::Heap::the(), [finish, descriptor, key](Optional<bool> granted) {
++        if (!granted.has_value()) {
++            finish->function()(Bindings::NotificationPermission::Default);
++            return;
++        }
++        auto state = *granted ? PermissionsAPI::PermissionState::Granted : PermissionsAPI::PermissionState::Denied;
++        PermissionsAPI::PermissionStore::the().set_permission_store_entry(descriptor, key, state);
++        finish->function()(notification_permission_from(state));
++    }));
++    return promise;
++}
++
+ // https://notifications.spec.whatwg.org/#dom-notification-actions
+ Vector<NotificationAction> Notification::actions() const
+ {
+diff --git a/Libraries/LibWeb/NotificationsAPI/Notification.h b/Libraries/LibWeb/NotificationsAPI/Notification.h
+index c6808b83ca..8811a8fe41 100644
+--- a/Libraries/LibWeb/NotificationsAPI/Notification.h
++++ b/Libraries/LibWeb/NotificationsAPI/Notification.h
+@@ -108,6 +108,11 @@ public:
+         URL::URL base_url,
+         HighResolutionTime::EpochTimeStamp fallback_timestamp);
+ 
++    // https://notifications.spec.whatwg.org/#dom-notification-permission
++    static Bindings::NotificationPermission permission();
++    // https://notifications.spec.whatwg.org/#dom-notification-requestpermission
++    static GC::Ref<WebIDL::Promise> request_permission(JS::VM&, GC::Ptr<WebIDL::CallbackType> deprecated_callback);
++
+     static unsigned long max_actions()
+     {
+         // FIXME: Change the number of max_actions supported when actions will actually be supported
+diff --git a/Libraries/LibWeb/NotificationsAPI/Notification.idl b/Libraries/LibWeb/NotificationsAPI/Notification.idl
+index 06d5462dc4..bd97c5e2c1 100644
+--- a/Libraries/LibWeb/NotificationsAPI/Notification.idl
++++ b/Libraries/LibWeb/NotificationsAPI/Notification.idl
+@@ -3,8 +3,8 @@
+ interface Notification : EventTarget {
+     constructor(DOMString title, optional NotificationOptions options = {});
+ 
+-    [FIXME] static readonly attribute NotificationPermission permission;
+-    [FIXME, Exposed=Window] static Promise<NotificationPermission> requestPermission(optional NotificationPermissionCallback deprecatedCallback);
++    static readonly attribute NotificationPermission permission;
++    [Exposed=Window] static Promise<NotificationPermission> requestPermission(optional NotificationPermissionCallback deprecatedCallback);
+ 
+     static readonly attribute unsigned long maxActions;
+ 
+@@ -70,4 +70,4 @@ dictionary NotificationAction {
+     USVString icon;
+ };
+ 
+-[FIXME] callback NotificationPermissionCallback = undefined (NotificationPermission permission);
++callback NotificationPermissionCallback = undefined (NotificationPermission permission);
+diff --git a/Libraries/LibWeb/Page/Page.cpp b/Libraries/LibWeb/Page/Page.cpp
+index 8a16a6c1ed..b7c37c2283 100644
+--- a/Libraries/LibWeb/Page/Page.cpp
++++ b/Libraries/LibWeb/Page/Page.cpp
+@@ -137,6 +137,8 @@ void Page::visit_edges(JS::Cell::Visitor& visitor)
+     visitor.visit(m_offscreen_canvases_pending_placeholder_commit);
+     for (auto const& request : m_pending_geolocation_requests)
+         visitor.visit(request.value.callback);
++    for (auto const& request : m_pending_permission_requests)
++        visitor.visit(request.value);
+     m_pending_fullscreen_operations.for_each([&](auto const& operation) {
+         operation.visit([&](PendingFullscreenEnter const& enter_operation) {
+                 visitor.visit(enter_operation.element);
+@@ -1304,6 +1306,21 @@ void Page::cancel_geolocation_position_request(u64 request_id)
+     }
+ }
+ 
++void Page::request_permission(String const& name, PermissionCallback callback)
++{
++    auto request_id = m_next_permission_request_id++;
++    m_pending_permission_requests.set(request_id, callback);
++    client().page_did_request_permission(request_id, name);
++}
++
++void Page::receive_permission_response(u64 request_id, Optional<bool> granted)
++{
++    auto callback = m_pending_permission_requests.take(request_id);
++    if (!callback.has_value())
++        return;
++    callback.value()->function()(granted);
++}
++
+ void Page::receive_geolocation_position(u64 request_id, GeolocationPositionResult result)
+ {
+     auto request = m_pending_geolocation_requests.get(request_id);
+diff --git a/Libraries/LibWeb/Page/Page.h b/Libraries/LibWeb/Page/Page.h
+index d51b65082d..a006641ca4 100644
+--- a/Libraries/LibWeb/Page/Page.h
++++ b/Libraries/LibWeb/Page/Page.h
+@@ -303,6 +303,12 @@ public:
+     void cancel_geolocation_position_request(u64 request_id);
+     void receive_geolocation_position(u64 request_id, GeolocationPositionResult);
+ 
++    // Asks the user, through the UI process, whether the page's site may use a powerful feature ("microphone",
++    // "notifications", ...). The callback gets their answer, or nothing when they dismissed the question.
++    using PermissionCallback = GC::Ref<GC::Function<void(Optional<bool>)>>;
++    void request_permission(String const& name, PermissionCallback);
++    void receive_permission_response(u64 request_id, Optional<bool> granted);
++
+     // https://w3c.github.io/geolocation/#dfn-emulated-position-data
+     // NB: The top-level traversable's, which the UI process tells every page representing it.
+     Geolocation::EmulatedPositionData const& emulated_position_data() const { return m_emulated_position_data; }
+@@ -498,6 +504,8 @@ private:
+         GeolocationRequestType type;
+     };
+     HashMap<u64, PendingGeolocationRequest> m_pending_geolocation_requests;
++    HashMap<u64, PermissionCallback> m_pending_permission_requests;
++    u64 m_next_permission_request_id { 0 };
+     u64 m_next_geolocation_request_id { 0 };
+     Optional<u64> m_active_geolocation_request_id;
+ 
+@@ -765,6 +773,8 @@ public:
+     virtual void page_did_request_file_picker([[maybe_unused]] HTML::FileFilter const& accepted_file_types, Web::HTML::AllowMultipleFiles) { }
+     virtual void page_did_request_select_dropdown([[maybe_unused]] HTML::CrossProcessId local_root_id, [[maybe_unused]] Web::CSSPixelPoint content_position, [[maybe_unused]] Web::CSSPixels minimum_width, [[maybe_unused]] Vector<Web::HTML::SelectItem> items) { }
+     virtual void page_did_request_geolocation_position([[maybe_unused]] u64 request_id) { }
++    virtual void page_did_request_permission([[maybe_unused]] u64 request_id, [[maybe_unused]] String const& name) { }
++    virtual void page_did_request_show_notification([[maybe_unused]] String const& title, [[maybe_unused]] String const& body, [[maybe_unused]] String const& tag, [[maybe_unused]] String const& icon_url) { }
+     virtual void page_did_cancel_geolocation_position_request([[maybe_unused]] u64 request_id) { }
+     virtual void page_did_start_geolocation_position_watch([[maybe_unused]] u64 request_id) { }
+     virtual void page_did_stop_geolocation_position_watch([[maybe_unused]] u64 request_id) { }
+diff --git a/Libraries/LibWeb/PermissionsAPI/PermissionStatus.idl b/Libraries/LibWeb/PermissionsAPI/PermissionStatus.idl
+index 11001bf62e..9f783ba0a3 100644
+--- a/Libraries/LibWeb/PermissionsAPI/PermissionStatus.idl
++++ b/Libraries/LibWeb/PermissionsAPI/PermissionStatus.idl
+@@ -1,5 +1,5 @@
+ // https://w3c.github.io/permissions/#permissionstatus-interface
+-[Experimental, Exposed=(Window,Worker)]
++[Exposed=(Window,Worker)]
+ interface PermissionStatus : EventTarget {
+     readonly attribute PermissionState state;
+     readonly attribute DOMString name;
+diff --git a/Libraries/LibWeb/PermissionsAPI/Permissions.cpp b/Libraries/LibWeb/PermissionsAPI/Permissions.cpp
+index 0a50c86066..e3c8e8ad2e 100644
+--- a/Libraries/LibWeb/PermissionsAPI/Permissions.cpp
++++ b/Libraries/LibWeb/PermissionsAPI/Permissions.cpp
+@@ -24,9 +24,8 @@ namespace Web::PermissionsAPI {
+ 
+ bool is_permission_supported(Utf16View name)
+ {
+-    if (name == "geolocation"_utf16) {
++    if (name == "geolocation"_utf16 || name == "microphone"_utf16 || name == "camera"_utf16 || name == "notifications"_utf16)
+         return true;
+-    }
+     return false;
+ }
+ 
+diff --git a/Libraries/LibWebView/ViewImplementation.h b/Libraries/LibWebView/ViewImplementation.h
+index a98fa0fd0f..1e25e84bc7 100644
+--- a/Libraries/LibWebView/ViewImplementation.h
++++ b/Libraries/LibWebView/ViewImplementation.h
+@@ -473,6 +473,9 @@ public:
+     Function<void()> on_exit_fullscreen_window;
+     Function<void(Color current_color)> on_request_color_picker;
+     Function<void(WebContentPage& requesting_page, u64 request_id)> on_request_geolocation_position;
++    // A site asks for a powerful feature; answer with requesting_page.async_permission_response(). Unset, it is denied.
++    Function<void(WebContentPage& requesting_page, u64 request_id, String const& name)> on_request_permission;
++    Function<void(String const& title, String const& body, String const& tag, String const& icon_url)> on_show_notification;
+     Function<void(WebContentPage& requesting_page, u64 request_id)> on_cancel_geolocation_position_request;
+     Function<void(WebContentPage& requesting_page, u64 request_id)> on_start_geolocation_position_watch;
+     Function<void(WebContentPage& requesting_page, u64 request_id)> on_stop_geolocation_position_watch;
+diff --git a/Libraries/LibWebView/WebContentPage.cpp b/Libraries/LibWebView/WebContentPage.cpp
+index 40a1d548e1..063c78af42 100644
+--- a/Libraries/LibWebView/WebContentPage.cpp
++++ b/Libraries/LibWebView/WebContentPage.cpp
+@@ -1185,6 +1185,20 @@ void WebContentPage::did_start_geolocation_position_watch(u64 request_id)
+         view().on_start_geolocation_position_watch(*this, request_id);
+ }
+ 
++void WebContentPage::did_request_permission(u64 request_id, String name)
++{
++    if (view().on_request_permission)
++        view().on_request_permission(*this, request_id, name);
++    else
++        async_permission_response(request_id, false);
++}
++
++void WebContentPage::did_request_show_notification(String title, String body, String tag, String icon_url)
++{
++    if (view().on_show_notification)
++        view().on_show_notification(title, body, tag, icon_url);
++}
++
+ void WebContentPage::did_stop_geolocation_position_watch(u64 request_id)
+ {
+     if (view().on_stop_geolocation_position_watch)
+diff --git a/Libraries/LibWebView/WebContentPage.h b/Libraries/LibWebView/WebContentPage.h
+index e621e695f6..838f8992f7 100644
+--- a/Libraries/LibWebView/WebContentPage.h
++++ b/Libraries/LibWebView/WebContentPage.h
+@@ -193,6 +193,8 @@ private:
+     virtual void did_request_file(ByteString path, i32 request_id) override;
+     virtual void did_request_color_picker(Color current_color) override;
+     virtual void did_request_geolocation_position(u64 request_id) override;
++    virtual void did_request_permission(u64 request_id, String name) override;
++    virtual void did_request_show_notification(String title, String body, String tag, String icon_url) override;
+     virtual void did_cancel_geolocation_position_request(u64 request_id) override;
+     virtual void did_start_geolocation_position_watch(u64 request_id) override;
+     virtual void did_stop_geolocation_position_watch(u64 request_id) override;
+diff --git a/Services/WebContent/ConnectionFromClient.cpp b/Services/WebContent/ConnectionFromClient.cpp
+index d12cd09d78..d5a3c09bc6 100644
+--- a/Services/WebContent/ConnectionFromClient.cpp
++++ b/Services/WebContent/ConnectionFromClient.cpp
+@@ -2870,6 +2870,12 @@ void ConnectionFromClient::geolocation_position_response(Compositing::PageId pag
+         page->geolocation_position_response(request_id, position, error_code);
+ }
+ 
++void ConnectionFromClient::permission_response(Compositing::PageId page_id, u64 request_id, Optional<bool> granted)
++{
++    if (auto page = this->page(page_id); page.has_value())
++        page->page().receive_permission_response(request_id, granted);
++}
++
+ void ConnectionFromClient::set_has_focus(Compositing::PageId page_id, bool has_focus)
+ {
+     if (auto page = this->page(page_id); page.has_value())
+diff --git a/Services/WebContent/ConnectionFromClient.h b/Services/WebContent/ConnectionFromClient.h
+index d584229121..ca17d2bca9 100644
+--- a/Services/WebContent/ConnectionFromClient.h
++++ b/Services/WebContent/ConnectionFromClient.h
+@@ -239,6 +239,7 @@ private:
+     virtual void set_enable_global_privacy_control(Compositing::PageId page_id, bool) override;
+     virtual void set_geolocation_emulated_position(Compositing::PageId page_id, WebView::GeolocationPositionData, Optional<u16> error_code) override;
+     virtual void geolocation_position_response(Compositing::PageId page_id, u64 request_id, WebView::GeolocationPositionData, Optional<u16> error_code) override;
++    virtual void permission_response(Compositing::PageId page_id, u64 request_id, Optional<bool> granted) override;
+     virtual void set_has_focus(Compositing::PageId page_id, bool) override;
+     virtual void set_focused_navigable(Compositing::PageId page_id, Web::HTML::CrossProcessId navigable_id) override;
+     virtual void consume_user_activation(Compositing::PageId page_id, Web::HTML::UserActivationConsumption) override;
+diff --git a/Services/WebContent/PageClient.cpp b/Services/WebContent/PageClient.cpp
+index 7a8e785b02..0f95b2a9e0 100644
+--- a/Services/WebContent/PageClient.cpp
++++ b/Services/WebContent/PageClient.cpp
+@@ -1110,6 +1110,16 @@ void PageClient::geolocation_position_response(u64 request_id, WebView::Geolocat
+         page().receive_geolocation_position(request_id, Web::Geolocation::GeolocationPositionError::ErrorCode::PositionUnavailable);
+ }
+ 
++void PageClient::page_did_request_permission(u64 request_id, String const& name)
++{
++    client().async_did_request_permission(m_id, request_id, name);
++}
++
++void PageClient::page_did_request_show_notification(String const& title, String const& body, String const& tag, String const& icon_url)
++{
++    client().async_did_request_show_notification(m_id, title, body, tag, icon_url);
++}
++
+ void PageClient::page_did_request_geolocation_position(u64 request_id)
+ {
+     client().async_did_request_geolocation_position(m_id, request_id);
+diff --git a/Services/WebContent/PageClient.h b/Services/WebContent/PageClient.h
+index b2a5bb7d99..4bb2185c28 100644
+--- a/Services/WebContent/PageClient.h
++++ b/Services/WebContent/PageClient.h
+@@ -325,6 +325,8 @@ private:
+     virtual void page_did_request_file_picker(Web::HTML::FileFilter const& accepted_file_types, Web::HTML::AllowMultipleFiles) override;
+     virtual void page_did_request_select_dropdown(Web::HTML::CrossProcessId local_root_id, Compositing::CSSPixelPoint content_position, Compositing::CSSPixels minimum_width, Vector<Web::HTML::SelectItem> items) override;
+     virtual void page_did_request_geolocation_position(u64 request_id) override;
++    virtual void page_did_request_permission(u64 request_id, String const& name) override;
++    virtual void page_did_request_show_notification(String const& title, String const& body, String const& tag, String const& icon_url) override;
+     virtual void page_did_cancel_geolocation_position_request(u64 request_id) override;
+     virtual void page_did_start_geolocation_position_watch(u64 request_id) override;
+     virtual void page_did_stop_geolocation_position_watch(u64 request_id) override;
+diff --git a/Services/WebContent/WebContentClient.ipc b/Services/WebContent/WebContentClient.ipc
+index fb3d1b4f7c..bedc5e912c 100644
+--- a/Services/WebContent/WebContentClient.ipc
++++ b/Services/WebContent/WebContentClient.ipc
+@@ -224,6 +224,8 @@ endpoint WebContentClient routed by Compositing::PageId page_id
+     did_cancel_geolocation_position_request(Compositing::PageId page_id, u64 request_id) =|
+     did_start_geolocation_position_watch(Compositing::PageId page_id, u64 request_id) =|
+     did_stop_geolocation_position_watch(Compositing::PageId page_id, u64 request_id) =|
++    did_request_permission(Compositing::PageId page_id, u64 request_id, String name) =|
++    did_request_show_notification(Compositing::PageId page_id, String title, String body, String tag, String icon_url) =|
+     did_request_file_picker(Compositing::PageId page_id, Web::HTML::FileFilter accepted_file_types, Web::HTML::AllowMultipleFiles allow_multiple_files) =|
+     did_request_select_dropdown(Compositing::PageId page_id, Web::HTML::CrossProcessId local_root_id, Gfx::IntPoint content_position, i32 minimum_width, Vector<Web::HTML::SelectItem> items) =|
+     did_finish_handling_input_event(Compositing::PageId page_id, u64 event_id, Web::EventResult event_result) =|
+diff --git a/Services/WebContent/WebContentServer.ipc b/Services/WebContent/WebContentServer.ipc
+index 47abe7bd3d..b42f90dff0 100644
+--- a/Services/WebContent/WebContentServer.ipc
++++ b/Services/WebContent/WebContentServer.ipc
+@@ -239,6 +239,7 @@ endpoint WebContentServer routed by Compositing::PageId page_id
+     set_enable_global_privacy_control(Compositing::PageId page_id, bool enable) =|
+     set_geolocation_emulated_position(Compositing::PageId page_id, WebView::GeolocationPositionData position, Optional<u16> error_code) =|
+     geolocation_position_response(Compositing::PageId page_id, u64 request_id, WebView::GeolocationPositionData position, Optional<u16> error_code) =|
++    permission_response(Compositing::PageId page_id, u64 request_id, Optional<bool> granted) =|
+     set_has_focus(Compositing::PageId page_id, bool has_focus) =|
+     set_focused_navigable(Compositing::PageId page_id, Web::HTML::CrossProcessId navigable_id) =|
+     consume_user_activation(Compositing::PageId page_id, Web::HTML::UserActivationConsumption consumption) =|

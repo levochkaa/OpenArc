@@ -23,6 +23,7 @@
 #include <LibWebView/WebContentPage.h>
 
 #import <Interface/Event.h>
+#import <UserNotifications/UserNotifications.h>
 #import <Interface/LadybirdWebView.h>
 #import <Utilities/Conversions.h>
 
@@ -35,8 +36,8 @@
 static NSString* (^s_scheme_page_provider)(NSString*, NSInteger*) = nil;
 static __weak OpenArcLadybirdPage* s_last_focused_page = nil;
 static NSHashTable<OpenArcLadybirdPage*>* s_open_pages = nil;
-// Each site's answer to OpenArc's location prompt, for as long as the app runs.
-static NSMutableDictionary<NSString*, NSNumber*>* s_location_decisions = nil;
+// Each site's answers to OpenArc's permission prompts ("location https://example.com"), for as long as the app runs.
+static NSMutableDictionary<NSString*, NSNumber*>* s_site_decisions = nil;
 static uint64_t s_next_permission_prompt_id = 0;
 // Ladybird asks for a new page's handle by reference; the new page stays alive here until the run loop turns,
 // even if the tab controller had no tab for it.
@@ -62,9 +63,59 @@ static constexpr auto s_internal_hosts = Array { "settings"sv, "history"sv, "boo
 @interface OpenArcLadybirdPage () <LadybirdWebViewObserver>
 - (void)webViewDidBecomeFirstResponder;
 - (BOOL)handleKeyEventBeforePage:(NSEvent*)event;
+- (void)askForPermission:(NSString*)kind then:(void (^)(NSNumber* _Nullable allowed))then;
+- (void)showNotificationWithTitle:(NSString*)title body:(NSString*)body tag:(NSString*)tag;
+- (void)bringToFront;
 - (void)containerDidResize;
 - (void)containerDidMoveToWindow:(NSWindow*)window;
 - (void)windowDidChangeOcclusionState;
+@end
+
+// Shows a page's notifications in the app, as banners even while OpenArc is in front, and brings the page's window
+// forward when one is clicked. Installed only when the app has no notification delegate of its own.
+@interface OpenArcLadybirdNotifications : NSObject <UNUserNotificationCenterDelegate>
+@end
+
+static NSString* const OpenArcLadybirdPageKey = @"OpenArcLadybirdPage";
+
+@implementation OpenArcLadybirdNotifications
+
++ (void)installIfNeeded
+{
+    static OpenArcLadybirdNotifications* s_shared = nil;
+    auto* center = [UNUserNotificationCenter currentNotificationCenter];
+    if (s_shared != nil || center.delegate != nil)
+        return;
+    s_shared = [OpenArcLadybirdNotifications new];
+    center.delegate = s_shared;
+}
+
+- (void)userNotificationCenter:(UNUserNotificationCenter*)center
+       willPresentNotification:(UNNotification*)notification
+         withCompletionHandler:(void (^)(UNNotificationPresentationOptions))completionHandler
+{
+    (void)center;
+    (void)notification;
+    completionHandler(UNNotificationPresentationOptionBanner | UNNotificationPresentationOptionList | UNNotificationPresentationOptionSound);
+}
+
+- (void)userNotificationCenter:(UNUserNotificationCenter*)center
+    didReceiveNotificationResponse:(UNNotificationResponse*)response
+             withCompletionHandler:(void (^)(void))completionHandler
+{
+    (void)center;
+    NSString* page_id = response.notification.request.content.userInfo[OpenArcLadybirdPageKey];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        for (OpenArcLadybirdPage* page in s_open_pages) {
+            if ([[NSString stringWithFormat:@"%p", page] isEqualToString:page_id]) {
+                [page bringToFront];
+                break;
+            }
+        }
+    });
+    completionHandler();
+}
+
 @end
 
 @implementation OpenArcLadybirdWebView
@@ -255,7 +306,7 @@ struct PendingEvaluation {
     if (self == [OpenArcLadybirdPage class]) {
         s_open_pages = [NSHashTable weakObjectsHashTable];
         s_pages_being_opened = [NSMutableArray array];
-        s_location_decisions = [NSMutableDictionary dictionary];
+        s_site_decisions = [NSMutableDictionary dictionary];
     }
 }
 
@@ -416,6 +467,38 @@ struct PendingEvaluation {
     view.on_request_geolocation_position = gate_location(move(view.on_request_geolocation_position));
     view.on_start_geolocation_position_watch = gate_location(move(view.on_start_geolocation_position_watch));
 
+    // The microphone and notifications go through OpenArc's prompt too; Ladybird keeps the answer for the site.
+    view.on_request_permission = [weak_self](WebView::WebContentPage& requesting_page, u64 request_id, String const& name) {
+        OpenArcLadybirdPage* self = weak_self;
+        NonnullRefPtr<WebView::WebContentPage> page = requesting_page;
+        NSString* kind = nil;
+        if (name == "microphone"sv)
+            kind = @"microphone";
+        else if (name == "camera"sv)
+            kind = @"camera";
+        else if (name == "notifications"sv)
+            kind = @"notifications";
+        if (self == nil || kind == nil) {
+            page->async_permission_response(request_id, false);
+            return;
+        }
+        [self askForPermission:kind
+                          then:^(NSNumber* _Nullable allowed) {
+                              if (!page->is_open())
+                                  return;
+                              Optional<bool> answer;
+                              if (allowed != nil)
+                                  answer = allowed.boolValue;
+                              page->async_permission_response(request_id, answer);
+                          }];
+    };
+    view.on_show_notification = [weak_self](String const& title, String const& body, String const& tag, String const&) {
+        OpenArcLadybirdPage* self = weak_self;
+        [self showNotificationWithTitle:Ladybird::string_to_ns_string(title.bytes_as_string_view())
+                                   body:Ladybird::string_to_ns_string(body.bytes_as_string_view())
+                                    tag:Ladybird::string_to_ns_string(tag.bytes_as_string_view())];
+    };
+
     // The navigation state follows the back and forward actions Ladybird keeps for its toolbar.
     view.navigate_back_action().add_observer(make<NavigationActionObserver>(self));
     view.navigate_forward_action().add_observer(make<NavigationActionObserver>(self));
@@ -567,23 +650,61 @@ struct PendingEvaluation {
 // for (no tab) gets no location.
 - (void)askForLocationThen:(void (^)(BOOL allowed))then
 {
+    [self askForPermission:@"location"
+                      then:^(NSNumber* _Nullable allowed) {
+                          then(allowed.boolValue);
+                      }];
+}
+
+// Runs `then` with the site's answer to OpenArc's prompt for `kind` (BrowserSitePermissionKind's raw value): remembered,
+// or asked now; nil when the prompt was dismissed or OpenArc could not ask (no tab).
+- (void)askForPermission:(NSString*)kind then:(void (^)(NSNumber* _Nullable allowed))then
+{
     NSString* origin = [self siteOrigin];
-    if (NSNumber* decision = s_location_decisions[origin]) {
-        then(decision.boolValue);
+    NSString* key = [NSString stringWithFormat:@"%@ %@", kind, origin];
+    if (NSNumber* decision = s_site_decisions[key]) {
+        then(decision);
         return;
     }
     id<BrowserChromePageDelegate> delegate = self.delegate;
     BOOL asked = [delegate chromePage:self
           requestSitePermissionPrompt:++s_next_permission_prompt_id
                                origin:origin
-                                kinds:@[ @"location" ]
+                                kinds:@[ kind ]
                              decision:^(NSNumber* _Nullable allowed) {
                                  if (allowed != nil)
-                                     s_location_decisions[origin] = allowed;
-                                 then(allowed.boolValue);
+                                     s_site_decisions[key] = allowed;
+                                 then(allowed);
                              }];
     if (!asked)
-        then(NO);
+        then(nil);
+}
+
+#pragma mark - Notifications
+
+- (void)showNotificationWithTitle:(NSString*)title body:(NSString*)body tag:(NSString*)tag
+{
+    [OpenArcLadybirdNotifications installIfNeeded];
+    NSString* origin = [self siteOrigin];
+    auto* content = [UNMutableNotificationContent new];
+    content.title = title;
+    content.body = body;
+    content.subtitle = [NSURL URLWithString:origin].host ?: origin;
+    content.sound = UNNotificationSound.defaultSound;
+    content.threadIdentifier = origin;
+    content.userInfo = @{ OpenArcLadybirdPageKey : [NSString stringWithFormat:@"%p", self] };
+    // A tag replaces the site's earlier notification with the same tag, as the spec asks.
+    NSString* identifier = tag.length > 0 ? [NSString stringWithFormat:@"%@ %@", origin, tag] : NSUUID.UUID.UUIDString;
+    auto* request = [UNNotificationRequest requestWithIdentifier:identifier content:content trigger:nil];
+    [[UNUserNotificationCenter currentNotificationCenter] addNotificationRequest:request withCompletionHandler:nil];
+}
+
+- (void)bringToFront
+{
+    [NSApp activate];
+    NSWindow* window = _container.window;
+    [window makeKeyAndOrderFront:nil];
+    [self focus];
 }
 
 #pragma mark - Sign-ins
