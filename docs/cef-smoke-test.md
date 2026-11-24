@@ -35,6 +35,8 @@ The script copies the app to `~/Library/Caches/OpenArcSmokeTest/OpenArcSmoke.app
 
 It starts the copy through LaunchServices with `open -g` and `--no-activate`, `--runtime-suffix=cef-smoke-<random>`, `--agent-socket=/tmp/oa-smoke-<random>.sock`, `--use-mock-keychain` (no keychain prompts) and `--load-extension` with the test extension. A copy started from a shell becomes the frontmost app even though it never activates itself; `open -g` keeps it in the background. Apps that LaunchServices starts get launchd's environment, so `OPENARC_SYNC_BASE_URL` never reaches the copy and it does not sync. Afterwards the script kills it with SIGKILL (SIGTERM shows the quit alert) and deletes the app copy, `CEF-<suffix>`, `Session-<suffix>` and the defaults domain.
 
+Only one run can execute at a time because every run shares the same copy path, bundle ID, and defaults domain. Each run first takes an exclusive lock on `~/Library/Caches/OpenArcSmokeTest/run.lock` and waits while a run from another checkout holds it (`--wait MINUTES`, 30 by default; exits with status 2 on timeout). The lock file records the holder's checkout, app, and engine, and the system releases the lock when that process exits, even on `SIGKILL`. A copy left by `--keep` is not covered; the next run kills it.
+
 `--no-activate` is a launch argument for automated checks: OpenArc then never activates itself and opens its windows behind other apps' windows. A copy started with `--agent-socket` leaves `~/.local/bin/openarc` alone.
 
 ## Checks

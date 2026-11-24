@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import ctypes
 import datetime as dt
+import fcntl
 import glob
 import http.server
 import json
@@ -33,6 +34,8 @@ CRASH_DIRS = [Path.home() / "Library" / "Logs" / "DiagnosticReports"]
 COPY_BUNDLE_ID = "com.levochkaa.OpenArc.smoketest"
 COPY_NAME = "OpenArc Smoke"
 COPY_DIR = Path.home() / "Library" / "Caches" / "OpenArcSmokeTest"
+# Every run uses the same copy path, bundle id and defaults domain, so runs from other checkouts wait for this lock.
+RUN_LOCK = COPY_DIR / "run.lock"
 CHROME_ENGINE_FRAMEWORK = "OpenArc Framework.framework"
 LADYBIRD_ENGINE_FRAMEWORK = "OpenArc Ladybird.framework"
 # Checks of features the Chrome engine does not have yet (docs/chrome-engine.md); they skip on it.
@@ -93,7 +96,7 @@ What it does:
   Ladybird (OpenArc Ladybird.framework, docs/ladybird-engine.md) and checks
   that its pages run in Ladybird's WebContent helpers and no Chromium loads. Afterwards the copy is killed with
   SIGKILL, and its app copy, CEF- and Session- data and defaults are deleted.
-  One run at a time.
+  One run at a time: a run waits while another holds {RUN_LOCK} (--wait).
 
 Checks:
   chromium-engine, sandbox, no-notification-request-at-launch, engine-version, page-load-js-navigation,
@@ -277,6 +280,42 @@ def find_row(state: dict, *patterns: str) -> tuple[str, str] | None:
         if all(re.search(pattern, text, re.IGNORECASE) for pattern in patterns):
             return token, text
     return None
+
+
+# MARK: - One run at a time
+
+
+class RunLock:
+    """An exclusive lock on the copy's place; the kernel drops it when the run's process ends, even on SIGKILL."""
+
+    def __init__(self, path: Path):
+        self.path = path
+        self.handle = None
+
+    def acquire(self, timeout: float, owner: dict) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        handle = self.path.open("a+")
+        deadline = time.monotonic() + timeout
+        announced = False
+        while True:
+            try:
+                fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if not announced:
+                    handle.seek(0)
+                    log(f"Another smoke run holds {self.path} ({handle.read().strip() or 'no details'}); "
+                        f"waiting up to {timeout / 60:g} min …")
+                    announced = True
+                if time.monotonic() > deadline:
+                    handle.close()
+                    raise TimeoutError(f"another smoke run still holds {self.path} after {timeout / 60:g} min")
+                time.sleep(2)
+        handle.seek(0)
+        handle.truncate()
+        handle.write(json.dumps(owner) + "\n")
+        handle.flush()
+        self.handle = handle
 
 
 # MARK: - The isolated copy
@@ -1600,6 +1639,8 @@ def main() -> int:
                              "for it and no-notification-request-at-launch is conclusive; the screen-share check "
                              "then skips, and macOS keeps a notification settings entry for that id")
     parser.add_argument("--keep", action="store_true", help="leave the copy running and its data in place")
+    parser.add_argument("--wait", type=float, default=30, metavar="MINUTES",
+                        help="how long to wait while a run from another checkout uses the copy (default 30)")
     parser.add_argument("--engine", choices=("cef", "chrome", "webkit", "ladybird"), default="cef",
                         help="the engine the copy runs pages on (default cef); chrome needs a build that "
                              f"carries {CHROME_ENGINE_FRAMEWORK}; webkit loads no Chromium; ladybird needs a build "
@@ -1621,6 +1662,17 @@ def main() -> int:
     if options.fresh_identity:
         global COPY_BUNDLE_ID
         COPY_BUNDLE_ID = f"{COPY_BUNDLE_ID}.r{dt.datetime.now().strftime('%m%d%H%M')}{random_token(3)}"
+    # Held until this process ends; the variable keeps the file open.
+    run_lock = RunLock(RUN_LOCK)
+    try:
+        run_lock.acquire(options.wait * 60, {
+            "pid": os.getpid(), "checkout": str(ROOT), "app": str(options.app), "engine": options.engine,
+            "started": dt.datetime.now().isoformat(timespec="seconds")})
+    except TimeoutError as error:
+        log(f"Setup failed: {error}")
+        return 2
+    except KeyboardInterrupt:
+        return 130
     test = SmokeTest(options)
     try:
         return test.run()
