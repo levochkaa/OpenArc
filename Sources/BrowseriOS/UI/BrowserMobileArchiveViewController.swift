@@ -135,6 +135,7 @@ final class BrowserMobileArchiveViewController: UITableViewController, UISearchR
         searchController.searchBar.placeholder = String(localized: "Search Archive", table: "Mobile")
         searchController.searchBar.searchTextField.accessibilityIdentifier = "browser.archive.search"
         navigationItem.searchController = searchController
+        tableView.keyboardDismissMode = .interactive
         navigationItem.hidesSearchBarWhenScrolling = false
         definesPresentationContext = true
         errorLabel.font = .preferredFont(forTextStyle: .subheadline)

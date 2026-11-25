@@ -37,6 +37,14 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
         }
     }
 
+    /// Lays the buttons over the field's end; a touch between them reaches the field.
+    private final class PassThroughView: UIView {
+        override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+            let hit = super.hitTest(point, with: event)
+            return hit === self ? nil : hit
+        }
+    }
+
     private final class Cell: UITableViewCell {
         // MARK: Private
 
@@ -164,7 +172,7 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
     private let holdGesture = UILongPressGestureRecognizer()
     private var suggestions = BrowserMobileSearchSuggestions(query: "", candidates: [])
     /// The microphone and the eyes, which fade in with the field.
-    private let accessories = UIView()
+    private let accessories = PassThroughView()
     private let micButton = UIButton(type: .system)
     private let eyesButton = UIButton(type: .system)
     private let clearButton = UIButton(type: .system)
@@ -181,6 +189,9 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
     private let dictation = BrowserMobileDictation()
     /// The text before dictation started; what is heard goes after it.
     private var dictationPrefix = ""
+
+    /// A finger is on the suggestions, so the keyboard may be following it.
+    var isDraggingSuggestions: Bool { table.isTracking }
 
     private var hasText: Bool { field.text?.isEmpty == false }
 
@@ -233,7 +244,9 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
         table.rowHeight = Self.rowHeight
         table.dataSource = self
         table.delegate = self
-        table.keyboardDismissMode = .none
+        // A drag down the suggestions takes the keyboard with it.
+        table.keyboardDismissMode = .interactive
+        table.alwaysBounceVertical = true
         table.showsVerticalScrollIndicator = false
         table.register(Cell.self, forCellReuseIdentifier: "Suggestion")
         table.accessibilityIdentifier = "browser.searchSuggestions"
@@ -340,6 +353,8 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
     /// scroll the suggestions.
     func dragMovesPanel(at point: CGPoint, downward: Bool) -> Bool {
         guard table.frame.contains(point) else { return true }
+        // With the keyboard up the suggestions take the drag, so it can pull the keyboard down.
+        guard !field.isFirstResponder else { return false }
         return downward && table.contentOffset.y <= -table.adjustedContentInset.top + 1
     }
 
@@ -417,6 +432,12 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
         for cell in table.visibleCells.compactMap({ $0 as? Cell }) {
             cell.reloadIcon()
         }
+    }
+
+    /// Starts listening, as the microphone button does.
+    func startDictation() {
+        guard !dictation.isListening else { return }
+        toggleDictation()
     }
 
     private func configureAccessories() {
@@ -564,12 +585,6 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
         updateAccessories(animated: true)
     }
 
-    /// Starts listening, as the microphone button does.
-    func startDictation() {
-        guard !dictation.isListening else { return }
-        toggleDictation()
-    }
-
     private func toggleDictation() {
         if dictation.isListening {
             dictation.stop()
@@ -578,7 +593,8 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
         field.keepCompletion()
         let typed = field.text ?? ""
         dictationPrefix = typed.isEmpty || typed.hasSuffix(" ") ? typed : typed + " "
-        dictation.start(language: BrowserMobileVoiceSearchLanguages.language(keyboard: field.textInputMode?.primaryLanguage))
+        dictation
+            .start(language: BrowserMobileVoiceSearchLanguages.language(keyboard: field.textInputMode?.primaryLanguage))
     }
 
     private func toggleIncognito() {

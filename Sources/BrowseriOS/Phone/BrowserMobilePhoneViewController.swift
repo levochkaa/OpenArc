@@ -187,6 +187,10 @@ final class BrowserMobilePhoneViewController: UIViewController {
     private lazy var searchPanel = BrowserMobileSearchPanel()
     private var searchReplacesPage = false
     private var keyboardTop: CGFloat?
+    /// The keyboard went down while search stayed open, so the panel sits at the bottom.
+    private var isSearchKeyboardDismissed = false
+    /// Follows the keyboard's top, as it moves under a finger too.
+    private let keyboardTracker = BrowserMobileKeyboardTracker()
     private var laidOutSize = CGSize.zero
 
     /// Switcher.
@@ -241,6 +245,12 @@ final class BrowserMobilePhoneViewController: UIViewController {
     /// The open page's site, for Site Settings.
     private var siteHost: String? {
         shareURL.flatMap { BrowserMobileFavicons.host(forPage: $0.absoluteString) }
+    }
+
+    /// Where the search panel ends: the keyboard's top, the screen's bottom once the keyboard
+    /// was pulled down, or where the keyboard will come up while it is on its way.
+    private var searchKeyboardTop: CGFloat {
+        keyboardTop ?? (isSearchKeyboardDismissed ? view.bounds.height : view.bounds.height * 0.655)
     }
 
     init(workspace: BrowserMobileWorkspace, contentView: UIView) {
@@ -307,6 +317,16 @@ final class BrowserMobilePhoneViewController: UIViewController {
         NotificationCenter.default.addObserver(
             self, selector: #selector(thumbnailsChanged), name: BrowserMobileTabThumbnails.didChange, object: nil,
         )
+        keyboardTracker.isUserInteractionEnabled = false
+        keyboardTracker.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(keyboardTracker)
+        NSLayoutConstraint.activate([
+            keyboardTracker.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            keyboardTracker.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            keyboardTracker.topAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor),
+            keyboardTracker.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+        ])
+        keyboardTracker.onResize = { [weak self] in self?.followKeyboardUnderFinger() }
         for name in [UIResponder.keyboardWillShowNotification, UIResponder.keyboardWillHideNotification] {
             NotificationCenter.default.addObserver(
                 self, selector: #selector(keyboardChanged(_:)), name: name, object: nil,
@@ -530,7 +550,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
         let size = view.bounds.size
         switch mode {
         case .search:
-            let top = searchPanelTop(keyboardTop: keyboardTop ?? size.height * 0.655)
+            let top = searchPanelTop(keyboardTop: searchKeyboardTop)
             surface.frame = CGRect(x: 0, y: top, width: size.width, height: size.height - top)
             applyPageCard(searchCardFrame())
         case .pageMenu:
@@ -1322,6 +1342,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
             closeSwitcherInstantly()
         }
         guard mode == .browsing || overSwitcher else { return false }
+        isSearchKeyboardDismissed = false
         // The page is still full screen: its picture is right for the switcher
         // only now, before it shrinks behind the panel.
         if !overSwitcher, let tab = workspace.selectedTab, !tab.state.isLoading {
@@ -1343,7 +1364,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
         searchPanel.isIncognito = workspace.isIncognito || (replacesPage && workspace.selectedTab?.isPrivate == true)
         searchPanel.onIncognitoChange = { [weak self] isOn in self?.workspace.isIncognito = isOn }
         searchPanel.prepare(text: text)
-        let top = searchPanelTop(keyboardTop: keyboardTop ?? view.bounds.height * 0.655)
+        let top = searchPanelTop(keyboardTop: searchKeyboardTop)
         guard let surface = makeSurface(
             height: view.bounds.height - top, dark: true, content: searchPanel, revealsContent: true,
             followsFinger: followsFinger,
@@ -1364,7 +1385,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
     private func finishOpeningSearch() {
         guard mode == .search, let surface else { return }
         searchPanel.focus()
-        let top = searchPanelTop(keyboardTop: keyboardTop ?? view.bounds.height * 0.655)
+        let top = searchPanelTop(keyboardTop: searchKeyboardTop)
         let card = searchCardFrame()
         UIView.animate(springDuration: 0.42, bounce: 0.12, initialSpringVelocity: 0, delay: 0, options: [
             .allowUserInteraction, .beginFromCurrentState,
@@ -1406,22 +1427,35 @@ final class BrowserMobilePhoneViewController: UIViewController {
         max(view.safeAreaInsets.top + 160, keyboardTop - 301)
     }
 
+    private func layoutSearchPanel(keyboardTop: CGFloat) {
+        guard let surface else { return }
+        let panelTop = searchPanelTop(keyboardTop: keyboardTop)
+        surface.frame = CGRect(x: 0, y: panelTop, width: view.bounds.width, height: view.bounds.height - panelTop)
+        searchPanel.frame = CGRect(x: 0, y: 0, width: view.bounds.width, height: keyboardTop - panelTop)
+    }
+
     @objc private func keyboardChanged(_ notification: Notification) {
         guard let frame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return }
-        let top = notification.name == UIResponder.keyboardWillHideNotification
-            ? view.bounds.height
-            : view.convert(frame, from: nil).minY
+        let hides = notification.name == UIResponder.keyboardWillHideNotification
+        let top = hides ? view.bounds.height : view.convert(frame, from: nil).minY
         keyboardTop = top < view.bounds.height ? top : nil
         bar.isHidden = workspace.isFindInPageVisible && mode == .browsing
-        guard mode == .search, let surface, let keyboardTop else { return }
-        let panelTop = searchPanelTop(keyboardTop: keyboardTop)
+        guard mode == .search, surface != nil, keyboardTop != nil || searchPanel.isFieldExpanded else { return }
+        isSearchKeyboardDismissed = keyboardTop == nil
+        let bottom = searchKeyboardTop
         UIView.animate(springDuration: 0.42, bounce: 0.1) {
-            surface.frame = CGRect(
-                x: 0, y: panelTop, width: self.view.bounds.width, height: self.view.bounds.height - panelTop,
-            )
-            self.searchPanel.frame = CGRect(
-                x: 0, y: 0, width: self.view.bounds.width, height: keyboardTop - panelTop,
-            )
+            self.layoutSearchPanel(keyboardTop: bottom)
+        }
+    }
+
+    /// A drag down the suggestions pulls the keyboard, and the panel stays on top of it.
+    private func followKeyboardUnderFinger() {
+        guard mode == .search, surface != nil, searchPanel.isFieldExpanded, searchPanel.isDraggingSuggestions,
+              surfacePan.map({ $0.state != .began && $0.state != .changed }) ?? true
+        else { return }
+        let top = keyboardTracker.frame.minY
+        UIView.performWithoutAnimation {
+            layoutSearchPanel(keyboardTop: top < view.bounds.height ? top : view.bounds.height)
         }
     }
 
@@ -2332,7 +2366,7 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
     /// The search panel follows the finger up out of the bar, its field still
     /// the New Tab capsule.
     private func dragSearchUp(_ surface: UIView, by translation: CGFloat) {
-        let top = searchPanelTop(keyboardTop: keyboardTop ?? view.bounds.height * 0.655)
+        let top = searchPanelTop(keyboardTop: searchKeyboardTop)
         let lift = max(-translation, 0)
         let reach = surfaceDragStartTop - top
         // Past where the panel settles it gives only a little.
@@ -2903,5 +2937,17 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
         now.radius = step(now.radius, target.radius)
         swipe.pullNow = now
         placePulledCard(swipe)
+    }
+}
+
+// MARK: - BrowserMobileKeyboardTracker
+
+/// Stretches from the keyboard's top to the screen's bottom and says when that changes.
+private final class BrowserMobileKeyboardTracker: UIView {
+    var onResize: () -> Void = {}
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        onResize()
     }
 }

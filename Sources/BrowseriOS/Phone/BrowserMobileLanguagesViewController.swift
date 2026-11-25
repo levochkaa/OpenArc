@@ -225,6 +225,7 @@ final class BrowserMobileAddLanguageViewController: UITableViewController, UISea
         search.obscuresBackgroundDuringPresentation = false
         navigationItem.searchController = search
         navigationItem.hidesSearchBarWhenScrolling = false
+        tableView.keyboardDismissMode = .interactive
     }
 
     override func tableView(_: UITableView, numberOfRowsInSection _: Int) -> Int { shown.count }
