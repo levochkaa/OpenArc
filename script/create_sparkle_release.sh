@@ -99,6 +99,9 @@ archive_name="OpenArc-$short_version-$build_version.zip"
 archive_path="$updates_dir/$archive_name"
 # generate_appcast pairs release notes by the archive's name without .zip.
 generated_notes_path="$updates_dir/${archive_name%.zip}.md"
+# The disk image is for first installs from the release page. It stays out of
+# $updates_dir: generate_appcast would list it next to the zip.
+dmg_path="$work_dir/${archive_name%.zip}.dmg"
 # The server proxies downloads, so they work while the repository is private.
 download_url_prefix="${OPENARC_UPDATE_DOWNLOAD_URL_PREFIX:-https://api.openarc.su/downloads/}"
 # A prefix without a trailing slash loses its last path component.
@@ -122,6 +125,12 @@ if [[ "$notarize" == true ]]; then
 fi
 
 ditto -c -k --sequesterRsrc --keepParent "$app_bundle" "$archive_path"
+
+dmg_args=()
+if [[ "$notarize" == true ]]; then
+  dmg_args+=(--notarize)
+fi
+"$ROOT_DIR/script/make_dmg.sh" "$app_bundle" "$dmg_path" ${dmg_args[@]+"${dmg_args[@]}"}
 
 if [[ -n "$notes_file" ]]; then
   cp "$notes_file" "$generated_notes_path"
@@ -161,7 +170,7 @@ if [[ ! -f "$appcast_path" ]]; then
 fi
 
 # macOS ships bash 3.2, which has no mapfile.
-assets=("$archive_path" "$generated_notes_path" "$appcast_path")
+assets=("$archive_path" "$dmg_path" "$generated_notes_path" "$appcast_path")
 while IFS= read -r delta_asset; do
   assets+=("$delta_asset")
 done < <(find "$updates_dir" -maxdepth 1 -type f -name '*.delta' -print)
@@ -188,5 +197,6 @@ if [[ "$publish" == true ]]; then
 fi
 
 printf 'Archive: %s\n' "$archive_path"
+printf 'Disk image: %s\n' "$dmg_path"
 printf 'Appcast: %s\n' "$appcast_path"
 printf 'Tag: %s\n' "$tag"
