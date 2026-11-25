@@ -2,7 +2,7 @@
 
 OpenArc runs on its own CEF build: CEF plus the overrides in `Chromium/chromium_src`. The app builds against a binary distribution in `ThirdParty/cef/export`; it needs no Chromium checkout on the Mac.
 
-The current base is CEF 158.0.3+g8c29be2, Chromium 158.0.8127.18, recorded in `ThirdParty/cef/export/include/cef_version.h`. Routine rebuilds stay on that base; move it only on purpose.
+The current base is CEF 158.0.6+g23f1736, Chromium 158.0.8127.89, recorded in `ThirdParty/cef/export/include/cef_version.h`. Routine rebuilds stay on that base; move it only on purpose.
 
 ## The Linux build host
 
@@ -34,7 +34,7 @@ On the WSL host (24 threads, 52 GB) the first build of a new base took about 1.5
 WAIT=1 ./script/cef_remote_build.sh build
 WAIT=1 ./script/cef_remote_build.sh package
 ./script/cef_remote_build.sh pull
-./script/cef_remote_build.sh install 158.0.3   # export-158.0.3 becomes the export; the old one is kept as export-158.0.3-previous
+./script/cef_remote_build.sh install 158.0.6   # export-158.0.6 becomes the export; the old one is kept as export-158.0.6-previous
 ./build.sh build
 ```
 
@@ -45,7 +45,7 @@ A change to `Chromium/chromium_src/cef/patch` needs `prepare` before `build`.
 Pick the CEF commit and its Chromium tag from CEF's `CHROMIUM_BUILD_COMPATIBILITY.txt`, then:
 
 ```bash
-export CEF_BRANCH=8127 CEF_COMMIT=8c29be240971eebee960ac92114d3efccb5780ff CHROMIUM_TAG=158.0.8127.18
+export CEF_BRANCH=8127 CEF_COMMIT=23f1736e2d5e65155607a588e09ab3efd254dd38 CHROMIUM_TAG=158.0.8127.89
 WAIT=1 ./script/cef_remote_build.sh fetch
 WAIT=1 ./script/cef_remote_build.sh all
 ```

@@ -24,8 +24,8 @@ GN_BIN="$CHROMIUM_SRC/buildtools/mac/gn"
 BINARY_DISTRIB_DIR="$CEF_SRC/binary_distrib"
 CHROMIUM_SRC_OVERRIDES="$ROOT_DIR/Chromium/chromium_src"
 CHROMIUM_FORK_MARKER=".openarc-chromium-fork"
-FALLBACK_CEF_CHECKOUT="8c29be240971eebee960ac92114d3efccb5780ff"
-FALLBACK_CHROMIUM_CHECKOUT="refs/tags/158.0.8127.18"
+FALLBACK_CEF_CHECKOUT="23f1736e2d5e65155607a588e09ab3efd254dd38"
+FALLBACK_CHROMIUM_CHECKOUT="refs/tags/158.0.8127.89"
 DEFAULT_CEF_BRANCH="8127"
 # Match a shipped browser runtime instead of Chromium's DCHECK-heavy local
 # Release default. Official mode enables PGO and ThinLTO for Release, while the
@@ -933,9 +933,9 @@ Usage:
 
 Defaults:
   CEF checkout comes from ThirdParty/cef/export/include/cef_version.h when
-  available, then falls back to 8c29be240971eebee960ac92114d3efccb5780ff.
+  available, then falls back to 23f1736e2d5e65155607a588e09ab3efd254dd38.
   Chromium checkout comes from the same exported cef_version.h when available,
-  then falls back to refs/tags/158.0.8127.18.
+  then falls back to refs/tags/158.0.8127.89.
   Existing Chromium out/ build directories are preserved by default. Set
   OPENARC_CEF_CLOBBER_OUT=1 only when an explicit full CEF rebuild is wanted.
   Chromium GN defaults: official optimized build with PGO and ThinLTO,

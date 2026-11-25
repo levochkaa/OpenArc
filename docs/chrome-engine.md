@@ -22,7 +22,7 @@ on, this setting waits for it to be turned off; so does "Use Ladybird for every 
   app never links either: `main()` (`Sources/Browser/BrowserMain.mm`) asks `BrowserEngineChoice` which engine
   this launch runs on, then loads CEF as before or `dlopen`s Chrome's framework and hands the process to
   `OpenArcChromeEngineMain`, which runs `ChromeMain` start to quit. CEF is never loaded on the Chrome engine.
-- **Same Chromium, same profile.** The engine builds from the Chromium tag of the exported CEF (158.0.8127.18
+- **Same Chromium, same profile.** The engine builds from the Chromium tag of the exported CEF (158.0.8127.89
   now), and Chrome gets OpenArc's data folder (`~/Library/Application Support/OpenArc/CEF`, profile `Default`)
   as its user data. Cookies, passwords, history and extensions open on either engine, and switching back is safe:
   neither engine meets a profile written by a newer Chromium. Both use the "Chromium Safe Storage" Keychain item.
