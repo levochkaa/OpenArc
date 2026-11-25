@@ -25,6 +25,9 @@ protocol BrowserHistorySearching {
     func noteVisit(title: String, urlString: String)
     /// The engine's saved icons of these pages, by address; pages without one are left out.
     func pageIcons(for urlStrings: [String]) -> [String: Data]
+    /// Visited pages with their visit counts and times, for agents: the best
+    /// matches of `query`, or the latest pages when it is empty.
+    func pages(matching query: String, maximumCount: Int) -> [BrowserSearchDocument]
 }
 
 extension BrowserHistorySearching {
@@ -44,6 +47,7 @@ extension BrowserHistorySearching {
 }
 
 extension BrowserHistorySearching {
+    func pages(matching _: String, maximumCount _: Int) -> [BrowserSearchDocument] { [] }
     func noteVisit(title _: String, urlString _: String) {}
     func recentSuggestions(maximumCount _: Int) -> [BrowserCommandSuggestion] { [] }
     func recentSuggestions(withURLPrefix _: String, maximumCount _: Int) -> [BrowserCommandSuggestion] { [] }
@@ -324,10 +328,92 @@ final class BrowserChromiumHistoryStore: BrowserHistorySearching, @unchecked Sen
         sessionIndex = BrowserSearchIndex(documents: sessionDocuments)
     }
 
+    func pages(matching query: String, maximumCount: Int) -> [BrowserSearchDocument] {
+        guard maximumCount > 0 else { return [] }
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let session: [BrowserSearchDocument]
+        let stored: [BrowserSearchDocument]
+        if trimmed.isEmpty {
+            session = Array(sessionDocuments.reversed())
+            stored = storedPages(
+                where: "1",
+                arguments: [],
+                order: "last_visit_time DESC",
+                maximumCount: maximumCount,
+            )
+        } else {
+            session = sessionIndex.map { index in
+                index.search(trimmed, limit: maximumCount).map { index.documents[$0] }
+            } ?? []
+            prepareSearchIndex()
+            stored = searchIndex.map { index in
+                index.search(trimmed, limit: maximumCount).map { index.documents[$0] }
+            } ?? storedPages(
+                where: "(url LIKE ? ESCAPE '\\' OR title LIKE ? ESCAPE '\\')",
+                arguments: [Self.likePattern(for: trimmed), Self.likePattern(for: trimmed)],
+                order: "typed_count DESC, visit_count DESC, last_visit_time DESC",
+                maximumCount: maximumCount,
+            )
+        }
+        let urls = Set(session.map(\.urlString))
+        var pages = session + stored.filter { !urls.contains($0.urlString) }
+        if trimmed.isEmpty {
+            pages.sort { $0.lastVisit > $1.lastVisit }
+        }
+        return Array(pages.prefix(maximumCount))
+    }
+
     func pageIcons(for urlStrings: [String]) -> [String: Data] {
         loadIcons(for: urlStrings)
         return urlStrings.reduce(into: [:]) { icons, urlString in
             if let data = iconCache[urlString] ?? nil { icons[urlString] = data }
+        }
+    }
+
+    /// Pages with their counts, from the database or, while it is locked, the index's latest.
+    private func storedPages(
+        where condition: String,
+        arguments: [any DatabaseValueConvertible],
+        order: String,
+        maximumCount: Int,
+    ) -> [BrowserSearchDocument] {
+        guard let historyURL = existingHistoryURL else { return [] }
+        do {
+            let dbQueue = try DatabaseQueue(path: historyURL.path, configuration: Self.mainThreadReading)
+            defer { try? dbQueue.close() }
+            return try dbQueue.read { db in
+                try Row.fetchAll(
+                    db,
+                    sql: """
+                    SELECT url, title, visit_count, typed_count, last_visit_time
+                    FROM urls
+                    WHERE hidden = 0
+                      AND url NOT LIKE 'chrome://%'
+                      AND url NOT LIKE 'chrome-extension://%'
+                      AND url NOT LIKE 'openarc://%'
+                      AND url NOT LIKE 'about:%'
+                      AND \(condition)
+                    ORDER BY \(order)
+                    LIMIT ?
+                    """,
+                    arguments: StatementArguments(arguments + [maximumCount]),
+                )
+                .map { row in
+                    let lastVisit: Int64 = row["last_visit_time"]
+                    return BrowserSearchDocument(
+                        title: row["title"],
+                        urlString: row["url"],
+                        visitCount: row["visit_count"],
+                        typedCount: row["typed_count"],
+                        lastVisit: lastVisit > 0 ? TimeInterval(lastVisit) / 1_000_000 - 11_644_473_600 : 0,
+                    )
+                }
+            }
+        } catch {
+            return Array((searchIndex?.documents ?? [])
+                .filter { !$0.urlString.hasPrefix("chrome-extension://") }
+                .sorted { $0.lastVisit > $1.lastVisit }
+                .prefix(maximumCount))
         }
     }
 

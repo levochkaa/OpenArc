@@ -53,7 +53,7 @@ Only one run can execute at a time because every run shares the same copy path, 
 | extension-sees-tabs | The test extension's service worker answers `chrome.tabs.query({})`; the count matches `openarc tabs`, including a tab that was never shown. |
 | passkeys | `isUserVerifyingPlatformAuthenticatorAvailable()` and `getClientCapabilities()` resolve. False is a WARN: the copy has no webauthn keychain group. |
 | media-devices | `navigator.mediaDevices` exists, `getDisplayMedia` is a function, `enumerateDevices` resolves. |
-| history | The visited fixture URLs are in the profile's `History` database, which OpenArc's history reads; the CLI has no history command. |
+| history | The visited fixture URLs are in the profile's `History` database, which OpenArc's history reads, and `openarc history` lists them. |
 | webkit-engine | The copy's `browser.settings.siteEngines` sends a second fixture port to WebKit. The fixture writes the engine it sees into its title, which `openarc tabs` lists: `Engine webkit 42` there, `Engine chromium 42` on the other port. |
 | print-preview | `window.print()` opens a "Print" window over the browser window; Escape, sent in the background, closes it and the page still runs scripts. |
 | screen-share-picker | `getDisplayMedia` from a click opens OpenArc's picker sheet. With Screen Recording allowed for the copy it shares the first source and checks the track, then stops it; otherwise it presses Cancel and expects `NotAllowedError`. |

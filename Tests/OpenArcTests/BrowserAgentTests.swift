@@ -60,6 +60,59 @@ private nonisolated(unsafe) let page: [String: Any] = ["nodes": [
     #expect(refs[30] != nil)
 }
 
+@Test func aScopedSnapshotShowsOnlyThatElement() {
+    var refs = [Int: String]()
+    let tree: [String: Any] = ["nodes": [
+        axNode("1", role: "RootWebArea", children: ["2", "3"]),
+        axNode("2", role: "navigation", name: "Top", backend: 20, parent: "1", children: ["4"]),
+        axNode("4", role: "link", name: "Home", backend: 40, parent: "2"),
+        axNode("3", role: "link", name: "Elsewhere", backend: 30, parent: "1"),
+    ]]
+    let outline = BrowserAgentSnapshot.outline(
+        fromAXTree: tree, interactiveOnly: false, refs: &refs, scope: 20, frames: [:],
+    )
+    #expect(outline?.contains(#"- navigation "Top""#) == true)
+    #expect(outline?.contains(#"link "Home""#) == true)
+    #expect(outline?.contains("Elsewhere") == false)
+    #expect(BrowserAgentSnapshot.outline(
+        fromAXTree: tree, interactiveOnly: false, refs: &refs, scope: 999, frames: [:],
+    ) == nil, "An element without an accessibility node gives no outline")
+}
+
+@Test func aFramesOutlineSitsUnderItsFrameWithRefsOfItsOwn() {
+    var refs = [Int: String]()
+    let tree: [String: Any] = ["nodes": [
+        axNode("1", role: "RootWebArea", children: ["2", "3"]),
+        axNode("2", role: "button", name: "Outside", backend: 20, parent: "1"),
+        axNode("3", role: "Iframe", backend: 30, parent: "1"),
+    ]]
+    // A frame numbers its accessibility nodes from 1 as well.
+    let frame: [String: Any] = ["nodes": [
+        axNode("1", role: "RootWebArea", children: ["2"]),
+        axNode("2", role: "button", name: "Inside", backend: 70, parent: "1"),
+    ]]
+    let outline = BrowserAgentSnapshot.outline(
+        fromAXTree: tree, interactiveOnly: false, refs: &refs, scope: nil, frames: [30: frame],
+    ) ?? ""
+    #expect(outline.contains(#"- button "Outside" [ref=e1]"#))
+    #expect(outline.contains(#"  - button "Inside" [ref=e2]"#), "\(outline)")
+    #expect(refs[70] == "e2")
+}
+
+@Test func aDiffShowsOnlyWhatChangedUnderItsContext() {
+    let before = "- heading \"Cart\"\n  - button \"Add\" [ref=e1]\n  - text \"0 items\""
+    let after = "- heading \"Cart\"\n  - button \"Add\" [ref=e1]\n  - text \"1 item\""
+    let diff = BrowserAgentSnapshot.diff(from: before, to: after)
+    #expect(diff == "    - button \"Add\" [ref=e1]\n-   - text \"0 items\"\n+   - text \"1 item\"")
+    #expect(BrowserAgentSnapshot.diff(from: after, to: after) == "(no changes)")
+}
+
+@Test func newRefsNeverReuseANameAfterNodesLeave() {
+    var refs = [30: "e1", 40: "e5"]
+    _ = BrowserAgentSnapshot.outline(fromAXTree: page, interactiveOnly: true, refs: &refs)
+    #expect(refs[50] == "e6", "A new node takes a name after the highest, not after the count")
+}
+
 @Test func keysGoByTheirUsualNames() {
     #expect(BrowserAgentSnapshot.keyEvent(named: "Enter")?.text == "\r")
     #expect(BrowserAgentSnapshot.keyEvent(named: "arrowdown")?.virtualCode == 40)
@@ -141,4 +194,26 @@ private final class OneLoginStore: BrowserPasswordStoring {
 @Test func screenShareSourcesUseChromiumsNames() {
     #expect(BrowserScreenShareSource.screen(id: 1, title: "Screen").mediaID == "screen:1:0")
     #expect(BrowserScreenShareSource.window(id: 9, title: "Doc", app: "Pages").mediaID == "window:9:0")
+}
+
+@Test @MainActor func profilesNotesAndHistoryAreAnsweredForTheWindow() async throws {
+    let (model, _) = makeModel(store: nil)
+    model.notesStore = BrowserNotesStore()
+    let note = model.notesStore.createNote(title: "Trip", markdown: "Flight to Tbilisi on Friday")
+    let service = BrowserAgentService(models: { [model] }, approveSignIn: { _, _ in false })
+
+    let profiles = try await service.handle(method: "profiles", params: [:]) as? [[String: Any]]
+    #expect(profiles?.first?["id"] as? String == model.profile.id)
+    #expect(profiles?.first?["selected"] as? Bool == true)
+
+    let found = try await service.handle(method: "notes", params: ["query": "tbilisi"]) as? [[String: Any]]
+    #expect(found?.first?["id"] as? String == note.id)
+    let read = try await service.handle(method: "note", params: ["id": note.id]) as? [String: Any]
+    #expect(read?["markdown"] as? String == "Flight to Tbilisi on Friday")
+
+    let history = try await service.handle(method: "history", params: [:]) as? [[String: Any]]
+    #expect(history?.isEmpty == true, "A window without stored history answers with none")
+
+    let missing = await service.respond(toLine: #"{"method":"tabs","params":{"profile":"Nobody"}}"#)
+    #expect(missing.contains("No open window has the profile"))
 }

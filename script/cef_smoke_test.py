@@ -1272,10 +1272,15 @@ class SmokeTest:
         # Chromium writes history in batches, about every ten seconds.
         found = wait_until(visited, 30, 2)
         details = {"method": "reads the History database of the copy's CEF profile (what OpenArc's history "
-                             "and command bar search read); the CLI has no history command", "rows": found}
+                             "and command bar search read), then `openarc history`", "rows": found}
         if not found:
             raise CheckFailed(f"{wanted} did not reach the History database within 30 s", details)
-        return {"evidence": f"{len(found)} fixture URL(s) in History, including index.html and two.html", **details}
+        listed = {page["url"] for page in self.instance.cli("history", "--limit", "100") or []}
+        details["cli"] = sorted(url for url in listed if url.startswith(f"http://127.0.0.1:{self.server.port}/"))
+        if not all(url in listed for url in wanted):
+            raise CheckFailed("`openarc history` does not list the visited fixture pages", details)
+        return {"evidence": f"{len(found)} fixture URL(s) in History, including index.html and two.html, "
+                            "and `openarc history` lists both", **details}
 
     def check_webkit(self) -> dict:
         url = f"http://127.0.0.1:{self.webkit_server.port}/webkit.html"

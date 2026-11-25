@@ -1749,6 +1749,11 @@ enum BrowserWindowMode: Equatable {
 
     func endToolbarCustomization() { isCustomizingToolbar = false }
 
+    /// Visited pages for agents: the best matches of `query`, or the latest when it is empty.
+    func historyPages(matching query: String, maximumCount: Int) -> [BrowserSearchDocument] {
+        isIncognito ? [] : historyStore.pages(matching: query, maximumCount: maximumCount)
+    }
+
     func executeDevTools(
         method: String,
         paramsJSON: String,
