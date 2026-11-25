@@ -23,6 +23,25 @@ final class BrowserNativeResizeHandle: NSView {
     var direction: CGFloat = 1
     var verticalPadding = BrowserChromeLayout.sidebarOuterPadding
     var hapticsEnabled = true
+    /// Where the line is drawn; the middle when nil.
+    var lineCenterX: CGFloat? {
+        didSet {
+            if oldValue != lineCenterX {
+                needsDisplay = true
+            }
+        }
+    }
+
+    /// Set when part of the handle lies outside its superview's bounds: the pointer is then
+    /// tracked over the whole handle, not only its visible part.
+    var tracksBeyondSuperview = false {
+        didSet {
+            if oldValue != tracksBeyondSuperview {
+                updateTrackingAreas()
+            }
+        }
+    }
+
     var onResizePhaseChange: (Bool) -> Void = { _ in }
     /// When set, releasing a drag that went below this width calls `onCollapse`.
     var collapseWidth: CGFloat?
@@ -58,12 +77,21 @@ final class BrowserNativeResizeHandle: NSView {
             removeTrackingArea(tracking)
         }
         let tracking = NSTrackingArea(
-            rect: .zero,
-            options: [.activeInKeyWindow, .inVisibleRect, .mouseEnteredAndExited],
+            rect: tracksBeyondSuperview ? bounds : .zero,
+            options: tracksBeyondSuperview
+                ? [.activeInKeyWindow, .mouseEnteredAndExited]
+                : [.activeInKeyWindow, .inVisibleRect, .mouseEnteredAndExited],
             owner: self,
         )
         addTrackingArea(tracking)
         self.tracking = tracking
+    }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        if tracksBeyondSuperview {
+            updateTrackingAreas()
+        }
     }
 
     override func mouseEntered(with _: NSEvent) {
@@ -127,8 +155,13 @@ final class BrowserNativeResizeHandle: NSView {
     override func draw(_: NSRect) {
         guard highlighted || isResizing else { return }
         (highlighted ? BrowserChromeColors.resizeHandleHover : BrowserChromeColors.resizeHandle).setFill()
-        NSRect(x: bounds.midX - 1, y: verticalPadding, width: 2, height: max(bounds.height - verticalPadding * 2, 0))
-            .fill()
+        NSRect(
+            x: (lineCenterX ?? bounds.midX) - 1,
+            y: verticalPadding,
+            width: 2,
+            height: max(bounds.height - verticalPadding * 2, 0),
+        )
+        .fill()
     }
 
     func updateDrag(translation: CGFloat) {

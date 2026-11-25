@@ -154,12 +154,12 @@ final class BrowserSidebarHoverOverlayDismissNSView: NSView {
 
     private func dismissIfNeeded(for locationInWindow: NSPoint) {
         // The sidebar sits on either window edge; leaving it toward the page dismisses.
-        // The strip between it and the window edge still counts as the sidebar.
         let sidebar = sidebarFrameInWindow
-        let isOnLeadingEdge = sidebar.midX < convert(bounds, to: nil).midX
-        guard isPresented, !bounds.isEmpty,
-              isOnLeadingEdge ? locationInWindow.x > sidebar.maxX : locationInWindow.x < sidebar.minX
-        else {
+        guard isPresented, !bounds.isEmpty, BrowserChromeLayout.pointerLeftHoverSidebar(
+            x: locationInWindow.x,
+            sidebar: sidebar,
+            onLeadingEdge: sidebar.midX < convert(bounds, to: nil).midX,
+        ) else {
             return
         }
 

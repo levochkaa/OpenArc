@@ -178,7 +178,7 @@ final class BrowserRootView: NSView {
     }
 
     private var allowsSidebarHoverOverlayPointerSyncDismissal: Bool {
-        !isWindowFullscreenTransitioning && !isSidebarHoverOverlayPointerSyncSuspended
+        !isWindowFullscreenTransitioning && !isSidebarHoverOverlayPointerSyncSuspended && !model.isSidebarResizing
     }
 
     private var contentEdgeDragBlockedLeadingWidth: CGFloat { windowGeometry.leadingReservedWidth }
@@ -1459,7 +1459,9 @@ final class BrowserRootView: NSView {
     }
 
     private func dismissSidebarHoverOverlay() {
-        guard isSidebarHoverOverlayPresented, !sidebar.sidebar.state.isDraggingSidebarItem else { return }
+        // Dragging its edge can take the pointer past the safe zone; the sidebar stays until the drag ends.
+        guard isSidebarHoverOverlayPresented, !sidebar.sidebar.state.isDraggingSidebarItem,
+              !model.isSidebarResizing else { return }
         guard !isWindowFullscreenTransitioning else { preserveSidebarHoverOverlayDuringFullscreenTransitionIfNeeded()
             return
         }

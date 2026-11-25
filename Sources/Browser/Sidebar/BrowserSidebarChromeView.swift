@@ -13,7 +13,14 @@ final class BrowserSidebarChromeView: NSView, BrowserSpaceThemedChrome {
     let header: BrowserNativeSidebarHeaderNSView
     let footer: BrowserNativeSidebarFooterNSView
     var showsWindowControls = false
-    var isOverlayPresentation = false
+    var isOverlayPresentation = false {
+        didSet {
+            if oldValue != isOverlayPresentation {
+                needsLayout = true
+            }
+        }
+    }
+
     /// The overlay border fades out instead of staying until the overlay ends.
     var fadesOverlayBorder = false
     var onToggleSidebar: () -> Void = {}
@@ -88,12 +95,28 @@ final class BrowserSidebarChromeView: NSView, BrowserSpaceThemedChrome {
         super.layout()
         background.frame = bounds
         sidebar.frame = bounds
+        // A floating sidebar's handle reaches past its edge into the safe zone, where the
+        // pointer can overshoot without hiding the sidebar; the line stays on the inner strip.
+        let hitWidth = BrowserChromeLayout.sidebarResizeHitWidth
+        let reach = isOverlayPresentation ? BrowserChromeLayout.sidebarHoverOverlaySafeZone : 0
         resize.frame = NSRect(
-            x: sidebarPosition == .left ? max(bounds.width - BrowserChromeLayout.sidebarResizeHitWidth, 0) : 0,
+            x: sidebarPosition == .left ? max(bounds.width - hitWidth, 0) : -reach,
             y: 0,
-            width: BrowserChromeLayout.sidebarResizeHitWidth,
+            width: hitWidth + reach,
             height: bounds.height,
         )
+        resize.lineCenterX = sidebarPosition == .left ? hitWidth / 2 : reach + hitWidth / 2
+        resize.tracksBeyondSuperview = reach > 0
+    }
+
+    /// The handle's part past the edge lies outside these bounds, so it is found here.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        if isOverlayPresentation, !isHidden, !resize.isHidden, let superview,
+           resize.frame.contains(convert(point, from: superview))
+        {
+            return resize
+        }
+        return super.hitTest(point)
     }
 
     override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance()

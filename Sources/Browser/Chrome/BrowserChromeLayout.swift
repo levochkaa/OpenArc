@@ -119,6 +119,10 @@ enum BrowserChromeLayout {
     static let sidebarResizeHitWidth: CGFloat = sidebarOuterPadding
     static let sidebarHoverRevealWidth: CGFloat = browserContentEdgeInset
     static let sidebarHoverOverlayEdgeInset: CGFloat = 5
+    /// How far past its edge the pointer can go before the floating sidebar hides. Its
+    /// resize handle reaches as far, so the edge can be grabbed from just outside.
+    static let sidebarHoverOverlaySafeZone: CGFloat = 16
+
     static let detachedSidebarWindowBorderInset: CGFloat = 1
     static let sidebarOverlayBorderWidth: CGFloat = 1
     /// A pinned floating sidebar's border fades over the pin's delay and slide.
@@ -262,4 +266,10 @@ enum BrowserChromeLayout {
     static let tooltipAnchorYFraction: CGFloat = 0.8125
     static let tooltipViewportPadding: CGFloat = 8
     static let tooltipMaximumWidth: CGFloat = 360
+
+    /// The pointer left a floating sidebar toward the page, past the safe zone. The strip
+    /// between the sidebar and the window edge still counts as the sidebar.
+    static func pointerLeftHoverSidebar(x: CGFloat, sidebar: CGRect, onLeadingEdge: Bool) -> Bool {
+        onLeadingEdge ? x > sidebar.maxX + sidebarHoverOverlaySafeZone : x < sidebar.minX - sidebarHoverOverlaySafeZone
+    }
 }

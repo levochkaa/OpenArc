@@ -234,6 +234,30 @@ import Testing
         #expect(width == 380)
     }
 
+    @Test func floatingSidebarStaysWhileThePointerIsInTheSafeZonePastItsEdge() {
+        let sidebar = CGRect(x: 5, y: 5, width: 300, height: 790)
+        let zone = BrowserChromeLayout.sidebarHoverOverlaySafeZone
+        func left(_ x: CGFloat, leading: Bool = true) -> Bool {
+            BrowserChromeLayout.pointerLeftHoverSidebar(x: x, sidebar: sidebar, onLeadingEdge: leading)
+        }
+        #expect(!left(sidebar.maxX + 1), "Overshooting the edge to grab it keeps the sidebar")
+        #expect(!left(sidebar.maxX + zone))
+        #expect(left(sidebar.maxX + zone + 1), "Past the safe zone the sidebar hides")
+        #expect(!left(0), "The strip at the window edge counts as the sidebar")
+        #expect(!left(sidebar.minX - zone, leading: false))
+        #expect(left(sidebar.minX - zone - 1, leading: false))
+    }
+
+    @Test func resizeHandleDrawsItsLineWhereAskedAndTracksPastItsSuperview() throws {
+        let handle = BrowserNativeResizeHandle(frame: NSRect(x: 0, y: 0, width: 24, height: 400))
+        handle.tracksBeyondSuperview = true
+        let area = try #require(handle.trackingAreas.first)
+        #expect(area.rect == handle.bounds)
+        #expect(!area.options.contains(.inVisibleRect))
+        handle.tracksBeyondSuperview = false
+        #expect(handle.trackingAreas.first?.options.contains(.inVisibleRect) == true)
+    }
+
     @Test func faviconReuseIgnoresCacheUpdatesForPreviousURL() async throws {
         let cache = BrowserFaviconCache(dataLoader: { _ in nil })
         let firstURL = try #require(URL(string: "https://first.example/icon.png"))
