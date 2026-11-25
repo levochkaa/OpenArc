@@ -9699,7 +9699,10 @@ void CenterPageModalWindowsOver(NSView *pageView) {
       }
       for (NSView *view in pageViews) {
         NSWindow *window = view.window;
-        if (window == nil || view.hiddenOrHasHiddenAncestor || !NSContainsRect(window.frame, dialog.frame)) {
+        // Only a dialog Chromium centered on the window moves; a bubble (Save address? on the Chrome engine)
+        // stays at its anchor, or it jumped to the page's middle when first clicked.
+        if (window == nil || view.hiddenOrHasHiddenAncestor || !NSContainsRect(window.frame, dialog.frame) ||
+            fabs(NSMidX(dialog.frame) - NSMidX(window.frame)) > 1) {
           continue;
         }
         NSRect page = [window convertRectToScreen:[view convertRect:view.bounds toView:nil]];
