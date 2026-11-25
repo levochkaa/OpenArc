@@ -103,6 +103,40 @@ private func withProfile(_ body: (BrowserProfileImporter, Data) throws -> Void) 
     }
 }
 
+/// A host-only cookie set with a domain would become a domain cookie, and
+/// Chromium refuses a `__Host-` cookie with one; a partitioned cookie set as an
+/// ordinary one would shadow the site's own.
+@Test func hostOnlyCookiesStayHostOnlyAndPartitionedOnesAreLeftBehind() throws {
+    try withProfile { profile, key in
+        let queue = try DatabaseQueue(path: profile.profileDirectory.appendingPathComponent("Cookies").path)
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let future = Int64((now.timeIntervalSince1970 + 11_644_473_600 + 1000) * 1_000_000)
+        try queue.write { db in
+            try db.execute(sql: "CREATE TABLE meta (key TEXT, value TEXT)")
+            try db.execute(sql: "INSERT INTO meta VALUES ('version', '24')")
+            try db
+                .execute(
+                    sql: "CREATE TABLE cookies (host_key TEXT, top_frame_site_key TEXT, name TEXT, value TEXT, encrypted_value BLOB, path TEXT, expires_utc INTEGER, is_secure INTEGER, is_httponly INTEGER, samesite INTEGER)",
+                )
+            for (host, site, name) in [
+                ("accounts.google.com", "", "__Host-GAPS"),
+                (".google.com", "", "__Secure-1PSID"),
+                ("accounts.google.com", "https://example.com", "__Host-3PLSID"),
+            ] {
+                try db.execute(
+                    sql: "INSERT INTO cookies VALUES (?, ?, ?, 'v', x'', '/', ?, 1, 1, 0)",
+                    arguments: [host, site, name, future],
+                )
+            }
+        }
+        try queue.close()
+        let cookies = profile.cookies(key: key, now: now)
+        #expect(cookies.map(\.name) == ["__Host-GAPS", "__Secure-1PSID"])
+        #expect(cookies.map(\.domainAttribute) == [nil, ".google.com"])
+        #expect(cookies.map(\.urlString) == ["https://accounts.google.com/", "https://google.com/"])
+    }
+}
+
 @Test func onlyRealExtensionIDsBecomeStorePages() throws {
     try withProfile { profile, _ in
         let extensions = profile.profileDirectory.appendingPathComponent("Extensions")

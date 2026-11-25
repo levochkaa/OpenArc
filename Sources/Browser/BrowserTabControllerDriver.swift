@@ -388,7 +388,8 @@ import Foundation
         }
         return controller.importCookies(cookies.map {
             [
-                "url": $0.urlString, "host": $0.host, "name": $0.name, "value": $0.value, "path": $0.path,
+                "url": $0.urlString, "domain": $0.domainAttribute ?? "", "name": $0.name, "value": $0.value,
+                "path": $0.path,
                 "expires": $0.expires, "secure": $0.isSecure, "httpOnly": $0.isHTTPOnly, "sameSite": $0.sameSite,
             ]
         }, profileCachePath: profileCachePath)

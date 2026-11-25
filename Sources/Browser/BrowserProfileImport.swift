@@ -19,6 +19,14 @@ struct BrowserImportedCookie: Equatable {
     let isHTTPOnly: Bool
     let sameSite: Int
 
+    /// The domain attribute Chromium sets the cookie with: the host with its
+    /// leading dot for a domain cookie, nil for a host-only one. Chromium makes a
+    /// cookie with any domain a domain cookie and refuses a `__Host-` cookie that
+    /// has one.
+    var domainAttribute: String? {
+        host.hasPrefix(".") ? host : nil
+    }
+
     /// The page address Chromium checks a cookie against.
     var urlString: String {
         let bareHost = host.hasPrefix(".") ? String(host.dropFirst()) : host
@@ -321,14 +329,21 @@ struct BrowserProfileImporter {
             // From version 24 a value starts with a hash of its host.
             let version = try String.fetchOne(db, sql: "SELECT value FROM meta WHERE key = 'version'")
                 .flatMap(Int.init) ?? 0
+            // A partitioned cookie belongs to a site embedded in another; set as an
+            // ordinary one, it shadows the site's own cookie of the same name.
+            let columns = try Set(db.columns(in: "cookies").map(\.name))
+            let partition = columns.contains("top_frame_site_key") ? "top_frame_site_key" : "'' AS top_frame_site_key"
             return try Row.fetchAll(
                 db,
                 sql: """
-                SELECT host_key, name, value, encrypted_value, path, expires_utc, is_secure, is_httponly, samesite
+                SELECT host_key, name, value, encrypted_value, path, expires_utc, is_secure, is_httponly, samesite,
+                \(partition)
                 FROM cookies
                 """,
             )
             .compactMap { row -> BrowserImportedCookie? in
+                let topFrameSite: String = row["top_frame_site_key"] ?? ""
+                guard topFrameSite.isEmpty else { return nil }
                 let expires: Int64 = row["expires_utc"]
                 // A session cookie has no expiry, and those end with the other browser's session.
                 guard expires > nowChromium else { return nil }

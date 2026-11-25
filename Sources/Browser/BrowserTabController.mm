@@ -6760,7 +6760,8 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
     CefCookie cookie;
     CefString(&cookie.name) = ToStdString(item[@"name"]);
     CefString(&cookie.value) = ToStdString(item[@"value"]);
-    CefString(&cookie.domain) = ToStdString(item[@"host"]);
+    // Empty for a host-only cookie: see BrowserImportedCookie.domainAttribute.
+    CefString(&cookie.domain) = ToStdString(item[@"domain"]);
     CefString(&cookie.path) = ToStdString(item[@"path"]);
     cookie.secure = [item[@"secure"] boolValue] ? 1 : 0;
     cookie.httponly = [item[@"httpOnly"] boolValue] ? 1 : 0;
