@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import App from "./App";
+import App, { appStoreDevice } from "./App";
 
 const releasesApiUrl = "https://api.openarc.su/v1/releases";
 
@@ -80,6 +80,34 @@ describe("App", () => {
       "https://github.com/levochkaa/OpenArc/releases/latest",
     );
     expect(screen.queryByRole("heading", { name: /what’s new/i })).not.toBeInTheDocument();
+  });
+
+  it("makes the App Store the main download on iPhone and keeps the Mac download beside it", () => {
+    vi.stubGlobal("fetch", vi.fn(() => new Promise(() => {})));
+    vi.stubGlobal("navigator", {
+      userAgent:
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 26_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.1 Mobile/15E148 Safari/604.1",
+      maxTouchPoints: 5,
+    });
+
+    render(<App />);
+
+    const actions = screen.getByLabelText("Download actions");
+    const [primary, mac] = within(actions).getAllByRole("link");
+    expect(primary).toHaveTextContent("Download for iPhone");
+    expect(primary).toHaveClass("button");
+    expect(primary).toHaveAttribute("href", "https://apps.apple.com/app/openarc/id6832347016");
+    expect(mac).toHaveTextContent("Download for macOS");
+    expect(mac).not.toHaveClass("button");
+    expect(mac).toHaveAttribute("href", "https://github.com/levochkaa/OpenArc/releases/latest");
+  });
+
+  it("tells iPhone and iPad from a Mac", () => {
+    const mac = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)";
+    expect(appStoreDevice({ userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 26_1 like Mac OS X)", maxTouchPoints: 5 })).toBe("iPhone");
+    expect(appStoreDevice({ userAgent: "Mozilla/5.0 (iPad; CPU OS 18_0 like Mac OS X)", maxTouchPoints: 5 })).toBe("iPad");
+    expect(appStoreDevice({ userAgent: mac, maxTouchPoints: 5 })).toBe("iPad");
+    expect(appStoreDevice({ userAgent: mac, maxTouchPoints: 0 })).toBeNull();
   });
 
   it("links the iPhone and iPad app on the App Store from the hero, the top bar and the footer", () => {

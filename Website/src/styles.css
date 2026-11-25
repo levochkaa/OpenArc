@@ -165,7 +165,22 @@ a {
 }
 
 .hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 12px 28px;
   margin-top: 32px;
+}
+
+/* The Mac download beside the App Store button on iPhone and iPad. */
+.text-action {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font: 700 15px/1 -apple-system, BlinkMacSystemFont, sans-serif;
+  color: var(--cream);
+  text-underline-offset: 4px;
 }
 
 .button {

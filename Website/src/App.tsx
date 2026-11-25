@@ -39,6 +39,14 @@ const releaseDateFormatter = new Intl.DateTimeFormat(undefined, {
 const shownReleaseCount = 3;
 const ancillaryAssetNamePattern = /(^|[.\-_\s])(blockmap|checksum|checksums|debug|dsym|manifest|metadata|sha256|sha512|signature|symbols?)([.\-_\s]|$)/i;
 
+/// iPhone and iPad visitors get the App Store as the main action. iPadOS asks for
+/// desktop sites and reports a Mac, which only a touch screen tells apart.
+export function appStoreDevice(nav: Pick<Navigator, "userAgent" | "maxTouchPoints">): "iPhone" | "iPad" | null {
+  if (/iPhone|iPod/.test(nav.userAgent)) return "iPhone";
+  if (/iPad/.test(nav.userAgent) || (/Macintosh/.test(nav.userAgent) && nav.maxTouchPoints > 1)) return "iPad";
+  return null;
+}
+
 const importItems = [
   "Spaces and pinned tabs",
   "Bookmarks",
@@ -141,6 +149,7 @@ function App() {
   // Without a stable release in the list, downloads go to GitHub's latest release, which skips pre-releases.
   const latestDownloadUrl = getPrimaryMacOSAsset(stableReleases[0]?.assets ?? [])?.downloadURL ?? fallbackDownloadUrl;
   const hasReleases = stableReleases.length > 0;
+  const mobileDevice = useMemo(() => appStoreDevice(navigator), []);
 
   return (
     <main>
@@ -175,9 +184,20 @@ function App() {
           </h1>
           <p className="hero-byline">Free · Open source · For Mac, iPhone and iPad</p>
           <div className="hero-actions" aria-label="Download actions">
-            <a className="button" href={latestDownloadUrl}>
-              Download for macOS
-            </a>
+            {mobileDevice ? (
+              <>
+                <a className="button" href={appStoreUrl}>
+                  Download for {mobileDevice}
+                </a>
+                <a className="text-action" href={latestDownloadUrl}>
+                  Download for macOS
+                </a>
+              </>
+            ) : (
+              <a className="button" href={latestDownloadUrl}>
+                Download for macOS
+              </a>
+            )}
           </div>
         </div>
         <svg className="stamp" viewBox="0 0 220 120" aria-hidden="true">
