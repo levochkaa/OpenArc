@@ -3478,9 +3478,9 @@ enum BrowserStrings {
         comment: "Message shown after the account is deleted.",
     )
 
-    static let syncAccountDeleteOffline = NSLocalizedString(
-        "browser.sync.account.delete_offline",
-        comment: "Error when account deletion cannot reach the server.",
+    static let syncServerUnreachable = NSLocalizedString(
+        "browser.sync.server_unreachable",
+        comment: "Error when a sign-in, sync or account request cannot reach the server.",
     )
 
     static let syncAccountDeleteSignInAgain = NSLocalizedString(

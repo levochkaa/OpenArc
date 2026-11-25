@@ -146,7 +146,7 @@ import WebKit
             errorReporter: { [weak self] error, phase in
                 guard let self, generation == currentGeneration else { return }
                 lastErrorPhase = phase
-                lastSyncError = error.localizedDescription
+                lastSyncError = BrowserSyncErrorMessage.describe(error)
             },
             operationDidSucceed: { [weak self] phase in
                 guard let self, generation == currentGeneration, lastErrorPhase == phase else { return }

@@ -134,7 +134,7 @@ import UIKit
         f.remote.deletionError = URLError(.notConnectedToInternet)
         #expect(await !f.runtime.deleteAccount(erasingWebsiteData: true))
         #expect(f.runtime.account.isAuthenticated && f.runtime.account.bindingState == .enabled)
-        #expect(f.runtime.account.lastError == BrowserStrings.syncAccountDeleteOffline)
+        #expect(f.runtime.account.lastError == BrowserStrings.syncServerUnreachable)
         #expect(f.remote.websiteDataErasures == 0, "website data stays while the account exists")
 
         f.remote.deletionError = nil

@@ -103,6 +103,18 @@ import Testing
         )
     }
 
+    /// The generated client wraps transport failures in `ClientError`, whose
+    /// description is a dump of the operation and the `NSError`.
+    @Test func aLostConnectionReadsAsAnUnreachableServer() async throws {
+        let f = try DeletionFixture()
+        defer { f.close() }
+        let account = f.account()
+        DeletionURLProtocol.fail(URLError(.networkConnectionLost))
+        await account.loadProviders()
+        #expect(account.providers == nil)
+        #expect(account.lastError == BrowserStrings.syncServerUnreachable)
+    }
+
     @Test func aFailedDeletionKeepsTheAccountSignedInAndSaysWhy() async throws {
         let f = try DeletionFixture()
         defer { f.close() }
@@ -121,7 +133,7 @@ import Testing
             try await f.client.deleteAccount(authSession: f.session)
         }
         #expect(await !account.deleteAccount())
-        #expect(account.lastError == BrowserStrings.syncAccountDeleteOffline)
+        #expect(account.lastError == BrowserStrings.syncServerUnreachable)
         #expect(account.session == f.session)
 
         DeletionURLProtocol.respond(401, #"{"error":"unauthorized"}"#)

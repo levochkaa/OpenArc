@@ -3,6 +3,7 @@
 import Combine
 import CryptoKit
 import Foundation
+import OpenAPIRuntime
 import Security
 
 // MARK: - BrowserAppleIdentityProviding
@@ -217,7 +218,7 @@ enum BrowserAccountDeletionError: LocalizedError, Equatable {
         switch self {
         case .signInRequired: BrowserStrings.syncAccountDeleteSignInAgain
         case .tooManyRequests: BrowserStrings.syncAccountTooManyRequests
-        case .offline: BrowserStrings.syncAccountDeleteOffline
+        case .offline: BrowserStrings.syncServerUnreachable
         case .server(_, let message): message ?? BrowserStrings.syncAccountDeleteFailed
         }
     }
@@ -227,10 +228,29 @@ enum BrowserAccountDeletionError: LocalizedError, Equatable {
         if let error = error as? Self {
             return error
         }
-        if error is URLError {
+        if BrowserSyncErrorMessage.underlying(error) is URLError {
             return .offline
         }
         return .server(statusCode: 0, message: nil)
+    }
+}
+
+// MARK: - BrowserSyncErrorMessage
+
+/// What a failed request to the sync server tells the user. The generated
+/// client's own description names the operation, the transport and the whole
+/// `NSError`, which reads as a crash report.
+enum BrowserSyncErrorMessage {
+    static func describe(_ error: Error) -> String {
+        let error = underlying(error)
+        if error is URLError {
+            return BrowserStrings.syncServerUnreachable
+        }
+        return error.localizedDescription
+    }
+
+    static func underlying(_ error: Error) -> Error {
+        (error as? ClientError)?.underlyingError ?? error
     }
 }
 
@@ -370,7 +390,7 @@ enum BrowserAppleSignInError: Error {
         do {
             providers = try await syncClient.signInProviders()
         } catch {
-            lastError = error.localizedDescription
+            lastError = BrowserSyncErrorMessage.describe(error)
         }
     }
 
@@ -649,7 +669,7 @@ enum BrowserAppleSignInError: Error {
     /// Closing the sign-in page is not an error.
     private func fail(_ error: Error, attempt: SignInAttempt) {
         guard isCurrent(attempt), error as? BrowserWebSignInError != .cancelled else { return }
-        lastError = error.localizedDescription
+        lastError = BrowserSyncErrorMessage.describe(error)
     }
 
     private func showEmailCodeEntry(email: String, resendIn: Int) {

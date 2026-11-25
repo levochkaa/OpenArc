@@ -540,7 +540,7 @@
 "browser.sync.account.deleting" = "Deleting account…";
 "browser.sync.account.deleted_title" = "Account deleted";
 "browser.sync.account.deleted_message" = "Spaces, tabs and Boosts on this Mac stay here and no longer sync.";
-"browser.sync.account.delete_offline" = "Couldn’t reach the sync server. Check your connection and try again.";
+"browser.sync.server_unreachable" = "Couldn’t reach the sync server. Check your connection and try again.";
 "browser.sync.account.delete_sign_in_again" = "Your sign-in has expired. Sign out, sign in again, then delete the account.";
 "browser.sync.account.delete_failed" = "The account was not deleted. Try again later.";
 "browser.sync.account.code_sent" = "Enter the 6-digit code sent to %@.";
