@@ -206,7 +206,7 @@ import UIKit
         await requests[0].waitUntilStarted()
         // The system asks before opening a sign-in page, which deactivates the caller scene.
         NotificationCenter.default.post(name: UIScene.willDeactivateNotification, object: host.window.windowScene)
-        NotificationCenter.default.post(name: UIScene.didEnterBackgroundNotification, object: NSObject())
+        // Only the sheet: UIKit's own observers read the scene of a real background notification.
         #expect(requests[0].cancellations == 0)
         NotificationCenter.default.post(name: UIScene.didEnterBackgroundNotification, object: host.window.windowScene)
         await #expect(throws: BrowserWebSignInError.cancelled) { try await first.value }
