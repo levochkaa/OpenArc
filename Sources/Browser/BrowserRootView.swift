@@ -1279,6 +1279,7 @@ final class BrowserRootView: NSView {
             model.exitPageFullscreen()
         }
         let enteredFullscreen = state.isFullscreen && !state.isTransitioning && isWindowFullscreenTransitioning
+        let finishedTransition = !state.isTransitioning && isWindowFullscreenTransitioning
         isWindowFullscreen = state.isFullscreen
         isWindowFullscreenTransitioning = state.isTransitioning
         // A full screen window, not a page's, says once how to leave it.
@@ -1291,6 +1292,11 @@ final class BrowserRootView: NSView {
             restoreSidebarHoverOverlayAfterFullscreenTransitionIfNeeded()
         }
         refresh()
+        // The page loses the keyboard while the window moves in or out of full screen, so a
+        // player taken full screen with F would not hear Escape or the space bar; it gets it back.
+        if finishedTransition, let window, window.isKeyWindow, window.firstResponder === window {
+            model.focusSelectedPage()
+        }
     }
 
     /// Open Extensions opens the control center of the visible URL controls.
