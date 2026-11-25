@@ -87,10 +87,12 @@ import WebKit
         )
         super.init()
         document.syncSession = self
-        for name in [UIScene.willDeactivateNotification, UIScene.didDisconnectNotification] {
+        // A system sign-in sheet makes the scene inactive, so only leaving the
+        // foreground or closing the scene ends the attempt.
+        for name in [UIScene.didEnterBackgroundNotification, UIScene.didDisconnectNotification] {
             NotificationCenter.default.addObserver(
                 self,
-                selector: #selector(sceneDeactivated(_:)),
+                selector: #selector(sceneLeftForeground(_:)),
                 name: name,
                 object: nil,
             )
@@ -178,9 +180,6 @@ import WebKit
             activeScenes.remove(sceneID)
         }
         syncService?.setRuntimeActive(isForeground)
-        if !isForeground || (!active && signInWindow?.windowScene?.session.persistentIdentifier == sceneID) {
-            cancelSignIn()
-        }
     }
 
     /// Native Sign in with Apple.
@@ -286,7 +285,7 @@ import WebKit
         accountObservation = account.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
     }
 
-    @objc private func sceneDeactivated(_ notification: Notification) {
+    @objc private func sceneLeftForeground(_ notification: Notification) {
         guard let scene = notification.object as? UIScene, scene === signInWindow?.windowScene else { return }
         cancelSignIn()
     }

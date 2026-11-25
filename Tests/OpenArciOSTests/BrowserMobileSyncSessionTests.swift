@@ -186,8 +186,11 @@ import UIKit
         let first = Task { await f.runtime.signIn(from: host.window) }
         await f.remote.waitForAuthentication(count: 1)
         #expect(f.runtime.account.isSigningIn)
+        // A system sign-in sheet only deactivates the caller scene.
         NotificationCenter.default.post(name: UIScene.willDeactivateNotification, object: scene)
         f.runtime.setSceneActive(false, sceneID: scene.session.persistentIdentifier)
+        #expect(f.runtime.account.isSigningIn)
+        NotificationCenter.default.post(name: UIScene.didEnterBackgroundNotification, object: scene)
         #expect(f.runtime.isForeground && !f.runtime.account.isSigningIn)
         #expect(f.auth.session == nil)
         // The test notification does not change UIKit's real scene state. A

@@ -53,7 +53,7 @@ import UIKit
         #expect(anchors.count == 2 && anchors.allSatisfy { $0 === host.window })
     }
 
-    @Test func identityProviderCancelsOnCallerSceneDeactivationAndTaskCancellation() async throws {
+    @Test func identityProviderSurvivesTheSystemSheetAndCancelsWhenTheCallerSceneLeaves() async throws {
         let host = try MobileAccountHost(controller: UIViewController())
         defer { host.close() }
         try #require(host.window.windowScene?.activationState == .foregroundActive)
@@ -66,9 +66,11 @@ import UIKit
         service.setPresentationWindow(host.window)
         let first = Task { try await service.requestIdentityToken() }
         await requests[0].waitUntilStarted()
-        NotificationCenter.default.post(name: UIScene.willDeactivateNotification, object: NSObject())
-        #expect(requests[0].cancellations == 0)
+        // The Sign in with Apple sheet deactivates the caller scene.
         NotificationCenter.default.post(name: UIScene.willDeactivateNotification, object: host.window.windowScene)
+        NotificationCenter.default.post(name: UIScene.didEnterBackgroundNotification, object: NSObject())
+        #expect(requests[0].cancellations == 0)
+        NotificationCenter.default.post(name: UIScene.didEnterBackgroundNotification, object: host.window.windowScene)
         await #expect(throws: CancellationError.self) { try await first.value }
         let second = Task { try await service.requestIdentityToken() }
         await requests[1].waitUntilStarted()

@@ -204,9 +204,11 @@ import UIKit
         service.setPresentationWindow(host.window)
         let first = Task { try await service.signIn(at: url, callbackScheme: "openarc-auth") }
         await requests[0].waitUntilStarted()
-        NotificationCenter.default.post(name: UIScene.willDeactivateNotification, object: NSObject())
-        #expect(requests[0].cancellations == 0)
+        // The system asks before opening a sign-in page, which deactivates the caller scene.
         NotificationCenter.default.post(name: UIScene.willDeactivateNotification, object: host.window.windowScene)
+        NotificationCenter.default.post(name: UIScene.didEnterBackgroundNotification, object: NSObject())
+        #expect(requests[0].cancellations == 0)
+        NotificationCenter.default.post(name: UIScene.didEnterBackgroundNotification, object: host.window.windowScene)
         await #expect(throws: BrowserWebSignInError.cancelled) { try await first.value }
         let second = Task { try await service.signIn(at: url, callbackScheme: "openarc-auth") }
         await requests[1].waitUntilStarted()

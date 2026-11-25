@@ -29,10 +29,12 @@ import UIKit
     init(requestFactory: (@MainActor (UIWindow) -> any BrowserMobileAppleAuthorizationRequest)? = nil) {
         self.requestFactory = requestFactory ?? { BrowserMobileNativeAppleAuthorizationRequest(window: $0) }
         super.init()
-        for name in [UIScene.willDeactivateNotification, UIScene.didDisconnectNotification] {
+        // A system sign-in sheet makes the scene inactive, so only leaving the
+        // foreground or closing the scene ends the attempt.
+        for name in [UIScene.didEnterBackgroundNotification, UIScene.didDisconnectNotification] {
             NotificationCenter.default.addObserver(
                 self,
-                selector: #selector(sceneDeactivated(_:)),
+                selector: #selector(sceneLeftForeground(_:)),
                 name: name,
                 object: nil,
             )
@@ -89,7 +91,7 @@ import UIKit
         attempt.continuation.resume(with: result)
     }
 
-    @objc private func sceneDeactivated(_ notification: Notification) {
+    @objc private func sceneLeftForeground(_ notification: Notification) {
         guard let scene = notification.object as? UIScene, scene === pending?.window.windowScene else { return }
         cancel()
     }
