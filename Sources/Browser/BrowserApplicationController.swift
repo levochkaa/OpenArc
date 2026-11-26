@@ -293,6 +293,15 @@ NSMenuDelegate, NSUserInterfaceValidations {
         installMainMenu(for: app)
         if webAppConfiguration == nil, userPreferencesStore.appIcon != .standard {
             userPreferencesStore.appIcon.apply()
+            // After an update the Dock reads the new bundle and can draw its own icon over the picked one.
+            NotificationCenter.default.addObserver(
+                forName: NSApplication.didBecomeActiveNotification,
+                object: nil,
+                queue: .main,
+            ) { _ in
+                MainActor.assumeIsolated { BrowserAppIcon.showAgain() }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5) { BrowserAppIcon.showAgain() }
         }
         BrowserFaviconCache.shared.pageIconProvider = { [weak self] pageURLString in
             self?.profileWindowSessions

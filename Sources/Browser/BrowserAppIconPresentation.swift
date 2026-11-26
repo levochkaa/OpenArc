@@ -12,6 +12,8 @@ extension BrowserAppIcon {
 
     /// The latest `apply()`, so an earlier pick decoded later is not shown.
     @MainActor private static var applyGeneration = 0
+    /// The picked icon as the Dock shows it, nil for the bundle's own.
+    @MainActor private static var shownImage: NSImage?
 
     // MARK: Internal
 
@@ -43,6 +45,7 @@ extension BrowserAppIcon {
     @MainActor func apply() {
         Self.applyGeneration &+= 1
         Self.postChange()
+        Self.shownImage = nil
         guard self != .standard, let url = imageURL else {
             if let image {
                 NSApp.applicationIconImage = image
@@ -56,8 +59,17 @@ extension BrowserAppIcon {
             guard let icon = Self.dockImage(contentsOf: url).map(DecodedIcon.init) else { return }
             await MainActor.run {
                 guard generation == Self.applyGeneration else { return }
+                Self.shownImage = icon.image
                 NSApp.applicationIconImage = icon.image
             }
+        }
+    }
+
+    /// Shows the picked icon again. The Dock can put the bundle's own icon back on
+    /// the tile after the app set its own, as after an update replaced the bundle.
+    @MainActor static func showAgain() {
+        if let shownImage {
+            NSApp.applicationIconImage = shownImage
         }
     }
 
