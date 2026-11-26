@@ -180,7 +180,6 @@ import Testing
             windowProfile: "Default",
             profiles: { [] },
             cachePath: { "/profiles/\($0)" },
-            createProfile: { nil },
         )
         let result = f.model.importSidebar(sidebar, profiles: BrowserSidebarProfileChoice(
             skipped: ["Profile 3"],
@@ -201,7 +200,6 @@ import Testing
             windowProfile: "Default",
             profiles: { created },
             cachePath: { "/profiles/\($0)" },
-            createProfile: { nil },
             createNamedProfile: { name in
                 let profile = BrowserProfile(directoryName: "Profile \(created.count + 1)", name: name)
                 created.append(profile)

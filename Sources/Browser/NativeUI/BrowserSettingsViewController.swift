@@ -2433,10 +2433,9 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
             ) ?? NSImage())
             icon.widthAnchor.constraint(equalToConstant: 24).isActive = true
             icon.heightAnchor.constraint(equalToConstant: 24).isActive = true
-            let title = titleDetail(
-                profile.displayName,
-                detail: BrowserStrings.settingsProfileDirectory(profile.directoryName),
-            )
+            // The folder keeps the name it was made with; the profile's own name can change.
+            let title = titleDetail(profile.displayName)
+            title.toolTip = BrowserStrings.settingsProfileDirectory(profile.directoryName)
             var items = [NSView]()
             if profile.id == currentProfileID {
                 items.append(BrowserNativeControls.label(
@@ -2450,6 +2449,11 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                     self?.openProfile(profile)
                 })
             }
+            let rename = BrowserActionButton(BrowserStrings.settingsRenameProfile) { [weak self] in
+                self?.promptRenaming(profile)
+            }
+            rename.setAccessibilityIdentifier("browser.settings.profile.rename.\(profile.id)")
+            items.append(rename)
             let backup = BrowserActionButton(BrowserStrings.settingsBackUpProfile) { [weak self] in
                 self?.createProfileBackup(profile)
             }
@@ -2472,6 +2476,24 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
             return row(label: label, control: actions)
         }
         replaceRows(rows, in: profilesBody)
+    }
+
+    private func promptRenaming(_ profile: BrowserProfile) {
+        guard let window = view.window else { return }
+        let field = NSTextField(string: profile.displayName)
+        field.placeholderString = profile.displayName
+        field.frame = NSRect(x: 0, y: 0, width: 280, height: 24)
+        field.setAccessibilityIdentifier("browser.settings.profile.rename-field")
+        let alert = NSAlert()
+        alert.messageText = BrowserStrings.settingsRenameProfileTitle
+        alert.accessoryView = field
+        alert.addButton(withTitle: BrowserStrings.settingsRenameProfileConfirm)
+        alert.addButton(withTitle: BrowserStrings.cancelAction)
+        alert.window.initialFirstResponder = field
+        alert.beginSheetModal(for: window) { [weak self, weak field] response in
+            guard response == .alertFirstButtonReturn, let self, let field else { return }
+            profileStore.renameProfile(profile, to: field.stringValue)
+        }
     }
 
     private func refreshShortcuts() {

@@ -57,6 +57,12 @@ final class BrowserProfileStore: ObservableObject {
         rootCacheURL.appendingPathComponent("Local State", isDirectory: false)
     }
 
+    /// Names given in OpenArc. Chromium writes Local State back from its own
+    /// copy while it runs, so a name written only there does not last.
+    private var profileNamesURL: URL {
+        rootCacheURL.appendingPathComponent("OpenArc Profile Names.json", isDirectory: false)
+    }
+
     private var deletedProfilesURL: URL {
         rootCacheURL.appendingPathComponent("OpenArc Deleted Profiles.json", isDirectory: false)
     }
@@ -76,7 +82,7 @@ final class BrowserProfileStore: ObservableObject {
         rootCacheURL.appendingPathComponent(profile.directoryName, isDirectory: true)
     }
 
-    /// A new profile, named `name` when given.
+    /// A new profile, named `name` when given, else the next free "Profile N".
     @discardableResult func createProfile(named name: String? = nil) -> BrowserProfile {
         var localState = loadLocalState()
         let existingDirectoryNames = Set(
@@ -89,15 +95,37 @@ final class BrowserProfileStore: ObservableObject {
             profileIndex += 1
         }
 
+        let trimmedName = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let profile = BrowserProfile(
             directoryName: "Profile \(profileIndex)",
-            name: name ?? "Profile \(profileIndex + 1)",
+            name: trimmedName.isEmpty ? nextProfileName() : trimmedName,
         )
         _ = ensureProfile(profile, in: &localState)
         writeLocalState(localState)
+        var names = profileNames()
+        names[profile.directoryName] = profile.name
+        writeProfileNames(names)
         createProfileDirectoryIfNeeded(for: profile)
         refresh()
         return self.profile(withID: profile.id) ?? profile
+    }
+
+    /// Renames a profile everywhere OpenArc shows it; the folder keeps its name.
+    @discardableResult func renameProfile(_ profile: BrowserProfile, to name: String) -> Bool {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty, self.profile(withID: profile.id) != nil else {
+            return false
+        }
+
+        var names = profileNames()
+        guard names[profile.directoryName] != trimmedName || profile.name != trimmedName else {
+            return false
+        }
+
+        names[profile.directoryName] = trimmedName
+        writeProfileNames(names)
+        refresh()
+        return true
     }
 
     @discardableResult func deleteProfile(_ profile: BrowserProfile) -> Bool {
@@ -112,6 +140,10 @@ final class BrowserProfileStore: ObservableObject {
         )
         writeLocalState(localState)
         let didRecordDeletion = recordDeletedProfileDirectoryName(profile.directoryName)
+        var names = profileNames()
+        if names.removeValue(forKey: profile.directoryName) != nil {
+            writeProfileNames(names)
+        }
 
         let profileDirectoryURL = profileDirectoryURL(for: profile)
         let hadDirectory = fileManager.fileExists(atPath: profileDirectoryURL.path)
@@ -178,6 +210,7 @@ final class BrowserProfileStore: ObservableObject {
 
     private func profiles(in localState: JSONObject, excluding deletedDirectoryNames: Set<String>) -> [BrowserProfile] {
         let infoCache = profileInfoCache(in: localState)
+        let names = profileNames()
         let orderedDirectoryNames = uniqueDirectoryNames(
             profileDirectoryNames(in: localState)
                 + infoCache.keys.sorted()
@@ -191,7 +224,7 @@ final class BrowserProfileStore: ObservableObject {
             }
 
             let entry = infoCache[directoryName] as? JSONObject
-            let name = entry?["name"] as? String
+            let name = names[directoryName] ?? entry?["name"] as? String
             return BrowserProfile(
                 directoryName: directoryName,
                 name: name ?? defaultDisplayName(forDirectoryName: directoryName),
@@ -337,6 +370,40 @@ final class BrowserProfileStore: ObservableObject {
         directoryName == BrowserProfile.defaultDirectoryName || directoryName.hasPrefix("Profile ")
     }
 
+    /// Default counts as the first profile, so a new one starts at "Profile 2".
+    private func nextProfileName() -> String {
+        let takenNames = Set(profiles.map(\.displayName))
+        var index = 2
+        while takenNames.contains("Profile \(index)") {
+            index += 1
+        }
+        return "Profile \(index)"
+    }
+
+    private func profileNames() -> [String: String] {
+        guard
+            fileManager.fileExists(atPath: profileNamesURL.path),
+            let data = try? Data(contentsOf: profileNamesURL),
+            let object = try? JSONSerialization.jsonObject(with: data) as? JSONObject,
+            let names = object["names"] as? [String: String]
+        else {
+            return [:]
+        }
+
+        return names.filter { isProfileDirectoryName($0.key) && !$0.value.isEmpty }
+    }
+
+    private func writeProfileNames(_ names: [String: String]) {
+        let object: JSONObject = ["names": names]
+        do {
+            try fileManager.createDirectory(at: rootCacheURL, withIntermediateDirectories: true)
+            let data = try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
+            try data.write(to: profileNamesURL, options: .atomic)
+        } catch {
+            return
+        }
+    }
+
     private func deletedProfileDirectoryNames() -> [String] {
         guard
             fileManager.fileExists(atPath: deletedProfilesURL.path),
@@ -422,7 +489,6 @@ struct BrowserSpaceProfileDirectories {
     let windowProfile: String
     let profiles: () -> [BrowserProfile]
     let cachePath: (String) -> String?
-    let createProfile: () -> String?
-    /// Makes a profile with the given name; imports use it for another browser's profiles.
+    /// Makes a profile with the given name: for a new Space, or another browser's profile on import.
     var createNamedProfile: (String) -> String? = { _ in nil }
 }

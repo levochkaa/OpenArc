@@ -225,7 +225,6 @@ private func writeCrestSession(_ json: String, in home: SidebarHome) throws {
         windowProfile: "Default",
         profiles: { [] },
         cachePath: { "/profiles/\($0)" },
-        createProfile: { nil },
     )
     let result = f.model.importSidebar(sidebar, profiles: BrowserSidebarProfileChoice(
         skipped: ["Crest-CCCCCCCC-0000-0000-0000-000000000003"],

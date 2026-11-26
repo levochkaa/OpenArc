@@ -577,6 +577,9 @@
 "browser.settings.default_browser.prompt" = "OpenArc works best as your default browser";
 "browser.settings.default_browser.action" = "Set OpenArc as default";
 "browser.settings.profiles.new_profile" = "New Profile";
+"browser.settings.profiles.rename" = "Rename…";
+"browser.settings.profiles.rename_prompt.title" = "Rename Profile";
+"browser.settings.profiles.rename_prompt.confirm" = "Rename";
 "browser.settings.profiles.directory" = "Chromium directory: %@";
 "browser.settings.search" = "Search";
 "browser.settings.search_engine" = "Search Engine";
@@ -805,6 +808,7 @@
 "browser.menu.manage_spaces" = "Manage Spaces…";
 "browser.menu.share_tab" = "Share…";
 "browser.space.set_profile_action" = "Set Profile";
+"browser.space.creation.new_profile" = "New Profile";
 "browser.space.creation.profile" = "Profile";
 "browser.new_document.google_doc" = "New Google Doc";
 "browser.new_document.google_sheet" = "New Google Sheet";

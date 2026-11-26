@@ -258,11 +258,7 @@ final class BrowserNativeSidebarFooterNSView: NSView, NSPopoverDelegate, Browser
                 profiles: model.profileDirectories?.profiles() ?? [],
                 selectedProfile: model.profileDirectory(forSpaceID: space.id),
                 onSetProfile: { model.requestProfile($0, forSpaceID: space.id) },
-                onNewProfile: {
-                    if let created = model.profileDirectories?.createProfile() {
-                        model.setProfile(created, forSpaceID: space.id)
-                    }
-                },
+                onNewProfile: { model.moveSpaceToNewProfile(spaceID: space.id) },
                 onManageSpaces: { model.openSpacesInLibrary() },
                 onShare: model.onShareSpace.map { share in { share(space.id) } },
                 onResetTabs: { model.resetSpaceTabs(spaceID: space.id) },

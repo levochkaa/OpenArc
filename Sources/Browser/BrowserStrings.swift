@@ -2021,6 +2021,11 @@ enum BrowserStrings {
         comment: "Space menu submenu that chooses the browser profile for the Space.",
     )
 
+    static let spaceCreationNewProfile = NSLocalizedString(
+        "browser.space.creation.new_profile",
+        comment: "Profile choice for a new Space that makes a new profile named after the Space.",
+    )
+
     static let spaceCreationProfile = NSLocalizedString(
         "browser.space.creation.profile",
         comment: "Label of the profile choice for a new Space.",
@@ -3621,6 +3626,21 @@ enum BrowserStrings {
     static let settingsNewProfile = NSLocalizedString(
         "browser.settings.profiles.new_profile",
         comment: "Button title for creating a new browser profile.",
+    )
+
+    static let settingsRenameProfile = NSLocalizedString(
+        "browser.settings.profiles.rename",
+        comment: "Button title for renaming a browser profile.",
+    )
+
+    static let settingsRenameProfileTitle = NSLocalizedString(
+        "browser.settings.profiles.rename_prompt.title",
+        comment: "Title of the prompt that renames a browser profile.",
+    )
+
+    static let settingsRenameProfileConfirm = NSLocalizedString(
+        "browser.settings.profiles.rename_prompt.confirm",
+        comment: "Confirm button of the prompt that renames a browser profile.",
     )
 
     static let settingsBackUpProfile = NSLocalizedString(

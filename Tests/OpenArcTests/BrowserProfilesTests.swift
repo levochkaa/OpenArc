@@ -99,6 +99,47 @@ import ZIPFoundation
     #expect(infoCache[profile.directoryName] == nil)
 }
 
+@Test func aRenamedProfileKeepsItsNameWhenChromiumWritesLocalStateBack() throws {
+    let rootURL = try makeTemporaryProfileRootURL()
+    defer { try? FileManager.default.removeItem(at: rootURL) }
+
+    let store = BrowserProfileStore(rootCacheURL: rootURL)
+    let profile = store.createProfile()
+    #expect(store.renameProfile(profile, to: "  Work  "))
+    #expect(store.profile(withID: profile.id)?.displayName == "Work")
+    #expect(!store.renameProfile(profile, to: " "), "An empty name changes nothing")
+
+    // Chromium writes its own copy of the profile list over the file.
+    try writeLocalState([
+        "profile": [
+            "profiles_order": ["Default", profile.directoryName],
+            "info_cache": [
+                "Default": ["name": "Your OpenArc"],
+                profile.directoryName: ["name": "Person 2"],
+            ],
+        ],
+    ], to: rootURL)
+    let reloaded = BrowserProfileStore(rootCacheURL: rootURL)
+    #expect(reloaded.profiles.map(\.displayName) == ["Default", "Work"])
+
+    #expect(reloaded.renameProfile(reloaded.defaultProfile, to: "Personal"))
+    #expect(reloaded.defaultProfile.displayName == "Personal", "Default can be renamed too")
+}
+
+@Test func aNewProfileTakesTheNextFreeNameWhateverItsFolder() throws {
+    let rootURL = try makeTemporaryProfileRootURL()
+    defer { try? FileManager.default.removeItem(at: rootURL) }
+
+    let store = BrowserProfileStore(rootCacheURL: rootURL)
+    #expect(store.deleteProfile(store.createProfile()))
+    #expect(store.deleteProfile(store.createProfile()))
+    let third = store.createProfile()
+    #expect(third.directoryName == "Profile 3", "A deleted profile's folder is never reused")
+    #expect(third.displayName == "Profile 2")
+    #expect(store.createProfile().displayName == "Profile 3")
+    #expect(store.createProfile(named: "Work").displayName == "Work")
+}
+
 @Test func profileStoreCreatesZipBackupWithLocalStateAndProfileDirectory() throws {
     let rootURL = try makeTemporaryProfileRootURL()
     defer { try? FileManager.default.removeItem(at: rootURL) }

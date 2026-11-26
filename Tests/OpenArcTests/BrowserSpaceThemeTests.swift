@@ -380,7 +380,6 @@ import Testing
             windowProfile: "Default",
             profiles: { [] },
             cachePath: { "/profiles/\($0)" },
-            createProfile: { nil },
         )
         let space = try #require(f.model.selectedSpaceID)
         #expect(f.model.profileDirectory(forSpaceID: space) == "Default")
@@ -413,7 +412,6 @@ import Testing
             windowProfile: "Default",
             profiles: { [] },
             cachePath: { "/profiles/\($0)" },
-            createProfile: { nil },
         )
         f.model.beginCreatingSpace()
         f.model.updateSpaceCreationDraft { $0.title = "Work" }
@@ -425,13 +423,43 @@ import Testing
         #expect(f.driver.createdTabProfilePaths.last == "/profiles/Profile 2")
     }
 
+    @Test func aNewSpaceCanMakeAProfileNamedAfterIt() throws {
+        let f = SidebarDragFixture(temporary: ["x"])
+        var made = [String]()
+        f.model.profileDirectories = BrowserSpaceProfileDirectories(
+            windowProfile: "Default",
+            profiles: { [] },
+            cachePath: { "/profiles/\($0)" },
+            createNamedProfile: { made.append($0)
+                return "Profile 4"
+            },
+        )
+        f.model.beginCreatingSpace()
+        f.model.updateSpaceCreationDraft { $0.title = "Work" }
+        f.model.updateSpaceCreationDraft { $0.createsProfile = true }
+        f.model.cancelCreatingSpace()
+        #expect(made.isEmpty, "Nothing is made until the Space is")
+
+        f.model.beginCreatingSpace()
+        f.model.updateSpaceCreationDraft { $0.title = " Work " }
+        f.model.updateSpaceCreationDraft { $0.createsProfile = true }
+        #expect(f.model.commitCreatingSpace())
+        let created = try #require(f.model.spaces.last)
+        #expect(made == ["Work"])
+        #expect(f.model.spaceProfilesByID[created.id] == "Profile 4")
+        f.model.createNewTab()
+        #expect(f.driver.createdTabProfilePaths.last == "/profiles/Profile 4")
+
+        f.model.moveSpaceToNewProfile(spaceID: created.id)
+        #expect(made == ["Work", "Work"], "The Space menu names it after the Space as well")
+    }
+
     @Test func aTabMovedToASpaceOnAnotherProfileReopensThere() {
         let f = SidebarDragFixture(pinned: [], temporary: ["x", "y"])
         f.model.profileDirectories = BrowserSpaceProfileDirectories(
             windowProfile: "Default",
             profiles: { [] },
             cachePath: { "/profiles/\($0)" },
-            createProfile: { nil },
         )
         #expect(f.model.setProfile("Profile 2", forSpaceID: "t"))
         let requests = f.driver.createdTabRequests.count

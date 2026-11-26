@@ -179,7 +179,13 @@ final class BrowserNativeSidebarNSView: NSView {
         }
         creationPage.onChooseTheme = { [weak state] anchor in state?.model.onEditSpaceCreationTheme?(anchor) }
         creationPage.onChooseProfile = { [weak state] id in
-            state?.model.updateSpaceCreationDraft { $0.profileDirectory = id }
+            state?.model.updateSpaceCreationDraft {
+                $0.profileDirectory = id
+                $0.createsProfile = false
+            }
+        }
+        creationPage.onChooseNewProfile = { [weak state] in
+            state?.model.updateSpaceCreationDraft { $0.createsProfile = true }
         }
         creationPage.onCreate = { [weak state] in
             state?.withSidebarAnimation { _ = state?.model.commitCreatingSpace() }
@@ -439,6 +445,7 @@ final class BrowserNativeSidebarNSView: NSView {
             creationPage.updateProfiles(
                 state.model.profileDirectories?.profiles() ?? [],
                 selected: draft.profileDirectory ?? state.model.profileDirectories?.windowProfile,
+                createsProfile: draft.createsProfile,
             )
             creationPage.isHidden = false
             state.spacePagerCurve = .spaceSelect
@@ -1854,11 +1861,7 @@ final class BrowserNativeSidebarNSView: NSView {
             profiles: model.profileDirectories?.profiles() ?? [],
             selectedProfile: model.profileDirectory(forSpaceID: space.id),
             onSetProfile: { model.requestProfile($0, forSpaceID: space.id) },
-            onNewProfile: {
-                if let created = model.profileDirectories?.createProfile() {
-                    model.setProfile(created, forSpaceID: space.id)
-                }
-            },
+            onNewProfile: { model.moveSpaceToNewProfile(spaceID: space.id) },
             onManageSpaces: { model.openSpacesInLibrary() },
             canCreateFolder: model.canCreateFolder,
             onNewFolder: { model.createFolderInSelectedSpace() },

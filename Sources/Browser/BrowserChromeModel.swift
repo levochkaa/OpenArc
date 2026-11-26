@@ -2156,6 +2156,14 @@ enum BrowserWindowMode: Equatable {
         return true
     }
 
+    /// Moves a Space to a new profile named after it.
+    func moveSpaceToNewProfile(spaceID: String) {
+        guard let space = spaces.first(where: { $0.id == spaceID }),
+              let created = profileDirectories?.createNamedProfile(space.title)
+        else { return }
+        setProfile(created, forSpaceID: spaceID)
+    }
+
     /// Opens the sidebar page that sets up a Space. Nothing changes until it is created.
     func beginCreatingSpace() {
         guard supportsSpaces, !isShuttingDown, spaceCreationDraft == nil else { return }
@@ -2185,7 +2193,9 @@ enum BrowserWindowMode: Equatable {
         }
         spaces.append(space)
         spaceThemesByID[space.id] = draft.theme
-        if draft.profileDirectory != profileDirectories?.windowProfile {
+        if draft.createsProfile, let created = profileDirectories?.createNamedProfile(title) {
+            spaceProfilesByID[space.id] = created
+        } else if draft.profileDirectory != profileDirectories?.windowProfile {
             spaceProfilesByID[space.id] = draft.profileDirectory
         }
         selectSpace(id: space.id)

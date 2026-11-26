@@ -10,6 +10,8 @@ struct BrowserSpaceCreationDraft: Equatable {
     var icon: String?
     var theme: BrowserSpaceTheme?
     var profileDirectory: String?
+    /// Makes a profile named after the Space when it is created.
+    var createsProfile = false
 }
 
 // MARK: - BrowserSpaceCreationView
@@ -24,6 +26,7 @@ final class BrowserSpaceCreationView: NSView, NSTextFieldDelegate {
     var onChooseIcon: (NSView) -> Void = { _ in }
     var onChooseTheme: (NSView) -> Void = { _ in }
     var onChooseProfile: (String) -> Void = { _ in }
+    var onChooseNewProfile: () -> Void = {}
     var onCreate: () -> Void = {}
     var onCancel: () -> Void = {}
 
@@ -127,16 +130,23 @@ final class BrowserSpaceCreationView: NSView, NSTextFieldDelegate {
         cancelButton.frame = NSRect(x: 14, y: bounds.height - 36, width: inner, height: 24)
     }
 
-    /// The profile choice, shown once there is more than one to choose from.
-    func updateProfiles(_ profiles: [BrowserProfile], selected: String?) {
-        profileRow.isHidden = profiles.count < 2
+    /// The profile choice: the existing profiles, or a new one for this Space.
+    /// Hidden where the window has no profiles to choose from.
+    func updateProfiles(_ profiles: [BrowserProfile], selected: String?, createsProfile: Bool) {
+        profileRow.isHidden = profiles.isEmpty
         profileLabel.textColor = BrowserChromeColors.sidebarRowText
         profilePopUp.removeAllItems()
         for profile in profiles {
             profilePopUp.addItem(withTitle: profile.displayName)
             profilePopUp.lastItem?.representedObject = profile.id
         }
-        if let index = profiles.firstIndex(where: { $0.id == selected }) {
+        profilePopUp.menu?.addItem(.separator())
+        profilePopUp.addItem(withTitle: BrowserStrings.spaceCreationNewProfile)
+        profilePopUp.lastItem?.image = NSImage(systemSymbolName: "plus", accessibilityDescription: nil)
+        profilePopUp.lastItem?.setAccessibilityIdentifier("browser.sidebar.create-space-new-profile")
+        if createsProfile {
+            profilePopUp.select(profilePopUp.lastItem)
+        } else if let index = profiles.firstIndex(where: { $0.id == selected }) {
             profilePopUp.selectItem(at: index)
         }
         needsLayout = true
@@ -165,6 +175,8 @@ final class BrowserSpaceCreationView: NSView, NSTextFieldDelegate {
     @objc private func chooseProfile() {
         if let id = profilePopUp.selectedItem?.representedObject as? String {
             onChooseProfile(id)
+        } else if profilePopUp.selectedItem === profilePopUp.lastItem {
+            onChooseNewProfile()
         }
     }
 

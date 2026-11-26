@@ -4387,7 +4387,6 @@ NSMenuDelegate, NSUserInterfaceValidations {
                 cachePath: { directory in
                     store.profile(withID: directory).map { store.profileDirectoryURL(for: $0).path }
                 },
-                createProfile: { store.createProfile().id },
                 createNamedProfile: { store.createProfile(named: $0).id },
             )
         }
