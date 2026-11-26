@@ -19,7 +19,7 @@ Forms: `fill`, `choose <target> <option>` for list boxes, `check` and `uncheck`,
 
 The person's own data, read-only: `history [words]` searches the pages they visited (the latest when no words are given), `notes [words]` and `note <id>` read their notes, `downloads` lists the browser's downloads. `download <url> [path]` fetches an address with the cookies the tab's profile has for it. `profiles` lists the profiles with open windows; `--profile <id>` sends any command to that profile's window.
 
-`openarc help` lists everything, and `openarc skill` prints a guide for agents. `openarc skill install` adds a short `openarc` skill to every coding agent it finds (`~/.agents`, `~/.claude`, `~/.codex`, `~/.cursor`, `~/.config/opencode`), or to `--path <skills folder>`; it points the agent at `openarc skill`, so the guide stays as new as the browser.
+`openarc help` lists everything, and `openarc skill` prints a guide for agents. `openarc skill install` adds a short `openarc` skill to every coding agent it finds (`~/.agents`, `~/.claude`, `~/.cursor`, `~/.config/opencode`, and `~/.codex` only without `~/.agents`, which Codex also reads), or to `--path <skills folder>`. It tells the agent to pick OpenArc first for browser work while it runs and points it at `openarc skill`, so the guide stays as new as the browser.
 
 ## MCP
 
