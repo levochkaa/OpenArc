@@ -6283,9 +6283,30 @@ enum BrowserWindowMode: Equatable {
     @discardableResult private func commitSessionWrites(_ writes: [BrowserSessionWrite], schedulesPush: Bool) -> Bool {
         guard !writes.isEmpty, !sessionWriteBuffer.isTerminal, !hasDiscardedSessionForClosure else { return false }
         let wasBlocked = hasUncommittedSessionWrites
+        var writes = writes
         do {
-            try sessionSnapshotStore.writeSessionBatch(writes)
+            do {
+                try sessionSnapshotStore.writeSessionBatch(writes)
+            } catch BrowserTabArchiveError.invalidTransition {
+                guard let rebased = archiveWritesRebasedOnStoredTabs(writes) else {
+                    throw BrowserTabArchiveError.invalidTransition
+                }
+                try sessionSnapshotStore.writeSessionBatch(rebased)
+                for index in pendingSessionCompletions.indices {
+                    if let position = writes.firstIndex(of: pendingSessionCompletions[index].write) {
+                        pendingSessionCompletions[index] = .init(
+                            write: rebased[position],
+                            completion: pendingSessionCompletions[index].completion,
+                        )
+                    }
+                }
+                writes = rebased
+            }
         } catch {
+            // The banner says only that saving stopped; the reason is for diagnosis.
+            BrowserSessionDiagnostics.logger.error(
+                "Failed to save \(writes.count, privacy: .public) session writes: \(String(reflecting: error), privacy: .public)",
+            )
             if sessionWriteBuffer.writes.isEmpty {
                 for write in writes where !sessionWriteBuffer.isTerminal {
                     sessionWriteBuffer.append(write)
@@ -6321,6 +6342,30 @@ enum BrowserWindowMode: Equatable {
             action.completion()
         }
         return true
+    }
+
+    /// Another window of the profile can save a tab after this one last did. Closing it here then
+    /// archived this window's older copy, which the store refuses so the newer one is not lost; the
+    /// refusal repeated on every retry until saving stopped for good. The entry takes the copy the
+    /// store holds before each write instead. Nil when no Archive entry differs from it.
+    private func archiveWritesRebasedOnStoredTabs(_ writes: [BrowserSessionWrite]) -> [BrowserSessionWrite]? {
+        guard let stored = sessionSnapshotStore.loadSnapshot() else { return nil }
+        var preimage = stored
+        var changed = false
+        let rebased = writes.map { write -> BrowserSessionWrite in
+            defer { preimage = write.snapshot }
+            guard write.archiveProjectionSnapshot == nil, case .insert(let entry)? = write.archiveAction,
+                  let tab = preimage.tabs.first(where: { $0.id == entry.tab.id }),
+                  tab != entry.tab, tab.placement == entry.tab.placement
+            else { return write }
+            changed = true
+            return BrowserSessionWrite(
+                snapshot: write.snapshot,
+                origin: write.origin,
+                archiveAction: .insert(.init(id: entry.id, tab: tab, archivedAt: entry.archivedAt, title: entry.title)),
+            )
+        }
+        return changed ? rebased : nil
     }
 
     /// Every save sets this; an unchanged value publishes nothing, so a tab switch's

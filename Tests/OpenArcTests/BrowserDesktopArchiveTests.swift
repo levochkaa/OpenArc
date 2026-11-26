@@ -50,6 +50,33 @@ import Testing
         #expect(library.documentBuildCount == built)
     }
 
+    /// Another window of the profile saved the tab after this one last did; closing it here still
+    /// archives it and keeps saving, where the stale copy once stopped every later save.
+    @Test func closingATabAnotherWindowSavedSinceStillArchivesAndSaves() throws {
+        let f = try DesktopArchiveFixture(archivedIDs: [])
+        defer { f.close() }
+        f.restoreModel()
+        let saved = try #require(try f.store.loadSnapshotStrict())
+        try f.store.writeSessionBatch([.init(snapshot: .init(
+            spaces: saved.spaces, pinnedTabFolders: saved.pinnedTabFolders,
+            tabs: saved.tabs.map { tab in
+                guard tab.id == "b" else { return tab }
+                return .init(
+                    id: tab.id, urlString: tab.urlString, userTitleOverride: tab.userTitleOverride,
+                    spaceID: tab.spaceID, lastActivityTimestamp: 1_800_000_500,
+                )
+            },
+        ), origin: .local(syncMove: nil))])
+        let b = try #require(f.model.tabs.first { $0.syncID == "b" }?.id)
+        #expect(f.model.closeTab(id: b))
+        #expect(f.model.sessionPersistenceFailure == nil, "The close saves")
+        let after = try #require(try f.store.loadSnapshotStrict())
+        #expect(!after.tabs.contains { $0.id == "b" })
+        #expect(try f.store.loadArchivePage().entries.contains { $0.tab.id == "b" }, "It is in the Archive")
+        f.model.createNewTab()
+        #expect(f.model.sessionPersistenceFailure == nil, "Later saves go on")
+    }
+
     @Test func restoreCommitsFreshIdentityBeforeEngineCreationAndPreservesTheOriginalTombstone() throws {
         let f = try DesktopArchiveFixture()
         defer { f.close() }

@@ -521,7 +521,7 @@ final class BrowserEphemeralSessionStore: BrowserTabSessionSnapshotStoring, Brow
 
 // MARK: - BrowserSessionDiagnostics
 
-private enum BrowserSessionDiagnostics {
+enum BrowserSessionDiagnostics {
     static let logger = Logger(
         subsystem: Bundle.main.bundleIdentifier ?? "com.levochkaa.OpenArc",
         category: "Session",
