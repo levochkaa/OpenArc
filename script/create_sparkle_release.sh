@@ -87,6 +87,15 @@ if [[ ! -d "$app_bundle" ]]; then
   exit 1
 fi
 
+# The build stages the Chrome engine only when its Chromium matches CEF's, and otherwise goes on without it. A
+# release without it moves everyone who picked Chrome's engine back to CEF, so it stops here.
+if [[ ! -d "$app_bundle/Contents/Frameworks/OpenArc Framework.framework" &&
+  "${OPENARC_RELEASE_WITHOUT_CHROME_ENGINE:-0}" != "1" ]]; then
+  echo "error: $app_bundle has no Chrome engine; run ./script/chrome_engine.sh pull (or build, package, pull)" \
+    "and build again, or set OPENARC_RELEASE_WITHOUT_CHROME_ENGINE=1 to release without it" >&2
+  exit 1
+fi
+
 info_plist="$app_bundle/Contents/Info.plist"
 short_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$info_plist")"
 build_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$info_plist")"
