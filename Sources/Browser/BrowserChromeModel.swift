@@ -569,6 +569,11 @@ enum BrowserWindowMode: Equatable {
                     selectionHistory.removeFirst(selectionHistory.count - Self.selectionHistoryLimit)
                 }
             }
+            // Another tab never shows behind a page in fullscreen, whichever way it was
+            // chosen: from the sidebar, or opened from the command bar over the page.
+            if let fullscreen = pageFullscreenTabID, selectedTabID != fullscreen {
+                exitPageFullscreen()
+            }
             recordSplitFocus(tabID: selectedTabID)
             syncSplitLayout()
             refreshZoomFromEngine()
@@ -4435,10 +4440,6 @@ enum BrowserWindowMode: Equatable {
 
         captureSelectedTabPreviewIfNeeded()
         dismissCommandBar()
-        // Another tab never shows behind a page in fullscreen.
-        if pageFullscreenTabID != nil, pageFullscreenTabID != id {
-            exitPageFullscreen()
-        }
 
         if tab.spaceID != selectedSpaceID {
             selectedSpaceID = tab.spaceID

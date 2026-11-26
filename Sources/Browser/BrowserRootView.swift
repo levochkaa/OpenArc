@@ -167,10 +167,13 @@ final class BrowserRootView: NSView {
     }
 
     private var isEditingSpaceTheme: Bool { spaceThemePopover?.isShown == true }
-    private var isSidebarPresented: Bool { model.isSidebarVisible || isSidebarHoverOverlayPresented }
-    private var isSidebarHoverOverlayActive: Bool { !model.isSidebarVisible && isSidebarHoverOverlayPresented }
+    /// The pinned sidebar beside the page. A page in fullscreen covers it, and the
+    /// sidebar can still be hovered out over it.
+    private var isSidebarDocked: Bool { model.isSidebarVisible && !isPageFullscreen }
+    private var isSidebarPresented: Bool { isSidebarDocked || isSidebarHoverOverlayPresented }
+    private var isSidebarHoverOverlayActive: Bool { !isSidebarDocked && isSidebarHoverOverlayPresented }
     private var isSidebarOverlayPresentation: Bool {
-        isSidebarOverlayPinning || !model.isSidebarVisible && isSidebarHoverOverlayChromeVisible
+        isSidebarOverlayPinning || !isSidebarDocked && isSidebarHoverOverlayChromeVisible
     }
 
     private var showsWindowControlsInSidebarChrome: Bool {
@@ -762,7 +765,7 @@ final class BrowserRootView: NSView {
         }
         downloadFlight.frame = bounds
         addSubview(downloadFlight, positioned: .above, relativeTo: nil)
-        guard model.isSidebarVisible else {
+        guard isSidebarDocked else {
             downloadFlight.launchWithoutSidebar(
                 from: source,
                 tint: tint,
@@ -1142,7 +1145,7 @@ final class BrowserRootView: NSView {
             hostView: model.hostView,
             isContextReady: model.isContextReady,
             hasSelectedTab: model.selectedTabID != nil && !model.showsMovedPage,
-            isSidebarVisible: model.isSidebarVisible,
+            isSidebarVisible: isSidebarDocked,
             usesWindowContentInsets: usesWindowContentInsets,
             sidebarPosition: preferences.sidebarPosition,
             selectedTabCreationState: model.selectedTabCreationState,
@@ -1187,7 +1190,7 @@ final class BrowserRootView: NSView {
         }
         extensionResize.isHidden = !isExtensionSidePanelPresented
         extensionResize.hapticsEnabled = preferences.hapticFeedbackEnabled
-        revealEdge.isHidden = model.isSidebarVisible || isSidebarPresented
+        revealEdge.isHidden = isSidebarPresented
         tabEvents.isEnabled = model.selectedTabID != nil
         // The switcher appears and leaves at once, like the command bar.
         tabSwitcher.isHidden = model.tabSwitcherState?.isVisible != true
@@ -1214,7 +1217,7 @@ final class BrowserRootView: NSView {
         if !isSidebarPresented {
             isSidebarHoverOverlayChromeVisible = false
         }
-        showsSidebarWindowControls = model.isSidebarVisible || isSidebarPresented
+        showsSidebarWindowControls = isSidebarPresented
         let shown = BrowserSidebarPresentation(
             showsWindowControls: sidebar.showsWindowControls,
             isOverlay: sidebar.isOverlayPresentation,
@@ -1234,7 +1237,7 @@ final class BrowserRootView: NSView {
     }
 
     private func handleSidebarRevealEdgeHoverChange(_ hovering: Bool) {
-        guard !model.isSidebarVisible, isSidebarRevealEdgeHovered != hovering else { return }
+        guard !isSidebarDocked, isSidebarRevealEdgeHovered != hovering else { return }
         isSidebarRevealEdgeHovered = hovering
         revealTask?.cancel()
         guard hovering,!isSidebarPresented else { return }
@@ -1255,6 +1258,10 @@ final class BrowserRootView: NSView {
         guard shownPageFullscreenTabID != model.pageFullscreenTabID else { return }
         let entering = shownPageFullscreenTabID == nil
         shownPageFullscreenTabID = model.pageFullscreenTabID
+        // The sidebar hovered out over the page gives way to the pinned one beside it.
+        if model.pageFullscreenTabID == nil, model.isSidebarVisible, isSidebarHoverOverlayPresented {
+            finishSidebarHoverOverlayPromotionIfNeeded()
+        }
         guard let window, !isWindowFullscreenTransitioning else { return }
         if entering, model.pageFullscreenTabID != nil {
             if isSidebarHoverOverlayPresented {
@@ -1386,7 +1393,7 @@ final class BrowserRootView: NSView {
             return
         }
         let controls = sidebar.header.urlControls
-        guard !model.isSidebarVisible, !isSidebarHoverOverlayActive else {
+        guard !isSidebarDocked, !isSidebarHoverOverlayActive else {
             controls.showControlCenter()
             return
         }
@@ -1417,7 +1424,7 @@ final class BrowserRootView: NSView {
     private func showDownloadsPopover() {
         let footer = sidebar.footer
         // Without a Library the footer has no button for it.
-        let showsButton = (model.isSidebarVisible || isSidebarHoverOverlayActive) && model.hasLibrary
+        let showsButton = (isSidebarDocked || isSidebarHoverOverlayActive) && model.hasLibrary
         guard !showsButton, !footer.isDownloadsPresented else {
             footer.toggleDownloads()
             return
@@ -1439,7 +1446,7 @@ final class BrowserRootView: NSView {
     }
 
     private func presentSidebarHoverOverlay() {
-        guard !model.isSidebarVisible, !isSidebarHoverOverlayPresented, !isPageFullscreen else { return }
+        guard !isSidebarDocked, !isSidebarHoverOverlayPresented else { return }
         isSidebarRevealEdgeHovered = false
         isSidebarHoverOverlayPointerSyncSuspended = false
         isSidebarHoverOverlayChromeVisible = true
@@ -1458,7 +1465,7 @@ final class BrowserRootView: NSView {
     /// Reveal Current Tab shows a hidden sidebar as the hover overlay. It stays
     /// until the pointer moves, then follows the pointer like a hover reveal.
     private func revealSidebarFromKeyboard() {
-        guard !model.isSidebarVisible, !isSidebarHoverOverlayPresented else { return }
+        guard !isSidebarDocked, !isSidebarHoverOverlayPresented else { return }
         presentSidebarHoverOverlay()
         isSidebarHoverOverlayPointerSyncSuspended = true
         refresh()
@@ -1492,7 +1499,7 @@ final class BrowserRootView: NSView {
     private func restoreSidebarHoverOverlayAfterFullscreenTransitionIfNeeded() {
         guard preservesSidebarHoverOverlayDuringFullscreenTransition else { return }
         preservesSidebarHoverOverlayDuringFullscreenTransition = false
-        guard !model.isSidebarVisible else {
+        guard !isSidebarDocked else {
             isSidebarHoverOverlayPointerSyncSuspended = false
             isSidebarHoverOverlayPresented = false
             isSidebarHoverOverlayChromeVisible = false

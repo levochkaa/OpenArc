@@ -93,6 +93,16 @@ import Testing
         #expect(f.model.pageFullscreenTabID == nil)
     }
 
+    @Test func aPageInFullscreenLeavesItWhenTheCommandBarOpensANewTab() throws {
+        let f = SidebarDragFixture()
+        let x = f.id("x")
+        f.model.selectTab(id: x)
+        f.driver.onPageFullscreenChanged?(x, true)
+        try f.model.openURLInNewTab(#require(URL(string: "https://search.example/?q=player")))
+        #expect(f.model.selectedTabID != x)
+        #expect(f.driver.exitPageFullscreenCount == 1, "The new tab is not hidden behind the player")
+    }
+
     @Test func tabsALinkOpensGoBelowTheirOpenerInOrder() throws {
         let f = SidebarDragFixture(pinned: [], temporary: ["x", "y", "z"])
         let x = f.id("x")
