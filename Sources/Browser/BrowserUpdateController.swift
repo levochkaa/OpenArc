@@ -9,6 +9,11 @@ import Sparkle
 // MARK: - BrowserUpdateController
 
 @MainActor final class BrowserUpdateController: NSObject, ObservableObject {
+    // MARK: Internal
+
+    /// Sparkle is quitting the app to put the update in place; nothing should ask to stay.
+    private(set) var isInstallingUpdate = false
+
     // MARK: Private
 
     private let preferencesStore: BrowserUserPreferencesStore
@@ -22,8 +27,6 @@ import Sparkle
     private var isAutomaticUpdatePolicyActive = false
     private var immediateInstallHandler: (() -> Void)?
     @Published private var toastState = BrowserUpdateToastState()
-
-    // MARK: Internal
 
     var toast: BrowserUpdateToast? { toastState.toast }
 
@@ -247,6 +250,14 @@ extension BrowserUpdateController: SPUUpdaterDelegate {
                 ],
             )
         }
+    }
+
+    func updater(_: SPUUpdater, willInstallUpdate _: SUAppcastItem) {
+        isInstallingUpdate = true
+    }
+
+    func updaterWillRelaunchApplication(_: SPUUpdater) {
+        isInstallingUpdate = true
     }
 
     func updater(_: SPUUpdater, didDownloadUpdate item: SUAppcastItem) {

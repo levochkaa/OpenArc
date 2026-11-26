@@ -111,7 +111,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
     var appleScriptTabs: [BrowserScriptTab] { [] }
 
     private var shouldPresentQuitWarning: Bool {
-        guard webAppConfiguration == nil, !didConfirmTerminationWarning, !isQuitWarningPresented else {
+        // Installing an update already asked: its Restart or Install and Relaunch quits.
+        guard webAppConfiguration == nil, !didConfirmTerminationWarning, !isQuitWarningPresented,
+              updateController?.isInstallingUpdate != true
+        else {
             return false
         }
 
