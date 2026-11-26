@@ -2279,6 +2279,9 @@ final class BrowserNativeSidebarNSView: NSView {
 
     /// The list is hidden behind the tray and fades in over the band above it.
     private func fadeListAbove(trayTop: CGFloat) {
+        // The players sit under the tray, out of the list, and showed through it; they leave with the list.
+        miniPlayers.alphaValue = 1 - listFadeStrength
+        miniPlayers.isHidden = listFadeStrength >= 1
         pagerClip.wantsLayer = true
         guard let layer = pagerClip.layer, pagerClip.bounds.height > 0 else { return }
         let top = pagerClip.convert(NSPoint(x: 0, y: trayTop), from: content).y
