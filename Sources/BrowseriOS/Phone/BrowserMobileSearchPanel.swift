@@ -382,6 +382,10 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
         return true
     }
 
+    func textFieldDidChangeSelection(_: UITextField) {
+        field.noteSelectionChange()
+    }
+
     func textFieldShouldReturn(_ textField: UITextField) -> Bool {
         guard textField.markedTextRange == nil else { return false }
         field.keepCompletion()
@@ -608,8 +612,9 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
         updateAccessories(animated: true)
     }
 
-    /// Lists suggestions for the typed text; while typing forward it also fills
-    /// in the rest of a known host, which the next keystroke replaces.
+    /// Lists suggestions for the typed text; while typing forward at the end
+    /// it also fills in the rest of a known host, which the next keystroke
+    /// replaces. An edit in the middle fills nothing in, so the caret stays.
     private func refresh(complete: Bool, asks: Bool = true) {
         let typed = field.typedText
         // Private browsing and other search engines send nothing out.
@@ -627,7 +632,7 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
                 ? String(completion.dropFirst(typed.count))
                 : nil
         }
-        if complete, let fill {
+        if complete, field.isTypingAtEnd, let fill {
             field.showCompletion(fill, after: typed)
         } else if field.completion != nil, field.completion != fill {
             // What shows no longer completes the typed text.

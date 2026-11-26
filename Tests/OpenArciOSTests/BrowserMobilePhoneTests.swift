@@ -102,6 +102,27 @@ import UIKit
     #expect(field.completion == nil)
 }
 
+@MainActor @Test func mobileCompletingFieldKeepsTheFilledInPartWhenTheCaretMoves() throws {
+    let field = BrowserMobileCompletingField()
+    field.showCompletion("hub.com", after: "git")
+    let shown = try #require(field.attributedText)
+    var highlighted = false
+    shown.enumerateAttribute(.backgroundColor, in: NSRange(location: 0, length: shown.length)) { value, _, _ in
+        highlighted = highlighted || value != nil
+    }
+    #expect(!highlighted, "The highlight is drawn behind the text, so keeping it needs no rewrite")
+
+    field.noteSelectionChange()
+    #expect(field.completion == "hub.com", "The caret at the end of the typed text keeps it filled in")
+
+    let inside = try #require(field.position(from: field.beginningOfDocument, offset: 1))
+    field.selectedTextRange = field.textRange(from: inside, to: inside)
+    field.noteSelectionChange()
+    #expect(field.completion == nil, "Moving the caret keeps the filled-in part as text")
+    #expect(field.text == "github.com")
+    #expect(field.typedText == "github.com")
+}
+
 @MainActor @Test func mobileCompletingFieldTypingOverTheCaretDropsTheFilledInPart() throws {
     let field = BrowserMobileCompletingField()
     field.showCompletion("hub.com", after: "git")
