@@ -961,6 +961,30 @@ private func command(_ title: String) -> BrowserCommandSuggestion {
     #expect(model.inlineCompletionSuffix == "tube.com")
 }
 
+@MainActor @Test func textLeftByDeleteIsNotCompletedUntilMoreIsTyped() async {
+    let youtube = page("YouTube", "https://www.youtube.com/")
+    let model = BrowserCommandBarModel(
+        suggestionProvider: FakeSuggestionProvider(suggestionsByQuery: [:]),
+        suggestionDebounceNanoseconds: 0,
+        localSuggestionProvider: { _, _ in [youtube] },
+        aiSearchEnabledProvider: { false },
+        submitHandler: { _ in },
+    )
+    model.present()
+    model.query = "yout"
+    #expect(model.inlineCompletionSuffix == "ube.com")
+    model.deleteText(leaving: "you")
+    #expect(model.inlineCompletionSuffix == nil, "Delete never brings a completion back")
+    #expect(model.previewDisplayText == nil)
+    #expect(model.selectedSuggestion?.kind == .search)
+    model.deleteText(leaving: "yo")
+    #expect(model.inlineCompletionSuffix == nil)
+    await model.waitForPendingSuggestionLoad()
+    #expect(model.inlineCompletionSuffix == nil, "Loaded suggestions keep the search first")
+    model.query = "you"
+    #expect(model.inlineCompletionSuffix == "tube.com", "Typing completes again")
+}
+
 @MainActor @Test func tabAcceptsTheCompletion() async {
     let model = await rankingModel(pages: [page("YouTube", "https://www.youtube.com/")], query: "you")
     #expect(model.acceptSelectedSuggestion())

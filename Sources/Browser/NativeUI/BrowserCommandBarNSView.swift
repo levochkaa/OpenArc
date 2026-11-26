@@ -58,6 +58,8 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
     private var blockedTrailingInset: CGFloat = 0
     private var faviconCandidate: BrowserCommandBarFaviconCandidate?
     private var scrolledSelectionID: String?
+    /// The key being handled deletes text, so the change it makes completes nothing.
+    private var isDeletingText = false
     private let scrollAnimation = BrowserNativeAnimation()
 
     var panelFrame: CGRect { panel.frame }
@@ -295,8 +297,14 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
         guard notification.object as? BrowserCommandNSTextField === queryField,
               !queryField.isApplyingPresentation else { return }
         queryField.clearFocusSelectionRequest()
+        let deleted = isDeletingText
+        isDeletingText = false
         if model.query != queryField.stringValue {
-            model.query = queryField.stringValue
+            if deleted {
+                model.deleteText(leaving: queryField.stringValue)
+            } else {
+                model.query = queryField.stringValue
+            }
             // The key replaced the completed part; put the completion back
             // before the field draws, or it shows the bare text for a frame.
             refresh()
@@ -325,6 +333,17 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
             {
                 refresh()
                 return true
+            }
+            noteDeletion()
+            return false
+        case #selector(NSResponder.deleteBackwardByDecomposingPreviousCharacter(_:)),
+             #selector(NSResponder.deleteForward(_:)),
+             #selector(NSResponder.deleteToBeginningOfLine(_:)),
+             #selector(NSResponder.deleteToEndOfLine(_:)),
+             #selector(NSResponder.deleteWordBackward(_:)),
+             #selector(NSResponder.deleteWordForward(_:)):
+            if !textView.hasMarkedText() {
+                noteDeletion()
             }
             return false
         case #selector(NSResponder.moveUp(_:)): model.moveSelection(by: -1)
@@ -363,6 +382,13 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
             return true
         default: return false
         }
+    }
+
+    /// The field editor deletes right after this returns; a key that deleted
+    /// nothing leaves no flag for the next one.
+    private func noteDeletion() {
+        isDeletingText = true
+        DispatchQueue.main.async { [weak self] in self?.isDeletingText = false }
     }
 
     private func refresh() {

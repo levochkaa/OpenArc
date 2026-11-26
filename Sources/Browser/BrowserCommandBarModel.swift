@@ -453,6 +453,13 @@ struct BrowserGoogleSuggestionService: BrowserSuggestionProviding {
         return true
     }
 
+    /// Text Delete left: it stays as it is, with the search first, until more
+    /// is typed. Only typing completes the field.
+    func deleteText(leaving text: String) {
+        completionRemovedQuery = text
+        query = text
+    }
+
     /// `pageTitle` names the page whose address `initialQuery` is: until the
     /// address is edited, that page comes first, then the latest pages.
     func present(initialQuery: String = "", pageTitle: String? = nil) {
