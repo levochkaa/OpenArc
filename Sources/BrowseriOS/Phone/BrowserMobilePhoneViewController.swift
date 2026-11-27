@@ -1055,8 +1055,15 @@ final class BrowserMobilePhoneViewController: UIViewController {
         let ghosts = surfaceGhosts
         matchSurfaceTintToBar()
         let distance = max(expandedBarFrame.minY - surface.frame.minY, 1)
-        let duration = velocity == nil ? 0.3 : min(max(0.22 + Double(distance) / 1200, 0.3), 0.6)
-        let springVelocity = max(velocity ?? 0, 0) / distance
+        // Let go slowly, the panel takes longer the farther it has to go;
+        // flicked, it goes quicker the faster the finger was, down to 0.24 s
+        // (most of the way in about 0.15 s) for 2500 points a second.
+        let slowDuration = min(max(0.22 + Double(distance) / 1200, 0.3), 0.6)
+        let flick = min(max((Double(velocity ?? 0) - 500) / 2000, 0), 1)
+        let duration = velocity == nil ? 0.3 : slowDuration - (slowDuration - 0.24) * flick
+        // A critically damped spring started faster than its own pace
+        // overshoots, so a hard flick is capped there.
+        let springVelocity = min(max(velocity ?? 0, 0) / distance, CGFloat(2 * Double.pi / duration))
         // Settles into the bar without dipping below its height.
         UIView.animate(springDuration: duration, bounce: 0, initialSpringVelocity: springVelocity, delay: 0, options: [
             .allowUserInteraction, .beginFromCurrentState,
@@ -1451,7 +1458,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
             // turn later keeps the panel's own animation.
             DispatchQueue.main.async { [weak self] in
                 guard let self, mode == .search else { return }
-                closePanel(velocity: 0)
+                closePanel(velocity: searchPanel.suggestionsReleaseVelocity)
             }
             return
         }
@@ -1483,11 +1490,16 @@ final class BrowserMobilePhoneViewController: UIViewController {
         guard mode == .search, let surface, searchPanel.isFieldExpanded else { return }
         let keyboardTop = searchKeyboardTop
         guard let offset else {
-            UIView.animate(springDuration: 0.32, bounce: 0.1, initialSpringVelocity: 0, delay: 0, options: [
-                .allowUserInteraction, .beginFromCurrentState,
-            ]) {
-                self.layoutSearchPanel(keyboardTop: keyboardTop)
+            // A keyboard the finger took along either leaves, and search
+            // closes from here, or comes back, and the panel rides it up;
+            // springing back now would jump the panel up before either.
+            if keyboardTracker.frame.minY > keyboardTop + 1 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                    self?.settleSearchPanel()
+                }
+                return
             }
+            settleSearchPanel()
             return
         }
         let restTop = searchPanelTop(keyboardTop: keyboardTop)
@@ -1495,6 +1507,19 @@ final class BrowserMobilePhoneViewController: UIViewController {
         UIView.performWithoutAnimation {
             surface.frame = CGRect(x: 0, y: y, width: view.bounds.width, height: view.bounds.height - y)
             fitSearchPanel(top: y)
+        }
+    }
+
+    /// An open search panel let go goes back on top of the keyboard.
+    private func settleSearchPanel() {
+        guard mode == .search, let surface, searchPanel.isFieldExpanded,
+              !searchPanel.isDraggingSuggestions else { return }
+        let keyboardTop = searchKeyboardTop
+        guard surface.frame.minY != searchPanelTop(keyboardTop: keyboardTop) else { return }
+        UIView.animate(springDuration: 0.32, bounce: 0.1, initialSpringVelocity: 0, delay: 0, options: [
+            .allowUserInteraction, .beginFromCurrentState,
+        ]) {
+            self.layoutSearchPanel(keyboardTop: keyboardTop)
         }
     }
 

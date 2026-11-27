@@ -170,6 +170,9 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
     /// its place, negative above; nil when the finger lets go.
     var onPanelPull: ((CGFloat?) -> Void)?
 
+    /// How fast, in points a second and down positive, that finger was going.
+    private(set) var suggestionsReleaseVelocity: CGFloat = 0
+
     private let fieldBackground = UIView()
     private let plusGlyph = UIImageView(image: UIImage(
         systemName: "plus", withConfiguration: UIImage.SymbolConfiguration(pointSize: 20, weight: .semibold),
@@ -475,6 +478,7 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
     func scrollViewWillEndDragging(
         _ scrollView: UIScrollView, withVelocity _: CGPoint, targetContentOffset: UnsafeMutablePointer<CGPoint>,
     ) {
+        suggestionsReleaseVelocity = scrollView.panGestureRecognizer.velocity(in: nil).y
         guard panelPullStart != nil else { return }
         targetContentOffset.pointee.y = -scrollView.adjustedContentInset.top
     }
