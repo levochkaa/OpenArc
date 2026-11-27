@@ -175,6 +175,11 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
         systemName: "plus", withConfiguration: UIImage.SymbolConfiguration(pointSize: 20, weight: .semibold),
     ))
     private let table = UITableView(frame: .zero, style: .plain)
+    /// Holds the suggestions from the field's top down, so they scroll up
+    /// behind the field; the field's capsule is cut out of it, so rows show
+    /// around the capsule and never through it.
+    private let suggestionsClip = UIView()
+    private let capsuleCutout = CAShapeLayer()
     private let holdGesture = UILongPressGestureRecognizer()
     private var suggestions = BrowserMobileSearchSuggestions(query: "", candidates: [])
     /// The microphone and the eyes, which fade in with the field.
@@ -269,13 +274,17 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
         // takes the keyboard with it as the finger reaches it; search closes
         // after the keyboard. See scrollViewDidScroll.
         table.keyboardDismissMode = .interactive
-        // The rows scroll up to the field's edge, not to a gap under it.
-        table.contentInset.top = Self.suggestionsTopInset
+        // The first row starts under the field; scrolled up, rows pass behind it.
+        table.contentInset.top = Self.fieldHeight + Self.suggestionsTopInset
+        table.contentOffset.y = -table.contentInset.top
         table.alwaysBounceVertical = true
         table.showsVerticalScrollIndicator = false
         table.register(Cell.self, forCellReuseIdentifier: "Suggestion")
         table.accessibilityIdentifier = "browser.searchSuggestions"
-        addSubview(table)
+        suggestionsClip.addSubview(table)
+        capsuleCutout.fillRule = .evenOdd
+        suggestionsClip.layer.mask = capsuleCutout
+        insertSubview(suggestionsClip, belowSubview: fieldBackground)
         // Holding a suggested search puts it in the field to go on typing.
         holdGesture.addTarget(self, action: #selector(heldSuggestion(_:)))
         holdGesture.delegate = self
@@ -333,11 +342,23 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
             x: isFieldExpanded ? 4 : (frame.width - glyphSide) / 2, y: (frame.height - glyphSide) / 2,
             width: glyphSide, height: glyphSide,
         )
-        let tableTop = frame.maxY
-        table.frame = CGRect(x: 0, y: tableTop, width: bounds.width, height: max(bounds.height - tableTop, 0))
-        incognitoNote.frame = table.frame.inset(by: UIEdgeInsets(
-            top: Self.suggestionsTopInset, left: Self.margin, bottom: 0, right: Self.margin,
+        suggestionsClip.frame = CGRect(
+            x: 0, y: full.minY, width: bounds.width, height: max(bounds.height - full.minY, 0),
+        )
+        table.frame = suggestionsClip.bounds
+        let cutout = UIBezierPath(rect: suggestionsClip.bounds)
+        cutout.append(UIBezierPath(
+            roundedRect: full.offsetBy(dx: 0, dy: -full.minY), cornerRadius: full.height / 2,
         ))
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        capsuleCutout.frame = suggestionsClip.bounds
+        capsuleCutout.path = cutout.cgPath
+        CATransaction.commit()
+        let listTop = full.maxY + Self.suggestionsTopInset
+        incognitoNote.frame = CGRect(
+            x: Self.margin, y: listTop, width: bounds.width - Self.margin * 2, height: max(bounds.height - listTop, 0),
+        )
         incognitoShade.frame = bounds
     }
 
@@ -379,7 +400,7 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
     /// Whether a downward drag at `point` should move the panel rather than
     /// scroll the suggestions.
     func dragMovesPanel(at point: CGPoint, downward: Bool) -> Bool {
-        guard table.frame.contains(point) else { return true }
+        guard suggestionsClip.frame.contains(point), point.y >= fieldBackground.frame.maxY else { return true }
         // With the keyboard up the suggestions take the drag, so it can pull the keyboard down.
         guard !field.isFirstResponder else { return false }
         return downward && table.contentOffset.y <= -table.adjustedContentInset.top + 1

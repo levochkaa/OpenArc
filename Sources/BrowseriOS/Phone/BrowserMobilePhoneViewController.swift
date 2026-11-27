@@ -1027,8 +1027,10 @@ final class BrowserMobilePhoneViewController: UIViewController {
         return surface
     }
 
-    /// Shrinks the open panel back into the bar.
-    private func closePanel(completion: (() -> Void)? = nil) {
+    /// Shrinks the open panel back into the bar. A panel let go by a finger
+    /// passes `velocity`, the finger's downward speed: it takes longer the
+    /// farther it has to go and starts at the finger's speed.
+    private func closePanel(velocity: CGFloat? = nil, completion: (() -> Void)? = nil) {
         guard let surface else {
             completion?()
             return
@@ -1052,8 +1054,11 @@ final class BrowserMobilePhoneViewController: UIViewController {
         surfacePan = nil
         let ghosts = surfaceGhosts
         matchSurfaceTintToBar()
+        let distance = max(expandedBarFrame.minY - surface.frame.minY, 1)
+        let duration = velocity == nil ? 0.3 : min(max(0.22 + Double(distance) / 1200, 0.3), 0.6)
+        let springVelocity = max(velocity ?? 0, 0) / distance
         // Settles into the bar without dipping below its height.
-        UIView.animate(springDuration: 0.3, bounce: 0, initialSpringVelocity: 0, delay: 0, options: [
+        UIView.animate(springDuration: duration, bounce: 0, initialSpringVelocity: springVelocity, delay: 0, options: [
             .allowUserInteraction, .beginFromCurrentState,
         ]) {
             surface.frame = self.expandedBarFrame
@@ -1441,7 +1446,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
         // The keyboard pulled away under a finger takes search with it, so
         // the drag goes on into closing instead of leaving the panel at the bottom.
         if hides, searchPanel.isPullingKeyboard {
-            closePanel()
+            closePanel(velocity: 0)
             return
         }
         isSearchKeyboardDismissed = keyboardTop == nil
@@ -1466,7 +1471,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
 
     /// A drag on the suggestions past their top moves the panel with the
     /// finger: down it slides under the keyboard until the finger reaches the
-    /// keyboard and takes it along, up it gives only a little. Let go, it goes
+    /// keyboard and takes it along, up it comes harder with each point. Let go, it goes
     /// back on top of the keyboard, unless the keyboard leaves and closes search.
     private func pullSearchPanel(by offset: CGFloat?) {
         guard mode == .search, let surface, searchPanel.isFieldExpanded else { return }
@@ -1480,7 +1485,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
             return
         }
         let restTop = searchPanelTop(keyboardTop: keyboardTop)
-        let y = offset >= 0 ? restTop + offset : restTop - rubberBand(-offset, limit: 30)
+        let y = offset >= 0 ? restTop + offset : restTop - liftResistance(-offset, from: restTop)
         UIView.performWithoutAnimation {
             surface.frame = CGRect(x: 0, y: y, width: view.bounds.width, height: view.bounds.height - y)
             searchPanel.frame = CGRect(x: 0, y: 0, width: view.bounds.width, height: keyboardTop - restTop)
@@ -2437,7 +2442,9 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
             surfaceDragStartTop = surface.frame.minY
         case .changed:
             let dy = gesture.translation(in: view).y
-            let y = dy >= 0 ? surfaceDragStartTop + dy : surfaceDragStartTop - rubberBand(-dy, limit: 30)
+            let y = dy >= 0
+                ? surfaceDragStartTop + dy
+                : surfaceDragStartTop - liftResistance(-dy, from: surfaceDragStartTop)
             surface.frame = CGRect(x: 0, y: y, width: view.bounds.width, height: view.bounds.height - y)
             if isSearch {
                 let progress = max(dy, 0) / max(expandedBarFrame.minY - surfaceDragStartTop, 1)
@@ -2445,8 +2452,9 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
             }
         case .cancelled, .ended, .failed:
             let dy = gesture.translation(in: view).y
-            if gesture.state == .ended, dy > 80 || gesture.velocity(in: view).y > 500 {
-                closePanel()
+            let velocity = gesture.velocity(in: view).y
+            if gesture.state == .ended, dy > 80 || velocity > 500 {
+                closePanel(velocity: velocity)
                 return
             }
             let top = surfaceDragStartTop
@@ -2692,6 +2700,16 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
         )
         cover.addSubview(picture)
         return cover
+    }
+
+    /// How far an open panel at `top` rises for a finger that lifts it `value`
+    /// points past its place: it follows the finger at first and each point
+    /// comes harder after that, so a finger taken to the top of the screen
+    /// brings the panel close to it, never past it.
+    private func liftResistance(_ value: CGFloat, from top: CGFloat) -> CGFloat {
+        guard value > 0, top > 0 else { return 0 }
+        let limit = top * 3
+        return min(limit * value / (value + limit), top)
     }
 
     private func rubberBand(_ value: CGFloat, limit: CGFloat) -> CGFloat {
