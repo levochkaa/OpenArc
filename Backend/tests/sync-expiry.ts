@@ -75,7 +75,7 @@ export function registerExpirySyncTests({ pool, account, post, startServerProces
     const first = await pull(a), second = await pull(b);
     assert.equal(first.protocolVersion, 5);
     assert.deepEqual(first, second);
-    assert.deepEqual(first.supportedPushVersions, [2, 3, 4, 5, 6]);
+    assert.deepEqual(first.supportedPushVersions, [2, 3, 4, 5, 6, 7]);
     for (const t of ids) assert.deepEqual(latest(second, t), latest(result, t));
     const legacy = await pull(b, 0, 2);
     assert.equal(legacy.protocolVersion, 2);

@@ -561,8 +561,54 @@ fn push_request_v6() -> Schema {
     ])
 }
 
+// MARK: Version 7 mobile tabs
+
+/// Limits in UTF-16 code units, as the other string fields count them.
+pub const MOBILE_TAB_URL_LIMIT: usize = 8192;
+pub const MOBILE_TAB_TITLE_LIMIT: usize = 1024;
+
+fn mobile_tab_data() -> Schema {
+    strict(vec![
+        ("urlString", string_between(Some(1), Some(MOBILE_TAB_URL_LIMIT))),
+        ("title", optional(string_between(Some(1), Some(MOBILE_TAB_TITLE_LIMIT)))),
+        ("createdAt", date_time()),
+        ("lastActivityAt", optional(date_time())),
+    ])
+}
+
+/// A whole mobile tab replaces the stored one, except activity, which only
+/// moves forward; a delete is permanent.
+fn mobile_tab_operation() -> Schema {
+    Schema::Discriminated {
+        key: "kind",
+        options: vec![
+            strict(vec![
+                ("kind", literal(json!("upsert"))),
+                ("entityType", literal(json!("mobileTab"))),
+                ("entityID", string_between(Some(1), Some(200))),
+                ("data", mobile_tab_data()),
+            ]),
+            strict(vec![
+                ("kind", literal(json!("delete"))),
+                ("entityType", literal(json!("mobileTab"))),
+                ("entityID", string_between(Some(1), Some(200))),
+            ]),
+        ],
+    }
+}
+
+fn push_request_v7() -> Schema {
+    strict(vec![
+        ("deviceID", uuid()),
+        ("protocolVersion", literal(json!(7))),
+        ("mutationID", uuid()),
+        ("operations", array(mobile_tab_operation(), Some(1), Some(1000))),
+    ])
+}
+
 pub static SYNC_PUSH_REQUEST: LazyLock<Schema> = LazyLock::new(|| {
     Schema::Union(vec![
+        push_request_v7(),
         push_request_v6(),
         push_request_v5(),
         push_request_v4(),
@@ -591,6 +637,7 @@ fn pull_fields() -> Vec<(&'static str, Schema)> {
 /// parser, which strips unknown fields for existing clients.
 pub static SYNC_PULL_REQUEST: LazyLock<Schema> = LazyLock::new(|| {
     Schema::Union(vec![
+        strict(with(pull_fields(), vec![("protocolVersion", literal(json!(7)))])),
         strict(with(pull_fields(), vec![("protocolVersion", literal(json!(6)))])),
         strict(with(pull_fields(), vec![("protocolVersion", literal(json!(5)))])),
         strict(with(pull_fields(), vec![("protocolVersion", literal(json!(4)))])),
@@ -769,6 +816,51 @@ mod tests {
         assert!(boost_push(&json!({"kind": "patch", "entityType": "boost", "entityID": "b", "fields": {}})).is_err());
         assert!(boost_push(&json!({"kind": "delete", "entityType": "tab", "entityID": "b"})).is_err());
         assert!(SYNC_PULL_REQUEST.parse(&json!({"deviceID": device, "protocolVersion": 6})).is_ok());
+        // Mobile tabs carry a whole record with UTC instants and nothing else.
+        let mobile_tab = json!({"kind": "upsert", "entityType": "mobileTab", "entityID": "m", "data": {
+            "urlString": "https://example.com/", "title": "Example", "createdAt": "2026-11-27T10:00:00Z",
+            "lastActivityAt": "2026-11-27T10:05:00.123456Z"}});
+        let mobile_push = |operations: Value| {
+            SYNC_PUSH_REQUEST.parse(
+                &json!({"deviceID": device, "protocolVersion": 7, "mutationID": mutation, "operations": operations}),
+            )
+        };
+        assert!(mobile_push(json!([mobile_tab])).is_ok());
+        assert!(mobile_push(json!([{"kind": "delete", "entityType": "mobileTab", "entityID": "m"}])).is_ok());
+        let mut bare = mobile_tab.clone();
+        for key in ["title", "lastActivityAt"] {
+            bare["data"].as_object_mut().unwrap().remove(key);
+        }
+        assert!(mobile_push(json!([bare])).is_ok());
+        assert!(mobile_push(json!([])).is_err());
+        assert!(mobile_push(Value::Array(vec![bare.clone(); 1001])).is_err());
+        for (key, value) in [
+            ("urlString", json!("")),
+            ("urlString", json!("a".repeat(MOBILE_TAB_URL_LIMIT + 1))),
+            ("title", json!("")),
+            ("title", json!("a".repeat(MOBILE_TAB_TITLE_LIMIT + 1))),
+            ("title", json!(null)),
+            ("createdAt", json!("2026-11-27T10:00:00+04:00")),
+            ("createdAt", json!(null)),
+            ("lastActivityAt", json!(null)),
+            ("lastActivityAt", json!("yesterday")),
+            ("spaceID", json!("s")),
+        ] {
+            let mut invalid = mobile_tab.clone();
+            invalid["data"][key] = value.clone();
+            assert!(mobile_push(json!([invalid])).is_err(), "{key} = {value}");
+        }
+        let mut undated = mobile_tab.clone();
+        undated["data"].as_object_mut().unwrap().remove("createdAt");
+        assert!(mobile_push(json!([undated])).is_err());
+        let mut long_id = mobile_tab.clone();
+        long_id["entityID"] = json!("a".repeat(201));
+        assert!(mobile_push(json!([long_id])).is_err());
+        // Other entities keep their own versions.
+        assert!(mobile_push(json!([{"kind": "delete", "entityType": "boost", "entityID": "b"}])).is_err());
+        assert!(boost_push(&mobile_tab).is_err());
+        assert!(SYNC_PULL_REQUEST.parse(&json!({"deviceID": device, "protocolVersion": 7})).is_ok());
+        assert!(SYNC_PULL_REQUEST.parse(&json!({"deviceID": device, "protocolVersion": 8})).is_err());
         // Expiry takes only the five intervals.
         let expiry = json!({"kind": "expire", "entityType": "tab", "entityID": "t", "expectedServerSeq": 1, "inactiveForSeconds": 60});
         assert!(

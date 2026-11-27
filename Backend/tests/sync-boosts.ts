@@ -51,7 +51,7 @@ export function registerBoostSyncTests({ pool, account, post }: Context) {
     assert.deepEqual(second.outcomes, [{ operationIndex: 0, status: "applied" }]);
     const fresh = await pull(b);
     assert.equal(fresh.protocolVersion, 6);
-    assert.deepEqual(fresh.supportedPushVersions, [2, 3, 4, 5, 6]);
+    assert.deepEqual(fresh.supportedPushVersions, [2, 3, 4, 5, 6, 7]);
     const events = fresh.events.filter((event) => event.entityID === id);
     assert.deepEqual(events.at(-1)?.data, { id, ...boost("example.com"), isEnabled: false, zappedSelectors: ["#ad"] });
   });

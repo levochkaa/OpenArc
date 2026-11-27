@@ -415,6 +415,7 @@ impl<'a> SyncStore<'a> {
             "space" => "spaces",
             "folder" => "folders",
             "boost" => "boosts",
+            "mobileTab" => "mobile_tabs",
             _ => "tabs",
         };
         self.execute(

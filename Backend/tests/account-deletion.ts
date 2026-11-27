@@ -48,6 +48,7 @@ async function accountRows(pool: pg.Pool, userID: string, emails: string[]): Pro
       (SELECT count(*) FROM tabs WHERE user_id = $1)::int AS tabs,
       (SELECT count(*) FROM folders WHERE user_id = $1)::int AS folders,
       (SELECT count(*) FROM boosts WHERE user_id = $1)::int AS boosts,
+      (SELECT count(*) FROM mobile_tabs WHERE user_id = $1)::int AS mobile_tabs,
       (SELECT count(*) FROM sync_events WHERE user_id = $1)::int AS sync_events,
       (SELECT count(*) FROM sync_tombstones WHERE user_id = $1)::int AS sync_tombstones,
       (SELECT count(*) FROM sync_mutation_receipts WHERE user_id = $1)::int AS sync_mutation_receipts`,
@@ -169,7 +170,7 @@ export function registerAccountDeletionTests(context: Context) {
       return result.rows[0] as { token: string | null; clientID: string | null } | undefined;
     }
 
-    /** Spaces, tabs, a folder, a boost, a tombstone and receipts for the session's device. */
+    /** Spaces, tabs, a folder, a boost, a mobile tab, a tombstone and receipts for the session's device. */
     async function syncSomething(session: Session) {
       const device = session.device.id;
       const spaceID = randomUUID();
@@ -188,6 +189,11 @@ export function registerAccountDeletionTests(context: Context) {
       await postJSON("/v1/sync/push", session.accessToken, {
         deviceID: device, protocolVersion: 6, mutationID: randomUUID(), operations: [
           { kind: "upsert", entityType: "boost", entityID: randomUUID(), data: { host: "example.test", isEnabled: true, css: "", javaScript: "", zappedSelectors: [] } }
+        ]
+      });
+      await postJSON("/v1/sync/push", session.accessToken, {
+        deviceID: device, protocolVersion: 7, mutationID: randomUUID(), operations: [
+          { kind: "upsert", entityType: "mobileTab", entityID: randomUUID(), data: { urlString: "https://example.test/", createdAt: "2026-11-27T10:00:00Z" } }
         ]
       });
     }

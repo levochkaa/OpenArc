@@ -3,8 +3,8 @@
 //! Deleting an account removes the user row; every table that holds the
 //! account's data references it with `ON DELETE CASCADE`, so one statement
 //! removes devices, sync events, tombstones, receipts, Spaces, tabs, folders,
-//! boosts, identities and pending web sign-ins together. Email codes are keyed
-//! by address and go separately.
+//! boosts, mobile tabs, identities and pending web sign-ins together. Email
+//! codes are keyed by address and go separately.
 //!
 //! With a Sign in with Apple key configured, sign-in redeems Apple's
 //! authorization code for a refresh token, and deletion revokes it at Apple.

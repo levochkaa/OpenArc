@@ -2,7 +2,7 @@
 //! sides agree on versions and limits. `docs/sync-protocol.md` describes the protocol.
 
 /// Push protocol versions the server accepts and every client may send.
-pub const SUPPORTED_PUSH_VERSIONS: [u8; 5] = [2, 3, 4, 5, 6];
+pub const SUPPORTED_PUSH_VERSIONS: [u8; 6] = [2, 3, 4, 5, 6, 7];
 
 /// Where a tab lives: a Space's unpinned list, its pinned list, or a web app.
 pub const PLACEMENTS: [&str; 3] = ["temporary", "spacePinned", "app"];

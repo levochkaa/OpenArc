@@ -50,12 +50,12 @@ impl SyncEvent {
     }
 }
 
-/// Space and tab events for readers before version 4: no folder or boost
-/// events and no folder membership.
+/// Space and tab events for readers before version 4: no folder, boost or
+/// mobile tab events and no folder membership.
 pub fn legacy_events(events: &[SyncEvent]) -> Vec<SyncEvent> {
     events
         .iter()
-        .filter(|event| event.entity_type != "folder" && event.entity_type != "boost")
+        .filter(|event| !matches!(event.entity_type.as_str(), "folder" | "boost" | "mobileTab"))
         .map(|event| {
             let mut result = event.clone();
             if event.is_tab_upsert_with_object()

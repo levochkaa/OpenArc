@@ -155,7 +155,8 @@ paths:
       operationId: deleteAccount
       description: >-
         Deletes the signed-in account and everything the server stores for it:
-        devices, sign-in methods, synced Spaces, folders, tabs and Boosts, the
+        devices, sign-in methods, synced Spaces, folders, tabs, Boosts and
+        mobile tabs, the
         event history, tombstones and mutation receipts. Sign in with Apple
         refresh tokens the server holds are revoked at Apple. Access tokens of
         the account stop working on every device. An account that is already
@@ -213,6 +214,7 @@ paths:
                   - $ref: "#/components/schemas/SyncResponseV4"
                   - $ref: "#/components/schemas/SyncResponseV5"
                   - $ref: "#/components/schemas/SyncResponseV6"
+                  - $ref: "#/components/schemas/SyncResponseV7"
         "409":
           description: This account already used mutationID with different parsed content or a different protocol version.
           content:
@@ -237,6 +239,7 @@ paths:
                 - $ref: "#/components/schemas/SyncPullRequestV4"
                 - $ref: "#/components/schemas/SyncPullRequestV5"
                 - $ref: "#/components/schemas/SyncPullRequestV6"
+                - $ref: "#/components/schemas/SyncPullRequestV7"
       responses:
         "201":
           description: Sync cursor and remote events after the requested cursor.
@@ -248,8 +251,9 @@ paths:
                   - $ref: "#/components/schemas/SyncResponseV4"
                   - $ref: "#/components/schemas/SyncResponseV5"
                   - $ref: "#/components/schemas/SyncResponseV6"
+                  - $ref: "#/components/schemas/SyncResponseV7"
         "409":
-          description: First protocol 4, 5 or 6 bootstrap requires cursor 0. Older pulls reset the corresponding per-device bootstrap marker.
+          description: First protocol 4, 5, 6 or 7 bootstrap requires cursor 0. Older pulls reset the corresponding per-device bootstrap marker.
           content:
             application/json:
               schema:
@@ -807,6 +811,7 @@ components:
       - $ref: '#/components/schemas/SyncPushRequestV4'
       - $ref: '#/components/schemas/SyncPushRequestV5'
       - $ref: '#/components/schemas/SyncPushRequestV6'
+      - $ref: '#/components/schemas/SyncPushRequestV7'
     LegacySyncPushRequest:
       type: object
       description: Omit protocolVersion and mutationID for legacy v1. Supply both for v2. Retries with
@@ -1283,7 +1288,7 @@ components:
           format: date-time
     SyncResponse:
       type: object
-      description: Legacy pull retains protocolVersion 2 and advertises supportedPushVersions [2, 3, 4, 5, 6]. A v2 or
+      description: Legacy pull retains protocolVersion 2 and advertises supportedPushVersions [2, 3, 4, 5, 6, 7]. A v2 or
         v3 push receipt echoes its protocolVersion and mutationID and is durably retained without expiry.
         Clients must observe supportedPushVersions before uploading v3 operations. V3 receipts also include
         per-operation outcomes and authoritative events, deduplicated by serverSeq. Push cursors must
@@ -1310,7 +1315,7 @@ components:
             $ref: '#/components/schemas/SyncEvent'
         supportedPushVersions:
           type: array
-          description: Present on pull responses. Exactly [2, 3, 4, 5, 6] for this server. Version 5 accepts conditional expiry only; version 6 accepts boosts only.
+          description: Present on pull responses. Exactly [2, 3, 4, 5, 6, 7] for this server. Version 5 accepts conditional expiry only; version 6 accepts boosts only; version 7 accepts mobile tabs only.
           items:
             type: integer
             enum:
@@ -1319,8 +1324,9 @@ components:
             - 4
             - 5
             - 6
-          minItems: 5
-          maxItems: 5
+            - 7
+          minItems: 6
+          maxItems: 6
           uniqueItems: true
         outcomes:
           type: array
@@ -1804,7 +1810,7 @@ components:
         - mutationID
         - operations
       description: >-
-        Durable idempotent v4 operations. Observe supportedPushVersions before upload. Versions 2, 3, 4 and 5 share
+        Durable idempotent v4 operations. Observe supportedPushVersions before upload. Versions 2 through 7 share
         account+mutationID identity: identical parsed content replays the original receipt, different content or
         protocol returns 409. deviceID is excluded from content identity. Operations, events, tombstones and
         receipt commit in one account transaction. Semantic rejection does not abort later operations; storage
@@ -1861,6 +1867,8 @@ components:
             - space
             - tab
             - folder
+            - boost
+            - mobileTab
         entityID:
           type: string
         op:
@@ -1878,7 +1886,8 @@ components:
         Canonical event history includes folders and tab pinnedFolderID. Historical tab upserts written before
         folder support return pinnedFolderID=null. Delete payloads identify the tombstoned entity. A conditional
         expiry delete also contains autoArchive (SyncAutoArchiveData): immutable canonical recovery content.
-        Boost events (SyncBoostData plus id) reach only v6 readers. Entity identity is (entityType, entityID).
+        Boost events (SyncBoostData plus id) reach only v6 and v7 readers; mobile tab events
+        (SyncMobileTabEventData) reach only v7 readers. Entity identity is (entityType, entityID).
     SyncResponseV4:
       type: object
       description: >-
@@ -1907,7 +1916,7 @@ components:
             $ref: '#/components/schemas/SyncEventV4'
         supportedPushVersions:
           type: array
-          description: Present on pull responses. Exactly [2, 3, 4, 5, 6] for this server. Version 5 accepts conditional expiry only; version 6 accepts boosts only.
+          description: Present on pull responses. Exactly [2, 3, 4, 5, 6, 7] for this server. Version 5 accepts conditional expiry only; version 6 accepts boosts only; version 7 accepts mobile tabs only.
           items:
             type: integer
             enum:
@@ -1916,8 +1925,9 @@ components:
               - 4
               - 5
               - 6
-          minItems: 5
-          maxItems: 5
+              - 7
+          minItems: 6
+          maxItems: 6
           uniqueItems: true
         outcomes:
           type: array
@@ -2046,9 +2056,9 @@ components:
           description: Present on pull responses; v5 push is conditional expiry only.
           items:
             type: integer
-            enum: [2, 3, 4, 5, 6]
-          minItems: 5
-          maxItems: 5
+            enum: [2, 3, 4, 5, 6, 7]
+          minItems: 6
+          maxItems: 6
           uniqueItems: true
         outcomes:
           type: array
@@ -2248,9 +2258,9 @@ components:
           description: Present on pull responses.
           items:
             type: integer
-            enum: [2, 3, 4, 5, 6]
-          minItems: 5
-          maxItems: 5
+            enum: [2, 3, 4, 5, 6, 7]
+          minItems: 6
+          maxItems: 6
           uniqueItems: true
         outcomes:
           type: array
@@ -2259,6 +2269,156 @@ components:
       description: >-
         V6 pulls add boost events to the v5 history. V6 push receipts require mutationID and one outcome per boost
         operation. A push cursor is not a pull cursor.
+    SyncMobileTabData:
+      type: object
+      additionalProperties: false
+      required: [urlString, createdAt]
+      properties:
+        urlString:
+          type: string
+          minLength: 1
+          maxLength: 8192
+        title:
+          type: string
+          minLength: 1
+          maxLength: 1024
+          description: The page's title. Absent until the page reports one; an upsert without it clears it.
+        createdAt:
+          type: string
+          format: date-time
+          description: UTC instant the tab was opened.
+        lastActivityAt:
+          type: string
+          format: date-time
+          description: >-
+            UTC instant of the tab's latest activity. The server keeps the maximum of the stored and incoming
+            values; an older or absent value never lowers or erases a known one.
+      description: >-
+        A whole mobile tab: a tab of a phone or tablet, kept apart from desktop Spaces. Lengths count UTF-16
+        code units. Date-times are UTC only. Optional fields are omitted rather than null.
+    SyncMobileTabEventData:
+      type: object
+      additionalProperties: false
+      required: [id, urlString, createdAt]
+      properties:
+        id:
+          type: string
+        urlString:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+          description: The stored instant as UTC with six fractional digits.
+        lastActivityAt:
+          type: string
+          format: date-time
+          description: The committed maximum as UTC with six fractional digits; absent while unknown.
+        title:
+          type: string
+          description: Absent when the tab has no title.
+      description: Upsert event data for a mobile tab. A delete event carries only id.
+    SyncMobileTabOperation:
+      type: object
+      additionalProperties: false
+      required: [kind, entityType, entityID]
+      properties:
+        kind:
+          type: string
+          enum: [upsert, delete]
+        entityType:
+          type: string
+          enum: [mobileTab]
+        entityID:
+          type: string
+          minLength: 1
+          maxLength: 200
+        data:
+          $ref: '#/components/schemas/SyncMobileTabData'
+      description: >-
+        Upsert (with data) replaces the whole tab; the last committed write wins, except lastActivityAt, which
+        keeps the maximum. Delete (without data) leaves a permanent tombstone. An upsert of a tombstoned tab is
+        rejected with reason deleted and echoes the tombstone; deleting it again returns deleted.
+    SyncPushRequestV7:
+      type: object
+      additionalProperties: false
+      required: [deviceID, protocolVersion, mutationID, operations]
+      properties:
+        deviceID:
+          type: string
+          format: uuid
+        protocolVersion:
+          type: integer
+          enum: [7]
+        mutationID:
+          type: string
+          format: uuid
+        operations:
+          type: array
+          minItems: 1
+          maxItems: 1000
+          items:
+            $ref: '#/components/schemas/SyncMobileTabOperation'
+      description: >-
+        Version 7 carries mobile tab operations only; desktop Spaces, tabs and folders remain v4 and boosts v6.
+        Negotiate supportedPushVersions first. Receipts, digests and outcomes follow the existing protocol.
+    SyncPullRequestV7:
+      type: object
+      additionalProperties: false
+      required: [deviceID, protocolVersion]
+      properties:
+        deviceID:
+          type: string
+          format: uuid
+        protocolVersion:
+          type: integer
+          enum: [7]
+        cursor:
+          type: integer
+          minimum: 0
+          default: 0
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 1000
+          default: 500
+      description: >-
+        Everything a v6 pull returns plus mobile tab events. Older pulls never return mobile tab events and reset
+        the device's v7 marker, so the first v7 pull after registration or an older pull requires cursor 0,
+        otherwise 409.
+    SyncResponseV7:
+      type: object
+      additionalProperties: false
+      required: [protocolVersion, cursor, events]
+      properties:
+        protocolVersion:
+          type: integer
+          enum: [7]
+        mutationID:
+          type: string
+          format: uuid
+        cursor:
+          type: integer
+          minimum: 0
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/SyncEventV4'
+        supportedPushVersions:
+          type: array
+          description: Present on pull responses.
+          items:
+            type: integer
+            enum: [2, 3, 4, 5, 6, 7]
+          minItems: 6
+          maxItems: 6
+          uniqueItems: true
+        outcomes:
+          type: array
+          items:
+            $ref: '#/components/schemas/SyncOperationOutcome'
+      description: >-
+        V7 pulls add mobile tab events to the v6 history. V7 push receipts require mutationID and one outcome per
+        mobile tab operation. A push cursor is not a pull cursor.
     ReleaseAsset:
       type: object
       required: [id, name, contentType, size, downloadCount, downloadURL]
