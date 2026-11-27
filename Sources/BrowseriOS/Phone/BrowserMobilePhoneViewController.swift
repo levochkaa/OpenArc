@@ -341,6 +341,9 @@ final class BrowserMobilePhoneViewController: UIViewController {
                 self, selector: #selector(sceneBecameInactive(_:)), name: name, object: nil,
             )
         }
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(sceneBecameActive(_:)), name: UIScene.didActivateNotification, object: nil,
+        )
         render()
     }
 
@@ -1482,6 +1485,15 @@ final class BrowserMobilePhoneViewController: UIViewController {
             }
             return
         }
+        // Search stays open only with its keyboard: a keyboard that goes for
+        // any other reason, while the app is in front and nothing covers
+        // search, closes it.
+        if hides, searchPanel.isFieldExpanded, presentedViewController == nil,
+           view.window?.windowScene?.activationState == .foregroundActive
+        {
+            closePanel()
+            return
+        }
         isSearchKeyboardDismissed = keyboardTop == nil
         // A panel a finger holds stays under it; let go, it settles on the keyboard.
         guard !searchPanel.isPullingPanel else { return }
@@ -2245,6 +2257,15 @@ final class BrowserMobilePhoneViewController: UIViewController {
             if let id = workspace.selectedTabID { closeSwitcher(opening: id) }
         case .browsing: workspace.dismissFindInPage()
         }
+    }
+
+    /// Search is open only with its field focused: a field that could not
+    /// take focus while the app was starting or away takes it now.
+    @objc private func sceneBecameActive(_ notification: Notification) {
+        guard let scene = notification.object as? UIWindowScene, scene === view.window?.windowScene,
+              mode == .search, surface != nil, searchPanel.isFieldExpanded, presentedViewController == nil,
+              !searchPanel.field.isFirstResponder else { return }
+        searchPanel.field.becomeFirstResponder()
     }
 
     @objc private func sceneBecameInactive(_ notification: Notification) {
