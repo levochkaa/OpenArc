@@ -4023,6 +4023,8 @@ struct MediaFrameState {
 struct TabRecord {
   // Stays visible under the active tab while its video moves to Picture in Picture.
   bool keptVisibleForPictureInPicture = false;
+  /// A Chrome engine page's video is in Picture in Picture.
+  bool peerPictureInPicture = false;
   // The page's background as last seen on screen, which fills its area after a
   // switch until the page draws again.
   NSColor *pageBackgroundColor = nil;
@@ -5428,6 +5430,7 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
   state.paused = paused;
   state.video = video;
   state.title = ToStdString(title);
+  state.pictureInPicture = it->second.peerPictureInPicture;
   [self reportMedia:state forTabID:tabID record:it->second];
 }
 
@@ -5511,6 +5514,18 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
                 activeMatchOrdinal:activeMatchOrdinal
                        finalUpdate:finalUpdate];
   }
+}
+
+- (void)chromePage:(id)page didChangePictureInPicture:(BOOL)active {
+  NSString *tabID = [self tabIDForWebKitPage:page];
+  auto it = _tabRecords.find(ToStdString(tabID));
+  if (tabID == nil || it == _tabRecords.end()) {
+    return;
+  }
+  it->second.peerPictureInPicture = active;
+  MediaFrameState state = it->second.reportedMedia;
+  state.pictureInPicture = active;
+  [self reportMedia:state forTabID:tabID record:it->second];
 }
 
 - (void)chromePage:(id)page didChangeStatus:(NSString *)status {
@@ -7167,7 +7182,14 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
     [weakSelf finishPictureInPictureAttemptForTabKey:tabKey];
   };
   CefRefPtr<CefBrowser> browser = it->second.browser;
-  // The Chrome engine's and WebKit's pages have no CEF browser, and CEF may not be loaded.
+  // A Chrome engine page asks Chrome itself; its pages stay drawn when hidden.
+  id<BrowserPeerPage> peer = it->second.peerPage;
+  if (!browser && [peer respondsToSelector:@selector(setPictureInPicture:)]) {
+    [(id<BrowserChromePage>)peer setPictureInPicture:active];
+    done();
+    return;
+  }
+  // WebKit's pages have no CEF browser, and CEF may not be loaded.
   if (!browser) {
     done();
     return;

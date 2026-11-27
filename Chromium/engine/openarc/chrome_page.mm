@@ -107,6 +107,7 @@
 - (void)pageFavicon:(NSString*)urlString;
 - (void)pageFindResult:(const find_in_page::FindNotificationDetails&)details;
 - (void)pageMediaChanged;
+- (void)pagePictureInPictureChanged:(BOOL)active;
 - (void)pageFocused;
 - (void)pageRenderProcessGone:(int)status;
 - (void)pageDestroyed;
@@ -508,6 +509,9 @@ class PageObserver : public content::WebContentsObserver,
       video_ = false;
     }
     [owner_ pageMediaChanged];
+  }
+  void MediaPictureInPictureChanged(bool is_picture_in_picture) override {
+    [owner_ pagePictureInPictureChanged:is_picture_in_picture];
   }
   void OnWebContentsFocused(content::RenderWidgetHost* widget) override { [owner_ pageFocused]; }
   void PrimaryMainFrameRenderProcessGone(base::TerminationStatus status) override {
@@ -1066,6 +1070,12 @@ void CancelDownload(NSString* downloadID) {
   [_delegate webKitPage:self didChangeMediaAudible:audible playing:playing paused:NO video:video title:@""];
 }
 
+- (void)pagePictureInPictureChanged:(BOOL)active {
+  if ([_delegate respondsToSelector:@selector(chromePage:didChangePictureInPicture:)]) {
+    [_delegate chromePage:self didChangePictureInPicture:active];
+  }
+}
+
 - (void)pageFocused {
   if (_contents) {
     LastPages()[_contents->GetBrowserContext()] = self;
@@ -1388,6 +1398,21 @@ void CancelDownload(NSString* downloadID) {
   } else if ([action isEqualToString:@"nexttrack"]) {
     session->NextTrack();
   }
+}
+
+- (void)setPictureInPicture:(BOOL)active {
+  if (!_contents) {
+    return;
+  }
+  // The request needs a user gesture, which a tab switch is.
+  _contents->GetPrimaryMainFrame()->ExecuteJavaScriptWithUserGestureForTests(
+      active ? u"(function(){if(document.pictureInPictureElement)return;"
+               u"var v=Array.from(document.querySelectorAll('video')).find(function(e){"
+               u"return !e.paused&&!e.ended&&e.readyState>2&&!e.disablePictureInPicture;});"
+               u"if(v)v.requestPictureInPicture().catch(function(){});})()"
+             : u"(function(){if(document.pictureInPictureElement)"
+               u"document.exitPictureInPicture().catch(function(){});})()",
+      base::NullCallback(), content::ISOLATED_WORLD_ID_GLOBAL);
 }
 
 - (void)togglePictureInPicture {

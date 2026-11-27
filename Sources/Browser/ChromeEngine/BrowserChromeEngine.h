@@ -105,6 +105,8 @@ NS_ASSUME_NONNULL_BEGIN
 /// nothing now.
 - (void)chromePage:(id)page didWithdrawSitePermissionPrompt:(uint64_t)promptID;
 @optional
+/// A video of the page entered or left Picture in Picture.
+- (void)chromePage:(id)page didChangePictureInPicture:(BOOL)active;
 /// A frame of the page has a password form, once per document. `frameID` names the frame for
 /// `fillPasswordInFrame:urlPrefix:username:password:`; `urlString` is the frame's own address.
 - (void)chromePage:(id)page didFindPasswordFormInFrame:(NSString *)frameID urlString:(NSString *)urlString;
@@ -134,6 +136,8 @@ NS_ASSUME_NONNULL_BEGIN
 /// Sends a Cocoa action such as `copy:` to the page's view. NO without such a view.
 - (BOOL)sendAction:(SEL)action;
 @optional
+/// Puts the page's playing video in Picture in Picture, or takes it out, as a tab switch does.
+- (void)setPictureInPicture:(BOOL)active;
 /// Fills a saved sign-in into the frame `frameID` named (an empty one is the main frame), only while the frame's
 /// address still starts with `urlPrefix`, the saved sign-in's origin.
 - (void)fillPasswordInFrame:(NSString *)frameID
