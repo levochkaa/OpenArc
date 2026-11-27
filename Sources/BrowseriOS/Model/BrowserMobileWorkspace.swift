@@ -91,20 +91,37 @@ struct BrowserMobileTab: Identifiable, Equatable {
     var downloads: BrowserMobileDownloads? { profileDocument?.downloads }
 
     var spaces: [BrowserSpaceSessionSnapshot] { profileDocument?.snapshot.spaces ?? [] }
-    var visibleTabs: [BrowserMobileTab] {
-        guard profileDocument != nil else { return tabs }
-        return tabs.filter { $0.placement == .app || $0.spaceID == selectedSpaceID }
-    }
+    /// Every tab of this window: the mobile tabs and the window's private
+    /// tabs. Space tabs open as mobile tabs and never show here themselves.
+    var visibleTabs: [BrowserMobileTab] { tabs }
 
     var selectedTab: BrowserMobileTab? { tabs.first { $0.id == selectedTabID } }
 
-    /// The tabs a phone's switcher lists, the oldest first: every Today tab
-    /// plus the pinned ones this window opened and still holds.
+    /// The tabs of the account's Spaces, as the Spaces picker lists them.
+    /// They have no page here: opening one makes a mobile tab.
+    var spaceTabs: [BrowserMobileTab] {
+        (profileDocument?.snapshot.tabs ?? []).compactMap { record in
+            guard let id = record.id else { return nil }
+            let unavailable = BrowserMobileSession.allowedURL(record.urlString) == nil
+            return BrowserMobileTab(
+                id: id, runtimeID: "", urlString: record.urlString, title: record.pageTitle ?? "",
+                state: BrowserMobilePageState(
+                    url: URL(string: record.urlString),
+                    error: unavailable ? "This address is unavailable on this device." : nil,
+                ),
+                spaceID: record.spaceID, placement: record.placement, pinnedFolderID: record.pinnedFolderID,
+                userTitleOverride: record.userTitleOverride,
+            )
+        }
+    }
+
+    /// The tabs a phone's switcher lists, the oldest first: the ones this
+    /// window showed by last selection, after them the rest by activity.
     var switcherTabs: [BrowserMobileTab] {
         let recentRank = Dictionary(recentTabIDs.enumerated().map { ($1, $0) }) { first, _ in first }
         let activity = Dictionary(
-            (profileDocument?.snapshot.tabs ?? []).compactMap { tab in
-                tab.id.map { ($0, tab.lastActivityTimestamp ?? 0) }
+            (profileDocument?.mobileTabs ?? []).map { entry in
+                (entry.id, entry.record.lastActivityAt?.timeIntervalSince1970 ?? 0)
             },
         ) { first, _ in first }
         let order = Dictionary(tabs.enumerated().map { ($1.id, $0) }) { first, _ in first }
@@ -199,6 +216,28 @@ struct BrowserMobileTab: Identifiable, Equatable {
         engine.onPopupCreated = { [weak self] runtimeID, url in self?.adoptPopup(runtimeID: runtimeID, url: url) }
     }
 
+    /// A Favorite or pinned Space tab with this address, which Pin added or a computer holds.
+    func pinnedSpaceTabID(urlString: String) -> String? {
+        profileDocument?.snapshot.tabs.first { $0.placement != .temporary && $0.urlString == urlString }?.id
+    }
+
+    /// Adds the selected page to a Space, as a Favorite or a pinned tab. The
+    /// mobile tab stays where it is.
+    @discardableResult func pinSelectedTab(
+        spaceID: String? = nil, placement: BrowserTabPlacement = .spacePinned, pinnedFolderID: String? = nil,
+    ) -> String? {
+        guard canEdit, let profileDocument, let tab = selectedTab, !tab.isPrivate,
+              BrowserMobileSession.allowedURL(tab.urlString) != nil, tab.urlString != "about:blank",
+              let space = spaceID ?? selectedSpaceID ?? spaces.first?.id,
+              let id = profileDocument.createTab(
+                  urlString: tab.urlString, spaceID: space, placement: placement, pinnedFolderID: pinnedFolderID,
+              ) else { return nil }
+        if !tab.title.isEmpty {
+            profileDocument.setPageTitle(tabID: id, title: tab.title)
+        }
+        return id
+    }
+
     func pageText(completion: @escaping @MainActor (BrowserMobilePageText?) -> Void) {
         guard let tab = selectedTab else { return completion(nil) }
         engine.pageText(id: tab.runtimeID, completion: completion)
@@ -230,8 +269,7 @@ struct BrowserMobileTab: Identifiable, Equatable {
             return
         }
         if let profileDocument {
-            guard let spaceID = selectedSpaceID ?? spaces.first?.id else { return }
-            _ = profileDocument.createTab(urlString: url.absoluteString, spaceID: spaceID)
+            _ = profileDocument.createMobileTab(urlString: url.absoluteString)
             return
         }
         let tab = BrowserMobileTab(
@@ -284,12 +322,36 @@ struct BrowserMobileTab: Identifiable, Equatable {
         return await profileDocument.clearArchive(through: boundary)
     }
 
-    @discardableResult func restoreArchivedTab(id: String, toSpaceID: String? = nil) -> String? {
+    /// Opens an archived tab again as a new mobile tab.
+    @discardableResult func restoreArchivedTab(id: String) -> String? {
         guard canRestoreArchivedTab,
-              let restoredID = profileDocument?.restoreArchivedTab(id: id, toSpaceID: toSpaceID)
+              let restoredID = profileDocument?.restoreArchivedMobileTab(archiveID: id)
         else { return nil }
         selectTab(id: restoredID)
         return restoredID
+    }
+
+    /// Opens a Space tab from the account's computers as a mobile tab, or
+    /// selects the mobile tab already showing its address.
+    @discardableResult func openSpaceTab(id: String) -> String? {
+        guard canEdit, let profileDocument,
+              let record = profileDocument.snapshot.tabs.first(where: { $0.id == id })
+        else { return nil }
+        guard let url = BrowserMobileSession.allowedURL(record.urlString) else {
+            navigationError = "This address is unavailable on this device."
+            notify()
+            return nil
+        }
+        if let open = tabs.first(where: { !$0.isPrivate && $0.urlString == url.absoluteString }) {
+            selectTab(id: open.id)
+            return open.id
+        }
+        navigationError = nil
+        guard let tabID = profileDocument.createMobileTab(
+            urlString: url.absoluteString, title: record.userTitleOverride ?? record.pageTitle,
+        ) else { return nil }
+        selectTab(id: tabID)
+        return tabID
     }
 
     @discardableResult func presentFindInPage() -> Bool {
@@ -477,7 +539,9 @@ struct BrowserMobileTab: Identifiable, Equatable {
             } else {
                 // Reconciliation owns exactly one create/navigation after the
                 // document accepts the action, including unsupported URL recovery.
-                profileDocument.updateURL(tabID: tab.id, urlString: url.absoluteString)
+                if !profileDocument.updateMobileTab(id: tab.id, urlString: url.absoluteString) {
+                    navigationError = profileDocument.mobileTabError
+                }
             }
             notify()
             return
@@ -501,12 +565,9 @@ struct BrowserMobileTab: Identifiable, Equatable {
     }
 
     func selectTab(id: String) {
-        guard canEdit, let tab = tabs.first(where: { $0.id == id }) else { return }
+        guard canEdit, tabs.contains(where: { $0.id == id }) else { return }
         let previousID = selectedTabID
         unloadedPersistentIDs.remove(id)
-        if profileDocument != nil, tab.placement != .app {
-            selectedSpaceID = tab.spaceID
-        }
         selectedTabID = id
         cancelJavaScriptDialogIfSelectionChanged()
         navigationError = nil
@@ -524,17 +585,11 @@ struct BrowserMobileTab: Identifiable, Equatable {
         selectTab(id: id)
     }
 
+    /// The Space the Spaces picker shows. The selected tab stays.
     func selectSpace(id: String) {
         guard canEdit, spaces.contains(where: { $0.id == id }) else { return }
-        let previousID = selectedTabID
         selectedSpaceID = id
-        if !visibleTabs.contains(where: { $0.id == selectedTabID }) {
-            selectedTabID = visibleTabs.first?.id
-        }
-        cancelJavaScriptDialogIfSelectionChanged()
         saveSceneSelection()
-        selectCurrentRuntime()
-        recordSelectionActivity(previousID: previousID)
         notify()
     }
 
@@ -555,24 +610,16 @@ struct BrowserMobileTab: Identifiable, Equatable {
             return nil
         }
         if let profileDocument {
-            if tab.placement == .temporary {
-                if profileDocument.supportsArchive {
-                    let current = profileDocument.snapshot.tabs.first { $0.id == id }
-                    let title = current?.urlString == tab.urlString ? tab.title : nil
-                    guard let archiveID = profileDocument.archiveTabEntry(id: id, displayTitle: title) else {
-                        navigationError = profileDocument.archiveError
-                        updateProfileError()
-                        notify()
-                        return nil
-                    }
-                    return archiveID
-                } else {
-                    profileDocument.removeTab(id: id)
-                }
-            } else {
-                unloadPersistentTab(tab)
+            let current = profileDocument.mobileTab(id: id)
+            let title = current?.record.urlString == tab.urlString ? tab.title : nil
+            let archiveID = profileDocument.closeMobileTab(id: id, displayTitle: title)
+            if profileDocument.mobileTab(id: id) != nil {
+                navigationError = profileDocument.archiveError ?? profileDocument.mobileTabError
+                updateProfileError()
+                notify()
+                return nil
             }
-            return nil
+            return archiveID
         }
         removeTab(runtimeID: tab.runtimeID)
         engine.closeTab(id: tab.runtimeID)
@@ -604,6 +651,10 @@ struct BrowserMobileTab: Identifiable, Equatable {
     }
 
     func setSyncActive(_ active: Bool) {
+        if !active {
+            // A page's last changes go up before the app may be suspended.
+            profileDocument?.flushMobileTabSync()
+        }
         isSyncActive = active && !isClosed
         syncSession?.setSceneActive(isSyncActive, sceneID: sceneID)
     }
@@ -756,18 +807,18 @@ struct BrowserMobileTab: Identifiable, Equatable {
             if selectedSpaceID == nil {
                 let filename = Data(sceneID.utf8).base64EncodedString().replacing("/", with: "_") + ".json"
                 let importedID = BrowserMobileProfileRegistry.legacySpaceID(filename: filename)
-                if let space = document.snapshot.spaces?.first(where: { $0.id == importedID }) {
+                if document.snapshot.spaces?.contains(where: { $0.id == importedID }) == true {
                     selectedSpaceID = importedID
-                    let importedTabs = document.snapshot.tabs.filter { $0.spaceID == importedID }
-                    if let index = space.selectedTabIndex, importedTabs.indices.contains(index) {
-                        selectedTabID = importedTabs[index].id
-                    }
                 }
+            }
+            if selectedTabID.map({ document.mobileTab(id: $0) == nil }) ?? true {
+                selectedTabID = recentTabIDs.first { document.mobileTab(id: $0) != nil } ?? document.mobileTabs.last?.id
             }
             hasRestored = true
             isRestoring = false
             isReady = true
             documentObserver = document.observe { [weak self] snapshot in self?.applyProfile(snapshot) }
+            ensureMobileTab()
             recordSelectionActivity()
             syncSession?.setSceneActive(isSyncActive, sceneID: sceneID)
             openPendingLinks()
@@ -780,18 +831,21 @@ struct BrowserMobileTab: Identifiable, Equatable {
         }
     }
 
-    private func applyProfile(_ snapshot: BrowserTabSessionSnapshot) {
-        guard !isClosed else { return }
+    /// Mirrors the document's mobile tabs; the Space snapshot only feeds the
+    /// Spaces picker.
+    private func applyProfile(_: BrowserTabSessionSnapshot) {
+        guard !isClosed, let profileDocument else { return }
         applyingDocument = true
         defer { applyingDocument = false }
         let previous = Dictionary(uniqueKeysWithValues: tabs.map { ($0.id, $0) })
         let privateTabs = tabs.filter(\.isPrivate)
         let oldSelectionIndex = visibleTabs.firstIndex { $0.id == selectedTabID } ?? 0
-        tabs = snapshot.tabs.compactMap { record in
-            guard let id = record.id else { return nil }
+        tabs = profileDocument.mobileTabs.map { entry in
+            let id = entry.id
+            let record = entry.record
             var tab = previous[id] ?? BrowserMobileTab(
                 id: id, runtimeID: adoptedPopupRuntimeID ?? UUID().uuidString,
-                urlString: record.urlString, title: record.pageTitle ?? "",
+                urlString: record.urlString, title: record.title ?? "",
                 state: BrowserMobilePageState(url: URL(string: record.urlString)),
             )
             if previous[id] == nil, adoptedPopupRuntimeID != nil {
@@ -801,10 +855,10 @@ struct BrowserMobileTab: Identifiable, Equatable {
                 tab.title = ""
             }
             tab.urlString = record.urlString
-            tab.userTitleOverride = record.userTitleOverride
-            tab.spaceID = record.spaceID
-            tab.placement = record.placement
-            tab.pinnedFolderID = record.pinnedFolderID
+            if tab.title.isEmpty, let title = record.title {
+                // The title another device read, until this page reports its own.
+                tab.title = title
+            }
             if BrowserMobileSession.allowedURL(record.urlString) == nil {
                 tab.state = BrowserMobilePageState(
                     url: URL(string: record.urlString),
@@ -827,7 +881,8 @@ struct BrowserMobileTab: Identifiable, Equatable {
         }
         if !visibleTabs.contains(where: { $0.id == selectedTabID }) {
             let visible = visibleTabs.filter { !unloadedPersistentIDs.contains($0.id) }
-            selectedTabID = visible.isEmpty ? nil : visible[min(oldSelectionIndex, visible.count - 1)].id
+            let recent = recentTabIDs.first { id in visible.contains { $0.id == id } }
+            selectedTabID = recent ?? (visible.isEmpty ? nil : visible[min(oldSelectionIndex, visible.count - 1)].id)
         }
         cancelJavaScriptDialogIfSelectionChanged()
         // Register all logical identities before WebKit can call back synchronously.
@@ -863,6 +918,18 @@ struct BrowserMobileTab: Identifiable, Equatable {
         updateProfileError()
         saveSceneSelection()
         selectCurrentRuntime()
+        if tabs.isEmpty {
+            // A window always holds a tab, also after other devices closed them all.
+            DispatchQueue.main.async { [weak self] in self?.ensureMobileTab() }
+        }
+        notify()
+    }
+
+    /// Opens a blank tab when the window has none. It stays on this device
+    /// until it opens a page.
+    private func ensureMobileTab() {
+        guard profileDocument != nil, tabs.isEmpty, canEdit else { return }
+        insertNewTab(url: Self.blankURL)
         notify()
     }
 
@@ -916,40 +983,12 @@ struct BrowserMobileTab: Identifiable, Equatable {
             : "Changes could not be saved. Keep this window open to preserve your unsaved work."
     }
 
-    private func unloadPersistentTab(_ tab: BrowserMobileTab) {
-        guard let index = tabs.firstIndex(where: { $0.id == tab.id }) else { return }
-        unloadedPersistentIDs.insert(tab.id)
-        tabs[index] = BrowserMobileTab(
-            id: tab.id,
-            runtimeID: UUID().uuidString,
-            urlString: tab.urlString,
-            title: tab.title,
-            state: BrowserMobilePageState(url: URL(string: tab.urlString)),
-            spaceID: tab.spaceID,
-            placement: tab.placement,
-            pinnedFolderID: tab.pinnedFolderID,
-            userTitleOverride: tab.userTitleOverride,
-        )
-        if selectedTabID == tab.id {
-            selectedTabID = visibleTabs.first { !unloadedPersistentIDs.contains($0.id) }?.id
-        }
-        cancelJavaScriptDialogIfSelectionChanged()
-        if registeredRuntimeIDs.remove(tab.runtimeID) != nil {
-            engine.closeTab(id: tab.runtimeID)
-        }
-        saveSceneSelection()
-        selectCurrentRuntime()
-        notify()
-    }
-
     private func insertNewTab(url: URL) {
         if let profileDocument {
-            var spaceID = selectedSpaceID ?? spaces.first?.id
-            if spaceID == nil {
-                spaceID = profileDocument.createSpace(title: "Personal")
+            guard let id = profileDocument.createMobileTab(urlString: url.absoluteString) else {
+                navigationError = profileDocument.mobileTabError
+                return
             }
-            guard let spaceID,
-                  let id = profileDocument.createTab(urlString: url.absoluteString, spaceID: spaceID) else { return }
             selectTab(id: id)
             return
         }
@@ -988,7 +1027,6 @@ struct BrowserMobileTab: Identifiable, Equatable {
             urlString: url.absoluteString,
             title: "",
             state: BrowserMobilePageState(url: url),
-            spaceID: profileDocument == nil ? nil : selectedSpaceID,
             isPrivate: true,
         )
         tabs.append(tab)
@@ -1040,12 +1078,9 @@ struct BrowserMobileTab: Identifiable, Equatable {
             return
         }
         if let profileDocument {
-            guard let spaceID = selectedSpaceID ?? spaces.first?.id else { engine.closeTab(id: runtimeID)
-                return
-            }
             adoptedPopupRuntimeID = runtimeID
             defer { adoptedPopupRuntimeID = nil }
-            if let id = profileDocument.createTab(urlString: url.absoluteString, spaceID: spaceID) {
+            if let id = profileDocument.createMobileTab(urlString: url.absoluteString) {
                 selectTab(id: id)
             } else {
                 engine.closeTab(id: runtimeID)
@@ -1088,10 +1123,17 @@ struct BrowserMobileTab: Identifiable, Equatable {
             if !tabs[index].isPrivate, previousURL != tabs[index].urlString || previousTitle != tabs[index].title {
                 if let profileDocument {
                     if !applyingDocument, previousURL != tabs[index].urlString {
-                        profileDocument.updateURL(tabID: tabs[index].id, urlString: tabs[index].urlString)
+                        profileDocument.updateMobileTab(id: tabs[index].id, urlString: tabs[index].urlString)
                     }
-                    if !applyingDocument, previousTitle != tabs[index].title {
-                        profileDocument.setPageTitle(tabID: tabs[index].id, title: tabs[index].title)
+                    if !applyingDocument, previousTitle != tabs[index].title, !tabs[index].title.isEmpty {
+                        profileDocument.setMobileTabTitle(id: tabs[index].id, title: tabs[index].title)
+                        // Space tabs never load here, so the open page names the ones at its address.
+                        let address = tabs[index].urlString
+                        for record in profileDocument.snapshot.tabs where record.urlString == address {
+                            if let id = record.id {
+                                profileDocument.setPageTitle(tabID: id, title: tabs[index].title)
+                            }
+                        }
                     }
                 } else {
                     enqueueCurrentSession()
@@ -1104,11 +1146,8 @@ struct BrowserMobileTab: Identifiable, Equatable {
             } else if let profileDocument {
                 guard registeredRuntimeIDs.remove(runtimeID) != nil,
                       let tab = tabs.first(where: { $0.runtimeID == runtimeID }) else { return }
-                if tab.placement == .temporary {
-                    profileDocument.removeTab(id: tab.id)
-                } else {
-                    unloadPersistentTab(tab)
-                }
+                // A page that closes itself goes without an Archive entry.
+                profileDocument.closeMobileTab(id: tab.id, archives: false)
             } else {
                 removeTab(runtimeID: runtimeID)
             }
@@ -1208,7 +1247,7 @@ struct BrowserMobileTab: Identifiable, Equatable {
         if let profileDocument {
             saveSceneSelection()
             if !applyingDocument, let tab = selectedTab, !tab.isPrivate {
-                profileDocument.updateURL(tabID: tab.id, urlString: tab.urlString)
+                profileDocument.updateMobileTab(id: tab.id, urlString: tab.urlString)
             }
             return
         }

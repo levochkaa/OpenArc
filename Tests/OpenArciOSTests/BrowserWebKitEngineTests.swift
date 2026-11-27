@@ -10,7 +10,7 @@ import WebKit
 
 @Suite(.serialized)
 @MainActor struct BrowserWebKitEngineTests {
-    @Test func sharedSQLiteProfileKeepsLiveWebKitHistoryAcrossTreeEditsAndScenes() async throws {
+    @Test func sharedSQLiteProfileKeepsLiveWebKitHistoryAcrossSpaceEditsAndScenes() async throws {
         let fixture = try LocalBrowserHTTPFixture()
         try await fixture.start()
         defer { fixture.stop() }
@@ -23,12 +23,14 @@ import WebKit
                 .init(id: "source", title: "Source", systemImageName: "globe"),
                 .init(id: "target", title: "Target", systemImageName: "folder"),
             ],
-            tabs: [
-                .init(id: "browsing", urlString: "about:blank", spaceID: "source"),
-                .init(id: "retained", urlString: "about:blank", spaceID: "source"),
-            ],
+            tabs: [.init(id: "space-tab", urlString: "about:blank", spaceID: "source")],
         )
         try store.writeSessionBatch([.init(snapshot: initial, origin: .local(syncMove: nil))])
+        let created = Date(timeIntervalSince1970: 1_800_000_000)
+        try store.saveMobileTabs([
+            .init(id: "browsing", record: .init(urlString: "about:blank", createdAt: created)),
+            .init(id: "retained", record: .init(urlString: "about:blank", createdAt: created.addingTimeInterval(1))),
+        ])
         let document = try BrowserMobileProfileDocument(store: store, loadSnapshot: { try store.loadSnapshotStrict() })
         let preferencesName = "WebKitSharedProfile." + UUID().uuidString
         let preferences = try #require(UserDefaults(suiteName: preferencesName))
@@ -70,23 +72,19 @@ import WebKit
             first.selectedTab?.title == "Second" && first.selectedTab?.state.isLoading == false
         })
         #expect(first.selectedTab?.urlString == secondURL.absoluteString)
-        #expect(try store.loadSnapshotStrict()?.tabs.first { $0.id == "browsing" }?.urlString == secondURL
+        #expect(try store.loadMobileTabs()?.first { $0.id == "browsing" }?.record.urlString == secondURL
             .absoluteString)
         let backURLs = liveView.backForwardList.backList.map(\.url)
         try #require(backURLs.contains(firstURL))
 
-        #expect(document.renameTab(id: "browsing", title: "Named tab"))
-        #expect(document.setTabPinned(id: "browsing", isPinned: true))
+        // Space edits leave the window's pages alone.
+        #expect(document.renameTab(id: "space-tab", title: "Named tab"))
         let folder = try #require(document.createFolder(spaceID: "source", title: "Carried folder"))
-        #expect(document.setPlacement(tabID: "browsing", placement: .spacePinned, pinnedFolderID: folder))
-        let parent = try #require(document.createFolder(spaceID: "target", title: "Target parent"))
+        #expect(document.setPlacement(tabID: "space-tab", placement: .spacePinned, pinnedFolderID: folder))
         #expect(document.move(
             items: [.init(entityType: .folder, entityID: folder)],
-            destination: .tabs(spaceID: "target", placement: .spacePinned, pinnedFolderID: parent),
+            destination: .tabs(spaceID: "target", placement: .spacePinned, pinnedFolderID: nil),
         ))
-        first.selectTab(id: "browsing")
-        #expect(first.selectedSpaceID == "target")
-        #expect(first.selectedTab?.userTitleOverride == "Named tab")
         #expect(first.selectedTab?.runtimeID == firstRuntime)
         #expect(firstEngine.webView(for: firstRuntime) === liveView)
         #expect(liveView.backForwardList.backList.map(\.url) == backURLs)
@@ -102,7 +100,6 @@ import WebKit
 
         await second.restore()
         try #require(second.isReady)
-        #expect(second.selectedSpaceID == "source")
         #expect(second.selectedTabID == "retained")
         #expect(first.selectedTabID == "browsing")
         second.selectTab(id: "browsing")
@@ -112,21 +109,17 @@ import WebKit
         let secondRuntime = try #require(second.selectedTab?.runtimeID)
         let secondView = try #require(secondEngine.webView(for: secondRuntime))
         #expect(secondRuntime != firstRuntime && secondView !== liveView)
-        #expect(second.selectedTab?.userTitleOverride == "Named tab")
-        #expect(second.selectedTab?.pinnedFolderID == folder)
         #expect(firstEngine.webView(for: firstRuntime) === liveView)
         #expect(liveView.backForwardList.backList.map(\.url) == backURLs)
 
-        #expect(document.removeTab(id: "browsing"))
+        document.closeMobileTab(id: "browsing", archives: false)
         #expect(firstEngine.webView(for: firstRuntime) == nil)
         #expect(secondEngine.webView(for: secondRuntime) == nil)
         #expect(liveView.navigationDelegate == nil && secondView.navigationDelegate == nil)
         #expect(first.tabs.map(\.id) == ["retained"] && second.tabs.map(\.id) == ["retained"])
         first.selectTab(id: "retained")
-        let storedSnapshot = try store.loadSnapshotStrict()
-        let saved = try #require(storedSnapshot)
-        #expect(saved == document.snapshot)
-        #expect(saved.pinnedTabFolders?.first { $0.id == folder }?.parentFolderID == parent)
+        let saved = try #require(try store.loadMobileTabs())
+        #expect(saved == document.mobileTabs)
         try #require(await first.shutdown())
         try #require(await second.shutdown())
 
@@ -139,9 +132,9 @@ import WebKit
         )
         await reopened.restore()
         #expect(reopened.isReady && reopened.selectedTabID == "retained")
-        #expect(reopened.tabs.map(\.id) == saved.tabs.compactMap(\.id))
-        #expect(reopened.tabs.map(\.urlString) == saved.tabs.map(\.urlString))
-        #expect(reopenedDocument.snapshot == saved)
+        #expect(reopened.tabs.map(\.id) == saved.map(\.id))
+        #expect(reopened.tabs.map(\.urlString) == saved.map(\.record.urlString))
+        #expect(reopenedDocument.mobileTabs == saved)
         #expect(reopened.tabs.allSatisfy { $0.runtimeID != firstRuntime && $0.runtimeID != secondRuntime })
         try #require(await reopened.shutdown())
     }

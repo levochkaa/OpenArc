@@ -263,8 +263,6 @@ extension BrowserMobileUITests {
         }
         await source.start()
         await destination.start(spaceID: "other")
-        source.workspace.selectTab(id: "deep")
-        destination.workspace.selectTab(id: "destination-page")
         let sourceRuntime = source.engine.selectedID
         let destinationRuntime = destination.engine.selectedID
         try source.toggleSelection()
@@ -291,7 +289,8 @@ extension BrowserMobileUITests {
             .map(ObjectIdentifier.init))
         #expect(try source.durableState() == before)
         #expect(source.engine.selectedID == sourceRuntime && destination.engine.selectedID == destinationRuntime)
-        #expect(source.workspace.selectedTabID == "deep" && destination.workspace.selectedTabID == "destination-page")
+        #expect(source.workspace.selectedTabID == source.workspace.tabs.first?.id && destination.workspace
+            .selectedTabID == destination.workspace.tabs.first?.id)
         let sourceRows = source.rowIDs(section: 2)
         let destinationRows = destination.rowIDs(section: 2)
         let proposal = destination.hover(drop)
@@ -516,7 +515,6 @@ extension BrowserMobileUITests {
         await source.start()
         await expanding.start()
         #expect(source.document.setFolderExpanded(id: "folder", isExpanded: false))
-        source.workspace.selectTab(id: "c")
         let runtime = source.engine.selectedID
         let before = try source.durableState()
         let drag = try source.begin(row: 0, section: 2)
@@ -533,11 +531,12 @@ extension BrowserMobileUITests {
         let added = source.add(to: drag, row: 1, section: 2)
         try #require(added.count == 1)
         drag.items.append(contentsOf: added)
-        #expect(source.workspace.selectedTabID == "c" && source.engine.selectedID == runtime)
+        #expect(source.workspace.selectedTabID == source.workspace.tabs.first?.id && source.engine
+            .selectedID == runtime)
         #expect(try source.durableState() == before)
         // An ordinary tap fallback after an empty addition must not navigate.
         source.sidebar.tableView(source.table, didSelectRowAt: .init(row: 0, section: 2))
-        #expect(source.workspace.selectedTabID == "c")
+        #expect(source.workspace.selectedTabID == source.workspace.tabs.first?.id)
         let drop = SidebarDropSession(drag: drag, point: source.point(row: 2, section: 2, fraction: 0.9))
         let proposal = source.hover(drop)
         #expect(proposal.operation == .move)
@@ -794,8 +793,6 @@ extension BrowserMobileUITests {
             #expect(source.document.setFolderExpanded(id: "nested", isExpanded: false))
             await source.start()
             await destination.start()
-            source.workspace.selectTab(id: "b")
-            destination.workspace.selectTab(id: "b")
             let sourceRuntime = source.engine.selectedID
             let destinationRuntime = destination.engine.selectedID
             try source.toggleSelection()
@@ -1087,8 +1084,6 @@ extension BrowserMobileUITests {
         // calls prove cross-window ownership, not a physical Stage Manager drag.
         #expect(source.window !== destination.window && source.workspace !== destination.workspace)
         #expect(source.document === destination.document && source.store === destination.store)
-        source.workspace.selectTab(id: "b")
-        destination.workspace.selectTab(id: "destination-page")
         let sourceRuntime = source.engine.selectedID
         let destinationRuntime = destination.engine.selectedID
         let sourceRuntimes = source.workspace.tabs.map(\.runtimeID)
@@ -1128,9 +1123,10 @@ extension BrowserMobileUITests {
         #expect(snapshot.tabs.first { $0.id == "a" }?.userTitleOverride == "Renamed while dragging")
         #expect(snapshot.pinnedTabFolders?.first { $0.id == "folder" }?.parentFolderID == "destination-folder")
         #expect(snapshot.pinnedTabFolders?.first { $0.id == "nested" }?.spaceID == "other")
-        #expect(source.workspace.selectedSpaceID == "source" && source.workspace.selectedTabID == "b")
-        #expect(destination.workspace.selectedSpaceID == "other" && destination.workspace
-            .selectedTabID == "destination-page")
+        #expect(source.workspace.selectedSpaceID == "source" && source.workspace.selectedTabID == source.workspace.tabs
+            .first?.id)
+        #expect(destination.workspace.selectedSpaceID == "other" && destination.workspace.selectedTabID == destination
+            .workspace.tabs.first?.id)
         #expect(source.engine.selectedID == sourceRuntime && destination.engine.selectedID == destinationRuntime)
         #expect(Set(source.workspace.tabs.map(\.runtimeID)) == Set(sourceRuntimes))
         #expect(Set(destination.workspace.tabs.map(\.runtimeID)) == Set(destinationRuntimes))
@@ -1165,8 +1161,6 @@ extension BrowserMobileUITests {
         }
         await source.start()
         await destination.start(spaceID: "other")
-        source.workspace.selectTab(id: "a")
-        destination.workspace.selectTab(id: "destination-page")
         let movedRuntime = try #require(source.workspace.selectedTab?.runtimeID)
         let destinationRuntime = destination.engine.selectedID
         try source.toggleSelection()
@@ -1187,10 +1181,11 @@ extension BrowserMobileUITests {
             after: .init(entityType: .tab, entityID: "destination-page"),
         )])
         #expect(coordinator.animations.map(\.completionCount) == [1, 1])
-        #expect(source.workspace.selectedSpaceID == "source" && source.workspace.selectedTabID == "b")
-        #expect(destination.workspace.selectedSpaceID == "other" && destination.workspace
-            .selectedTabID == "destination-page")
-        #expect(source.workspace.tabs.first { $0.id == "a" }?.runtimeID == movedRuntime)
+        #expect(source.workspace.selectedSpaceID == "source" && source.workspace.selectedTabID == source.workspace.tabs
+            .first?.id)
+        #expect(destination.workspace.selectedSpaceID == "other" && destination.workspace.selectedTabID == destination
+            .workspace.tabs.first?.id)
+        #expect(source.workspace.selectedTab?.runtimeID == movedRuntime, "The window keeps its own page")
         #expect(destination.engine.selectedID == destinationRuntime)
         #expect(source.rowIDs(section: 2) == beforeSourceRows)
         #expect(destination.rowIDs(section: 2) == beforeDestinationRows)
@@ -1552,7 +1547,6 @@ extension BrowserMobileUITests {
         let f = try SidebarDragFixture()
         defer { f.cleanup() }
         await f.start(showNavigation: true)
-        f.workspace.selectTab(id: "b")
         let selectedRuntime = f.engine.selectedID
         let runtimes = Set(f.workspace.tabs.map(\.runtimeID))
         try f.toggleSelection()
@@ -1566,7 +1560,7 @@ extension BrowserMobileUITests {
         let palette = try f.openSpacePalette()
         #expect(palette.controller.parent === f.sidebar)
         #expect(f.sidebar.presentedViewController == nil)
-        #expect(f.workspace.selectedSpaceID == "source" && f.workspace.selectedTabID == "b")
+        #expect(f.workspace.selectedSpaceID == "source" && f.workspace.selectedTabID == f.workspace.tabs.first?.id)
         #expect(f.engine.selectedID == selectedRuntime)
         #expect(try f.durableState() == beforeOpening)
         #expect(f.rowIDs(section: 1) == sourceRows)
@@ -1611,7 +1605,7 @@ extension BrowserMobileUITests {
         #expect(moved.tabs.first { $0.id == "c" }?.spaceID == "other")
         #expect(moved.tabs.first { $0.id == "deep" }?.spaceID == "other")
         #expect(moved.tabs.first { $0.id == "a" }?.spaceID == "other")
-        #expect(f.workspace.selectedSpaceID == "source" && f.workspace.selectedTabID == "b")
+        #expect(f.workspace.selectedSpaceID == "source" && f.workspace.selectedTabID == f.workspace.tabs.first?.id)
         #expect(f.engine.selectedID == selectedRuntime && Set(f.workspace.tabs.map(\.runtimeID)) == runtimes)
         #expect(f.engine.closed.isEmpty)
 
@@ -1634,11 +1628,10 @@ extension BrowserMobileUITests {
         #expect(await f.workspace.shutdown())
     }
 
-    @Test func crossSpaceTodayDropRetainsMovedRuntimeAndUsesExistingActiveTabFallback() async throws {
+    @Test func crossSpaceTodayDropMovesTheTabsAndKeepsTheWindowPage() async throws {
         let f = try SidebarDragFixture()
         defer { f.cleanup() }
         await f.start(showNavigation: true)
-        f.workspace.selectTab(id: "a")
         let runtime = try #require(f.workspace.selectedTab?.runtimeID)
         try f.toggleSelection()
         f.select(row: 0, section: 2)
@@ -1656,9 +1649,7 @@ extension BrowserMobileUITests {
         )])
         #expect(f.document.snapshot.tabs.filter { $0.spaceID == "other" }.compactMap(\.id) == ["a", "c"])
         #expect(f.workspace.selectedSpaceID == "source")
-        #expect(f.workspace.selectedTabID != "a")
-        #expect(f.workspace.visibleTabs.contains { $0.id == f.workspace.selectedTabID })
-        #expect(f.workspace.tabs.first { $0.id == "a" }?.runtimeID == runtime)
+        #expect(f.workspace.selectedTab?.runtimeID == runtime, "Moving Space tabs leaves the window's page alone")
         #expect(f.engine.closed.isEmpty)
         let animations = palette.installAnimations(for: drag.items, completesInline: true)
         #expect(animations.map(\.completionCount) == [1, 1])
@@ -1770,7 +1761,6 @@ extension BrowserMobileUITests {
         let f = try SidebarDragFixture()
         defer { f.cleanup() }
         await f.start()
-        f.workspace.selectTab(id: "b")
         let selectedRuntime = f.engine.selectedID
         let runtimes = Set(f.workspace.tabs.map(\.runtimeID))
         var navigations = 0
@@ -1786,7 +1776,7 @@ extension BrowserMobileUITests {
         #expect(Set(f.table.indexPathsForSelectedRows ?? []) == Set([
             IndexPath(row: 0, section: 2), IndexPath(row: 2, section: 2),
         ]))
-        #expect(f.workspace.selectedTabID == "b" && f.engine.selectedID == selectedRuntime)
+        #expect(f.workspace.selectedTabID == f.workspace.tabs.first?.id && f.engine.selectedID == selectedRuntime)
         #expect(navigations == 0)
         #expect(try f.mutations().isEmpty)
         let drag = try f.begin(row: 2, section: 2, expectedItems: 2)
@@ -1810,7 +1800,7 @@ extension BrowserMobileUITests {
         #expect(coordinator.droppedItems.map(ObjectIdentifier.init) == drag.items.map(ObjectIdentifier.init))
         try #require(coordinator.animations.count == 2)
         #expect(f.rowIDs(section: 2) == ["browser.tab.a", "browser.tab.b", "browser.tab.c"])
-        #expect(f.workspace.selectedTabID == "b" && f.engine.selectedID == selectedRuntime)
+        #expect(f.workspace.selectedTabID == f.workspace.tabs.first?.id && f.engine.selectedID == selectedRuntime)
         #expect(Set(f.workspace.tabs.map(\.runtimeID)) == runtimes && f.engine.closed.isEmpty)
 
         // A newer tree and reversed terminal/completion order must not release
@@ -1952,7 +1942,6 @@ extension BrowserMobileUITests {
         let f = try SidebarDragFixture()
         defer { f.cleanup() }
         await f.start()
-        f.workspace.selectTab(id: "b")
         let runtimes = f.workspace.tabs.map(\.runtimeID)
         let selectedRuntime = f.engine.selectedID
         #expect(!f.sidebar.responds(to: NSSelectorFromString("tableView:moveRowAtIndexPath:toIndexPath:")))
@@ -1963,7 +1952,7 @@ extension BrowserMobileUITests {
         let coordinator = SidebarDropCoordinator(session: drop, proposal: proposal)
         f.sidebar.tableView(f.table, performDropWith: coordinator)
         #expect(f.todayIDs == ["b", "a", "c"])
-        #expect(f.workspace.selectedTabID == "b" && f.engine.selectedID == selectedRuntime)
+        #expect(f.workspace.selectedTabID == f.workspace.tabs.first?.id && f.engine.selectedID == selectedRuntime)
         #expect(Set(f.workspace.tabs.map(\.runtimeID)) == Set(runtimes))
         #expect(f.engine.closed.isEmpty)
         let mutations = try f.mutations()
@@ -2048,13 +2037,12 @@ extension BrowserMobileUITests {
         let f = try SidebarDragFixture()
         defer { f.cleanup() }
         await f.start()
-        f.workspace.selectTab(id: "deep")
         let selectedRuntime = f.engine.selectedID
         let runtimes = Set(f.workspace.tabs.map(\.runtimeID))
         try f.toggleSelection()
         f.select(row: 1, section: 1)
         f.select(row: 0, section: 1)
-        #expect(f.workspace.selectedTabID == "deep" && f.engine.selectedID == selectedRuntime)
+        #expect(f.workspace.selectedTabID == f.workspace.tabs.first?.id && f.engine.selectedID == selectedRuntime)
         #expect(f.rowIDs(section: 1).count == 5)
         // An empty descendant callback may never become a native drag. It must
         // not require a terminal callback to unlock the selection controls.
@@ -2101,7 +2089,7 @@ extension BrowserMobileUITests {
         #expect(snapshot.tabs.first { $0.id == "a" }?.pinnedFolderID == "folder")
         #expect(snapshot.tabs.first { $0.id == "deep" }?.pinnedFolderID == "nested")
         #expect(snapshot.tabs.first { $0.id == "child" }?.pinnedFolderID == nil)
-        #expect(f.workspace.selectedTabID == "deep" && f.engine.selectedID == selectedRuntime)
+        #expect(f.workspace.selectedTabID == f.workspace.tabs.first?.id && f.engine.selectedID == selectedRuntime)
         #expect(Set(f.workspace.tabs.map(\.runtimeID)) == runtimes)
         #expect(f.engine.closed.isEmpty)
         f.end(drag, drop)

@@ -29,6 +29,10 @@ import UIKit
         data: .deleted(id: "expired"), createdAt: "2026-10-03T12:00:00Z",
     )
     _ = try store.completeFolderSyncBootstrap(events: remote.seed + [knownDelete], cursor: 20, for: owner)
+    // Each window shows the phone's own tabs; the pull only feeds the Archive.
+    try store.saveMobileTabs(["mobile-a", "mobile-b"].map {
+        .init(id: $0, record: .init(urlString: "https://example.com/" + $0, createdAt: Date(timeIntervalSince1970: 0)))
+    })
     let document = try BrowserMobileProfileDocument(store: store, loadSnapshot: { try store.loadSnapshotStrict() })
     let firstEngine = MobileArchiveObservationEngine()
     let secondEngine = MobileArchiveObservationEngine()
@@ -42,8 +46,8 @@ import UIKit
     await second.restore()
     first.setSceneAttached(true)
     second.setSceneAttached(true)
-    first.selectTab(id: "live-a")
-    second.selectTab(id: "live-b")
+    first.selectTab(id: "mobile-a")
+    second.selectTab(id: "mobile-b")
     let before = document.snapshot
     let firstTabs = first.tabs
     let secondTabs = second.tabs
@@ -53,7 +57,7 @@ import UIKit
     let secondNavigated = secondEngine.navigated
     let firstClosed = firstEngine.closed
     let secondClosed = secondEngine.closed
-    #expect(first.selectedTabID == "live-a" && second.selectedTabID == "live-b")
+    #expect(first.selectedTabID == "mobile-a" && second.selectedTabID == "mobile-b")
     #expect(Set(firstTabs.map(\.runtimeID)).isDisjoint(with: secondTabs.map(\.runtimeID)))
     #expect(try store.loadArchivePage().entries.isEmpty)
 
@@ -86,7 +90,7 @@ import UIKit
     #expect(document.archiveRevision == 1)
     #expect(firstRevisions == [1] && secondRevisions == [1])
     #expect(first.tabs == firstTabs && second.tabs == secondTabs)
-    #expect(first.selectedTabID == "live-a" && second.selectedTabID == "live-b")
+    #expect(first.selectedTabID == "mobile-a" && second.selectedTabID == "mobile-b")
     #expect(firstEngine.created == firstCreated && secondEngine.created == secondCreated)
     #expect(firstEngine.navigated == firstNavigated && secondEngine.navigated == secondNavigated)
     #expect(firstEngine.closed == firstClosed && secondEngine.closed == secondClosed)

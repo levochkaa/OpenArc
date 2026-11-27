@@ -14,22 +14,17 @@ final class BrowserMobileViewController: UISplitViewController, UISplitViewContr
             action: #selector(findInPage), input: "f", modifierFlags: .command,
         )
         find.wantsPriorityOverSystemBehavior = true
-        let nextSpace = UIKeyCommand(
-            title: String(localized: "Next Space", table: "Mobile"),
-            action: #selector(selectNextSpace), input: UIKeyCommand.inputRightArrow,
-            modifierFlags: [.command, .alternate],
+        let spaces = UIKeyCommand(
+            title: String(localized: "Spaces", table: "Mobile"),
+            action: #selector(showSpaces), input: "s", modifierFlags: [.command, .shift],
         )
-        let previousSpace = UIKeyCommand(
-            title: String(localized: "Previous Space", table: "Mobile"),
-            action: #selector(selectPreviousSpace), input: UIKeyCommand.inputLeftArrow,
-            modifierFlags: [.command, .alternate],
-        )
-        return (super.keyCommands ?? []) + [find, nextSpace, previousSpace]
+        return (super.keyCommands ?? []) + [find, spaces]
     }
 
     let workspace: BrowserMobileWorkspace
     let pageController: BrowserMobilePageViewController
-    let tabsController: BrowserMobileTabsViewController
+    /// The sidebar: this window's mobile and private tabs.
+    let tabsController: BrowserMobileOpenTabsViewController
     lazy var javaScriptDialogPresenter =
         BrowserMobileJavaScriptDialogPresenter(host: self) { [weak self] id, response in
             self?.workspace.resolveJavaScriptDialog(id: id, response: response)
@@ -44,12 +39,12 @@ final class BrowserMobileViewController: UISplitViewController, UISplitViewContr
 
     // MARK: Private
 
-    private weak var presentedTabs: BrowserMobileTabsViewController?
+    private weak var presentedTabs: BrowserMobileOpenTabsViewController?
 
     init(workspace: BrowserMobileWorkspace, contentView: UIView) {
         self.workspace = workspace
         self.pageController = BrowserMobilePageViewController(workspace: workspace, contentView: contentView)
-        self.tabsController = BrowserMobileTabsViewController(workspace: workspace)
+        self.tabsController = BrowserMobileOpenTabsViewController(workspace: workspace)
         super.init(style: .doubleColumn)
         delegate = self
         preferredDisplayMode = .oneBesideSecondary
@@ -85,8 +80,8 @@ final class BrowserMobileViewController: UISplitViewController, UISplitViewContr
         pageController.render()
         tabsController.render()
         presentedTabs?.render()
-        // The sidebar lists tabs of every Space a window switches to.
-        BrowserMobileFavicons.shared.requestIcons(for: workspace.tabs, in: workspace)
+        // The sidebar lists the window's tabs, the Spaces picker the Spaces' tabs.
+        BrowserMobileFavicons.shared.requestIcons(for: workspace.tabs + workspace.spaceTabs, in: workspace)
         javaScriptDialogPresenter.update(workspace.javaScriptDialog)
         httpAuthenticationPresenter.update(workspace.httpAuthentication)
         performPendingAppLink()
@@ -129,9 +124,14 @@ final class BrowserMobileViewController: UISplitViewController, UISplitViewContr
 
     @objc private func findInPage() { pageController.findInPage() }
 
-    @objc private func selectNextSpace() { tabsController.showSpace(offset: 1) }
-
-    @objc private func selectPreviousSpace() { tabsController.showSpace(offset: -1) }
+    @objc private func showSpaces() {
+        if isCollapsed {
+            showTabList()
+            presentedTabs?.showSpaces()
+        } else {
+            tabsController.showSpaces()
+        }
+    }
 
     private func showTabList() {
         workspace.dismissFindInPage()
@@ -144,7 +144,7 @@ final class BrowserMobileViewController: UISplitViewController, UISplitViewContr
             return
         }
         guard presentedViewController == nil else { return }
-        let controller = BrowserMobileTabsViewController(workspace: workspace)
+        let controller = BrowserMobileOpenTabsViewController(workspace: workspace)
         controller.didSelectTab = { [weak controller] in controller?.dismiss(animated: true) }
         controller.navigationItem.rightBarButtonItem = UIBarButtonItem(
             systemItem: .done, primaryAction: UIAction { [weak controller] _ in controller?.dismiss(animated: true) },
@@ -373,6 +373,27 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         rows.count > 2 && !rows[2].isEmpty && rows.prefix(2).contains { !$0.isEmpty }
     }
 
+    /// The tabs the rows list: the Spaces' tabs, or a window's own tabs without a profile.
+    private var listedTabs: [BrowserMobileTab] {
+        workspace.profileDocument == nil ? workspace.tabs : workspace.spaceTabs
+    }
+
+    /// The listed tabs of the Space on screen: its own and the Favorites.
+    private var spaceListedTabs: [BrowserMobileTab] {
+        guard workspace.profileDocument != nil else { return workspace.tabs }
+        return listedTabs.filter { $0.placement == .app || $0.spaceID == workspace.selectedSpaceID }
+    }
+
+    /// The Space tab the open mobile tab shows, marked in the rows.
+    private var highlightedTabID: String? {
+        guard workspace.profileDocument != nil else { return workspace.selectedTabID }
+        guard let selected = workspace.selectedTab, !selected.isPrivate else { return nil }
+        return workspace.spaceTabs
+            .first {
+                ($0.placement == .app || $0.spaceID == workspace.selectedSpaceID) && $0.urlString == selected.urlString
+            }?.id
+    }
+
     init(
         workspace: BrowserMobileWorkspace,
         hoverScheduler: any BrowserMobileSidebarHoverScheduling = BrowserMobileSidebarHoverScheduler(),
@@ -580,8 +601,13 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         }
         switch row(at: indexPath) {
         case .tab(let id, _):
-            guard workspace.tabs.contains(where: { $0.id == id }) else { return }
-            workspace.selectTab(id: id)
+            if workspace.profileDocument != nil {
+                // A Space tab opens as a mobile tab; the Space keeps its own.
+                guard workspace.openSpaceTab(id: id) != nil else { return }
+            } else {
+                guard workspace.tabs.contains(where: { $0.id == id }) else { return }
+                workspace.selectTab(id: id)
+            }
             didSelectTab?()
         case .folder(let id, _):
             guard let document = workspace.profileDocument,
@@ -616,7 +642,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         // In the phone sheet a sideways drag pages between Spaces.
         guard !isPhoneSheet, !isSelectingRows, workspace.isReady, workspace.profileDocument?.canEdit != false,
               case .tab(let id, _) = row(at: indexPath),
-              let tab = workspace.tabs.first(where: { $0.id == id }) else { return nil }
+              let tab = listedTabs.first(where: { $0.id == id }) else { return nil }
         let removes = workspace.profileDocument != nil && tab.placement != .temporary
         let close = UIContextualAction(
             style: .destructive,
@@ -695,10 +721,29 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
             if !isPhoneSheet, tableView.tableHeaderView !== spaceHeader {
                 tableView.tableHeaderView = spaceHeader
             }
-            applyRows(sharedRows(
-                document.snapshot, spaceID: workspace.selectedSpaceID,
-                available: Set(workspace.visibleTabs.map(\.id)), expanded: [],
-            ), snapshot: document.snapshot)
+            // A new profile has no Space until sign-in brings the computers' or one is made.
+            let hasNoSpaces = workspace.isReady && workspace.spaces.isEmpty
+            applyRows(
+                hasNoSpaces
+                    ? []
+                    : sharedRows(
+                        document.snapshot, spaceID: workspace.selectedSpaceID,
+                        available: Set(spaceListedTabs.map(\.id)), expanded: [],
+                    ),
+                snapshot: document.snapshot,
+            )
+            if hasNoSpaces {
+                var empty = UIContentUnavailableConfiguration.empty()
+                empty.image = UIImage(systemName: "square.stack")
+                empty.text = String(localized: "No Spaces Yet", table: "Mobile")
+                empty.secondaryText = String(
+                    localized: "Sign in to sync Spaces from your Mac, or choose New Space from the Spaces button above.",
+                    table: "Mobile",
+                )
+                contentUnavailableConfiguration = empty
+            } else {
+                contentUnavailableConfiguration = nil
+            }
         } else {
             if tableView.tableHeaderView === spaceHeader {
                 tableView.tableHeaderView = nil
@@ -1026,7 +1071,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
     }
 
     func tabMenu(id: String) -> UIMenu? {
-        guard !isSelectingRows, let tab = workspace.tabs.first(where: { $0.id == id }) else { return nil }
+        guard !isSelectingRows, let tab = listedTabs.first(where: { $0.id == id }) else { return nil }
         guard let document = workspace.profileDocument else {
             return UIMenu(children: [UIAction(
                 title: String(localized: "Close Tab", table: "Mobile"),
@@ -1065,7 +1110,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
             image: UIImage(systemName: "pencil"),
             attributes: disabled,
         ) { [weak self, weak document] _ in
-            let latest = self?.workspace.tabs.first { $0.id == id }
+            let latest = self?.listedTabs.first { $0.id == id }
             self?.prompt(
                 title: String(localized: "Rename", table: "Mobile"),
                 value: latest?.userTitleOverride ?? latest?.title ?? "",
@@ -1385,12 +1430,11 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         preview.clipsToBounds = true
         preview.isUserInteractionEnabled = false
         guard let document = workspace.profileDocument else { return preview }
-        let tabs = workspace.tabs.filter { $0.placement == .app || $0.spaceID == spaceID }
+        let tabs = listedTabs.filter { $0.placement == .app || $0.spaceID == spaceID }
         let sections = sharedRows(
             document.snapshot, spaceID: spaceID, available: Set(tabs.map(\.id)), expanded: [],
         )
-        // Choosing the Space keeps the open tab only when it is in that Space.
-        let selected = tabs.contains { $0.id == workspace.selectedTabID } ? workspace.selectedTabID : tabs.first?.id
+        let selected = highlightedTabID
         let width = tableView.bounds.width
         // Inset rows in the sidebar.
         let rowX = tableView.visibleCells.first?.frame.minX ?? 0
@@ -1522,7 +1566,8 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
             : String(localized: "Select", table: "Mobile")
         selectionButton
             .isEnabled = !isHoldingRows &&
-            (isSelectingRows || (workspace.isReady && workspace.profileDocument?.canEdit == true))
+            (isSelectingRows || (workspace.isReady && workspace.profileDocument?.canEdit == true
+                    && !workspace.spaces.isEmpty))
         // The phone sheet closes tabs from each row's menu and has no Select.
         navigationItem.rightBarButtonItems = isPhoneSheet
             ? nonSelectionRightButtons
@@ -1570,7 +1615,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
     }
 
     private func configure(_ cell: UITableViewCell, at indexPath: IndexPath) {
-        configure(cell, row: row(at: indexPath), selectedTabID: workspace.selectedTabID)
+        configure(cell, row: row(at: indexPath), selectedTabID: highlightedTabID)
     }
 
     private func configure(_ cell: UITableViewCell, row: Row?, selectedTabID: String?) {
@@ -2181,8 +2226,9 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         renderedSnapshot = snapshot
         renderedDocument = workspace.profileDocument
         renderedSpaceID = workspace.selectedSpaceID
-        renderedAvailableTabIDs = Set(workspace.visibleTabs.map(\.id))
-        renderedTabs = Dictionary(workspace.tabs.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let listed = listedTabs
+        renderedAvailableTabIDs = Set(spaceListedTabs.map(\.id))
+        renderedTabs = Dictionary(listed.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         if structuralChange {
             tableView.reloadData()
             tableView.layoutIfNeeded()
@@ -2288,12 +2334,16 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
             : URL(string: tab.urlString)?.host ?? tab.urlString
     }
 
+    /// Closes a Space tab in its Space, for every computer; a Today tab goes
+    /// to this device's Archive.
     @discardableResult private func removeTab(id: String) -> Bool {
-        guard workspace.tabs.contains(where: { $0.id == id }) else { return false }
+        guard listedTabs.contains(where: { $0.id == id }) else { return false }
         if let document = workspace.profileDocument {
-            if document.snapshot.tabs.first(where: { $0.id == id })?.placement == .temporary {
-                workspace.closeTab(id: id)
-                return !workspace.tabs.contains(where: { $0.id == id })
+            if document.snapshot.tabs.first(where: { $0.id == id })?.placement == .temporary,
+               document.supportsArchive
+            {
+                let title = renderedTabs[id].map(displayTitle)
+                return document.archiveTab(id: id, displayTitle: title)
             }
             return document.removeTab(id: id)
         }

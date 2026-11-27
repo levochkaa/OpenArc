@@ -5,7 +5,7 @@ import Testing
 import WebKit
 
 extension BrowserMobileSyncHTTPIntegrationTests {
-    @Test func mobileSchedulerProtectsWindowsAndHydrationAndRestoresAcceptedExpiryWithFreshIdentity() async throws {
+    @Test func mobileSchedulerWaitsForHydrationAndRestoresAcceptedExpiryAsAMobileTab() async throws {
         let fixture = try await MobileHTTPFixture.load()
         let account = try fixture.account("mobile-v5-automatic-archive")
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -15,7 +15,10 @@ extension BrowserMobileSyncHTTPIntegrationTests {
         let pageURL = fixture.baseURL.appendingPathComponent("mobile-test-page")
         let first = try MobileHTTPProfile(
             fixture: fixture, device: account.devices[0], directory: directory,
-            initial: mobileAutomaticHTTPSeed(pageURL: pageURL, activity: initialActivity), dateProvider: { state.now },
+            initial: mobileAutomaticHTTPSeed(
+                pageURL: pageURL, activity: initialActivity, recent: state.now.timeIntervalSince1970,
+            ),
+            dateProvider: { state.now },
             pollInterval: .milliseconds(100), expirySweepInterval: 0.2, expiryActivityRefreshInterval: 300,
             automaticArchivalCheckInterval: nil,
         )
@@ -28,50 +31,23 @@ extension BrowserMobileSyncHTTPIntegrationTests {
         }
         first.workspace.setExpiryHydrationCheck { state.hydrationReady }
         first.workspace.setSceneAttached(true)
-        try await first.start(expectedPullProtocolVersion: 5)
+        try await first.start(expectedPullProtocolVersion: 7)
         first.workspace.setActivityActive(true)
+        // The window shows its own tab, which the sweep never takes.
+        first.workspace.submit(pageURL.absoluteString)
         try #require(await mobileHTTPEventually {
-            first.workspace.selectedTabID == "selected"
-                && first.workspace.selectedTab?.title == "Mobile sync fixture"
+            first.workspace.selectedTab?.title == "Mobile sync fixture"
                 && first.workspace.selectedTab?.state.isLoading == false
         })
+        let windowTabID = try #require(first.workspace.selectedTabID)
         let selectedRuntime = try #require(first.workspace.selectedTab?.runtimeID)
         let selectedWebView = try #require(first.engine.webView(for: selectedRuntime))
-        try await first.drain()
+        try #require(first.document.renameTab(id: "fresh", title: "Kept fresh"))
+        first.document.flushMobileTabSync()
+        try await first.pull()
+        #expect(first.document.protectedTabIDs.isEmpty, "Phones hold no Space tab back from the Archive")
 
-        // A second attached but inactive window still protects its own selected
-        // old tab. Its WebKit runtime and selection are independent of window A.
-        let siblingEngine = BrowserWebKitEngine(dataStore: .nonPersistent())
-        let siblingPreferenceName = "MobileAutomaticHTTPSibling." + UUID().uuidString
-        let siblingPreferences = try #require(UserDefaults(suiteName: siblingPreferenceName))
-        let sharedDocument = first.document
-        let sibling = BrowserMobileWorkspace(
-            engine: siblingEngine, sceneID: "inactive-sibling", profileLoader: { sharedDocument },
-            preferences: siblingPreferences,
-        )
-        defer {
-            sibling.setSceneAttached(false)
-            siblingEngine.shutdown()
-            siblingPreferences.removePersistentDomain(forName: siblingPreferenceName)
-        }
-        sibling.setSceneAttached(true)
-        await sibling.restore()
-        sibling.selectTab(id: "protected-window")
-        try #require(sibling.isReady && sibling.selectedTabID == "protected-window")
-        let siblingRuntime = try #require(sibling.selectedTab?.runtimeID)
-        #expect(siblingRuntime != selectedRuntime)
-        #expect(first.document.protectedTabIDs == ["selected", "protected-window"])
-        #expect(first.document
-            .snapshot
-            .tabs
-            .first { $0.id == "protected-window" }?
-            .lastActivityTimestamp == initialActivity)
-
-        try await second.start(expectedPullProtocolVersion: 5)
-        try #require(await mobileHTTPEventually {
-            second.workspace.selectedTab?.title == "Mobile sync fixture"
-                && second.workspace.selectedTab?.state.isLoading == false
-        })
+        try await second.start(expectedPullProtocolVersion: 7)
         try await second.drain()
         let configuration = try #require(BrowserSyncConfiguration(baseURL: fixture.baseURL))
         let transportSession = URLSession(configuration: .ephemeral)
@@ -124,13 +100,13 @@ extension BrowserMobileSyncHTTPIntegrationTests {
             .subtracting(["expired"]))
         #expect(accepted.tabs.filter(\.deleted).map(\.id) == ["expired"])
         #expect(accepted.tabs.first { $0.id == "expired" }?.tombstoned == true)
-        #expect(first.workspace.selectedTabID == "selected" && sibling.selectedTabID == "protected-window")
-        #expect(first.workspace.selectedTab?.runtimeID == selectedRuntime)
+        #expect(first.workspace.selectedTabID == windowTabID && first.workspace.selectedTab?
+            .runtimeID == selectedRuntime)
         #expect(first.engine.webView(for: selectedRuntime) === selectedWebView)
-        #expect(sibling.selectedTab?.runtimeID == siblingRuntime)
         let archived = try #require(try first.store.loadArchivePage().entries.first)
         #expect(archived.tab.id == "expired" && archived.tab.userTitleOverride == "Expired tab")
-        #expect(archived.tab.urlString == "about:blank" && archived.tab.lastActivityTimestamp == initialActivity)
+        #expect(archived.tab.urlString == pageURL.absoluteString && archived.tab
+            .lastActivityTimestamp == initialActivity)
 
         try await fixture.command("release", deviceID: account.devices[1].deviceID)
         try await second.drain()
@@ -140,20 +116,22 @@ extension BrowserMobileSyncHTTPIntegrationTests {
         #expect(second.document.snapshot.tabs.first { $0.id == "recently-used" }?.lastActivityTimestamp == state.now
             .addingTimeInterval(-1)
             .timeIntervalSince1970)
+        // On a phone the archived Space tab comes back as a mobile tab, which
+        // the other phone receives over v7.
         let restoredID = try #require(first.workspace.restoreArchivedTab(id: archived.id))
-        #expect(restoredID != "expired")
-        try await first.drain()
+        #expect(restoredID != "expired" && first.document.mobileTab(id: restoredID) != nil)
+        first.document.flushMobileTabSync()
+        try await first.pull()
         try await second.pull()
+        #expect(second.document.mobileTab(id: restoredID)?.record.urlString == pageURL.absoluteString)
         for document in [first.document, second.document] {
-            #expect(document.snapshot.tabs.first { $0.id == restoredID }?.urlString == "about:blank")
-            #expect(document.snapshot.tabs.first { $0.id == restoredID }?.userTitleOverride == "Expired tab")
-            #expect(!document.snapshot.tabs.contains { $0.id == "expired" })
+            #expect(!document.snapshot.tabs.contains { $0.id == "expired" || $0.id == restoredID })
         }
         #expect(try first.store.loadArchivePage().entries.isEmpty)
         #expect(first.workspace.restoreArchivedTab(id: archived.id) == nil)
 
         // Replay the scheduler's actual request identity through the production
-        // typed transport. Its original tombstone cannot consume the fresh ID.
+        // typed transport. Its original tombstone cannot consume anything new.
         let scheduled = BrowserSyncExpiryMutation(id: expiryAttempt.mutationID, operations: [.init(
             id: "expired", expectedServerSeq: expiredSource.serverSeq, inactiveForSeconds: 43200,
         )])
@@ -167,10 +145,9 @@ extension BrowserMobileSyncHTTPIntegrationTests {
         let afterReplay = try await fixture.inspect(account)
         #expect(afterReplay.eventCount == beforeReplay.eventCount && afterReplay.receiptCount == beforeReplay
             .receiptCount)
-        #expect(afterReplay.tabs.first { $0.id == restoredID }?.deleted == false)
         #expect(afterReplay.tabs.first { $0.id == "expired" }?.tombstoned == true)
+        #expect(second.document.mobileTab(id: restoredID) != nil)
         #expect(try first.store.loadArchivePage().entries.isEmpty)
-        sibling.setSceneAttached(false)
         try await first.stop()
         try await second.stop()
         let reopened = try MobileHTTPProfile(
@@ -180,15 +157,15 @@ extension BrowserMobileSyncHTTPIntegrationTests {
         defer { reopened.cleanup() }
         #expect(!reopened.document.automaticTabArchivalEnabled)
         #expect(reopened.document.temporaryTabLifetime == .twelveHours)
-        try await reopened.start(expectedPullProtocolVersion: 5)
-        #expect(reopened.document.snapshot.tabs.count(where: { $0.id == restoredID }) == 1)
+        try await reopened.start(expectedPullProtocolVersion: 7)
+        #expect(reopened.document.mobileTab(id: restoredID) != nil)
         #expect(!reopened.document.snapshot.tabs.contains { $0.id == "expired" })
         #expect(try reopened.store.loadArchivePage().entries.isEmpty)
         try await fixture.complete(account)
     }
 }
 
-private let mobileAutomaticHTTPOriginalIDs: Set = ["selected", "protected-window", "recently-used", "expired"]
+private let mobileAutomaticHTTPOriginalIDs: Set = ["fresh", "recently-used", "expired"]
 
 // MARK: - MobileAutomaticHTTPState
 
@@ -197,14 +174,15 @@ private let mobileAutomaticHTTPOriginalIDs: Set = ["selected", "protected-window
     var hydrationReady = false
 }
 
-private func mobileAutomaticHTTPSeed(pageURL: URL, activity: TimeInterval) -> BrowserTabSessionSnapshot {
+private func mobileAutomaticHTTPSeed(
+    pageURL: URL, activity: TimeInterval, recent: TimeInterval,
+) -> BrowserTabSessionSnapshot {
     .init(spaces: [.init(id: "source", title: "Automatic Archive", systemImageName: "globe")], tabs: [
-        .init(id: "selected", urlString: pageURL.absoluteString, spaceID: "source", lastActivityTimestamp: activity),
-        .init(id: "protected-window", urlString: "about:blank", spaceID: "source", lastActivityTimestamp: activity),
+        .init(id: "fresh", urlString: "about:blank", spaceID: "source", lastActivityTimestamp: recent),
         .init(id: "recently-used", urlString: "about:blank", spaceID: "source", lastActivityTimestamp: activity),
         .init(
             id: "expired",
-            urlString: "about:blank",
+            urlString: pageURL.absoluteString,
             userTitleOverride: "Expired tab",
             spaceID: "source",
             lastActivityTimestamp: activity,

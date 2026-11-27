@@ -203,11 +203,21 @@ extension BrowserMobileUITests {
         self.store = try BrowserSQLiteSessionStore(databaseURL: directory.appendingPathComponent("Profile.sqlite"))
         let snapshot = BrowserTabSessionSnapshot(
             spaces: [.init(id: "space", title: "Space", systemImageName: "globe")],
-            tabs: ["a", "b"].map {
-                .init(id: $0, urlString: "about:blank", spaceID: "space", lastActivityTimestamp: 1_800_000_000)
-            },
+            tabs: [.init(
+                id: "space-tab",
+                urlString: "about:blank",
+                spaceID: "space",
+                lastActivityTimestamp: 1_800_000_000,
+            )],
         )
         try store.writeSessionBatch([.init(snapshot: snapshot, origin: .local(syncMove: nil))])
+        // The window's own tabs; the Space keeps one of its own.
+        try store.saveMobileTabs(["a", "b"].map {
+            .init(
+                id: $0,
+                record: .init(urlString: "about:blank", createdAt: Date(timeIntervalSince1970: 1_800_000_000)),
+            )
+        })
         try store.bindSyncOwner(owner)
         self.document = try BrowserMobileProfileDocument(
             store: store, initialSnapshot: snapshot,

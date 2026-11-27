@@ -75,11 +75,8 @@ import Foundation
                     ))
                 }
             }
-            if existing == nil, imports.isEmpty {
-                let spaceID = UUID().uuidString
-                spaces = [.init(id: spaceID, title: "Personal", systemImageName: "globe")]
-                tabs = [.init(id: UUID().uuidString, urlString: "about:blank", spaceID: spaceID)]
-            }
+            // A fresh profile starts without Spaces: its tabs are mobile tabs,
+            // and Spaces come from the account's computers.
             return BrowserTabSessionSnapshot(spaces: spaces, pinnedTabFolders: existing?.pinnedTabFolders, tabs: tabs)
         }
     }

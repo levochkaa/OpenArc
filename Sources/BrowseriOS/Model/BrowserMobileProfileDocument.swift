@@ -6,7 +6,9 @@ import Foundation
 
 /// One logical profile shared by scene adapters. Scenes submit stable-ID actions;
 /// their independently selected tabs and WebKit runtimes never replace this tree.
-@MainActor final class BrowserMobileProfileDocument: BrowserSyncSnapshotApplying, BrowserSyncExpiryScheduling {
+@MainActor final class BrowserMobileProfileDocument: BrowserSyncSnapshotApplying, BrowserSyncExpiryScheduling,
+    BrowserSyncMobileTabApplying
+{
     // MARK: Internal
 
     typealias ObserverToken = UUID
@@ -26,7 +28,13 @@ import Foundation
 
     let downloads: BrowserMobileDownloads?
 
+    /// The Spaces of the account's computers. This device opens their tabs
+    /// as mobile tabs; it shows no Space tab as its own.
     private(set) var snapshot: BrowserTabSessionSnapshot
+    /// This device's tabs, the oldest first. Every phone and tablet of the
+    /// account shows the same mobile tabs; they are no Space's.
+    private(set) var mobileTabs = [BrowserSyncMobileTabEntry]()
+    private(set) var mobileTabError: String?
     private(set) var archiveError: String?
     private(set) var archiveRevision = 0
     private(set) var isArchiveOperationInFlight = false
@@ -49,6 +57,12 @@ import Foundation
     private var lastLocalActivityRefresh: TimeInterval?
     private var isNotifying = false
     private var needsNotification = false
+    /// Mobile tabs changed here and not queued yet: a page changes its URL
+    /// and title several times while it loads, so writes wait for a pause.
+    private var changedMobileTabIDs = Set<String>()
+    private var mobileTabFlushTask: Task<Void, Never>?
+    private let mobileTabDebounce: Duration
+    private var mobileTabStore: (any BrowserMobileTabStoring)? { store as? any BrowserMobileTabStoring }
 
     var persistenceFailure: BrowserSessionPersistenceFailure? { writeBuffer.failure }
     var hasUncommittedWrites: Bool { !writeBuffer.writes.isEmpty || writeBuffer.isTerminal }
@@ -75,6 +89,7 @@ import Foundation
         idProvider: @escaping () -> String = { UUID().uuidString },
         dateProvider: @escaping () -> Date = Date.init,
         automaticArchivalCheckInterval: Duration? = .seconds(60),
+        mobileTabDebounce: Duration = .seconds(1),
         maximumBufferedWrites: Int = 32,
         maximumBufferedBytes: Int = 32 * 1024 * 1024,
     ) throws {
@@ -87,7 +102,9 @@ import Foundation
         self.idProvider = idProvider
         self.dateProvider = dateProvider
         self.automaticArchivalCheckInterval = automaticArchivalCheckInterval
+        self.mobileTabDebounce = mobileTabDebounce
         self.writeBuffer = .init(maximumCount: maximumBufferedWrites, maximumBytes: maximumBufferedBytes)
+        self.mobileTabs = try (store as? any BrowserMobileTabStoring)?.loadMobileTabs() ?? []
         reloadAutomaticTabArchivalSettings()
     }
 
@@ -299,6 +316,7 @@ import Foundation
 
     @discardableResult func recordActivity(tabIDs: Set<String>) -> Bool {
         guard canEdit, !tabIDs.isEmpty else { return false }
+        let recordedMobileTab = recordMobileTabActivity(ids: tabIDs)
         let now = dateProvider().timeIntervalSince1970
         let formatter = ISO8601DateFormatter()
         let operations: [BrowserSyncFolderOperation] = snapshot.tabs.compactMap { tab in
@@ -307,8 +325,8 @@ import Foundation
             else { return nil }
             return .patchTab(id: id, fields: .init(lastActivityAt: .set(activity)))
         }
-        guard !operations.isEmpty else { return false }
-        return apply(operations)
+        guard !operations.isEmpty else { return recordedMobileTab }
+        return apply(operations) || recordedMobileTab
     }
 
     func archivePage(before: BrowserTabArchiveCursor? = nil, limit: Int = 50) throws -> BrowserTabArchivePage {
@@ -412,12 +430,17 @@ import Foundation
         if let previous = syncCoordinator as? BrowserSyncService, previous !== service {
             previous.setExpiryScheduler(nil)
             previous.setSnapshotApplier(nil)
+            previous.setMobileTabApplier(nil)
             previous.setLocalPersistenceBlocked(true)
         }
         syncCoordinator = service
+        service.setMobileTabApplier(self)
         service.setSnapshotApplier(self)
         service.setExpiryScheduler(self)
         service.setLocalPersistenceBlocked(hasUncommittedWrites)
+        // Tabs changed elsewhere while this device was closed come down;
+        // tabs made here while it could not queue them go up at bootstrap.
+        syncMobileTabsDidChange()
     }
 
     /// The coordinator has already committed this canonical projection and cursor.
@@ -574,6 +597,245 @@ import Foundation
             case .folder: .deleteFolder(id: entity.entityID)
             }
         return apply([operation])
+    }
+
+    // MARK: Mobile tabs
+
+    func mobileTab(id: String) -> BrowserSyncMobileTabEntry? {
+        mobileTabs.first { $0.id == id }
+    }
+
+    /// Adds a mobile tab after the others and returns its identity.
+    @discardableResult func createMobileTab(urlString: String = "about:blank", title: String? = nil) -> String? {
+        guard canEdit, Self.nonempty(urlString) != nil else { return nil }
+        let id = idProvider()
+        guard !id.isEmpty, mobileTab(id: id) == nil else { return nil }
+        let now = dateProvider()
+        let entry = BrowserSyncMobileTabEntry(id: id, record: .init(
+            urlString: urlString, title: Self.nonempty(title), createdAt: now, lastActivityAt: now,
+        ))
+        guard saveMobileTabs(mobileTabs + [entry], changed: [id]) else { return nil }
+        return id
+    }
+
+    @discardableResult func updateMobileTab(id: String, urlString: String) -> Bool {
+        guard Self.nonempty(urlString) != nil, let index = mobileTabs.firstIndex(where: { $0.id == id }),
+              mobileTabs[index].record.urlString != urlString else { return false }
+        var tabs = mobileTabs
+        tabs[index].record.urlString = urlString
+        tabs[index].record.title = nil
+        tabs[index].record.lastActivityAt = BrowserSyncMobileTabRecord.latest(
+            tabs[index].record.lastActivityAt, dateProvider(),
+        )
+        return saveMobileTabs(tabs, changed: [id])
+    }
+
+    @discardableResult func setMobileTabTitle(id: String, title: String) -> Bool {
+        let title = Self.nonempty(title).map { String($0.utf16.prefix(BrowserSyncMobileTabRecord.titleLimit)) ?? $0 }
+        guard let index = mobileTabs.firstIndex(where: { $0.id == id }), mobileTabs[index].record.title != title
+        else { return false }
+        var tabs = mobileTabs
+        tabs[index].record.title = title
+        return saveMobileTabs(tabs, changed: [id])
+    }
+
+    /// Closes a mobile tab on every device. A closed tab goes to this
+    /// device's Archive; returns the archive entry's ID, to restore it by,
+    /// or nil when nothing was archived.
+    @discardableResult func closeMobileTab(id: String, archives: Bool = true, displayTitle: String? = nil) -> String? {
+        guard canEdit, let entry = mobileTab(id: id) else { return nil }
+        flushMobileTabSync()
+        var archived: BrowserTabArchiveEntry?
+        if archives, supportsArchive, entry.record.urlString != "about:blank" {
+            let archiveID = idProvider()
+            if !archiveID.isEmpty {
+                archived = BrowserTabArchiveEntry(
+                    id: archiveID,
+                    tab: BrowserTabSessionSnapshotTab(
+                        id: id, urlString: entry.record.urlString, placement: .temporary,
+                        lastActivityTimestamp: entry.record.lastActivityAt?.timeIntervalSince1970,
+                        pageTitle: entry.record.title,
+                    ),
+                    archivedAt: dateProvider().timeIntervalSince1970,
+                    title: Self.nonempty(displayTitle) ?? entry.record.title,
+                )
+            }
+        }
+        let tabs = mobileTabs.filter { $0.id != id }
+        let state = try? mobileTabStore?.loadSyncMobileTabState()
+        // A tab sync never heard of has nothing to delete there.
+        let operations: [BrowserSyncMobileTabOperation] = state?.live[id] != nil ? [.delete(id: id)] : []
+        guard saveMobileTabs(tabs, operations: operations, archiving: archived) else { return nil }
+        if archived != nil {
+            archiveRevision &+= 1
+            notify()
+        }
+        return archived?.id
+    }
+
+    /// Opens an archived tab again as a new mobile tab.
+    @discardableResult func restoreArchivedMobileTab(archiveID: String) -> String? {
+        guard canRestoreArchivedTab, let archive = store as? any BrowserTabArchiveStoring else { return nil }
+        do {
+            guard let entry = try archive.loadArchiveEntry(id: archiveID) else {
+                throw BrowserTabArchiveError.entryMissing
+            }
+            let id = idProvider()
+            guard !id.isEmpty, id != entry.tab.id, mobileTab(id: id) == nil else {
+                throw BrowserTabArchiveError.restoredTabIDNotFresh
+            }
+            let now = dateProvider()
+            let restored = BrowserSyncMobileTabEntry(id: id, record: .init(
+                urlString: entry.tab.urlString, title: entry.tab.pageTitle ?? entry.title, createdAt: now,
+                lastActivityAt: now,
+            ))
+            archiveError = nil
+            guard saveMobileTabs(mobileTabs + [restored], changed: [id], restoringArchiveID: archiveID) else {
+                return nil
+            }
+            archiveRevision &+= 1
+            notify()
+            return id
+        } catch {
+            archiveError = Self.archiveErrorMessage(error)
+            notify()
+            return nil
+        }
+    }
+
+    /// Queues mobile tab edits still waiting for their pause, for example
+    /// before the app goes to the background.
+    func flushMobileTabSync() {
+        mobileTabFlushTask?.cancel()
+        mobileTabFlushTask = nil
+        guard !changedMobileTabIDs.isEmpty, let mobileTabStore else { return }
+        let changed = changedMobileTabIDs
+        changedMobileTabIDs = []
+        do {
+            guard let state = try mobileTabStore.loadSyncMobileTabState() else { return }
+            let operations: [BrowserSyncMobileTabOperation] = mobileTabs.compactMap { entry in
+                guard changed.contains(entry.id), entry.record.isSyncable, !state.deleted.contains(entry.id),
+                      state.live[entry.id] != entry.record else { return nil }
+                return .upsert(id: entry.id, record: entry.record)
+            }
+            guard !operations.isEmpty else { return }
+            if try mobileTabStore.saveMobileTabs(mobileTabs, operations: operations, archiving: nil,
+                                                 restoringArchiveID: nil)
+            {
+                (syncCoordinator as? BrowserSyncService)?.scheduleQueuedPush()
+            }
+        } catch {
+            changedMobileTabIDs.formUnion(changed)
+            mobileTabError = String(localized: "Tabs could not be saved. Try again.", table: "Mobile")
+            notify()
+        }
+    }
+
+    func localSyncMobileTabs() -> [BrowserSyncMobileTabEntry] {
+        changedMobileTabIDs = []
+        mobileTabFlushTask?.cancel()
+        mobileTabFlushTask = nil
+        return mobileTabs.filter(\.record.isSyncable)
+    }
+
+    /// Shows the synced tabs: a tab changed elsewhere takes the synced
+    /// record, one closed elsewhere goes, and a new one joins the end. A tab
+    /// sync has not heard of yet stays.
+    func syncMobileTabsDidChange() {
+        flushMobileTabSync()
+        guard let mobileTabStore else { return }
+        do {
+            guard let state = try mobileTabStore.loadSyncMobileTabState() else { return }
+            var merged = [BrowserSyncMobileTabEntry]()
+            for entry in mobileTabs where !state.deleted.contains(entry.id) {
+                guard var record = state.live[entry.id] else {
+                    merged.append(entry)
+                    continue
+                }
+                record.lastActivityAt = BrowserSyncMobileTabRecord.latest(
+                    record.lastActivityAt, entry.record.lastActivityAt,
+                )
+                merged.append(.init(id: entry.id, record: record))
+            }
+            let known = Set(merged.map(\.id))
+            merged += state.entries.filter { !known.contains($0.id) }
+            guard merged != mobileTabs else { return }
+            try mobileTabStore.saveMobileTabs(merged, operations: [], archiving: nil, restoringArchiveID: nil)
+            mobileTabs = merged
+            mobileTabError = nil
+            notify()
+        } catch {
+            mobileTabError = String(localized: "Tabs could not be loaded. Try again.", table: "Mobile")
+            notify()
+        }
+    }
+
+    private func recordMobileTabActivity(ids: Set<String>) -> Bool {
+        let now = dateProvider()
+        guard now.timeIntervalSince1970.isFinite else { return false }
+        let second = Date(timeIntervalSince1970: floor(now.timeIntervalSince1970))
+        var tabs = mobileTabs
+        var changed = Set<String>()
+        for index in tabs.indices where ids.contains(tabs[index].id) {
+            if let previous = tabs[index].record.lastActivityAt, previous >= second { continue }
+            tabs[index].record.lastActivityAt = second
+            changed.insert(tabs[index].id)
+        }
+        guard !changed.isEmpty else { return false }
+        return saveMobileTabs(tabs, changed: changed)
+    }
+
+    /// Saves the list at once; sync writes for `changed` wait for a pause,
+    /// while `operations` (deletes) queue in the same transaction.
+    private func saveMobileTabs(
+        _ tabs: [BrowserSyncMobileTabEntry], changed: Set<String> = [],
+        operations: [BrowserSyncMobileTabOperation] = [], archiving entry: BrowserTabArchiveEntry? = nil,
+        restoringArchiveID: String? = nil,
+    ) -> Bool {
+        guard canEdit else { return false }
+        if let mobileTabStore {
+            do {
+                if try mobileTabStore.saveMobileTabs(
+                    tabs, operations: operations, archiving: entry, restoringArchiveID: restoringArchiveID,
+                ) {
+                    (syncCoordinator as? BrowserSyncService)?.scheduleQueuedPush()
+                }
+            } catch {
+                if restoringArchiveID != nil {
+                    archiveError = error is BrowserTabArchiveError
+                        ? Self.archiveErrorMessage(error)
+                        : String(localized: "This archive action could not be completed. Try again.", table: "Mobile")
+                } else if entry != nil, error is BrowserTabArchiveError {
+                    archiveError = Self.archiveErrorMessage(error)
+                } else {
+                    mobileTabError = String(localized: "Tabs could not be saved. Try again.", table: "Mobile")
+                }
+                notify()
+                return false
+            }
+        }
+        mobileTabs = tabs
+        mobileTabError = nil
+        changedMobileTabIDs.formUnion(changed)
+        changedMobileTabIDs.formIntersection(Set(tabs.map(\.id)))
+        if !changedMobileTabIDs.isEmpty {
+            scheduleMobileTabFlush()
+        }
+        notify()
+        return true
+    }
+
+    private func scheduleMobileTabFlush() {
+        mobileTabFlushTask?.cancel()
+        let debounce = mobileTabDebounce
+        mobileTabFlushTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(for: debounce)
+            } catch {
+                return
+            }
+            self?.flushMobileTabSync()
+        }
     }
 
     private func requestAutomaticArchivalCheck() {
@@ -753,6 +1015,22 @@ import Foundation
         }
     }
 }
+
+// MARK: - BrowserMobileTabStoring
+
+/// The profile store that keeps this device's mobile tabs and queues their writes.
+protocol BrowserMobileTabStoring: AnyObject {
+    func loadMobileTabs() throws -> [BrowserSyncMobileTabEntry]?
+    func loadSyncMobileTabState() throws -> BrowserSyncMobileTabState?
+    @discardableResult func saveMobileTabs(
+        _ tabs: [BrowserSyncMobileTabEntry], operations: [BrowserSyncMobileTabOperation],
+        archiving entry: BrowserTabArchiveEntry?, restoringArchiveID: String?,
+    ) throws -> Bool
+}
+
+// MARK: - BrowserSQLiteSessionStore + BrowserMobileTabStoring
+
+extension BrowserSQLiteSessionStore: BrowserMobileTabStoring {}
 
 // MARK: - BrowserMobileProfileDocumentError
 

@@ -64,7 +64,7 @@ import WebKit
         )
         await workspace.restore()
         #expect(workspace.isReady && workspace.supportsArchive)
-        workspace.selectTab(id: "a")
+        workspace.selectTab(id: "ma")
         let snapshot = f.document.snapshot
         let loaded = try f.store.loadSnapshotStrict()
         let stored = try #require(loaded)
@@ -96,6 +96,7 @@ import WebKit
         let storedAfter = try #require(loadedAfter)
         #expect(!storedAfter.tabs.contains { $0.urlString.contains("secret") })
         #expect(storedAfter.tabs.count == stored.tabs.count)
+        #expect(try f.store.loadMobileTabs()?.map(\.id) == ["ma"], "A private tab is no mobile tab")
         let operations = try f.queue().dropFirst(queue.count)
         #expect(operations.count == 1, "Only the rename is queued for sync")
         #expect(!String(describing: Array(operations)).contains("secret"))
@@ -110,7 +111,7 @@ import WebKit
         #expect(workspace.tabs.allSatisfy { !$0.isPrivate })
         #expect(try workspace.archivePage().entries.isEmpty, "Closing a private tab discards it")
         #expect(try f.queue().count == queue.count + 1)
-        #expect(workspace.selectedTabID == "a")
+        #expect(workspace.selectedTabID == "ma")
         #expect(engine.selectedID == workspace.selectedTab?.runtimeID)
         #expect(await workspace.shutdown())
     }
@@ -180,6 +181,9 @@ import WebKit
         )
         let events = try privateTabsEvents(BrowserSyncFolderProjection.canonicalChanges(snapshot))
         _ = try store.completeFolderSyncBootstrap(events: events, cursor: events.count, for: owner)
+        try store.saveMobileTabs([.init(id: "ma", record: .init(
+            urlString: "https://example.com/mobile", createdAt: Date(timeIntervalSince1970: 1_800_000_000),
+        ))])
         self.document = try BrowserMobileProfileDocument(store: store, initialSnapshot: store.loadSnapshotStrict())
     }
 

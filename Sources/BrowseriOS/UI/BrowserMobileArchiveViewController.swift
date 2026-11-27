@@ -279,12 +279,6 @@ final class BrowserMobileArchiveViewController: UITableViewController, UISearchR
         updatePresentation()
     }
 
-    func chooseDestination(_ spaceID: String, for entry: BrowserTabArchiveEntry, dismissing picker: UIAlertController) {
-        picker.dismiss(animated: true) { [weak self] in
-            self?.restore(entry, to: spaceID)
-        }
-    }
-
     /// Shown on its own, the archive has Done and Auto-Archive on either
     /// side; pushed inside Settings, the back button keeps its place and
     /// Auto-Archive moves to the right.
@@ -357,32 +351,8 @@ final class BrowserMobileArchiveViewController: UITableViewController, UISearchR
         // Search dismissal may reload the list. The captured identity is checked
         // against the document again, independently of the new rendered rows.
         guard mayManage, presentedViewController == nil else { return }
-        if let original = entry.tab.spaceID, workspace.spaces.contains(where: { $0.id == original }) {
-            restore(entry, to: original)
-            return
-        }
-        guard !workspace.spaces.isEmpty else {
-            interactionError = String(localized: "Create a Space before restoring tabs.", table: "Mobile")
-            updatePresentation()
-            return
-        }
-        let picker = UIAlertController(
-            title: String(localized: "Restore to Space", table: "Mobile"),
-            message: String(localized: "The original Space is no longer available.", table: "Mobile"),
-            preferredStyle: .actionSheet,
-        )
-        for space in workspace.spaces {
-            picker.addAction(UIAlertAction(title: space.title, style: .default) { [weak self, weak picker] _ in
-                guard let picker else { return }
-                self?.chooseDestination(space.id, for: entry, dismissing: picker)
-            })
-        }
-        picker.addAction(UIAlertAction(title: String(localized: "Cancel", table: "Mobile"), style: .cancel))
-        picker.popoverPresentationController?.sourceView = tableView
-        picker.popoverPresentationController?.sourceRect = CGRect(
-            x: tableView.bounds.midX, y: tableView.bounds.midY, width: 1, height: 1,
-        )
-        present(picker, animated: true)
+        // An archived tab opens again as a mobile tab.
+        restore(entry)
     }
 
     private func remove(_ action: Removal, completion: ((Bool) -> Void)? = nil) {
@@ -492,9 +462,9 @@ final class BrowserMobileArchiveViewController: UITableViewController, UISearchR
         tableView.tableHeaderView = statusStack
     }
 
-    private func restore(_ entry: BrowserTabArchiveEntry, to spaceID: String) {
+    private func restore(_ entry: BrowserTabArchiveEntry) {
         guard mayManage, failedRemoval == nil else { return }
-        if workspace.restoreArchivedTab(id: entry.id, toSpaceID: spaceID) != nil,
+        if workspace.restoreArchivedTab(id: entry.id) != nil,
            workspace.sessionError == nil, workspace.canRestoreArchivedTab
         {
             let presenter = navigationController?.presentingViewController ?? presentingViewController

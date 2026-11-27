@@ -82,137 +82,36 @@ import UIKit
         }
     }
 
-    @Test func activeSelectionTouchesOutgoingAndIncomingWhileInactiveSelectionOnlyRenewsLease() async throws {
+    @Test func selectingRecordsMobileTabActivityForBothTabsOnlyWhileTheWindowIsActive() async throws {
         try await withMobileActivityFixture { f in
             let (workspace, engine) = await f.workspace("first")
             workspace.setSceneAttached(true)
-            workspace.selectTab(id: "a")
-            #expect(try f.document.protectedTabIDs == ["a"] && f.queue().isEmpty)
+            workspace.selectTab(id: "ma")
+            #expect(f.mobileActivity("ma") == 100, "An inactive window records nothing")
             f.clock.now = 200
             workspace.setActivityActive(true)
-            #expect(f.activity("a") == 200)
+            #expect(f.mobileActivity("ma") == 200)
             let runtimes = workspace.tabs.map(\.runtimeID)
-            f.clock.now = 210
-            workspace.selectTab(id: "b")
-            #expect(f.activity("a") == 210 && f.activity("b") == 210)
-            #expect(f.document.protectedTabIDs == ["b"])
+            f.clock.now = 210.9
+            workspace.selectTab(id: "mb")
+            #expect(f.mobileActivity("ma") == 210 && f.mobileActivity("mb") == 210)
             #expect(workspace.tabs.map(\.runtimeID) == runtimes && engine.closed.isEmpty)
-            let selectedQueue = try f.queue()
-            f.clock.now = 220
-            workspace.selectTab(id: "b")
-            #expect(try f.queue().count == selectedQueue.count + 1)
-            #expect(try f.lastOperations() == [.patchTab(id: "b", fields: .init(lastActivityAt: .set(f.date(220))))])
-            let repeatedSelection = try f.queue()
-            workspace.selectTab(id: "b")
+            let saved = try f.store.loadMobileTabs()
+            workspace.selectTab(id: "mb")
             workspace.setActivityActive(true)
             #expect(
-                try f.queue() == repeatedSelection,
+                try f.store.loadMobileTabs() == saved,
                 "Same-second selection and duplicate lifecycle delivery do not write",
             )
             f.clock.now = 230
             workspace.setActivityActive(false)
-            #expect(f.activity("b") == 230 && f.document.protectedTabIDs == ["b"])
-            let inactiveQueue = try f.queue()
+            #expect(f.mobileActivity("mb") == 230)
             f.clock.now = 240
-            workspace.setActivityActive(false)
-            workspace.selectTab(id: "c")
-            #expect(workspace.selectedSpaceID == "target" && f.document.protectedTabIDs == ["c"])
-            #expect(try f.queue() == inactiveQueue && f.activity("c") == 80)
-            workspace.setSceneAttached(false)
-            #expect(try f.document.protectedTabIDs.isEmpty && f.queue() == inactiveQueue)
-        }
-    }
-
-    @Test func loadedDocumentAndRemoteProjectionRenewLeasesWithoutActivityEcho() async throws {
-        try await withMobileActivityFixture { f in
-            let (workspace, engine) = await f.workspace("first")
-            workspace.setSceneAttached(true)
-            workspace.selectTab(id: "a")
-            f.clock.now = 100
-            workspace.setActivityActive(true)
-            let runtime = try #require(workspace.selectedTab?.runtimeID)
-            f.clock.now = 900
-            engine.onEvent?(.state(
-                id: runtime,
-                .init(
-                    url: URL(string: "https://activity.example/a"),
-                    title: "Loaded title",
-                    isLoading: false,
-                    progress: 1,
-                    canGoBack: true,
-                ),
-            ))
-            #expect(try f.queue().isEmpty)
-            let old = try #require(f.document.snapshot.tabs.first { $0.id == "a" })
-            let changed = activityTab(old, url: "https://activity.example/remote", timestamp: 20)
-            let changes = BrowserSyncFolderProjection.canonicalChanges(.init(
-                spaces: f.document.snapshot.spaces,
-                tabs: [changed],
-            ))
-            .filter { $0.entityType == .tab }
-            let remote = try f.store.applyRemoteSyncEvents(
-                activityEvents(changes, startingAt: 100),
-                cursor: 100,
-                for: f.owner,
-            )
-            f.document.applyRemoteSyncSnapshot(remote)
-            #expect(workspace.selectedTab?.runtimeID == runtime)
-            #expect(workspace.selectedTab?.urlString == changed.urlString && f.activity("a") == 20)
-            #expect(try f.document.protectedTabIDs == ["a"] && f.queue().isEmpty)
-            let deletion = BrowserSyncChange(entityType: .tab, entityID: "a", op: .delete, spaceData: nil, tabData: nil)
-            let deleted = try f.store.applyRemoteSyncEvents(
-                activityEvents([deletion], startingAt: 101),
-                cursor: 101,
-                for: f.owner,
-            )
-            f.document.applyRemoteSyncSnapshot(deleted)
-            #expect(!workspace.tabs.contains { $0.id == "a" } && engine.closed.contains(runtime))
-            #expect(f.document.protectedTabIDs == Set([workspace.selectedTabID].compactMap(\.self)))
-            #expect(try f.queue().isEmpty, "Remote URL, activity and fallback selection do not echo local touches")
-        }
-    }
-
-    @Test func sceneLeasesSurviveInactivityButRejectStaleConnectionsAndReleaseOnDisconnect() async throws {
-        try await withMobileActivityFixture { f in
-            let scenes = f.scenes()
-            var first = try await scenes.connect(sessionID: "first")
-            let second = try await scenes.connect(sessionID: "second")
-            await scenes.waitForPendingOperations()
-            first.workspace.selectTab(id: "a")
-            second.workspace.selectTab(id: "a")
-            #expect(f.document.protectedTabIDs == ["a"])
-            scenes.disconnect(first)
-            #expect(f.document.protectedTabIDs == ["a"], "Releasing one owner keeps another window's lease")
-            first = try await scenes.connect(sessionID: "first")
-            second.workspace.selectTab(id: "b")
-            let staleOwner = UUID()
-            f.document.updateSelectionLease(owner: staleOwner, selectedTabID: "missing")
-            #expect(try f.document.protectedTabIDs == ["a", "b"] && f.queue().isEmpty)
-            f.document.removeSelectionLease(owner: staleOwner)
-            f.clock.now = 500
-            scenes.setActive(true, for: first)
-            scenes.setActive(true, for: second)
-            f.clock.now = 510
-            scenes.setActive(false, for: first)
-            #expect(f.document.protectedTabIDs == ["a", "b"])
-            scenes.disconnect(first)
-            #expect(f.document.protectedTabIDs == ["b"])
-            let replacement = try await scenes.connect(sessionID: "second")
-            #expect(replacement.workspace === second.workspace && f.document.protectedTabIDs == ["b"])
-            let beforeStale = try f.queue()
-            f.clock.now = 520
-            scenes.setActive(true, for: second)
-            scenes.setActive(false, for: second)
-            scenes.disconnect(second)
-            #expect(try f.queue() == beforeStale && f.document.protectedTabIDs == ["b"])
-            scenes.setActive(true, for: replacement)
-            #expect(f.activity("b") == 520)
-            #expect(f.document.removeTab(id: "b"))
-            #expect(!f.document.protectedTabIDs.contains("b"))
-            #expect(f.document.protectedTabIDs == Set([replacement.workspace.selectedTabID].compactMap(\.self)))
-            scenes.discard(sessionIDs: ["first", "second"])
-            await scenes.waitForPendingOperations()
-            #expect(f.document.protectedTabIDs.isEmpty)
+            workspace.selectTab(id: "mc")
+            #expect(f.mobileActivity("mc") == 80, "An inactive window records nothing")
+            #expect(try f.store.loadMobileTabs()?.first { $0.id == "mb" }?.record.lastActivityAt == f.moment(230))
+            #expect(f.document.protectedTabIDs.isEmpty, "Mobile tabs never hold Space tabs back from the Archive")
+            #expect(try f.queue().isEmpty, "Mobile tabs never write Spaces")
         }
     }
 
@@ -224,7 +123,6 @@ import UIKit
             let connection = try await scenes.connect(sessionID: "delayed")
             scenes.setActive(true, for: connection)
             await gate.waitUntilHeld()
-            #expect(try f.document.protectedTabIDs.isEmpty && f.queue().isEmpty)
             if disconnectBeforeRestore {
                 scenes.disconnect(connection)
             }
@@ -234,62 +132,16 @@ import UIKit
             #expect(connection.workspace.isReady)
             let selected = try #require(connection.workspace.selectedTabID)
             if disconnectBeforeRestore {
-                #expect(try f.document.protectedTabIDs.isEmpty && f.queue().isEmpty)
+                #expect(f.mobileActivity(selected) != 600)
                 let replacement = try await scenes.connect(sessionID: "delayed")
-                #expect(f.document.protectedTabIDs == [selected])
                 scenes.setActive(true, for: connection)
-                #expect(try f.queue().isEmpty)
+                #expect(f.mobileActivity(selected) != 600, "A stale connection records nothing")
                 scenes.setActive(true, for: replacement)
             }
-            #expect(f.document.protectedTabIDs == [selected] && f.activity(selected) == 600)
-            #expect(try f.queue().count == 1)
+            #expect(f.mobileActivity(selected) == 600)
+            #expect(try f.queue().isEmpty)
             scenes.discard(sessionIDs: ["delayed"])
             await scenes.waitForPendingOperations()
-            #expect(f.document.protectedTabIDs.isEmpty)
-        }
-    }
-
-    @Test func failedActivityWriteRetainsOrderedEditsAndRetryReopensWithoutLostTimestamps() async throws {
-        try await withMobileActivityFixture { f in
-            let (workspace, _) = await f.workspace("first")
-            workspace.setSceneAttached(true)
-            workspace.selectTab(id: "a")
-            f.clock.now = 1000
-            workspace.setActivityActive(true)
-            let durable = try f.store.loadSnapshotStrict()
-            let queue = try f.queue()
-            let bytes = try f.queueBytes()
-            try f
-                .sql(
-                    "CREATE TRIGGER fail_activity BEFORE INSERT ON browser_sync_outbox BEGIN SELECT RAISE(ABORT, 'injected'); END",
-                )
-            f.clock.now = 1100
-            workspace.selectTab(id: "b")
-            #expect(f.document.hasUncommittedWrites && f.document.persistenceFailure?.isRetryable == true)
-            #expect(f.activity("a") == 1100 && f.activity("b") == 1100)
-            #expect(f.document.protectedTabIDs == ["b"])
-            #expect(f.document.renameTab(id: "b", title: "After failed activity"))
-            f.clock.now = 1200
-            workspace.setActivityActive(false)
-            let optimistic = f.document.snapshot
-            #expect(f.activity("b") == 1200)
-            #expect(try f.store.loadSnapshotStrict() == durable && f.queue() == queue && f.queueBytes() == bytes)
-            f.document.applyRemoteSyncSnapshot(.init(tabs: []))
-            #expect(f.document.snapshot == optimistic)
-            #expect(!f.document.retryPersistence())
-            try f.sql("DROP TRIGGER fail_activity")
-            #expect(f.document.retryPersistence() && !f.document.hasUncommittedWrites)
-            let batches = try f.batches().dropFirst(queue.count)
-            let ids = optimistic.tabs.compactMap { ["a", "b"].contains($0.id ?? "") ? $0.id : nil }
-            #expect(Array(batches) == [
-                ids.map { .patchTab(id: $0, fields: .init(lastActivityAt: .set(f.date(1100)))) },
-                [.patchTab(id: "b", fields: .init(userTitleOverride: .set("After failed activity")))],
-                [.patchTab(id: "b", fields: .init(lastActivityAt: .set(f.date(1200))))],
-            ])
-            let reopened = try BrowserSQLiteSessionStore(databaseURL: f.databaseURL)
-            #expect(try reopened.loadSnapshotStrict() == optimistic)
-            #expect(try reopened.pendingSyncQueue(for: f.owner) == f.queue())
-            #expect(try f.queueBytes().prefix(bytes.count) == bytes[...])
         }
     }
 }
@@ -352,6 +204,13 @@ import UIKit
             },
         )
         try store.writeSessionBatch([.init(snapshot: precise, origin: .remoteProjection)])
+        let created = Date(timeIntervalSince1970: 10)
+        try store.saveMobileTabs([("ma", 100.0), ("mb", 50), ("mc", 80)].map { id, activity in
+            .init(id: id, record: .init(
+                urlString: "https://activity.example/mobile-" + id, createdAt: created,
+                lastActivityAt: Date(timeIntervalSince1970: activity),
+            ))
+        })
         let clock = clock
         self.document = try BrowserMobileProfileDocument(
             store: store,
@@ -395,6 +254,11 @@ import UIKit
     }
 
     func activity(_ id: String) -> TimeInterval? { document.snapshot.tabs.first { $0.id == id }?.lastActivityTimestamp }
+    func mobileActivity(_ id: String) -> TimeInterval? {
+        document.mobileTab(id: id)?.record.lastActivityAt?.timeIntervalSince1970
+    }
+
+    func moment(_ timestamp: TimeInterval) -> Date { Date(timeIntervalSince1970: timestamp) }
     func date(_ timestamp: TimeInterval) -> String { ISO8601DateFormatter()
         .string(from: Date(timeIntervalSince1970: timestamp))
     }

@@ -146,6 +146,10 @@
 "Auto-Archive settings could not be saved. Try again." = "Auto-Archive settings could not be saved. Try again.";
 "Auto-Archive settings could not be loaded. Try again." = "Auto-Archive settings could not be loaded. Try again.";
 "Auto-Archive could not check this profile. Try again." = "Auto-Archive could not check this profile. Try again.";
+"Tabs could not be saved. Try again." = "Tabs could not be saved. Try again.";
+"Tabs could not be loaded. Try again." = "Tabs could not be loaded. Try again.";
+"No Spaces Yet" = "No Spaces Yet";
+"Sign in to sync Spaces from your Mac, or choose New Space from the Spaces button above." = "Sign in to sync Spaces from your Mac, or choose New Space from the Spaces button above.";
 "Downloads" = "Downloads";
 "Loading Downloads…" = "Loading Downloads…";
 "No Downloads" = "No Downloads";

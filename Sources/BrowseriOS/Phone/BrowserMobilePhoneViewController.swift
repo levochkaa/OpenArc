@@ -1141,7 +1141,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
         let tab = workspace.selectedTab
         let isWebPage = shareURL != nil
         let document = workspace.profileDocument
-        let isPinned = tab.map { $0.placement != .temporary } ?? false
+        let isPinned = tab.flatMap { workspace.pinnedSpaceTabID(urlString: $0.urlString) } != nil
         var tiles = [BrowserMobilePagePanel.Tile]()
         tiles.append(.init(
             title: String(localized: "Find on Page", table: "Mobile"), symbol: "doc.text.magnifyingglass",
@@ -1158,7 +1158,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
         tiles.append(.init(
             title: isPinned ? String(localized: "Unpin", table: "Mobile") : String(localized: "Pin", table: "Mobile"),
             symbol: isPinned ? "pin.slash" : "pin", identifier: "browser.pin",
-            isEnabled: document?.canEdit == true && tab?.spaceID != nil && isWebPage,
+            isEnabled: document?.canEdit == true && !workspace.spaces.isEmpty && tab?.isPrivate == false && isWebPage,
             menu: isPinned ? nil : pinMenu(),
         ) { [weak self] in
             self?.togglePin()
@@ -1254,17 +1254,14 @@ final class BrowserMobilePhoneViewController: UIViewController {
         )
     }
 
-    /// Where Pin can put the tab: Favorites, the top of any Space, or a
-    /// folder of its own Space.
+    /// Where Pin can put the page: Favorites, the top of any Space, or a
+    /// folder of the Space the Spaces picker shows. The mobile tab stays.
     private func pinMenu() -> UIMenu? {
-        guard let document = workspace.profileDocument, let tab = workspace.selectedTab,
-              let spaceID = tab.spaceID else { return nil }
+        guard let document = workspace.profileDocument, workspace.selectedTab != nil,
+              let spaceID = workspace.selectedSpaceID ?? workspace.spaces.first?.id else { return nil }
         let pin = { [weak self] (space: String, placement: BrowserTabPlacement, folder: String?) in
-            guard let self, let document = workspace.profileDocument, let tab = workspace.selectedTab else { return }
-            document.move(
-                items: [BrowserSyncEntityReference(entityType: .tab, entityID: tab.id)],
-                destination: .tabs(spaceID: space, placement: placement, pinnedFolderID: folder),
-            )
+            guard let self else { return }
+            workspace.pinSelectedTab(spaceID: space, placement: placement, pinnedFolderID: folder)
             updatePagePanel()
         }
         var children = [UIMenuElement]()
@@ -1301,16 +1298,15 @@ final class BrowserMobilePhoneViewController: UIViewController {
         return UIMenu(children: children)
     }
 
+    /// Pins the page to the Space the Spaces picker shows, or removes the
+    /// Space's pinned copy of it.
     private func togglePin() {
-        guard let document = workspace.profileDocument, let tab = workspace.selectedTab,
-              let spaceID = tab.spaceID else { return }
-        document.move(
-            items: [BrowserSyncEntityReference(entityType: .tab, entityID: tab.id)],
-            destination: .tabs(
-                spaceID: spaceID, placement: tab.placement == .temporary ? .spacePinned : .temporary,
-                pinnedFolderID: nil,
-            ),
-        )
+        guard let document = workspace.profileDocument, let tab = workspace.selectedTab else { return }
+        if let pinned = workspace.pinnedSpaceTabID(urlString: tab.urlString) {
+            document.removeTab(id: pinned)
+        } else {
+            workspace.pinSelectedTab()
+        }
         updatePagePanel()
     }
 
@@ -1467,8 +1463,9 @@ final class BrowserMobilePhoneViewController: UIViewController {
                 location: location(of: tab),
             )
         }
-        let listed = Set(result.map(\.tabID))
-        for tab in workspace.tabs where !listed.contains(tab.id) && tab.placement != .temporary {
+        // Favorites and pinned tabs of the Spaces open as mobile tabs.
+        let listedURLs = Set(result.map(\.urlString))
+        for tab in workspace.spaceTabs where !listedURLs.contains(tab.urlString) && tab.placement != .temporary {
             result.append(.init(
                 tabID: tab.id, title: tab.userTitleOverride ?? tab.title, urlString: tab.urlString,
                 location: location(of: tab),
@@ -1483,7 +1480,8 @@ final class BrowserMobilePhoneViewController: UIViewController {
         let place =
             switch tab.placement {
             case .app: String(localized: "Favorites", table: "Mobile")
-            case .temporary: String(localized: "Tab", table: "Mobile")
+            case .temporary where tab.spaceID == nil: String(localized: "Tab", table: "Mobile")
+            case .temporary: String(localized: "Today", table: "Mobile")
             default: String(localized: "Pinned", table: "Mobile")
             }
         return space.map { String(localized: "\(place) in \($0)", table: "Mobile") } ?? place
@@ -1520,7 +1518,11 @@ final class BrowserMobilePhoneViewController: UIViewController {
             closeSearchForPage()
             if id != workspace.selectedTabID {
                 if let current = workspace.selectedTabID { capturePageIfFullScreen(current) }
-                workspace.selectTab(id: id)
+                if workspace.tabs.contains(where: { $0.id == id }) {
+                    workspace.selectTab(id: id)
+                } else {
+                    workspace.openSpaceTab(id: id)
+                }
             }
         }
     }

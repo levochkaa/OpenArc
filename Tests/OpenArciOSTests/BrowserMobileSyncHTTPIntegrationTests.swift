@@ -13,7 +13,7 @@ import WebKit
     .enabled(if: MobileHTTPFixture.isConfigured, "Run ./script/test_mobile_sync.sh for localhost integration"),
 )
 @MainActor struct BrowserMobileSyncHTTPIntegrationTests {
-    @Test func mobileV4RoundtripPreservesLoadedPageAndSharedFolderTree() async throws {
+    @Test func mobileV4SpaceTreeRoundTripsWhileTheWindowsPageStaysLoaded() async throws {
         let fixture = try await MobileHTTPFixture.load()
         let account = try fixture.account("mobile-v4-roundtrip")
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -31,11 +31,9 @@ import WebKit
             second.cleanup()
         }
         try await first.start()
-        let unsupportedRuntime = try #require(first.workspace.tabs.first { $0.id == "unsupported" }?.runtimeID)
-        #expect(first.engine.webView(for: unsupportedRuntime) == nil)
-        #expect(first.workspace.tabs.first { $0.id == "unsupported" }?.state.error != nil)
+        // Space tabs have no page on a phone; the window shows its own tab.
+        #expect(!first.workspace.tabs.contains { $0.id == "unsupported" || $0.id == "browsing" })
         #expect(first.document.snapshot.tabs.first { $0.id == "unsupported" }?.urlString == "openarc://settings")
-        first.workspace.selectTab(id: "browsing")
         let page = BrowserMobilePageViewController(workspace: first.workspace, contentView: first.engine.hostView)
         first.workspace.onChange = { [weak page] in page?.render() }
         page.loadViewIfNeeded()
@@ -46,6 +44,7 @@ import WebKit
             first.workspace.selectedTab?.title == "Mobile sync fixture"
                 && first.workspace.selectedTab?.state.isLoading == false
         })
+        let windowTabID = try #require(first.workspace.selectedTabID)
         let runtimeID = try #require(first.workspace.selectedTab?.runtimeID)
         let live = try #require(first.engine.webView(for: runtimeID))
         let secondURL = fixture.baseURL.appendingPathComponent("mobile-test-second")
@@ -90,6 +89,7 @@ import WebKit
         try #require(first.document.createFolder(spaceID: "source", title: "Empty") != nil)
         try #require(try first.store.pendingSyncQueue(for: first.owner).allSatisfy { $0.protocolVersion == 4 })
         try await first.drain()
+        #expect(first.workspace.selectedTab?.runtimeID == runtimeID && first.engine.webView(for: runtimeID) === live)
 
         let otherSceneEngine = BrowserWebKitEngine(dataStore: .nonPersistent())
         let scenePreferencesName = "MobileHTTPSiblingScene." + UUID().uuidString
@@ -107,9 +107,7 @@ import WebKit
         await otherScene.restore()
         otherScene.setSyncActive(true)
         try #require(otherScene.profileDocument === first.document)
-        otherScene.selectTab(id: "retained")
-        #expect(otherScene.selectedTabID == "retained" && first.workspace.selectedTabID == "browsing")
-        otherScene.selectTab(id: "browsing")
+        otherScene.selectTab(id: windowTabID)
         try #require(await mobileHTTPEventually {
             otherScene.selectedTab?.title == "Mobile sync second" && otherScene.selectedTab?.state.isLoading == false
         })
@@ -119,14 +117,6 @@ import WebKit
         try await second.start()
         #expect(second.document.snapshot.tabs == first.document.snapshot.tabs)
         #expect(second.document.snapshot.pinnedTabFolders == first.document.snapshot.pinnedTabFolders)
-        second.workspace.selectTab(id: "browsing")
-        try #require(await mobileHTTPEventually {
-            second.workspace.selectedTab?.title == "Mobile sync second"
-                && second.workspace.selectedTab?.state.isLoading == false
-        })
-        let secondRuntime = try #require(second.workspace.selectedTab?.runtimeID)
-        #expect(secondRuntime != runtimeID)
-        #expect(second.engine.webView(for: secondRuntime) !== live)
 
         try #require(second.document.move(
             items: [.init(entityType: .folder, entityID: folder)],
@@ -135,14 +125,12 @@ import WebKit
         try #require(second.document.renameFolder(id: nested, title: "Renamed on second device"))
         try await second.drain()
         try await first.pull()
-        first.workspace.selectTab(id: "browsing")
-        #expect(first.workspace.selectedSpaceID == "target")
-        #expect(first.workspace.selectedTab?.userTitleOverride == "Shared named tab")
-        #expect(first.workspace.selectedTab?.runtimeID == runtimeID)
+        #expect(first.workspace.selectedTabID == windowTabID && first.workspace.selectedTab?.runtimeID == runtimeID)
         #expect(first.engine.webView(for: runtimeID) === live)
         #expect(live.url == secondURL && live.backForwardList.backList.map(\.url) == history)
         #expect(otherSceneEngine.webView(for: otherRuntime) === otherLive)
-        #expect(otherScene.tabs.first { $0.id == "browsing" }?.spaceID == "target")
+        #expect(first.workspace.spaceTabs.first { $0.id == "browsing" }?.spaceID == "target")
+        #expect(first.workspace.spaceTabs.first { $0.id == "browsing" }?.userTitleOverride == "Shared named tab")
         #expect(first.document.snapshot.tabs == second.document.snapshot.tabs)
         #expect(first.document.snapshot.pinnedTabFolders == second.document.snapshot.pinnedTabFolders)
         let server = try await fixture.inspect(account)
@@ -150,14 +138,11 @@ import WebKit
         #expect(server.folders.first { $0.id == folder }?.spaceID == "target")
         #expect(server.folders.first { $0.id == nested }?.title == "Renamed on second device")
 
-        // Activity alone crosses the real v4 transport without recreating or
-        // navigating either device's existing runtime. This is local monotonic
-        // capture, not a claim about global ordering of offline timestamps.
-        let secondLive = try #require(second.engine.webView(for: secondRuntime))
-        let secondHistory = secondLive.backForwardList.backList.map(\.url)
+        // Space tab activity crosses the real v4 transport and leaves the
+        // window's page alone. This is local monotonic capture, not a claim
+        // about global ordering of offline timestamps.
         let activitySentinel = UUID().uuidString
         _ = try await live.evaluateJavaScript("window.__activitySentinel = '\(activitySentinel)'")
-        _ = try await secondLive.evaluateJavaScript("window.__activitySentinel = '\(activitySentinel)'")
         let activityTimestamp: TimeInterval = 1_900_000_000
         activityDate = Date(timeIntervalSince1970: activityTimestamp + 0.875)
         try #require(first.document.recordActivity(tabIDs: ["browsing"]))
@@ -179,13 +164,9 @@ import WebKit
             .tabs
             .first { $0.id == "browsing" }?
             .lastActivityTimestamp == activityTimestamp)
-        #expect(second.workspace.tabs.first { $0.id == "browsing" }?.runtimeID == secondRuntime)
-        #expect(second.engine.webView(for: secondRuntime) === secondLive)
-        #expect(secondLive.url == secondURL && secondLive.backForwardList.backList.map(\.url) == secondHistory)
         #expect(first.engine.webView(for: runtimeID) === live)
         #expect(live.url == secondURL && live.backForwardList.backList.map(\.url) == history)
         #expect(try await live.evaluateJavaScript("window.__activitySentinel") as? String == activitySentinel)
-        #expect(try await secondLive.evaluateJavaScript("window.__activitySentinel") as? String == activitySentinel)
         let activityServer = try await fixture.inspect(account)
         #expect(activityServer.attempts.contains {
             $0.mutationID == activityMutation.id && $0.protocolVersion == 4 && $0.status == 201
@@ -200,68 +181,110 @@ import WebKit
         try #require(second.document.delete(entity: .init(entityType: .folder, entityID: folder)))
         try await second.drain()
         try await first.pull()
-        #expect(first.engine.webView(for: runtimeID) == nil)
-        #expect(otherSceneEngine.webView(for: otherRuntime) == nil)
-        #expect(second.engine.webView(for: secondRuntime) == nil)
-        #expect(live.navigationDelegate == nil && otherLive.navigationDelegate == nil)
+        #expect(first.engine.webView(for: runtimeID) === live, "Deleting Space tabs leaves the window's page open")
+        #expect(otherSceneEngine.webView(for: otherRuntime) === otherLive)
         #expect(Set(first.document.snapshot.tabs.compactMap(\.id)) == ["retained", "unsupported"])
-        #expect(Set(otherScene.tabs.map(\.id)) == ["retained", "unsupported"])
         #expect(first.document.snapshot.pinnedTabFolders?.contains { $0.id == folder || $0.id == nested } == false)
         #expect(first.document.snapshot.tabs.first { $0.id == "unsupported" }?.urlString == "openarc://settings")
-        #expect(first.engine.webView(for: unsupportedRuntime) == nil)
         let afterDeletion = try await fixture.inspect(account)
         #expect(afterDeletion.tabs.first { $0.id == "browsing" }?.tombstoned == true)
         #expect(afterDeletion.tabs.first { $0.id == "unsupported" }?.deleted == false)
         let afterDeletionQueue = try first.outboxBytes()
         #expect(!first.document.recordActivity(tabIDs: ["browsing"]))
         #expect(try first.outboxBytes() == afterDeletionQueue)
-        #expect(!first.document.snapshot.tabs.contains { $0.id == "browsing" })
-        // Archive remains profile-local. Only the old-identity delete and fresh
-        // restored create cross the existing v4 wire; neither device resurrects
-        // the permanent tombstone or receives the other profile's archive row.
+        // Archive remains profile-local. Archiving a Space tab deletes it over
+        // the v4 wire; restoring it on a phone opens a mobile tab, so nothing
+        // resurrects the permanent tombstone.
         try #require(first.document.updateURL(tabID: "retained", urlString: secondURL.absoluteString))
         try #require(first.document.renameTab(id: "retained", title: "Archived over HTTP"))
         try await first.drain()
         try await second.pull()
-        first.workspace.closeTab(id: "retained")
+        try #require(first.document.archiveTab(id: "retained"))
         let archived = try #require(try first.store.loadArchivePage().entries.first)
         #expect(archived.tab.id == "retained" && archived.tab.urlString == secondURL.absoluteString)
         try await first.drain()
         try await second.pull()
         let afterArchive = try await fixture.inspect(account)
         #expect(afterArchive.tabs.first { $0.id == "retained" }?.tombstoned == true)
-        #expect(!second.workspace.tabs.contains { $0.id == "retained" })
+        #expect(!second.document.snapshot.tabs.contains { $0.id == "retained" })
         #expect(try second.store.loadArchivePage().entries.isEmpty)
         let restoredID = try #require(first.workspace.restoreArchivedTab(id: archived.id))
-        #expect(restoredID != "retained")
+        #expect(restoredID != "retained" && first.document.mobileTab(id: restoredID) != nil)
         try #require(await mobileHTTPEventually {
             first.workspace.selectedTabID == restoredID && first.workspace.selectedTab?.title == "Mobile sync second" &&
                 first.workspace.selectedTab?.state.isLoading == false
         })
         try await first.drain()
         try await second.pull()
-        #expect(second.document.snapshot.tabs.first { $0.id == restoredID }?.urlString == secondURL.absoluteString)
-        #expect(second.document.snapshot.tabs.first { $0.id == restoredID }?.userTitleOverride == "Archived over HTTP")
-        #expect(!second.document.snapshot.tabs.contains { $0.id == "retained" })
+        #expect(!second.document.snapshot.tabs.contains { $0.id == restoredID || $0.id == "retained" })
         let afterRestore = try await fixture.inspect(account)
         #expect(afterRestore.tabs.first { $0.id == "retained" }?.tombstoned == true)
-        #expect(afterRestore.tabs.first { $0.id == restoredID }?.deleted == false)
         #expect(try first.store.loadArchivePage().entries.isEmpty && second.store.loadArchivePage().entries.isEmpty)
         #expect(first.workspace.restoreArchivedTab(id: archived.id) == nil)
         #expect(try first.store.pendingSyncQueue(for: first.owner).isEmpty)
         let saved = first.document.snapshot
+        let savedMobileTabs = first.document.mobileTabs
         try #require(await otherScene.shutdown())
         try await first.stop()
         let reopened = try MobileHTTPProfile(fixture: fixture, device: account.devices[0], directory: directory)
         defer { reopened.cleanup() }
-        #expect(reopened.document.snapshot == saved)
+        #expect(reopened.document.snapshot == saved && reopened.document.mobileTabs == savedMobileTabs)
         try await reopened.start()
-        #expect(reopened.workspace.tabs.map(\.id) == saved.tabs.compactMap(\.id))
+        #expect(reopened.workspace.tabs.map(\.id) == savedMobileTabs.map(\.id))
         #expect(reopened.document.snapshot.pinnedTabFolders == saved.pinnedTabFolders)
-        #expect(reopened.document.snapshot.tabs.contains { $0.id == restoredID })
         #expect(try reopened.store.loadArchivePage().entries.isEmpty)
         try await reopened.stop()
         try await second.stop()
+        try await fixture.complete(account)
+    }
+
+    @Test func mobileV7TabsJoinEveryPhoneAndClosingOneClosesItEverywhere() async throws {
+        let fixture = try await MobileHTTPFixture.load()
+        let account = try fixture.account("mobile-v7-tabs")
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let first = try MobileHTTPProfile(fixture: fixture, device: account.devices[0], directory: directory)
+        let second = try MobileHTTPProfile(fixture: fixture, device: account.devices[1], directory: directory)
+        defer { first.cleanup()
+            second.cleanup()
+        }
+        let page = fixture.baseURL.appendingPathComponent("mobile-test-page").absoluteString
+        let other = fixture.baseURL.appendingPathComponent("mobile-test-second").absoluteString
+        // A tab opened before sign-in joins the account's list when mobile tab sync starts.
+        let early = try #require(first.document.createMobileTab(urlString: page, title: "Mobile sync fixture"))
+        try await first.start(expectedPullProtocolVersion: 7)
+        try await second.start(expectedPullProtocolVersion: 7)
+        #expect(second.document.mobileTab(id: early)?.record.urlString == page)
+        #expect(second.document.mobileTab(id: early)?.record.title == "Mobile sync fixture")
+        #expect(second.workspace.tabs.contains { $0.id == early })
+
+        let later = try #require(second.document.createMobileTab(urlString: other))
+        second.document.flushMobileTabSync()
+        try await second.pull()
+        try await first.pull()
+        #expect(first.document.mobileTab(id: later)?.record.urlString == other)
+        #expect(first.workspace.tabs.contains { $0.id == later })
+
+        // Closing archives the tab on this phone only and closes it on the others.
+        #expect(first.workspace.closeTab(id: early) != nil)
+        try await first.pull()
+        try await second.pull()
+        #expect(second.document.mobileTab(id: early) == nil)
+        #expect(!second.workspace.tabs.contains { $0.id == early })
+        #expect(try first.store.loadArchivePage().entries.map(\.tab.urlString) == [page])
+        #expect(try second.store.loadArchivePage().entries.isEmpty)
+        #expect(first.document.snapshot.tabs.isEmpty && second.document.snapshot.tabs.isEmpty, "No Space was touched")
+
+        // A reopened phone keeps the synced list.
+        let saved = second.document.mobileTabs
+        try await second.stop()
+        let reopened = try MobileHTTPProfile(fixture: fixture, device: account.devices[1], directory: directory)
+        defer { reopened.cleanup() }
+        #expect(reopened.document.mobileTabs == saved)
+        try await reopened.start(expectedPullProtocolVersion: 7)
+        #expect(reopened.document.mobileTab(id: later) != nil && reopened.document.mobileTab(id: early) == nil)
+        try await reopened.stop()
+        try await first.stop()
         try await fixture.complete(account)
     }
 
@@ -396,23 +419,22 @@ import WebKit
             second.cleanup()
         }
         try await first.start()
-        first.workspace.selectTab(id: "browsing")
+        // A Space tab opens as the phone's own tab; moving Spaces never touches it.
+        try #require(first.workspace.openSpaceTab(id: "browsing") != nil)
         try #require(await mobileHTTPEventually {
             first.workspace.selectedTab?.title == "Mobile sync fixture"
                 && first.workspace.selectedTab?.state.isLoading == false
         })
         try await first.drain()
         try await second.start()
-        second.workspace.selectTab(id: "browsing")
+        try #require(second.workspace.openSpaceTab(id: "browsing") != nil)
         try #require(await mobileHTTPEventually {
             second.workspace.selectedTab?.title == "Mobile sync fixture"
                 && second.workspace.selectedTab?.state.isLoading == false
         })
         try await second.drain()
-        let firstIDs = Dictionary(uniqueKeysWithValues: first.workspace.tabs.map { ($0.id, $0.runtimeID) })
-        let secondIDs = Dictionary(uniqueKeysWithValues: second.workspace.tabs.map { ($0.id, $0.runtimeID) })
-        let firstRuntime = try #require(firstIDs["browsing"])
-        let secondRuntime = try #require(secondIDs["browsing"])
+        let firstRuntime = try #require(first.workspace.selectedTab?.runtimeID)
+        let secondRuntime = try #require(second.workspace.selectedTab?.runtimeID)
         let firstPage = try #require(first.engine.webView(for: firstRuntime))
         let secondPage = try #require(second.engine.webView(for: secondRuntime))
         let roots: [BrowserSyncEntityReference] = [
@@ -460,8 +482,8 @@ import WebKit
         #expect(first.document.snapshot.tabs.first { $0.id == "escaped" }?.spaceID == "source")
         for id in ["browsing", "deep", "joining"] {
             #expect(first.document.snapshot.tabs.first { $0.id == id }?.spaceID == "target")
-            #expect(first.workspace.tabs.first { $0.id == id }?.runtimeID == firstIDs[id])
         }
+        #expect(first.workspace.selectedTab?.runtimeID == firstRuntime)
         first.workspace.setSyncActive(true)
         try await first.drain()
         try await second.pull()
@@ -501,10 +523,8 @@ import WebKit
         #expect(Set(first.document.snapshot.pinnedTabFolders?.map(\.id) ?? []) == ["group", "nested"])
         #expect(first.document.snapshot.tabs.first { $0.id == "joining" }?.userTitleOverride == "Joined remotely")
         #expect(first.document.snapshot.tabs.first { $0.id == "deep" }?.pinnedFolderID == "nested")
-        for id in ["browsing", "deep", "joining"] {
-            #expect(first.workspace.tabs.first { $0.id == id }?.runtimeID == firstIDs[id])
-            #expect(second.workspace.tabs.first { $0.id == id }?.runtimeID == secondIDs[id])
-        }
+        #expect(first.workspace.selectedTab?.runtimeID == firstRuntime)
+        #expect(second.workspace.selectedTab?.runtimeID == secondRuntime)
         #expect(first.engine.webView(for: firstRuntime) === firstPage)
         #expect(second.engine.webView(for: secondRuntime) === secondPage)
         #expect(firstPage.url == secondPage.url && firstPage.url?.lastPathComponent == "mobile-test-page")
@@ -527,7 +547,7 @@ import WebKit
         #expect(reopened.document.snapshot == saved)
         try await reopened.start()
         #expect(reopened.document.snapshot == saved)
-        #expect(reopened.workspace.tabs.map(\.id) == saved.tabs.compactMap(\.id))
+        #expect(reopened.workspace.spaceTabs.map(\.id) == saved.tabs.compactMap(\.id))
         let afterReopen = try await fixture.inspect(account)
         #expect(afterReopen.eventCount == deleted.eventCount && afterReopen.receiptCount == deleted.receiptCount)
         try await reopened.stop()
@@ -931,6 +951,20 @@ struct MobileHTTPFixture: Decodable {
         mutation: BrowserSyncExpiryMutation,
         authSession: BrowserAuthSession,
     ) async throws -> BrowserSyncExpiryPushResponse {
+        try await client.push(mutation: mutation, authSession: authSession)
+    }
+
+    func push(
+        mutation: BrowserSyncBoostMutation,
+        authSession: BrowserAuthSession,
+    ) async throws -> BrowserSyncBoostPushResponse {
+        try await client.push(mutation: mutation, authSession: authSession)
+    }
+
+    func push(
+        mutation: BrowserSyncMobileTabMutation,
+        authSession: BrowserAuthSession,
+    ) async throws -> BrowserSyncMobileTabPushResponse {
         try await client.push(mutation: mutation, authSession: authSession)
     }
 }

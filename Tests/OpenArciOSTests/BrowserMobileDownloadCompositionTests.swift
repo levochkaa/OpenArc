@@ -59,7 +59,7 @@ extension BrowserMobileUITests {
             let document = try await BrowserMobileProfileRegistry(directory: directory).document()
             let downloads = try #require(document.downloads)
             #expect(downloads.error != nil && downloads.entries.isEmpty)
-            #expect(document.snapshot.tabs.count == 1 && document.persistenceFailure == nil)
+            #expect(document.snapshot.tabs.isEmpty && document.persistenceFailure == nil)
             #expect(try Data(contentsOf: blockedDirectory) == original)
         }
     }

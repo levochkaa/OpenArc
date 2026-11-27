@@ -208,9 +208,11 @@ extension BrowserMobileUITests {
 
             _ = try await f.load()
             let beforeClose = try await f.openUsingButton()
-            #expect(f.document.removeTab(id: "a"))
+            f.document.closeMobileTab(id: "a", archives: false)
+            #expect(f.document.mobileTab(id: "a") == nil)
             try #require(await mobileFindEventually { !beforeClose.isFindNavigatorVisible })
-            #expect(f.document.removeTab(id: "b"))
+            f.document.closeMobileTab(id: "b", archives: false)
+            #expect(f.document.mobileTab(id: "b") == nil)
             #expect(f.workspace.selectedTab == nil)
             #expect(!f.workspace.presentFindInPage())
             let button = try #require(mobileFindView("browser.findInPage", in: f.root.pageController.view) as? UIButton)
@@ -274,12 +276,15 @@ extension BrowserMobileUITests {
         self.store = try BrowserSQLiteSessionStore(databaseURL: directory.appendingPathComponent("Profile.sqlite"))
         let snapshot = BrowserTabSessionSnapshot(
             spaces: [.init(id: "space", title: "Space", systemImageName: "globe")],
-            tabs: [
-                .init(id: "a", urlString: "about:blank", spaceID: "space"),
-                .init(id: "b", urlString: "about:blank", spaceID: "space"),
-            ],
+            tabs: [.init(id: "space-tab", urlString: "about:blank", spaceID: "space")],
         )
         try store.writeSessionBatch([.init(snapshot: snapshot, origin: .local(syncMove: nil))])
+        try store.saveMobileTabs(["a", "b"].map {
+            .init(
+                id: $0,
+                record: .init(urlString: "about:blank", createdAt: Date(timeIntervalSince1970: 1_800_000_000)),
+            )
+        })
         try store.bindSyncOwner(owner)
         self.document = try BrowserMobileProfileDocument(store: store, initialSnapshot: store.loadSnapshotStrict())
         self.preferences = try #require(UserDefaults(suiteName: preferencesName))

@@ -172,13 +172,13 @@ import Testing
     }
     let first = try #require(documents.first)
     #expect(documents.allSatisfy { $0 === first })
-    #expect(first.snapshot.spaces?.count == 1)
-    #expect(first.snapshot.tabs.count == 1 && first.snapshot.tabs[0].urlString == "about:blank")
-    let space = try #require(first.snapshot.spaces?.first?.id)
-    let created = try #require(first.createTab(urlString: "https://example.com/shared", spaceID: space))
-    #expect(documents.allSatisfy { $0.snapshot.tabs.contains { $0.id == created } })
+    // A fresh profile starts with no Spaces; its windows open a mobile tab.
+    #expect(first.snapshot.spaces?.isEmpty ?? true)
+    #expect(first.snapshot.tabs.isEmpty && first.mobileTabs.isEmpty)
+    let created = try #require(first.createMobileTab(urlString: "https://example.com/shared"))
+    #expect(documents.allSatisfy { $0.mobileTab(id: created) != nil })
     let reopened = try await BrowserMobileProfileRegistry(directory: fixture.directory).document()
-    #expect(reopened.snapshot == first.snapshot)
+    #expect(reopened.snapshot == first.snapshot && reopened.mobileTabs == first.mobileTabs)
 }
 
 // MARK: - MobileRegistryFixture

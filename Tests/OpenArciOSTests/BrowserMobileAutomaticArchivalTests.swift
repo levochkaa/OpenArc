@@ -51,10 +51,10 @@ import UIKit
             }
             let first = try await scenes.connect(sessionID: "first")
             await scenes.waitForPendingOperations()
-            first.workspace.selectTab(id: "a")
+            first.workspace.selectTab(id: "m1")
             scenes.setActive(true, for: first)
             #expect(f.document.setAutomaticTabArchival(lifetime: .twelveHours))
-            #expect(f.document.expirySchedulingState()?.protectedTabIDs == ["a"])
+            #expect(f.document.expirySchedulingState()?.protectedTabIDs == [], "Mobile tabs hold no Space tab back")
             let second = try await scenes.connect(sessionID: "delayed")
             defer { gate.release() }
             try #require(await automaticArchiveEventually { gate.isWaiting })
@@ -65,22 +65,17 @@ import UIKit
             #expect(try f.document.snapshot == before && f.store.loadArchivePage().entries.isEmpty)
             gate.release()
             await scenes.waitForPendingOperations()
-            second.workspace.selectTab(id: "b")
-            #expect(f.document.expirySchedulingState()?.protectedTabIDs == ["a", "b"])
-            let inactiveActivity = f.activity("b")
+            second.workspace.selectTab(id: "m2")
+            #expect(f.document.expirySchedulingState() != nil)
+            let inactiveActivity = f.mobileActivity("m2")
             f.clock.now += 600
             #expect(f.document.refreshExpiryActivity())
-            #expect(f.activity("a") == f.clock.now && f.activity("b") == inactiveActivity)
-            scenes.setActive(true, for: second)
-            scenes.setActive(false, for: second)
-            #expect(f.document.protectedTabIDs == ["a", "b"])
+            #expect(f.mobileActivity("m1") == f.clock.now && f.mobileActivity("m2") == inactiveActivity)
             scenes.disconnect(second)
-            #expect(f.document.expirySchedulingState()?.protectedTabIDs == ["a"])
             scenes.setActive(true, for: second)
-            #expect(
-                f.document.expirySchedulingState()?.protectedTabIDs == ["a"],
-                "Stale connections cannot restore a lease",
-            )
+            f.clock.now += 600
+            #expect(f.document.refreshExpiryActivity())
+            #expect(f.mobileActivity("m2") == inactiveActivity, "Stale connections cannot record activity")
             scenes.disconnect(first)
             #expect(f.document.expirySchedulingState() == nil)
             await scenes.waitForPendingOperations()
@@ -88,7 +83,7 @@ import UIKit
     }
 
     @Test(arguments: [AutomaticArchiveBinding.local, .bound, .paused, .signedOut])
-    func localSweepNeverBypassesDurableBindingAndProtectsUnknownFutureAndSelectedTabs(
+    func localSweepNeverBypassesDurableBindingAndProtectsUnknownAndFutureTabs(
         binding: AutomaticArchiveBinding,
     ) async throws {
         try await withAutomaticArchiveFixture(binding: binding) { f in
@@ -96,53 +91,45 @@ import UIKit
             let secondEngine = AutomaticArchiveEngine()
             let first = await f.workspace("first", engine: firstEngine)
             let second = await f.workspace("second", engine: secondEngine)
-            first.selectTab(id: "a")
-            second.selectTab(id: "b")
+            first.selectTab(id: "m1")
+            second.selectTab(id: "m2")
             first.setSceneAttached(true)
             second.setSceneAttached(true)
             first.setActivityActive(true)
             #expect(f.document.setAutomaticTabArchival(lifetime: .twelveHours))
             let before = try f.rows()
-            let closed = try #require(first.tabs.first { $0.id == "c" }?.runtimeID)
             f.document.performAutomaticTabArchivalCheck()
             let entries = try f.store.loadArchivePage().entries
+            #expect(firstEngine.closed.isEmpty && secondEngine.closed.isEmpty, "Space tabs have no page here")
+            #expect(first.tabs.map(\.id) == ["m1", "m2"], "Mobile tabs never expire")
             if binding == .local {
-                #expect(entries.map(\.tab.id) == ["c"])
-                #expect(!first.tabs.contains { $0.id == "c" } && !second.tabs.contains { $0.id == "c" })
-                #expect(firstEngine.closed == [closed] && secondEngine.closed.count == 1)
-                #expect(Set(f.document.snapshot.tabs.compactMap(\.id)) == [
-                    "a",
-                    "b",
-                    "unknown",
-                    "future",
-                    "pin",
-                    "favorite",
-                ])
+                #expect(Set(entries.compactMap(\.tab.id)) == ["a", "b", "c"])
+                #expect(Set(f.document.snapshot.tabs.compactMap(\.id)) == ["unknown", "future", "pin", "favorite"])
                 let reopened = try BrowserSQLiteSessionStore(databaseURL: f.databaseURL)
                 #expect(try reopened.loadArchivePage().entries == entries)
                 #expect(try reopened.loadSnapshotStrict() == f.document.snapshot)
-                let restored = try #require(first.restoreArchivedTab(id: entries[0].id))
-                #expect(restored != "c" && first.selectedTabID == restored)
+                let entry = try #require(entries.first)
+                let restored = try #require(first.restoreArchivedTab(id: entry.id))
+                #expect(first.selectedTabID == restored)
+                #expect(f.document.mobileTab(id: restored)?.record.urlString == entry.tab.urlString)
                 f.document.performAutomaticTabArchivalCheck()
-                #expect(try f.store.loadArchivePage().entries.isEmpty)
-                #expect(f.document.snapshot.tabs.contains { $0.id == restored })
+                #expect(try f.store.loadArchivePage().entries.count == entries.count - 1)
+                #expect(f.document.mobileTab(id: restored) != nil)
             } else {
-                #expect(entries.isEmpty && firstEngine.closed.isEmpty && secondEngine.closed.isEmpty)
+                #expect(entries.isEmpty)
                 #expect(f.document.snapshot.tabs.contains { $0.id == "c" })
                 #expect(try f.rows() == before, "Bound/Pause/logout cannot enqueue an unconditional local delete")
             }
-            #expect(second.selectedTabID == "b")
+            #expect(second.selectedTabID == "m2")
         }
     }
 
-    @Test func localArchiveSQLFailureStopsSweepAndRetryKeepsOneRecoveryEntry() async throws {
+    @Test func localArchiveSQLFailureStopsSweepAndRetryKeepsOneRecoveryEntryEach() async throws {
         try await withAutomaticArchiveFixture { f in
             let first = await f.workspace("first")
             let second = await f.workspace("second")
-            first.selectTab(id: "a")
             first.setSceneAttached(true)
             second.setSceneAttached(true)
-            second.selectTab(id: "b")
             first.setActivityActive(true)
             #expect(f.document.setAutomaticTabArchival(lifetime: .twelveHours))
             try f
@@ -156,35 +143,29 @@ import UIKit
             f.document.performAutomaticTabArchivalCheck()
             try f.sql("DROP TRIGGER fail_auto_archive")
             #expect(f.document.retryPersistence())
+            f.document.performAutomaticTabArchivalCheck()
             let entries = try f.store.loadArchivePage().entries
-            #expect(entries.count == 1 && entries[0].tab.id == "c")
+            #expect(entries.compactMap(\.tab.id).sorted() == ["a", "b", "c"])
             f.document.performAutomaticTabArchivalCheck()
             #expect(try f.store.loadArchivePage().entries == entries)
             #expect(try f.rows().isEmpty)
         }
     }
 
-    @Test func offStillRefreshesActivityAndFailedActivityBlocksSchedulingUntilRetry() async throws {
+    @Test func offStillRefreshesMobileActivityWithoutWritingSpaces() async throws {
         try await withAutomaticArchiveFixture(binding: .bound) { f in
             let workspace = await f.workspace("first")
-            workspace.selectTab(id: "a")
+            workspace.selectTab(id: "m1")
             workspace.setSceneAttached(true)
             workspace.setActivityActive(true)
             let state = try #require(f.document.expirySchedulingState())
             #expect(state.inactiveForSeconds == nil)
-            f.clock.now += 600
-            try f
-                .sql(
-                    "CREATE TRIGGER fail_auto_activity BEFORE INSERT ON browser_sync_outbox BEGIN SELECT RAISE(ABORT,'injected'); END",
-                )
-            #expect(!f.document.refreshExpiryActivity())
-            #expect(f.document.hasUncommittedWrites && f.document.expirySchedulingState() == nil)
-            try f.sql("DROP TRIGGER fail_auto_activity")
-            #expect(f.document.retryPersistence())
-            #expect(f.document.refreshExpiryActivity())
             let before = try f.rows()
+            f.clock.now += 600
             #expect(f.document.refreshExpiryActivity())
-            #expect(try f.rows() == before, "Same-second refresh adds no duplicate activity mutation")
+            #expect(f.mobileActivity("m1") == f.clock.now)
+            #expect(f.document.refreshExpiryActivity())
+            #expect(try f.rows() == before, "Mobile activity never queues Space writes")
             #expect(try f.store.loadArchivePage().entries.isEmpty)
         }
     }
@@ -302,6 +283,13 @@ enum AutomaticArchiveBinding: CaseIterable { case local, bound, paused, signedOu
                 try store.requireSyncSignIn()
             }
         }
+        // This phone's own tabs, which the sweep never takes.
+        try store.saveMobileTabs(["m1", "m2"].map { id in
+            .init(id: id, record: .init(
+                urlString: "https://autoarchive.example/mobile-" + id, createdAt: Date(timeIntervalSince1970: 0),
+                lastActivityAt: Date(timeIntervalSince1970: 0),
+            ))
+        })
         let clock = clock
         self.document = try BrowserMobileProfileDocument(
             store: store, initialSnapshot: store.loadSnapshotStrict(),
@@ -346,6 +334,10 @@ enum AutomaticArchiveBinding: CaseIterable { case local, bound, paused, signedOu
     }
 
     func activity(_ id: String) -> TimeInterval? { document.snapshot.tabs.first { $0.id == id }?.lastActivityTimestamp }
+    func mobileActivity(_ id: String) -> TimeInterval? {
+        document.mobileTab(id: id)?.record.lastActivityAt?.timeIntervalSince1970
+    }
+
     func rows() throws -> [Data] {
         try DatabaseQueue(path: databaseURL.path).read { try Data.fetchAll(
             $0,

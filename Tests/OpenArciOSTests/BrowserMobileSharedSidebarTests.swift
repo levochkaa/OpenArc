@@ -30,8 +30,10 @@ extension BrowserMobileUITests {
         f.sidebar.tableView(f.table, didSelectRowAt: .init(row: 0, section: 1))
         #expect(f.rowIDs(section: 1).count == 6)
 
+        // A Space tab opens as a mobile tab, and its row shows it is open.
         f.sidebar.tableView(f.table, didSelectRowAt: .init(row: 3, section: 1))
-        #expect(f.workspace.selectedTabID == "nested-child")
+        #expect(f.workspace.selectedTab?.urlString == "https://example.com/nested")
+        #expect(f.document.mobileTab(id: f.workspace.selectedTabID ?? "") != nil)
         #expect(f.engine.selectedID == f.workspace.selectedTab?.runtimeID)
         #expect(f.cells(section: 1)[3].accessoryType == .checkmark)
         #expect(await f.workspace.shutdown())
@@ -58,7 +60,7 @@ extension BrowserMobileUITests {
         #expect(f.rowIDs(section: 0) == ["browser.tab.favorite"])
         #expect(f.rowIDs(section: 1).isEmpty)
         #expect(f.rowIDs(section: 2) == ["browser.tab.other"])
-        #expect(f.workspace.tabs.count == 6)
+        #expect(f.workspace.spaceTabs.count == 6)
         #expect(try f.store.loadSnapshotStrict()?.tabs.count == 6)
         #expect(await f.workspace.shutdown())
     }
@@ -119,7 +121,6 @@ extension BrowserMobileUITests {
         defer { f.cleanup() }
         await f.workspace.restore()
         f.loadSidebar()
-        let runtimeID = try #require(f.workspace.tabs.first { $0.id == "today" }?.runtimeID)
         let pin = try sidebarAction(in: #require(f.sidebar.tabMenu(id: "today")), path: ["Pin"])
         performSidebarAction(pin)
         #expect(f.document.snapshot.tabs.first { $0.id == "today" }?.placement == .spacePinned)
@@ -136,7 +137,6 @@ extension BrowserMobileUITests {
         #expect(f.document.snapshot.tabs.first { $0.id == "today" }?.spaceID == "second")
         #expect(!f.rowIDs(section: 0).contains("browser.tab.today"))
         #expect(!f.rowIDs(section: 2).contains("browser.tab.today"))
-        #expect(f.workspace.tabs.first { $0.id == "today" }?.runtimeID == runtimeID)
         #expect(f.engine.closedIDs.isEmpty)
         #expect(try f.store.loadSnapshotStrict() == f.document.snapshot)
         #expect(await f.workspace.shutdown())
@@ -147,7 +147,6 @@ extension BrowserMobileUITests {
         defer { f.cleanup() }
         await f.workspace.restore()
         f.loadSidebar()
-        let runtimeID = try #require(f.workspace.tabs.first { $0.id == "loose" }?.runtimeID)
         let cell = f.cells(section: 1)[4]
         let swipe = try #require(f.sidebar
             .tableView(
@@ -162,7 +161,6 @@ extension BrowserMobileUITests {
         #expect(!f.document.snapshot.tabs.contains { $0.id == "loose" })
         #expect(f.document.snapshot.tabs.contains { $0.id == "nested-child" })
         #expect(f.document.snapshot.tabs.contains { $0.id == "favorite" })
-        #expect(f.engine.closedIDs.contains(runtimeID))
 
         let menu = try #require(f.sidebar.folderMenu(id: "folder"))
         let destinations = try #require(menu.children.compactMap { $0 as? UIMenu }.first { $0.title == "Move To" })
@@ -210,7 +208,9 @@ extension BrowserMobileUITests {
     let preferences: UserDefaults
     let preferencesName: String
 
-    var sidebar: BrowserMobileTabsViewController { root.tabsController }
+    /// The Spaces picker, where Space tabs, folders and Spaces are edited.
+    lazy var sidebar = BrowserMobileTabsViewController(workspace: workspace)
+
     var table: UITableView { sidebar.tableView }
 
     init() throws {
@@ -272,6 +272,7 @@ extension BrowserMobileUITests {
 
     func loadSidebar() {
         root.loadViewIfNeeded()
+        workspace.onChange = { [weak sidebar] in sidebar?.render() }
         sidebar.loadViewIfNeeded()
         sidebar.render()
     }
