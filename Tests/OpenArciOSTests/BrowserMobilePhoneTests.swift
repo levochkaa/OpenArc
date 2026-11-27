@@ -20,6 +20,22 @@ import UIKit
     #expect(suggestions.items[1].subtitle == nil, "The list of tabs shows titles only")
 }
 
+@Test func mobileSearchSuggestionsListAPageOnceAcrossSchemesWWWAndFragments() {
+    let candidates = [
+        BrowserMobileSearchSuggestions.Candidate(
+            tabID: "a", title: "Flag", urlString: "https://en.wikipedia.org/wiki/Flag#History", location: nil,
+        ),
+        .init(tabID: "b", title: "Flag", urlString: "http://www.en.wikipedia.org/wiki/Flag", location: nil),
+        .init(tabID: "c", title: "Flags", urlString: "https://en.wikipedia.org/wiki/Flags", location: nil),
+        .init(tabID: "d", title: "", urlString: "https://en.wikipedia.org/", location: nil),
+        .init(tabID: "e", title: "", urlString: "https://en.wikipedia.org", location: nil),
+    ]
+    let empty = BrowserMobileSearchSuggestions(query: "", candidates: candidates)
+    #expect(empty.items.map(\.kind) == [.tab("a"), .tab("c"), .tab("d")], "The most recent tab on a page stays")
+    let typed = BrowserMobileSearchSuggestions(query: "flag", candidates: candidates)
+    #expect(typed.items.map(\.kind) == [.search("flag"), .tab("a"), .tab("c")])
+}
+
 @Test func mobileSearchSuggestionsCompleteATypedHostFromOpenTabs() {
     let candidates = [
         BrowserMobileSearchSuggestions.Candidate(

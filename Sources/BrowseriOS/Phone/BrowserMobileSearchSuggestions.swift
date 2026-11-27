@@ -42,8 +42,12 @@ struct BrowserMobileSearchSuggestions: Equatable {
     /// The host the typed text completes to, such as "apple.com" for "app".
     let completion: String?
 
-    init(query rawQuery: String, candidates: [Candidate], searches: [String] = [], limit: Int = 8) {
+    init(query rawQuery: String, candidates allCandidates: [Candidate], searches: [String] = [], limit: Int = 8) {
         let query = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Tabs on one page, even under another scheme, with or without www
+        // or a fragment, are listed once: the first, the most recent.
+        var listedPages = Set<String>()
+        let candidates = allCandidates.filter { listedPages.insert(Self.pageKey($0.urlString)).inserted }
         guard !query.isEmpty else {
             completion = nil
             items = candidates.prefix(limit).map {
@@ -98,6 +102,21 @@ struct BrowserMobileSearchSuggestions: Equatable {
     }
 
     // MARK: Private
+
+    /// The page an address shows: without its scheme, a leading www, a
+    /// fragment or a trailing slash, in lowercase host.
+    private static func pageKey(_ urlString: String) -> String {
+        guard var components = URLComponents(string: urlString), let host = components.host?.lowercased() else {
+            return urlString
+        }
+        components.fragment = nil
+        let path = components.percentEncodedPath.hasSuffix("/")
+            ? String(components.percentEncodedPath.dropLast())
+            : components.percentEncodedPath
+        let query = components.percentEncodedQuery.map { "?" + $0 } ?? ""
+        let port = components.port.map { ":\($0)" } ?? ""
+        return (host.hasPrefix("www.") ? String(host.dropFirst(4)) : host) + port + path + query
+    }
 
     private static func title(_ candidate: Candidate) -> String {
         candidate.title.isEmpty ? host(candidate.urlString) ?? candidate.urlString : candidate.title
