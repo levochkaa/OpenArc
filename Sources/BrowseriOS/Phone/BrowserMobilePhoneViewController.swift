@@ -1424,6 +1424,22 @@ final class BrowserMobilePhoneViewController: UIViewController {
         return CGRect(x: inset, y: view.safeAreaInsets.top + 1, width: width, height: height)
     }
 
+    /// The page behind search follows the panel's top edge at `y`: its search
+    /// card with the panel in place, growing back to the full screen as the
+    /// panel goes down into the bar, and shrinking further about its middle as
+    /// a finger lifts the panel past its place.
+    private func searchCardFrame(panelTop y: CGFloat) -> CGRect {
+        let card = searchCardFrame()
+        let rest = searchPanelTop(keyboardTop: searchKeyboardTop)
+        guard y < rest else {
+            let progress = (y - rest) / max(expandedBarFrame.minY - rest, 1)
+            return interpolate(card, view.bounds, min(progress, 1))
+        }
+        let width = max(card.width - (rest - y) * 0.12, card.width * 0.85)
+        let height = width * card.height / card.width
+        return CGRect(x: card.midX - width / 2, y: card.midY - height / 2, width: width, height: height)
+    }
+
     private func applyPageCard(_ frame: CGRect) {
         let scale = frame.width / view.bounds.width
         pageContainer.bounds = view.bounds
@@ -1467,9 +1483,20 @@ final class BrowserMobilePhoneViewController: UIViewController {
             return
         }
         isSearchKeyboardDismissed = keyboardTop == nil
+        // A panel a finger holds stays under it; let go, it settles on the keyboard.
+        guard !searchPanel.isPullingPanel else { return }
         let bottom = searchKeyboardTop
-        UIView.animate(springDuration: 0.42, bounce: 0.1) {
+        let height = searchPanel.frame.height
+        UIView.animate(springDuration: 0.42, bounce: 0.1, initialSpringVelocity: 0, delay: 0, options: [
+            .allowUserInteraction, .beginFromCurrentState,
+        ]) {
             self.layoutSearchPanel(keyboardTop: bottom)
+            self.holdSearchPanelHeight(height)
+            if self.searchPanel.isFieldExpanded {
+                self.applyPageCard(self.searchCardFrame())
+            }
+        } completion: { _ in
+            self.fitSearchPanelAfterHold()
         }
     }
 
@@ -1483,6 +1510,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
         let top = keyboardTracker.frame.minY
         UIView.performWithoutAnimation {
             layoutSearchPanel(keyboardTop: top < view.bounds.height ? top : view.bounds.height)
+            if let surface { applyPageCard(searchCardFrame(panelTop: surface.frame.minY)) }
         }
     }
 
@@ -1513,6 +1541,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
         UIView.performWithoutAnimation {
             surface.frame = CGRect(x: 0, y: y, width: view.bounds.width, height: view.bounds.height - y)
             fitSearchPanel(top: y)
+            applyPageCard(searchCardFrame(panelTop: y))
         }
     }
 
@@ -1527,6 +1556,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
         ]) {
             self.layoutSearchPanel(keyboardTop: keyboardTop)
             self.holdSearchPanelHeight(height)
+            self.applyPageCard(self.searchCardFrame())
         } completion: { _ in
             self.fitSearchPanelAfterHold()
         }
@@ -2484,7 +2514,7 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
         surface.layer.cornerRadius = 36 * min(progress * 3, 1)
         setSurfaceTint(1 - min(progress * 2, 1), interactive: true)
         // The page recedes into its card as the panel comes up.
-        applyPageCard(interpolate(view.bounds, searchCardFrame(), progress))
+        applyPageCard(searchCardFrame(panelTop: y))
         // The page menu button goes within the first points, the tab stack
         // over a longer way.
         for (ghost, fadeDistance) in zip(surfaceGhosts, [CGFloat(100), 20]) {
@@ -2504,7 +2534,7 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
     @objc private func surfaceDragged(_ gesture: UIPanGestureRecognizer) {
         guard mode == .search || mode == .pageMenu, let surface else { return }
         let isSearch = mode == .search
-        let card = isSearch ? searchCardFrame() : view.bounds
+        let card = searchCardFrame()
         switch gesture.state {
         case .began:
             surfaceDragStartTop = surface.frame.minY
@@ -2523,8 +2553,7 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
             surface.frame = CGRect(x: 0, y: y, width: view.bounds.width, height: view.bounds.height - y)
             if isSearch {
                 fitSearchPanel(top: y)
-                let progress = max(dy, 0) / max(expandedBarFrame.minY - surfaceDragStartTop, 1)
-                applyPageCard(interpolate(card, view.bounds, min(progress, 1)))
+                applyPageCard(searchCardFrame(panelTop: y))
             }
         case .cancelled, .ended, .failed:
             let dy = gesture.translation(in: view).y
