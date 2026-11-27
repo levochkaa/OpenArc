@@ -18,12 +18,11 @@ use crate::js_json;
 use crate::signin::{Identity, create_session, resolve_user};
 use crate::time::js_iso;
 use deadpool_postgres::Pool;
+use openarc_sync_protocol::EXPIRY_RESPONSE_LIMIT;
 use serde_json::{Map, Value, json};
 use std::collections::{BTreeMap, HashSet};
 use tokio_postgres::Row;
 use uuid::Uuid;
-
-const EXPIRY_RESPONSE_LIMIT: usize = 4 * 1024 * 1024;
 
 pub struct SyncService {
     pool: Pool,
@@ -308,7 +307,7 @@ impl SyncService {
         tx.commit().await?;
         Ok(json!({
             "protocolVersion": if is_v6 { 6 } else if is_v5 { 5 } else if is_v4 { 4 } else { 2 },
-            "supportedPushVersions": [2, 3, 4, 5, 6],
+            "supportedPushVersions": openarc_sync_protocol::SUPPORTED_PUSH_VERSIONS,
             "cursor": next_cursor,
             "events": events.iter().map(SyncEvent::to_value).collect::<Vec<_>>(),
         }))

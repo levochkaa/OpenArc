@@ -25,6 +25,7 @@ http-body = "1.1.0"
 http-body-util = "0.1.5"
 lettre = { version = "0.11.23", default-features = false, features = ["builder", "hostname", "pool", "smtp-transport", "tokio1-rustls-tls"] }
 jsonwebtoken = { version = "11.1.0", default-features = false, features = ["rust_crypto", "use_pem"] }
+openarc-sync-protocol = { path = "../Core/openarc-sync-protocol" }
 postgres-types = { version = "0.2.14", features = ["with-chrono-0_4"] }
 regex = "1.13.1"
 reqwest = { version = "0.13.5", default-features = false, features = ["rustls-no-provider", "json", "stream"] }

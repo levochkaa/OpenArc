@@ -3,11 +3,13 @@
 //! original parsing, defaults and receipt digests.
 
 use crate::schema::*;
+use openarc_sync_protocol as protocol;
+use openarc_sync_protocol::{BATCH_LIMIT, EXPIRY_BATCH_LIMIT};
 use serde_json::{Value, json};
 use std::collections::HashSet;
 use std::sync::LazyLock;
 
-pub const PLACEMENTS: &[&str] = &["temporary", "spacePinned", "app"];
+pub const PLACEMENTS: &[&str] = &protocol::PLACEMENTS;
 const OPS: &[&str] = &["upsert", "delete"];
 
 fn entity_id() -> Schema {
@@ -116,7 +118,7 @@ fn legacy_push_request() -> Schema {
     refined(
         object(vec![
             ("deviceID", uuid()),
-            ("changes", array(sync_change(), None, Some(1000))),
+            ("changes", array(sync_change(), None, Some(BATCH_LIMIT))),
             ("protocolVersion", optional(literal(json!(2)))),
             ("mutationID", optional(uuid())),
         ]),
@@ -175,7 +177,7 @@ fn tab_patch_fields() -> Schema {
 }
 
 fn move_ids() -> Schema {
-    refined(array(entity_id(), Some(1), Some(1000)), |value, issues| {
+    refined(array(entity_id(), Some(1), Some(BATCH_LIMIT)), |value, issues| {
         let ids = value.as_array().into_iter().flatten().filter_map(Value::as_str).collect::<Vec<_>>();
         if ids.iter().collect::<HashSet<_>>().len() != ids.len() {
             issues.push(Issue::custom(&[], "Move IDs must be unique"));
@@ -265,7 +267,7 @@ fn semantic_push_request() -> Schema {
         ("deviceID", uuid()),
         ("protocolVersion", literal(json!(3))),
         ("mutationID", uuid()),
-        ("operations", array(sync_operation_v3(), None, Some(1000))),
+        ("operations", array(sync_operation_v3(), None, Some(BATCH_LIMIT))),
     ])
 }
 
@@ -320,7 +322,7 @@ fn typed_anchors() -> Vec<(&'static str, Schema)> {
 }
 
 fn move_items_v4() -> Schema {
-    refined(array(entity_reference(), Some(1), Some(1000)), |value, issues| {
+    refined(array(entity_reference(), Some(1), Some(BATCH_LIMIT)), |value, issues| {
         let keys = value.as_array().into_iter().flatten().map(reference_key).collect::<Vec<_>>();
         if keys.iter().collect::<HashSet<_>>().len() != keys.len() {
             issues.push(Issue::custom(&[], "Move items must be unique"));
@@ -446,13 +448,13 @@ fn push_request_v4() -> Schema {
         ("deviceID", uuid()),
         ("protocolVersion", literal(json!(4))),
         ("mutationID", uuid()),
-        ("operations", array(sync_operation_v4(), None, Some(1000))),
+        ("operations", array(sync_operation_v4(), None, Some(BATCH_LIMIT))),
     ])
 }
 
 // MARK: Version 5 conditional expiry
 
-pub const EXPIRY_INTERVALS: [u64; 5] = [43_200, 86_400, 259_200, 604_800, 2_592_000];
+pub const EXPIRY_INTERVALS: [u64; 5] = protocol::EXPIRY_INTERVALS;
 
 fn expiry_operation() -> Schema {
     strict(vec![
@@ -469,20 +471,18 @@ fn push_request_v5() -> Schema {
         ("deviceID", uuid()),
         ("protocolVersion", literal(json!(5))),
         ("mutationID", uuid()),
-        ("operations", array(expiry_operation(), None, Some(100))),
+        ("operations", array(expiry_operation(), None, Some(EXPIRY_BATCH_LIMIT))),
     ])
 }
 
 // MARK: Version 6 boosts
 
 /// Limits in UTF-16 code units, as the other string fields count them.
-pub const BOOST_HOST_LIMIT: usize = 253;
-pub const BOOST_CODE_LIMIT: usize = 262_144;
-pub const BOOST_SELECTOR_LIMIT: usize = 4096;
-pub const BOOST_SELECTOR_COUNT_LIMIT: usize = 1000;
-pub const BOOST_TITLE_LIMIT: usize = 1024;
-pub const BOOST_FONT_FAMILY_LIMIT: usize = 256;
-const BOOST_TEXT_CASES: &[&str] = &["capitalize", "uppercase", "lowercase"];
+pub use protocol::{
+    BOOST_CODE_LIMIT, BOOST_FONT_FAMILY_LIMIT, BOOST_HOST_LIMIT, BOOST_SELECTOR_COUNT_LIMIT, BOOST_SELECTOR_LIMIT,
+    BOOST_TITLE_LIMIT,
+};
+const BOOST_TEXT_CASES: &[&str] = &protocol::BOOST_TEXT_CASES;
 
 fn number_within(min: f64, max: f64) -> Schema {
     Schema::Number { int: false, min: Some((min, true)), max: Some((max, true)) }
@@ -557,7 +557,7 @@ fn push_request_v6() -> Schema {
         ("deviceID", uuid()),
         ("protocolVersion", literal(json!(6))),
         ("mutationID", uuid()),
-        ("operations", array(boost_operation(), None, Some(1000))),
+        ("operations", array(boost_operation(), None, Some(BATCH_LIMIT))),
     ])
 }
 
@@ -577,7 +577,13 @@ fn pull_fields() -> Vec<(&'static str, Schema)> {
     vec![
         ("deviceID", uuid()),
         ("cursor", with_default(integer(Some((0.0, true)), None), json!(0))),
-        ("limit", with_default(integer(Some((0.0, false)), Some((1000.0, true))), json!(500))),
+        (
+            "limit",
+            with_default(
+                integer(Some((0.0, false)), Some((protocol::PULL_LIMIT as f64, true))),
+                json!(protocol::DEFAULT_PULL_LIMIT),
+            ),
+        ),
     ]
 }
 

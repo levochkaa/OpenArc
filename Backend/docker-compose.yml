@@ -16,7 +16,10 @@ services:
       retries: 10
 
   api:
-    build: .
+    # The server shares Core/openarc-sync-protocol with the apps, so it builds from the repository root.
+    build:
+      context: ..
+      dockerfile: Backend/Dockerfile
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgres://openarc:openarc@postgres:5432/openarc}
       PORT: ${PORT:-8080}

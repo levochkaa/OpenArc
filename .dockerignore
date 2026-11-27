@@ -1,0 +1,10 @@
+# Docker builds run from the repository root (Backend/Dockerfile); send only what the server build reads.
+*
+!Backend/Cargo.toml
+!Backend/Cargo.lock
+!Backend/rustfmt.toml
+!Backend/src
+!Backend/migrations
+!Backend/openapi.yaml
+!Core/openarc-sync-protocol
+Core/openarc-sync-protocol/target

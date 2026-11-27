@@ -12,7 +12,7 @@ use std::io::Read;
 
 /// Sync batches may carry 1000 entities. Bound the inflated JSON as well, so
 /// gzip keeps uploads small without bypassing the limit.
-pub const JSON_LIMIT: usize = 8 * 1024 * 1024;
+pub const JSON_LIMIT: usize = openarc_sync_protocol::JSON_BODY_LIMIT;
 /// Express's default for URL-encoded forms.
 pub const FORM_LIMIT: usize = 100 * 1024;
 

@@ -59,8 +59,10 @@ if [[ -z "$ssh_host" ]]; then
   wait_for_host
 else
   remote_root=".cache/openarc-sync-test/$(basename "$repo_root")"
-  ssh "$ssh_host" "mkdir -p $remote_root/script"
+  ssh "$ssh_host" "mkdir -p $remote_root/script $remote_root/Core"
   rsync -a --delete --exclude node_modules --exclude target --exclude .env "$repo_root/Backend/" "$ssh_host:$remote_root/Backend/"
+  rsync -a --delete --exclude target "$repo_root/Core/openarc-sync-protocol/" \
+    "$ssh_host:$remote_root/Core/openarc-sync-protocol/"
   rsync -a "$repo_root/script/sync_fixture_host.sh" "$repo_root/script/build_sync_server.sh" "$ssh_host:$remote_root/script/"
   remote_directory="$(ssh "$ssh_host" 'mktemp -d /tmp/openarc-swift-sync.XXXXXX')"
   # The host runs until this script closes the pipe on descriptor 3.

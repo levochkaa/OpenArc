@@ -14,9 +14,10 @@ fi
 if command -v cargo >/dev/null 2>&1; then
   cargo build --quiet --bin openarc-sync-server >&2
 elif [[ "$(uname -s)" == Linux ]] && docker info >/dev/null 2>&1; then
-  # The registry cache lives in target/, so the build leaves no Docker volume.
-  docker run --rm --user "$(id -u):$(id -g)" --volume "$PWD:/src" --workdir /src \
-    --env CARGO_HOME=/src/target/cargo-home rust:1-bullseye \
+  # The registry cache lives in target/, so the build leaves no Docker volume. The repository root is
+  # mounted for Core/openarc-sync-protocol, which the server shares with the apps.
+  docker run --rm --user "$(id -u):$(id -g)" --volume "$PWD/..:/src" --workdir /src/Backend \
+    --env CARGO_HOME=/src/Backend/target/cargo-home rust:1-bullseye \
     cargo build --quiet --locked --bin openarc-sync-server >&2
 else
   echo "The sync server needs Rust (cargo); install it with rustup." >&2
