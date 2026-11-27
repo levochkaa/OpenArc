@@ -452,6 +452,7 @@
 "browser.mini_player.play" = "Play";
 "browser.mini_player.pause" = "Pause";
 "browser.mini_player.close" = "Close";
+"browser.mini_player.volume" = "Volume";
 "browser.mini_player.mute_microphone" = "Mute Microphone";
 "browser.mini_player.unmute_microphone" = "Unmute Microphone";
 "browser.mini_player.turn_off_camera" = "Turn Off Camera";

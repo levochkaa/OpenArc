@@ -284,6 +284,42 @@ import Testing
         #expect(play.frame.minY == 38)
     }
 
+    @Test func restingOnTheSpeakerOpensAVolumeRowAboveTheControls() async throws {
+        let player = BrowserMiniPlayerNSView(frame: NSRect(x: 0, y: 0, width: 212, height: 32))
+        player.update(BrowserMiniPlayerItem(
+            tabID: "x", title: "Song", faviconURL: nil, pageURLString: "https://x.example", isPlaying: true,
+            hasPreviousTrack: false, hasNextTrack: true, isMuted: false, volume: 0.5,
+        ))
+        player.setExpanded(true)
+        let mute = try #require(view("browser.mini-player.mute", in: player) as? BrowserNativeChromeButton)
+        let slider = try #require(view("browser.mini-player.volume", in: player))
+        #expect(slider.isHidden)
+
+        // Crossing the speaker opens nothing; resting on it does.
+        mute.onHoverChanged?(true)
+        mute.onHoverChanged?(false)
+        try await Task.sleep(for: .milliseconds(250))
+        #expect(slider.isHidden && player.preferredHeight == 66)
+        mute.onHoverChanged?(true)
+        try await Task.sleep(for: .milliseconds(250))
+        #expect(!slider.isHidden && player.preferredHeight == 98)
+
+        player.frame.size.height = player.preferredHeight
+        player.layoutSubtreeIfNeeded()
+        #expect(mute.frame.minY == 70, "The controls stay at the bottom, under the pointer")
+        #expect(slider.frame == NSRect(x: 10, y: 38, width: 192, height: 24))
+        #expect(slider.accessibilityRole() == .slider)
+        #expect(slider.accessibilityValue() as? Double == 0.5)
+
+        var volumes = [Double]()
+        player.onVolumeChange = { volumes.append($0) }
+        #expect(slider.accessibilityPerformIncrement())
+        #expect(volumes.count == 1 && abs(volumes[0] - 0.6) < 0.001)
+
+        player.setShowsVolume(false)
+        #expect(slider.isHidden && player.preferredHeight == 66)
+    }
+
     // MARK: Private
 
     private func play(

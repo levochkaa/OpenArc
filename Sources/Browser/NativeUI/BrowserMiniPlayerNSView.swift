@@ -7,7 +7,8 @@ import AppKit
 /// Mini player above the Space dock, for media playing in a tab off
 /// screen: the tab's icon (back to the tab), previous track, play or pause,
 /// next track and mute. On hover it grows upward by a row with the title and
-/// Close.
+/// Close, and the speaker under the pointer opens a volume row above the
+/// controls.
 final class BrowserMiniPlayerNSView: NSView {
     // MARK: Internal
 
@@ -32,6 +33,11 @@ final class BrowserMiniPlayerNSView: NSView {
 
     private let volumeSlider = BrowserMiniPlayerVolumeSlider()
     private var showsVolume = false
+    /// How far the volume row has opened, from 0 to 1.
+    private var volumeProgress: CGFloat = 0
+    private let volumeAnimation = BrowserNativeAnimation()
+    /// Opens the volume row once the pointer rests on the speaker.
+    private var volumeHover: DispatchWorkItem?
     private let material = NSVisualEffectView()
     private let outline = BrowserNativeSurface()
     private let titleLabel = BrowserNativeControls.label(
@@ -106,7 +112,7 @@ final class BrowserMiniPlayerNSView: NSView {
     private let expansionAnimation = BrowserNativeAnimation()
 
     var preferredHeight: CGFloat {
-        (showsVolume ? Self.volumeRowHeight : 0) + BrowserChromeLayout.sidebarMiniPlayerHeight
+        Self.volumeRowHeight * volumeProgress + BrowserChromeLayout.sidebarMiniPlayerHeight
             + (BrowserChromeLayout.sidebarMiniPlayerExpandedHeight - BrowserChromeLayout.sidebarMiniPlayerHeight)
             * expansion
     }
@@ -151,7 +157,9 @@ final class BrowserMiniPlayerNSView: NSView {
         ]
         for (button, action) in actions {
             button.onAction = { [weak self] in self?.onAction(action) }
-            button.tooltipPlacement = .aboveCapsule
+            if button !== muteButton {
+                button.tooltipPlacement = .aboveCapsule
+            }
         }
         for view in [
             titleClip,
@@ -169,8 +177,13 @@ final class BrowserMiniPlayerNSView: NSView {
         }
         outline.addSubview(volumeSlider)
         volumeSlider.isHidden = true
+        volumeSlider.alphaValue = 0
         volumeSlider.onChange = { [weak self] in self?.onVolumeChange($0) }
+        volumeSlider.onTrackingEnd = { [weak self] in self?.closeIfPointerLeft(at: $0) }
         muteButton.onLongPress = { [weak self] in self?.setShowsVolume(true) }
+        muteButton.onHoverChanged = { [weak self] hovered in self?.speakerHoverChanged(hovered) }
+        // The volume row opens above the speaker, so its tooltip goes beside it.
+        muteButton.tooltipPlacement = .trailingCapsule
         tabButton.setAccessibilityIdentifier("browser.mini-player.tab")
         previousButton.setAccessibilityIdentifier("browser.mini-player.previous")
         playButton.setAccessibilityIdentifier("browser.mini-player.play-pause")
@@ -207,6 +220,9 @@ final class BrowserMiniPlayerNSView: NSView {
     }
 
     override func mouseExited(with _: NSEvent) {
+        // A drag on the slider keeps the row open until it ends.
+        guard !volumeSlider.isTracking else { return }
+        volumeHover?.cancel()
         setShowsVolume(false)
         setExpanded(false)
     }
@@ -217,8 +233,7 @@ final class BrowserMiniPlayerNSView: NSView {
         outline.frame = bounds
         let size = BrowserChromeLayout.sidebarMiniPlayerButtonSize
         let inset = BrowserChromeLayout.sidebarMiniPlayerInset
-        let volumeRow: CGFloat = showsVolume ? Self.volumeRowHeight : 0
-        let controlsY = bounds.height - volumeRow - (BrowserChromeLayout.sidebarMiniPlayerHeight + size) / 2
+        let controlsY = bounds.height - (BrowserChromeLayout.sidebarMiniPlayerHeight + size) / 2
         // A call's player has its microphone and camera in place of the tracks.
         let controls: [NSView] = item?.call == nil
             ? [tabButton, previousButton, playButton, nextButton, muteButton]
@@ -227,9 +242,12 @@ final class BrowserMiniPlayerNSView: NSView {
         for (index, view) in controls.enumerated() {
             view.frame = NSRect(x: inset + CGFloat(index) * step, y: controlsY, width: size, height: size)
         }
+        // The volume row sits between the title and the controls, which stay
+        // under the pointer as the player grows upward.
         volumeSlider.frame = NSRect(
             x: inset,
-            y: bounds.height - Self.volumeRowHeight,
+            y: bounds.height - BrowserChromeLayout.sidebarMiniPlayerHeight - Self.volumeRowHeight * volumeProgress
+                + (Self.volumeRowHeight - 24) / 2,
             width: bounds.width - inset * 2,
             height: 24,
         )
@@ -316,6 +334,24 @@ final class BrowserMiniPlayerNSView: NSView {
         }
     }
 
+    /// Opens or closes the volume row between the title and the controls.
+    func setShowsVolume(_ shows: Bool) {
+        guard shows != showsVolume else { return }
+        showsVolume = shows
+        volumeSlider.isHidden = false
+        let from = volumeProgress
+        let to: CGFloat = shows ? 1 : 0
+        guard window != nil else {
+            applyVolumeProgress(to, final: true)
+            return
+        }
+        volumeAnimation.start(shows ? .miniPlayerGrow : .miniPlayerShrink) { [weak self] progress in
+            self?.applyVolumeProgress(from + (to - from) * progress, final: false)
+        } completion: { [weak self] in
+            self?.applyVolumeProgress(to, final: true)
+        }
+    }
+
     /// While the player is open, a long title scrolls to its end and back,
     /// resting at both ends.
     private func updateMarquee() {
@@ -347,11 +383,31 @@ final class BrowserMiniPlayerNSView: NSView {
         layer.add(animation, forKey: key)
     }
 
-    /// Holding the speaker opens a level slider under the controls.
-    private func setShowsVolume(_ shows: Bool) {
-        guard shows != showsVolume else { return }
-        showsVolume = shows
-        volumeSlider.isHidden = !shows
+    /// The pointer resting on the speaker opens the volume row; leaving the
+    /// speaker for the rest of the player keeps it open.
+    private func speakerHoverChanged(_ hovered: Bool) {
+        volumeHover?.cancel()
+        volumeHover = nil
+        guard hovered, !showsVolume else { return }
+        let work = DispatchWorkItem { [weak self] in self?.setShowsVolume(true) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: work)
+        volumeHover = work
+    }
+
+    /// A drag on the slider ended at a point in the window; the pointer may
+    /// have left the player on the way.
+    private func closeIfPointerLeft(at point: NSPoint) {
+        guard !bounds.contains(convert(point, from: nil)) else { return }
+        setShowsVolume(false)
+        setExpanded(false)
+    }
+
+    private func applyVolumeProgress(_ value: CGFloat, final: Bool) {
+        volumeProgress = value
+        volumeSlider.alphaValue = value
+        if final {
+            volumeSlider.isHidden = !showsVolume
+        }
         needsLayout = true
         onExpansionChange()
     }
@@ -473,7 +529,34 @@ private final class BrowserMiniPlayerVolumeSlider: NSView {
     override var isFlipped: Bool { true }
 
     var onChange: (Double) -> Void = { _ in }
+    /// A drag on the slider ended, at this point in the window.
+    var onTrackingEnd: (NSPoint) -> Void = { _ in }
     var value = 1.0 { didSet { needsDisplay = true } }
+    private(set) var isTracking = false
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        setAccessibilityElement(true)
+        setAccessibilityRole(.slider)
+        setAccessibilityLabel(BrowserStrings.miniPlayerVolume)
+        setAccessibilityIdentifier("browser.mini-player.volume")
+    }
+
+    @available(*, unavailable) required init?(coder _: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func accessibilityValue() -> Any? { NSNumber(value: value) }
+    override func accessibilityMinValue() -> Any? { NSNumber(value: 0) }
+    override func accessibilityMaxValue() -> Any? { NSNumber(value: 1) }
+
+    override func accessibilityPerformIncrement() -> Bool {
+        change(to: value + 0.1)
+        return true
+    }
+
+    override func accessibilityPerformDecrement() -> Bool {
+        change(to: value - 0.1)
+        return true
+    }
 
     override func draw(_: NSRect) {
         let knob: CGFloat = 18
@@ -499,12 +582,29 @@ private final class BrowserMiniPlayerVolumeSlider: NSView {
         NSGraphicsContext.restoreGraphicsState()
     }
 
-    override func mouseDown(with event: NSEvent) { update(event) }
+    override func mouseDown(with event: NSEvent) {
+        isTracking = true
+        update(event)
+    }
+
     override func mouseDragged(with event: NSEvent) { update(event) }
+
+    override func mouseUp(with event: NSEvent) {
+        update(event)
+        isTracking = false
+        onTrackingEnd(event.locationInWindow)
+    }
 
     private func update(_ event: NSEvent) {
         let x = convert(event.locationInWindow, from: nil).x
-        value = min(max((x - 9) / max(bounds.width - 18, 1), 0), 1)
+        change(to: (x - 9) / max(bounds.width - 18, 1))
+    }
+
+    private func change(to newValue: Double) {
+        let clamped = min(max(newValue, 0), 1)
+        guard clamped != value else { return }
+        value = clamped
         onChange(value)
+        NSAccessibility.post(element: self, notification: .valueChanged)
     }
 }

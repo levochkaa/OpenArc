@@ -382,6 +382,8 @@ final class BrowserNativeChromeButton: NSButton {
     var menuProvider: (() -> NSMenu?)?
     /// A press held past half a second, instead of the action.
     var onLongPress: (() -> Void)?
+    /// The pointer entered or left the button.
+    var onHoverChanged: ((Bool) -> Void)?
     var tooltipPlacement = BrowserTooltipPlacement.belowLeading
     var isSelected = false { didSet { if isSelected != oldValue { needsDisplay = true } } }
     /// A drag rests on the button, as on a Space's dock icon; it shows the
@@ -422,6 +424,7 @@ final class BrowserNativeChromeButton: NSButton {
     private var hovered = false {
         didSet {
             guard oldValue != hovered else { return }
+            onHoverChanged?(hovered)
             let from = hoverProgress
             let to = hovered ? 1.0 : 0.0
             hoverAnimation.start(style.hoverCurve) { [weak self] progress in

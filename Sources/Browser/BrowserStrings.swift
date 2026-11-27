@@ -3064,6 +3064,11 @@ enum BrowserStrings {
         comment: "Mini player button that hides it; the media keeps playing.",
     )
 
+    static let miniPlayerVolume = NSLocalizedString(
+        "browser.mini_player.volume",
+        comment: "Accessibility label of the mini player's volume slider.",
+    )
+
     static let tabUnmuteAction = NSLocalizedString(
         "browser.tab.unmute_action",
         comment: "Context menu and button title that lets a muted tab play sound again.",
