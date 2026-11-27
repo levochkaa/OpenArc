@@ -6,6 +6,7 @@ dist/
 Backend/dist/
 Backend/node_modules/
 Backend/target/
+Core/target/
 Website/.screenshots/
 Website/.reference-screenshots/
 Website/node_modules/

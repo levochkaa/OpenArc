@@ -43,14 +43,6 @@ private let defaultAISuggestionTitle = BrowserStrings.commandBarAskAI(BrowserAIS
     #expect(resolution?.resolvedURLString == "http://localhost:3000")
 }
 
-@Test func resolveTreatsLocalhostAsURLWithoutDomainParser() {
-    let resolver = BrowserNavigationResolver(domainParser: RejectingDomainParser())
-    let resolution = resolver.resolve("localhost:3000")
-
-    #expect(resolution?.kind == .url)
-    #expect(resolution?.resolvedURLString == "http://localhost:3000")
-}
-
 @Test func resolveTreatsBareDomainWithPortAsURL() {
     let resolver = BrowserNavigationResolver()
     let resolution = resolver.resolve("openai.com:443/research")
@@ -670,14 +662,6 @@ private func queryValue(from urlString: String?, name: String) -> String? {
         .queryItems?
         .first(where: { $0.name == name })?
         .value
-}
-
-// MARK: - RejectingDomainParser
-
-private struct RejectingDomainParser: BrowserDomainParsing {
-    func parse(host _: String) -> BrowserParsedHost? {
-        nil
-    }
 }
 
 @MainActor @Test func anEmptyQueryOffersRecentPagesAndKeepsThePlaceholder() {

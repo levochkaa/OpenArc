@@ -314,6 +314,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
     }
 
     let dbQueue: DatabaseQueue
+
     /// Used only inside `dbQueue` writes, which run one at a time.
     private let syncReplayMemo = BrowserSyncOutboxReplayMemo()
 
@@ -705,7 +706,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
             let payload = try Data.fetchOne(db, sql: "SELECT payload FROM browser_sync_baseline WHERE id=1") ?? Data()
             let empty = BrowserSyncExpiryCandidateBatch(baseline: payload, operations: [])
             guard let seconds = state.inactiveForSeconds, now.timeIntervalSince1970.isFinite,
-                  [43200, 86400, 259_200, 604_800, 2_592_000].contains(seconds),
+                  coreIsSyncExpiryInterval(seconds: Int64(seconds)),
                   validatingEntityIDs.map({ $0.count <= 100 }) ?? true,
                   try Int.fetchOne(
                       db,

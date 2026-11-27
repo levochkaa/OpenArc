@@ -692,6 +692,9 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
         subsystem: Bundle.main.bundleIdentifier ?? "com.levochkaa.OpenArc", category: "Sync",
     )
 
+    /// Push versions this client knows, from the sync protocol crate the server shares.
+    private static let knownPushVersions = Set(coreSyncSupportedPushVersions().map(Int.init))
+
     private let localStore: BrowserSQLiteSessionStore
     private let remoteClient: any BrowserSyncRemoteServing
     private let authSessionStore: any BrowserSyncAuthSessionReading
@@ -1338,7 +1341,7 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
                 guard response.protocolVersion == protocolVersion else {
                     throw BrowserRemoteSyncError.unsupportedSyncProtocol
                 }
-                let pageVersions = Set(response.supportedPushVersions ?? [2]).intersection([2, 3, 4, 5, 6])
+                let pageVersions = Set(response.supportedPushVersions ?? [2]).intersection(Self.knownPushVersions)
                 if protocolVersion == 6, !pageVersions.contains(6), pageVersions.isSuperset(of: [4, 5]) {
                     // The server stopped carrying boosts. Spaces and tabs keep
                     // syncing at v5 from the same cursor; boost sync starts again

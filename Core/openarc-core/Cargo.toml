@@ -1,0 +1,20 @@
+[package]
+name = "openarc-core"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "OpenArc's platform-neutral browser logic, shared by every app through UniFFI."
+
+[lib]
+crate-type = ["lib", "staticlib"]
+
+[dependencies]
+idna = "1.1.0"
+openarc-sync-protocol = { path = "../openarc-sync-protocol" }
+psl = "2.1.265"
+uniffi = { workspace = true, features = ["macro-scaffolding"] }
+
+[dev-dependencies]
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"

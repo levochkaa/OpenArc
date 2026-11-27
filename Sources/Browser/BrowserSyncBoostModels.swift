@@ -8,12 +8,14 @@ import Foundation
 /// beside it: after a delete, a new boost for the same host takes a fresh
 /// identity, since the server keeps every deletion forever.
 struct BrowserSyncBoostRecord: Codable, Equatable {
-    /// Limits in UTF-16 code units, as the server counts them.
-    static let hostLimit = 253
-    static let codeLimit = 262_144
-    static let selectorLimit = 4096
-    static let selectorCountLimit = 1000
-    static let titleLimit = 1024
+    static let hostLimit = Int(limits.host)
+    static let codeLimit = Int(limits.code)
+    static let selectorLimit = Int(limits.selector)
+    static let selectorCountLimit = Int(limits.selectorCount)
+    static let titleLimit = Int(limits.title)
+
+    /// Limits in UTF-16 code units, as the server counts them. The sync protocol crate keeps them.
+    private static let limits = coreSyncBoostLimits()
 
     var host: String
     var isEnabled: Bool

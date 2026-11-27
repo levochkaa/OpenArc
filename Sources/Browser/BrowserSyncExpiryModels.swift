@@ -37,7 +37,7 @@ struct BrowserSyncExpiryOperation: Codable, Equatable {
 
     func validate() throws {
         guard !entityID.isEmpty, expectedServerSeq > 0, expectedServerSeq <= 9_007_199_254_740_991,
-              [43200, 86400, 259_200, 604_800, 2_592_000].contains(inactiveForSeconds)
+              coreIsSyncExpiryInterval(seconds: Int64(inactiveForSeconds))
         else { throw BrowserSyncExpiryError.invalidOperation }
     }
 

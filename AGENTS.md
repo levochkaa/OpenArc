@@ -5,6 +5,7 @@
 - Keep business state in models/controllers. Reuse `BrowserChromeColors`, `BrowserChromeLayout`, and the shared AppKit controls in `NativeUI`; see `docs/appkit-ui.md` for the UI architecture and verification workflow.
 - For branded surfaces (the first-run welcome, the About window, the website), read `DESIGN.md` for direction, then the `antislop` skills as the filter, and finish with the antislop Delivery Gate.
 - Use `Objective-C` / `Objective-C++` only where interaction with the browser engine, CEF, or low-level platform APIs requires it.
+- Put logic every platform needs and that touches no UI or system service (address parsing, sync rules, the session model) in the Rust core, `Core/openarc-core`, and call it from Swift through its UniFFI bindings; see `docs/rust-core.md`.
 - When resizing or thumbnailing raster images, use `BrowserImageThumbnailer` instead of ad hoc `NSImage.draw`/`NSImage(data:)` resizing. Prefer its ImageIO/`CGImageSource` data or URL thumbnail path for encoded images.
 - Always write tests with the new `Testing` framework, not `XCTest`, and migrate existing tests when modifying them.
 

@@ -44,49 +44,22 @@ enum BrowserSearchEngine: String, CaseIterable, Codable, Identifiable {
         }
     }
 
-    func searchURLString(for query: String) -> String {
-        var components = URLComponents()
-        components.scheme = "https"
-
+    /// The engine as the Rust core names it.
+    var coreEngine: CoreSearchEngine {
         switch self {
-        case .google:
-            components.host = "www.google.com"
-            components.path = "/search"
-            components.queryItems = [URLQueryItem(name: "q", value: query)]
-        case .microsoftBing:
-            components.host = "www.bing.com"
-            components.path = "/search"
-            components.queryItems = [URLQueryItem(name: "q", value: query)]
-        case .yahoo:
-            components.host = "search.yahoo.com"
-            components.path = "/search"
-            components.queryItems = [URLQueryItem(name: "p", value: query)]
-        case .duckDuckGo:
-            components.host = "duckduckgo.com"
-            components.path = "/"
-            components.queryItems = [URLQueryItem(name: "q", value: query)]
-        case .ecosia:
-            components.host = "www.ecosia.org"
-            components.path = "/search"
-            components.queryItems = [URLQueryItem(name: "q", value: query)]
-        case .brave:
-            components.host = "search.brave.com"
-            components.path = "/search"
-            components.queryItems = [URLQueryItem(name: "q", value: query)]
-        case .qwant:
-            components.host = "www.qwant.com"
-            components.path = "/"
-            components.queryItems = [URLQueryItem(name: "q", value: query)]
-        case .yandex:
-            components.host = "yandex.com"
-            components.path = "/search/"
-            components.queryItems = [URLQueryItem(name: "text", value: query)]
-        case .baidu:
-            components.host = "www.baidu.com"
-            components.path = "/s"
-            components.queryItems = [URLQueryItem(name: "wd", value: query)]
+        case .google: .google
+        case .microsoftBing: .microsoftBing
+        case .yahoo: .yahoo
+        case .duckDuckGo: .duckDuckGo
+        case .ecosia: .ecosia
+        case .brave: .brave
+        case .qwant: .qwant
+        case .yandex: .yandex
+        case .baidu: .baidu
         }
+    }
 
-        return components.url?.absoluteString ?? BrowserSearchEngine.google.searchURLString(for: query)
+    func searchURLString(for query: String) -> String {
+        coreSearchUrl(engine: coreEngine, query: query)
     }
 }

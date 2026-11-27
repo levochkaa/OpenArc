@@ -34,6 +34,8 @@ settings:
     OPENARC_SYNC_BASE_URL: https://api.openarc.su
     OPENARC_SPARKLE_PUBLIC_KEY: K2RmhxJLUxN8YeRS4I7Tz7cYrzkbcZB1axGePxRHflM=
     OTHER_SWIFT_FLAGS: $(inherited) $(OPENARC_DYNAMIC_ACTOR_ISOLATION_FLAGS)
+    # The OpenArcCore template sets it, so targets that keep their own linker flags still link the Rust core.
+    OTHER_LDFLAGS: $(inherited) $(OPENARC_CORE_LDFLAGS)
   configs:
     # Swift 6 traps when main-actor code runs off the main thread behind an
     # API the compiler cannot check, such as an Objective-C callback. Debug
@@ -41,6 +43,20 @@ settings:
     Release:
       OPENARC_DYNAMIC_ACTOR_ISOLATION_FLAGS: -Xfrontend -disable-dynamic-actor-isolation
 targetTemplates:
+  # The Rust core (docs/rust-core.md): its Swift bindings and the static library script/rust_core.sh builds.
+  OpenArcCore:
+    sources:
+      - path: Sources/Core/Generated/openarc_core.swift
+    preBuildScripts:
+      - name: Build Rust Core
+        shell: /bin/bash
+        basedOnDependencyAnalysis: false
+        script: |
+          "$SRCROOT/script/rust_core.sh" xcode
+    settings:
+      base:
+        SWIFT_INCLUDE_PATHS: $(inherited) $(SRCROOT)/Sources/Core/Generated
+        OPENARC_CORE_LDFLAGS: $(SRCROOT)/.build/rust-core/$(PLATFORM_NAME)/libopenarc_core.a
   BrowserSyncCore:
     sources:
       - path: Sources/Browser/BrowserSessionDefaults.swift
@@ -126,9 +142,6 @@ targetTemplates:
           - -framework
           - UserNotifications
 packages:
-  DomainParser:
-    url: https://github.com/Dashlane/SwiftDomainParser.git
-    exactVersion: 1.1.0
   Gzip:
     url: https://github.com/1024jp/GzipSwift.git
     exactVersion: 7.0.0
@@ -214,6 +227,7 @@ targets:
   OpenArc:
     templates:
       - ChromiumTarget
+      - OpenArcCore
     type: application
     platform: macOS
     sources:
@@ -230,7 +244,6 @@ targets:
           destination: plugins
       - target: OpenArcAgentCLI
         embed: false
-      - package: DomainParser
       - package: Gzip
       - package: GRDB
       - package: Sentry
@@ -313,6 +326,7 @@ targets:
   OpenArcTests:
     templates:
       - ChromiumTarget
+      - OpenArcCore
     type: bundle.unit-test
     platform: macOS
     sources:
@@ -351,7 +365,6 @@ targets:
         PRODUCT_NAME: OpenArcTests
         TEST_HOST: ""
     dependencies:
-      - package: DomainParser
       - package: Gzip
       - package: GRDB
       - package: Sentry
@@ -361,6 +374,7 @@ targets:
       - package: ZIPFoundation
   OpenArciOS:
     templates:
+      - OpenArcCore
       - BrowserSyncCore
       - BrowserContentBlockingCore
       - BrowserWebExtensionsCore
@@ -379,7 +393,6 @@ targets:
       - path: Sources/Browser/Resources/filter-list-easyprivacy.txt
       - path: Sources/Browser/Resources/filter-list-easylist-cookie.txt
     dependencies:
-      - package: DomainParser
       - target: OpenArcWidgets
         embed: true
     settings:
@@ -426,9 +439,6 @@ targets:
     platform: iOS
     sources:
       - path: Tests/BrowserMobileTestHost
-    dependencies:
-      # Keep Bundle.module's main-bundle lookup valid in hosted tests.
-      - package: DomainParser
     settings:
       base:
         PRODUCT_NAME: BrowserMobileTestHost
@@ -440,6 +450,7 @@ targets:
         SWIFT_EMIT_LOC_STRINGS: NO
   OpenArciOSTests:
     templates:
+      - OpenArcCore
       - BrowserSyncCore
       - BrowserContentBlockingCore
       - BrowserWebExtensionsCore
@@ -457,7 +468,6 @@ targets:
       - path: Tests/OpenArciOSTests
       - path: Tests/OpenArcTests/BrowserWebExtensionCoreTests.swift
     dependencies:
-      - package: DomainParser
       - target: BrowserMobileTestHost
         link: false
     settings:

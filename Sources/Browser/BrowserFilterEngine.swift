@@ -52,7 +52,12 @@ struct BrowserFilterRequest {
     }
 
     private static func hostRange(in url: [UInt8]) -> Range<Int>? {
-        let schemes: [[UInt8]] = [Array("http://".utf8), Array("https://".utf8), Array("ws://".utf8), Array("wss://".utf8)]
+        let schemes: [[UInt8]] = [
+            Array("http://".utf8),
+            Array("https://".utf8),
+            Array("ws://".utf8),
+            Array("wss://".utf8),
+        ]
         guard let scheme = schemes.first(where: { scheme in
             url.count > scheme.count && zip(scheme, url).allSatisfy { $0 == lowercased($1) }
         }) else { return nil }
@@ -78,7 +83,7 @@ struct BrowserFilterRequest {
 enum BrowserFilterDomains {
     /// The site a host belongs to, such as `example.co.uk` for `ads.example.co.uk`.
     static func registrableDomain(_ host: String) -> String {
-        BrowserPublicSuffixDomainParser.shared.parse(host: host)?.registrableDomain ?? host
+        coreRegistrableDomain(host: host)
     }
 
     /// `ads.example.com` is `example.com` or one of its subdomains.
@@ -86,7 +91,8 @@ enum BrowserFilterDomains {
         guard host.hasSuffix(domain) else { return false }
         let hostBytes = host.utf8
         let extra = hostBytes.count - domain.utf8.count
-        return extra == 0 || (extra > 0 && hostBytes[hostBytes.index(hostBytes.startIndex, offsetBy: extra - 1)] == 0x2E)
+        return extra == 0 ||
+            (extra > 0 && hostBytes[hostBytes.index(hostBytes.startIndex, offsetBy: extra - 1)] == 0x2E)
     }
 
     /// The host and every parent domain, longest first.
@@ -115,6 +121,11 @@ enum BrowserFilterDomains {
 /// A network filter ready to match: its pattern bytes carry a leading `*`
 /// unless anchored and a trailing `*` unless the URL must end there.
 struct BrowserCompiledNetworkFilter {
+    // MARK: Private
+
+    private static let star = UInt8(ascii: "*")
+    private static let separator = UInt8(ascii: "^")
+
     // MARK: Internal
 
     let pattern: [UInt8]
@@ -177,7 +188,9 @@ struct BrowserCompiledNetworkFilter {
             mark += 1
             textIndex = mark
         }
-        while patternIndex < patternCount, pattern[patternIndex] == Self.star || pattern[patternIndex] == Self.separator {
+        while patternIndex < patternCount,
+              pattern[patternIndex] == Self.star || pattern[patternIndex] == Self.separator
+        {
             patternIndex += 1
         }
         return patternIndex == patternCount
@@ -215,11 +228,6 @@ struct BrowserCompiledNetworkFilter {
             return false
         }
     }
-
-    // MARK: Private
-
-    private static let star = UInt8(ascii: "*")
-    private static let separator = UInt8(ascii: "^")
 }
 
 // MARK: - BrowserNetworkFilterSet
@@ -231,6 +239,14 @@ struct BrowserNetworkFilterSet {
     // MARK: Internal
 
     let filters: [BrowserCompiledNetworkFilter]
+
+    // MARK: Private
+
+    private let byHost: [UInt64: [Int32]]
+    private let byToken: [UInt64: [Int32]]
+    private let fallback: [Int32]
+
+    var isEmpty: Bool { filters.isEmpty }
 
     init(_ filters: [BrowserNetworkFilter]) {
         self.filters = filters.map(BrowserCompiledNetworkFilter.init)
@@ -261,47 +277,6 @@ struct BrowserNetworkFilterSet {
         self.byToken = byToken
         self.fallback = fallback
     }
-
-    var isEmpty: Bool { filters.isEmpty }
-
-    func firstMatch(_ request: BrowserFilterRequest) -> BrowserCompiledNetworkFilter? {
-        guard !filters.isEmpty else { return nil }
-        let url = request.lowercasedURL
-        // The host and each parent domain.
-        var start = request.hostRange.lowerBound
-        let end = request.hostRange.upperBound
-        while start < end {
-            if let indices = byHost[Self.hash(url[start..<end])],
-               let filter = firstMatch(indices, request)
-            {
-                return filter
-            }
-            guard let dot = url[start..<end].firstIndex(of: 0x2E) else { break }
-            start = dot + 1
-        }
-        var tokenStart = -1
-        for index in 0...url.count {
-            let isToken = index < url.count && Self.isTokenByte(url[index])
-            if isToken {
-                if tokenStart < 0 { tokenStart = index }
-                continue
-            }
-            guard tokenStart >= 0 else { continue }
-            if let indices = byToken[Self.hash(url[tokenStart..<index])],
-               let filter = firstMatch(indices, request)
-            {
-                return filter
-            }
-            tokenStart = -1
-        }
-        return firstMatch(fallback, request)
-    }
-
-    // MARK: Private
-
-    private let byHost: [UInt64: [Int32]]
-    private let byToken: [UInt64: [Int32]]
-    private let fallback: [Int32]
 
     private static func isTokenByte(_ byte: UInt8) -> Bool {
         (byte >= 0x61 && byte <= 0x7A) || (byte >= 0x30 && byte <= 0x39) || byte == 0x25
@@ -338,6 +313,39 @@ struct BrowserNetworkFilterSet {
         return tokens
     }
 
+    func firstMatch(_ request: BrowserFilterRequest) -> BrowserCompiledNetworkFilter? {
+        guard !filters.isEmpty else { return nil }
+        let url = request.lowercasedURL
+        // The host and each parent domain.
+        var start = request.hostRange.lowerBound
+        let end = request.hostRange.upperBound
+        while start < end {
+            if let indices = byHost[Self.hash(url[start..<end])],
+               let filter = firstMatch(indices, request)
+            {
+                return filter
+            }
+            guard let dot = url[start..<end].firstIndex(of: 0x2E) else { break }
+            start = dot + 1
+        }
+        var tokenStart = -1
+        for index in 0...url.count {
+            let isToken = index < url.count && Self.isTokenByte(url[index])
+            if isToken {
+                if tokenStart < 0 { tokenStart = index }
+                continue
+            }
+            guard tokenStart >= 0 else { continue }
+            if let indices = byToken[Self.hash(url[tokenStart..<index])],
+               let filter = firstMatch(indices, request)
+            {
+                return filter
+            }
+            tokenStart = -1
+        }
+        return firstMatch(fallback, request)
+    }
+
     private func firstMatch(_ indices: [Int32], _ request: BrowserFilterRequest) -> BrowserCompiledNetworkFilter? {
         for index in indices where filters[Int(index)].matches(request) {
             return filters[Int(index)]
@@ -356,6 +364,16 @@ struct BrowserCosmeticIndex {
     static let selectorsPerRule = 20
 
     let genericSelectors: [String]
+
+    // MARK: Private
+
+    private let genericSet: Set<String>
+    private let genericWithExclusions: [BrowserCosmeticFilter]
+    private let specific: [String: [BrowserCosmeticFilter]]
+    private let exceptions: [String: Set<String>]
+    private let genericStyleSheet: String
+
+    var isEmpty: Bool { genericSelectors.isEmpty && genericWithExclusions.isEmpty && specific.isEmpty }
 
     init(_ filters: [BrowserCosmeticFilter]) {
         var globalExceptions = Set<String>()
@@ -390,8 +408,6 @@ struct BrowserCosmeticIndex {
         self.exceptions = exceptions
         self.genericStyleSheet = Self.styleSheet(generic)
     }
-
-    var isEmpty: Bool { genericSelectors.isEmpty && genericWithExclusions.isEmpty && specific.isEmpty }
 
     /// CSS that hides matching elements, one `display: none` rule per few
     /// selectors so an invalid one loses only its neighbors.
@@ -441,14 +457,6 @@ struct BrowserCosmeticIndex {
         }
         return css + Self.styleSheet(own)
     }
-
-    // MARK: Private
-
-    private let genericSet: Set<String>
-    private let genericWithExclusions: [BrowserCosmeticFilter]
-    private let specific: [String: [BrowserCosmeticFilter]]
-    private let exceptions: [String: Set<String>]
-    private let genericStyleSheet: String
 }
 
 // MARK: - BrowserFilterEngine
@@ -459,6 +467,14 @@ final class BrowserFilterEngine: Sendable {
 
     let networkFilterCount: Int
     let cosmeticFilterCount: Int
+
+    // MARK: Private
+
+    private let blocking: BrowserNetworkFilterSet
+    private let important: BrowserNetworkFilterSet
+    private let exceptions: BrowserNetworkFilterSet
+    private let documentExceptions: [([BrowserNetworkFilter.DocumentOption], BrowserCompiledNetworkFilter)]
+    private let cosmetic: BrowserCosmeticIndex
 
     init(_ list: BrowserParsedFilterList) {
         var blocking = [BrowserNetworkFilter]()
@@ -530,19 +546,11 @@ final class BrowserFilterEngine: Sendable {
             includesGeneric: includesGeneric && !options.contains(.genericHiding),
         )
     }
-
-    // MARK: Private
-
-    private let blocking: BrowserNetworkFilterSet
-    private let important: BrowserNetworkFilterSet
-    private let exceptions: BrowserNetworkFilterSet
-    private let documentExceptions: [([BrowserNetworkFilter.DocumentOption], BrowserCompiledNetworkFilter)]
-    private let cosmetic: BrowserCosmeticIndex
 }
 
-extension BrowserCompiledNetworkFilter {
+private extension BrowserCompiledNetworkFilter {
     /// A document exception names the page's own URL and the sites it applies on.
-    fileprivate func matchesDocument(_ request: BrowserFilterRequest) -> Bool {
+    func matchesDocument(_ request: BrowserFilterRequest) -> Bool {
         if !includedDomains.isEmpty || !excludedDomains.isEmpty {
             guard BrowserFilterDomains.matches(
                 host: request.host,

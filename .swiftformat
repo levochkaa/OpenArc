@@ -127,4 +127,4 @@
 --yoda-swap always
 --disable wrapFunctionBodies,wrapPropertyBodies,swiftTestingTestCaseNames,wrapIfStatementBodies
 --enable blockComments,isEmpty,markTypes,noExplicitOwnership,noGuardInTests,organizeDeclarations,preferFinalClasses,preferSwiftTesting,propertyTypes,redundantSendable,sortSwitchCases,unusedPrivateDeclarations,validateTestCases,wrapEnumCases,wrapMultilineConditionalAssignment,wrapMultilineFunctionChains
---exclude Packages/ZIPFoundation/Sources
+--exclude Packages/ZIPFoundation/Sources,Sources/Core/Generated

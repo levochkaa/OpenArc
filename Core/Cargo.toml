@@ -1,0 +1,16 @@
+[workspace]
+resolver = "3"
+members = ["openarc-core", "openarc-sync-protocol", "uniffi-bindgen"]
+
+[workspace.package]
+edition = "2024"
+license = "MIT"
+publish = false
+
+[workspace.dependencies]
+# Default features pull cargo_metadata into the library; only the bindings generator needs them.
+uniffi = { version = "0.33.0", default-features = false }
+
+[profile.release]
+lto = "thin"
+codegen-units = 4

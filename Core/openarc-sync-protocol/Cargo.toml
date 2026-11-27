@@ -1,0 +1,10 @@
+[package]
+name = "openarc-sync-protocol"
+version = "0.1.0"
+# Spelled out rather than inherited from the Core workspace: the server builds this crate without it.
+edition = "2024"
+license = "MIT"
+publish = false
+description = "Constants of OpenArc's sync protocol, shared by the server and every client."
+
+[dependencies]

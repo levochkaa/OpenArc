@@ -1,0 +1,3177 @@
+{
+  "hosts": [
+    {
+      "host": "localhost",
+      "isLocalHost": true,
+      "publicSuffix": null,
+      "registrableDomain": null
+    },
+    {
+      "host": "LOCALHOST",
+      "isLocalHost": true,
+      "publicSuffix": null,
+      "registrableDomain": null
+    },
+    {
+      "host": "foo.localhost",
+      "isLocalHost": true,
+      "publicSuffix": null,
+      "registrableDomain": null
+    },
+    {
+      "host": "foo.LOCALHOST",
+      "isLocalHost": true,
+      "publicSuffix": null,
+      "registrableDomain": null
+    },
+    {
+      "host": "printer.local",
+      "isLocalHost": true,
+      "publicSuffix": null,
+      "registrableDomain": null
+    },
+    {
+      "host": "printer.LOCAL",
+      "isLocalHost": true,
+      "publicSuffix": null,
+      "registrableDomain": null
+    },
+    {
+      "host": "local",
+      "isLocalHost": false,
+      "publicSuffix": null,
+      "registrableDomain": null
+    },
+    {
+      "host": ".local",
+      "isLocalHost": true,
+      "publicSuffix": null,
+      "registrableDomain": null
+    },
+    {
+      "host": "localhost.",
+      "isLocalHost": false,
+      "publicSuffix": null,
+      "registrableDomain": null
+    },
+    {
+      "host": "127.0.0.1",
+      "isLocalHost": true,
+      "publicSuffix": null,
+      "registrableDomain": null
+    },
+    {
+      "host": "127.1",
+      "isLocalHost": true,
+      "publicSuffix": null,
+      "registrableDomain": null
+    },
+    {
+      "host": "0x7f.0.0.1",
+      "isLocalHost": true,
+      "publicSuffix": null,
+      "registrableDomain": null
+    },
+    {
+      "host": "192.168.1.256",
+      "isLocalHost": false,
+      "publicSuffix": null,
+      "registrableDomain": null
+    },
+    {
+      "host": "::1",
+      "isLocalHost": true,
+      "publicSuffix": null,
+      "registrableDomain": null
+    },
+    {
+      "host": "[::1]",
+      "isLocalHost": true,
+      "publicSuffix": null,
+      "registrableDomain": null
+    },
+    {
+      "host": "[::1",
+      "isLocalHost": true,
+      "publicSuffix": null,
+      "registrableDomain": null
+    },
+    {
+      "host": "fe80::1%en0",
+      "isLocalHost": true,
+      "publicSuffix": null,
+      "registrableDomain": null
+    },
+    {
+      "host": "2001:db8::1",
+      "isLocalHost": true,
+      "publicSuffix": null,
+      "registrableDomain": null
+    },
+    {
+      "host": "1.2.3.4.5",
+      "isLocalHost": false,
+      "publicSuffix": null,
+      "registrableDomain": null
+    },
+    {
+      "host": "example.com",
+      "isLocalHost": false,
+      "publicSuffix": "com",
+      "registrableDomain": "example.com"
+    },
+    {
+      "host": "www.example.com",
+      "isLocalHost": false,
+      "publicSuffix": "com",
+      "registrableDomain": "example.com"
+    },
+    {
+      "host": "example.co.uk",
+      "isLocalHost": false,
+      "publicSuffix": "co.uk",
+      "registrableDomain": "example.co.uk"
+    },
+    {
+      "host": "a.b.example.co.uk",
+      "isLocalHost": false,
+      "publicSuffix": "co.uk",
+      "registrableDomain": "example.co.uk"
+    },
+    {
+      "host": "co.uk",
+      "isLocalHost": false,
+      "publicSuffix": "co.uk",
+      "registrableDomain": null
+    },
+    {
+      "host": "uk",
+      "isLocalHost": false,
+      "publicSuffix": null,
+      "registrableDomain": null
+    },
+    {
+      "host": "com",
+      "isLocalHost": false,
+      "publicSuffix": null,
+      "registrableDomain": null
+    },
+    {
+      "host": "github.io",
+      "isLocalHost": false,
+      "publicSuffix": "github.io",
+      "registrableDomain": null
+    },
+    {
+      "host": "foo.github.io",
+      "isLocalHost": false,
+      "publicSuffix": "github.io",
+      "registrableDomain": "foo.github.io"
+    },
+    {
+      "host": "s3.amazonaws.com",
+      "isLocalHost": false,
+      "publicSuffix": "s3.amazonaws.com",
+      "registrableDomain": null
+    },
+    {
+      "host": "foo.blogspot.com",
+      "isLocalHost": false,
+      "publicSuffix": "blogspot.com",
+      "registrableDomain": "foo.blogspot.com"
+    },
+    {
+      "host": "foo.notatld",
+      "isLocalHost": false,
+      "publicSuffix": null,
+      "registrableDomain": null
+    },
+    {
+      "host": "notatld",
+      "isLocalHost": false,
+      "publicSuffix": null,
+      "registrableDomain": null
+    },
+    {
+      "host": "xn--d1acpjx3f.xn--p1ai",
+      "isLocalHost": false,
+      "publicSuffix": "xn--p1ai",
+      "registrableDomain": "xn--d1acpjx3f.xn--p1ai"
+    },
+    {
+      "host": "яндекс.рф",
+      "isLocalHost": false,
+      "publicSuffix": "рф",
+      "registrableDomain": "яндекс.рф"
+    },
+    {
+      "host": "EXAMPLE.COM",
+      "isLocalHost": false,
+      "publicSuffix": "com",
+      "registrableDomain": "example.com"
+    },
+    {
+      "host": "Example.Co.Uk",
+      "isLocalHost": false,
+      "publicSuffix": "co.uk",
+      "registrableDomain": "example.co.uk"
+    },
+    {
+      "host": "foo.bar",
+      "isLocalHost": false,
+      "publicSuffix": "bar",
+      "registrableDomain": "foo.bar"
+    },
+    {
+      "host": "test.dev",
+      "isLocalHost": false,
+      "publicSuffix": "dev",
+      "registrableDomain": "test.dev"
+    },
+    {
+      "host": "a.b.c.d.e.com",
+      "isLocalHost": false,
+      "publicSuffix": "com",
+      "registrableDomain": "e.com"
+    },
+    {
+      "host": "example.com.",
+      "isLocalHost": false,
+      "publicSuffix": "com",
+      "registrableDomain": "example.com"
+    },
+    {
+      "host": "",
+      "isLocalHost": false,
+      "publicSuffix": null,
+      "registrableDomain": null
+    },
+    {
+      "host": "foo..com",
+      "isLocalHost": false,
+      "publicSuffix": null,
+      "registrableDomain": null
+    },
+    {
+      "host": "router.lan",
+      "isLocalHost": false,
+      "publicSuffix": null,
+      "registrableDomain": null
+    },
+    {
+      "host": "nas.home.arpa",
+      "isLocalHost": false,
+      "publicSuffix": "home.arpa",
+      "registrableDomain": "nas.home.arpa"
+    },
+    {
+      "host": "my.server.internal",
+      "isLocalHost": false,
+      "publicSuffix": null,
+      "registrableDomain": null
+    },
+    {
+      "host": "appspot.com",
+      "isLocalHost": false,
+      "publicSuffix": "appspot.com",
+      "registrableDomain": null
+    },
+    {
+      "host": "bar.appspot.com",
+      "isLocalHost": false,
+      "publicSuffix": "appspot.com",
+      "registrableDomain": "bar.appspot.com"
+    },
+    {
+      "host": "www.ck",
+      "isLocalHost": false,
+      "publicSuffix": "ck",
+      "registrableDomain": "www.ck"
+    },
+    {
+      "host": "foo.ck",
+      "isLocalHost": false,
+      "publicSuffix": "foo.ck",
+      "registrableDomain": null
+    },
+    {
+      "host": "foo.kawasaki.jp",
+      "isLocalHost": false,
+      "publicSuffix": "foo.kawasaki.jp",
+      "registrableDomain": null
+    },
+    {
+      "host": "city.kawasaki.jp",
+      "isLocalHost": false,
+      "publicSuffix": "kawasaki.jp",
+      "registrableDomain": "city.kawasaki.jp"
+    },
+    {
+      "host": "foo.bd",
+      "isLocalHost": false,
+      "publicSuffix": "bd",
+      "registrableDomain": "foo.bd"
+    }
+  ],
+  "resolve": [
+    {
+      "displayText": "https://openai.com/research?q=browser",
+      "input": "https://openai.com/research?q=browser",
+      "kind": "url",
+      "resolvedURLString": "https://openai.com/research?q=browser"
+    },
+    {
+      "displayText": "openai.com/research",
+      "input": "openai.com/research",
+      "kind": "url",
+      "resolvedURLString": "https://openai.com/research"
+    },
+    {
+      "displayText": "docs.google.co.uk",
+      "input": "docs.google.co.uk",
+      "kind": "url",
+      "resolvedURLString": "https://docs.google.co.uk"
+    },
+    {
+      "displayText": "localhost:3000",
+      "input": "localhost:3000",
+      "kind": "url",
+      "resolvedURLString": "http://localhost:3000"
+    },
+    {
+      "displayText": "openai.com:443/research",
+      "input": "openai.com:443/research",
+      "kind": "url",
+      "resolvedURLString": "https://openai.com:443/research"
+    },
+    {
+      "displayText": "openarc://settings",
+      "input": "openarc://settings",
+      "kind": "url",
+      "resolvedURLString": "openarc://settings/"
+    },
+    {
+      "displayText": "openarc://extensions/?id=abc",
+      "input": "openarc://extensions/?id=abc",
+      "kind": "url",
+      "resolvedURLString": "openarc://extensions/?id=abc"
+    },
+    {
+      "displayText": "chrome://settings",
+      "input": "chrome://settings",
+      "kind": "url",
+      "resolvedURLString": "openarc://settings/"
+    },
+    {
+      "displayText": "arc://bookmarks",
+      "input": "arc://bookmarks",
+      "kind": "url",
+      "resolvedURLString": "openarc://bookmarks/"
+    },
+    {
+      "displayText": "dia://password-manager/passwords",
+      "input": "dia://password-manager/passwords",
+      "kind": "url",
+      "resolvedURLString": "openarc://password-manager/passwords"
+    },
+    {
+      "displayText": "about:bookmarks",
+      "input": "about:bookmarks",
+      "kind": "url",
+      "resolvedURLString": "openarc://bookmarks/"
+    },
+    {
+      "displayText": "about:settings",
+      "input": "about:settings",
+      "kind": "url",
+      "resolvedURLString": "openarc://settings/"
+    },
+    {
+      "displayText": "ABOUT:Settings",
+      "input": "ABOUT:Settings",
+      "kind": "url",
+      "resolvedURLString": "openarc://settings/"
+    },
+    {
+      "displayText": "Google.",
+      "input": "Google.",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=Google."
+    },
+    {
+      "displayText": "Google.c",
+      "input": "Google.c",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=Google.c"
+    },
+    {
+      "displayText": "Google.co",
+      "input": "Google.co",
+      "kind": "url",
+      "resolvedURLString": "https://Google.co"
+    },
+    {
+      "displayText": "https://Google.c",
+      "input": "https://Google.c",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=https://Google.c"
+    },
+    {
+      "displayText": "127.0.0.1:9222",
+      "input": "127.0.0.1:9222",
+      "kind": "url",
+      "resolvedURLString": "http://127.0.0.1:9222"
+    },
+    {
+      "displayText": "command bar",
+      "input": "command bar",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=command%20bar"
+    },
+    {
+      "displayText": null,
+      "input": "   ",
+      "kind": null,
+      "resolvedURLString": null
+    },
+    {
+      "displayText": "app.localhost:5173",
+      "input": "app.localhost:5173",
+      "kind": "url",
+      "resolvedURLString": "http://app.localhost:5173"
+    },
+    {
+      "displayText": "printer.local",
+      "input": "printer.local",
+      "kind": "url",
+      "resolvedURLString": "http://printer.local"
+    },
+    {
+      "displayText": "192.168.1.10/admin",
+      "input": "192.168.1.10/admin",
+      "kind": "url",
+      "resolvedURLString": "http://192.168.1.10/admin"
+    },
+    {
+      "displayText": "[::1]:8080",
+      "input": "[::1]:8080",
+      "kind": "url",
+      "resolvedURLString": "http://[::1]:8080"
+    },
+    {
+      "displayText": "example.com",
+      "input": "example.com",
+      "kind": "url",
+      "resolvedURLString": "https://example.com"
+    },
+    {
+      "displayText": "https://localhost:3000",
+      "input": "https://localhost:3000",
+      "kind": "url",
+      "resolvedURLString": "https://localhost:3000"
+    },
+    {
+      "displayText": "open arc",
+      "input": "open arc",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=open%20arc"
+    },
+    {
+      "displayText": "example.com/path with space",
+      "input": "example.com/path with space",
+      "kind": "url",
+      "resolvedURLString": "https://example.com/path%20with%20space"
+    },
+    {
+      "displayText": "example.com/путь",
+      "input": "example.com/путь",
+      "kind": "url",
+      "resolvedURLString": "https://example.com/%D0%BF%D1%83%D1%82%D1%8C"
+    },
+    {
+      "displayText": "яндекс.рф",
+      "input": "яндекс.рф",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=%D1%8F%D0%BD%D0%B4%D0%B5%D0%BA%D1%81.%D1%80%D1%84"
+    },
+    {
+      "displayText": "https://яндекс.рф/поиск?q=тест",
+      "input": "https://яндекс.рф/поиск?q=тест",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=https://%D1%8F%D0%BD%D0%B4%D0%B5%D0%BA%D1%81.%D1%80%D1%84/%D0%BF%D0%BE%D0%B8%D1%81%D0%BA?q%3D%D1%82%D0%B5%D1%81%D1%82"
+    },
+    {
+      "displayText": "http://例子.测试",
+      "input": "http://例子.测试",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=http://%E4%BE%8B%E5%AD%90.%E6%B5%8B%E8%AF%95"
+    },
+    {
+      "displayText": "пример.рф",
+      "input": "пример.рф",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=%D0%BF%D1%80%D0%B8%D0%BC%D0%B5%D1%80.%D1%80%D1%84"
+    },
+    {
+      "displayText": "mail.ru",
+      "input": "mail.ru",
+      "kind": "url",
+      "resolvedURLString": "https://mail.ru"
+    },
+    {
+      "displayText": "foo.notatld",
+      "input": "foo.notatld",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=foo.notatld"
+    },
+    {
+      "displayText": "foo.bar.baz",
+      "input": "foo.bar.baz",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=foo.bar.baz"
+    },
+    {
+      "displayText": "github.com/openarc/openarc/issues?q=is%3Aopen",
+      "input": "github.com/openarc/openarc/issues?q=is%3Aopen",
+      "kind": "url",
+      "resolvedURLString": "https://github.com/openarc/openarc/issues?q=is%3Aopen"
+    },
+    {
+      "displayText": "github.com/a?q=a b#frag ment",
+      "input": "github.com/a?q=a b#frag ment",
+      "kind": "url",
+      "resolvedURLString": "https://github.com/a?q=a%20b#frag%20ment"
+    },
+    {
+      "displayText": "example.com#top",
+      "input": "example.com#top",
+      "kind": "url",
+      "resolvedURLString": "https://example.com#top"
+    },
+    {
+      "displayText": "example.com?x=1",
+      "input": "example.com?x=1",
+      "kind": "url",
+      "resolvedURLString": "https://example.com?x=1"
+    },
+    {
+      "displayText": "user@example.com",
+      "input": "user@example.com",
+      "kind": "url",
+      "resolvedURLString": "https://user@example.com"
+    },
+    {
+      "displayText": "user:pass@example.com/path",
+      "input": "user:pass@example.com/path",
+      "kind": "url",
+      "resolvedURLString": "user:pass@example.com/path"
+    },
+    {
+      "displayText": "https://user:pass@example.com:8080/p?q#f",
+      "input": "https://user:pass@example.com:8080/p?q#f",
+      "kind": "url",
+      "resolvedURLString": "https://user:pass@example.com:8080/p?q#f"
+    },
+    {
+      "displayText": "http://example.com:abc",
+      "input": "http://example.com:abc",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=http://example.com:abc"
+    },
+    {
+      "displayText": "example.com:abc",
+      "input": "example.com:abc",
+      "kind": "url",
+      "resolvedURLString": "example.com:abc"
+    },
+    {
+      "displayText": "example.com:",
+      "input": "example.com:",
+      "kind": "url",
+      "resolvedURLString": "example.com:"
+    },
+    {
+      "displayText": "example.com:80",
+      "input": "example.com:80",
+      "kind": "url",
+      "resolvedURLString": "https://example.com:80"
+    },
+    {
+      "displayText": "localhost",
+      "input": "localhost",
+      "kind": "url",
+      "resolvedURLString": "http://localhost"
+    },
+    {
+      "displayText": "LOCALHOST:8080",
+      "input": "LOCALHOST:8080",
+      "kind": "url",
+      "resolvedURLString": "http://LOCALHOST:8080"
+    },
+    {
+      "displayText": "localhost:3000/api/v1",
+      "input": "localhost:3000/api/v1",
+      "kind": "url",
+      "resolvedURLString": "http://localhost:3000/api/v1"
+    },
+    {
+      "displayText": "http://localhost",
+      "input": "http://localhost",
+      "kind": "url",
+      "resolvedURLString": "http://localhost"
+    },
+    {
+      "displayText": "http:example.com",
+      "input": "http:example.com",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=http:example.com"
+    },
+    {
+      "displayText": "https:/example.com",
+      "input": "https:/example.com",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=https:/example.com"
+    },
+    {
+      "displayText": "https:///example.com",
+      "input": "https:///example.com",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=https:///example.com"
+    },
+    {
+      "displayText": "https://",
+      "input": "https://",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=https://"
+    },
+    {
+      "displayText": "http://",
+      "input": "http://",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=http://"
+    },
+    {
+      "displayText": "ftp://ftp.example.com/file.txt",
+      "input": "ftp://ftp.example.com/file.txt",
+      "kind": "url",
+      "resolvedURLString": "ftp://ftp.example.com/file.txt"
+    },
+    {
+      "displayText": "file:///Users/lev/file.txt",
+      "input": "file:///Users/lev/file.txt",
+      "kind": "url",
+      "resolvedURLString": "file:///Users/lev/file.txt"
+    },
+    {
+      "displayText": "mailto:someone@example.com",
+      "input": "mailto:someone@example.com",
+      "kind": "url",
+      "resolvedURLString": "mailto:someone@example.com"
+    },
+    {
+      "displayText": "tel:+1234567890",
+      "input": "tel:+1234567890",
+      "kind": "url",
+      "resolvedURLString": "tel:+1234567890"
+    },
+    {
+      "displayText": "javascript:alert(1)",
+      "input": "javascript:alert(1)",
+      "kind": "url",
+      "resolvedURLString": "javascript:alert(1)"
+    },
+    {
+      "displayText": "data:text/html,<h1>hi</h1>",
+      "input": "data:text/html,<h1>hi</h1>",
+      "kind": "url",
+      "resolvedURLString": "data:text/html,%3Ch1%3Ehi%3C/h1%3E"
+    },
+    {
+      "displayText": "view-source:https://example.com",
+      "input": "view-source:https://example.com",
+      "kind": "url",
+      "resolvedURLString": "view-source:https://example.com"
+    },
+    {
+      "displayText": "chrome-extension://abcdef/popup.html",
+      "input": "chrome-extension://abcdef/popup.html",
+      "kind": "url",
+      "resolvedURLString": "chrome-extension://abcdef/popup.html"
+    },
+    {
+      "displayText": "about:blank",
+      "input": "about:blank",
+      "kind": "url",
+      "resolvedURLString": "about:blank"
+    },
+    {
+      "displayText": "about:config",
+      "input": "about:config",
+      "kind": "url",
+      "resolvedURLString": "about:config"
+    },
+    {
+      "displayText": "openarc://passwords",
+      "input": "openarc://passwords",
+      "kind": "url",
+      "resolvedURLString": "openarc://password-manager/passwords"
+    },
+    {
+      "displayText": "openarc://settings/passwords",
+      "input": "openarc://settings/passwords",
+      "kind": "url",
+      "resolvedURLString": "openarc://password-manager/passwords"
+    },
+    {
+      "displayText": "openarc://settings/passwords/",
+      "input": "openarc://settings/passwords/",
+      "kind": "url",
+      "resolvedURLString": "openarc://password-manager/passwords"
+    },
+    {
+      "displayText": "openarc://easel/abc",
+      "input": "openarc://easel/abc",
+      "kind": "url",
+      "resolvedURLString": "openarc://easel/abc"
+    },
+    {
+      "displayText": "openarc://notes/123",
+      "input": "openarc://notes/123",
+      "kind": "url",
+      "resolvedURLString": "openarc://notes/123"
+    },
+    {
+      "displayText": "openarc://credits",
+      "input": "openarc://credits",
+      "kind": "url",
+      "resolvedURLString": "openarc://credits"
+    },
+    {
+      "displayText": "chrome://credits",
+      "input": "chrome://credits",
+      "kind": "url",
+      "resolvedURLString": "chrome://credits"
+    },
+    {
+      "displayText": "openarc://history",
+      "input": "openarc://history",
+      "kind": "url",
+      "resolvedURLString": "openarc://history"
+    },
+    {
+      "displayText": "OPENARC://Settings/Autofill",
+      "input": "OPENARC://Settings/Autofill",
+      "kind": "url",
+      "resolvedURLString": "openarc://settings/Autofill"
+    },
+    {
+      "displayText": "chrome://extensions/shortcuts",
+      "input": "chrome://extensions/shortcuts",
+      "kind": "url",
+      "resolvedURLString": "openarc://extensions/shortcuts"
+    },
+    {
+      "displayText": "arc://settings/privacy?x=1#y",
+      "input": "arc://settings/privacy?x=1#y",
+      "kind": "url",
+      "resolvedURLString": "openarc://settings/privacy?x=1#y"
+    },
+    {
+      "displayText": "dia://history",
+      "input": "dia://history",
+      "kind": "url",
+      "resolvedURLString": "openarc://history"
+    },
+    {
+      "displayText": "what is rust",
+      "input": "what is rust",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=what%20is%20rust"
+    },
+    {
+      "displayText": "rust lang",
+      "input": "rust lang",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=rust%20lang"
+    },
+    {
+      "displayText": "c++ & go?",
+      "input": "c++ & go?",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=c++%20%26%20go?"
+    },
+    {
+      "displayText": "1+1",
+      "input": "1+1",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=1+1"
+    },
+    {
+      "displayText": "2*3=6",
+      "input": "2*3=6",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=2*3%3D6"
+    },
+    {
+      "displayText": "100%",
+      "input": "100%",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=100%25"
+    },
+    {
+      "displayText": "50% off",
+      "input": "50% off",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=50%25%20off"
+    },
+    {
+      "displayText": "#hashtag",
+      "input": "#hashtag",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=%23hashtag"
+    },
+    {
+      "displayText": "?question",
+      "input": "?question",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=?question"
+    },
+    {
+      "displayText": "/path/only",
+      "input": "/path/only",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=/path/only"
+    },
+    {
+      "displayText": "./relative",
+      "input": "./relative",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=./relative"
+    },
+    {
+      "displayText": "..",
+      "input": "..",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=.."
+    },
+    {
+      "displayText": ".",
+      "input": ".",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=."
+    },
+    {
+      "displayText": "...",
+      "input": "...",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=..."
+    },
+    {
+      "displayText": "a.b",
+      "input": "a.b",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=a.b"
+    },
+    {
+      "displayText": "a.b.c",
+      "input": "a.b.c",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=a.b.c"
+    },
+    {
+      "displayText": "xn--d1acpjx3f.xn--p1ai",
+      "input": "xn--d1acpjx3f.xn--p1ai",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=xn--d1acpjx3f.xn--p1ai"
+    },
+    {
+      "displayText": "www.example.com",
+      "input": "www.example.com",
+      "kind": "url",
+      "resolvedURLString": "https://www.example.com"
+    },
+    {
+      "displayText": "WWW.EXAMPLE.COM/Path",
+      "input": "WWW.EXAMPLE.COM/Path",
+      "kind": "url",
+      "resolvedURLString": "https://WWW.EXAMPLE.COM/Path"
+    },
+    {
+      "displayText": "example.co.uk",
+      "input": "example.co.uk",
+      "kind": "url",
+      "resolvedURLString": "https://example.co.uk"
+    },
+    {
+      "displayText": "co.uk",
+      "input": "co.uk",
+      "kind": "url",
+      "resolvedURLString": "https://co.uk"
+    },
+    {
+      "displayText": "uk",
+      "input": "uk",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=uk"
+    },
+    {
+      "displayText": "com",
+      "input": "com",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=com"
+    },
+    {
+      "displayText": ".com",
+      "input": ".com",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=.com"
+    },
+    {
+      "displayText": "example..com",
+      "input": "example..com",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=example..com"
+    },
+    {
+      "displayText": "-example.com",
+      "input": "-example.com",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=-example.com"
+    },
+    {
+      "displayText": "example-.com",
+      "input": "example-.com",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=example-.com"
+    },
+    {
+      "displayText": "ex_ample.com",
+      "input": "ex_ample.com",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=ex_ample.com"
+    },
+    {
+      "displayText": "exa mple.com",
+      "input": "exa mple.com",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=exa%20mple.com"
+    },
+    {
+      "displayText": "example.com.",
+      "input": "example.com.",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=example.com."
+    },
+    {
+      "displayText": "192.168.0.1",
+      "input": "192.168.0.1",
+      "kind": "url",
+      "resolvedURLString": "http://192.168.0.1"
+    },
+    {
+      "displayText": "192.168.0.256",
+      "input": "192.168.0.256",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=192.168.0.256"
+    },
+    {
+      "displayText": "1.2.3",
+      "input": "1.2.3",
+      "kind": "url",
+      "resolvedURLString": "http://1.2.3"
+    },
+    {
+      "displayText": "10.0.0.1:8080/x",
+      "input": "10.0.0.1:8080/x",
+      "kind": "url",
+      "resolvedURLString": "http://10.0.0.1:8080/x"
+    },
+    {
+      "displayText": "256.256.256.256",
+      "input": "256.256.256.256",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=256.256.256.256"
+    },
+    {
+      "displayText": "::1",
+      "input": "::1",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=::1"
+    },
+    {
+      "displayText": "[::1]",
+      "input": "[::1]",
+      "kind": "url",
+      "resolvedURLString": "http://[::1]"
+    },
+    {
+      "displayText": "[fe80::1%en0]",
+      "input": "[fe80::1%en0]",
+      "kind": "url",
+      "resolvedURLString": "http://[fe80::1%25en0]"
+    },
+    {
+      "displayText": "[fe80::1%25en0]:80",
+      "input": "[fe80::1%25en0]:80",
+      "kind": "url",
+      "resolvedURLString": "http://[fe80::1%25en0]:80"
+    },
+    {
+      "displayText": "http://[::1]:3000/path",
+      "input": "http://[::1]:3000/path",
+      "kind": "url",
+      "resolvedURLString": "http://[::1]:3000/path"
+    },
+    {
+      "displayText": "2001:db8::1",
+      "input": "2001:db8::1",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=2001:db8::1"
+    },
+    {
+      "displayText": "http://[2001:db8::1]/",
+      "input": "http://[2001:db8::1]/",
+      "kind": "url",
+      "resolvedURLString": "http://[2001:db8::1]/"
+    },
+    {
+      "displayText": "user@localhost",
+      "input": "user@localhost",
+      "kind": "url",
+      "resolvedURLString": "http://user@localhost"
+    },
+    {
+      "displayText": "localhost:3000:4000",
+      "input": "localhost:3000:4000",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=localhost:3000:4000"
+    },
+    {
+      "displayText": "a:b",
+      "input": "a:b",
+      "kind": "url",
+      "resolvedURLString": "a:b"
+    },
+    {
+      "displayText": "a:1",
+      "input": "a:1",
+      "kind": "url",
+      "resolvedURLString": "a:1"
+    },
+    {
+      "displayText": "foo:123",
+      "input": "foo:123",
+      "kind": "url",
+      "resolvedURLString": "foo:123"
+    },
+    {
+      "displayText": "foo.com:123",
+      "input": "foo.com:123",
+      "kind": "url",
+      "resolvedURLString": "https://foo.com:123"
+    },
+    {
+      "displayText": "weather tomorrow",
+      "input": "weather tomorrow",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=weather%20tomorrow"
+    },
+    {
+      "displayText": "\"quoted search\"",
+      "input": "\"quoted search\"",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=%22quoted%20search%22"
+    },
+    {
+      "displayText": "emoji 🚀",
+      "input": "emoji 🚀",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=emoji%20%F0%9F%9A%80"
+    },
+    {
+      "displayText": "🚀.com",
+      "input": "🚀.com",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=%F0%9F%9A%80.com"
+    },
+    {
+      "displayText": "https://example.com/🚀",
+      "input": "https://example.com/🚀",
+      "kind": "url",
+      "resolvedURLString": "https://example.com/%F0%9F%9A%80"
+    },
+    {
+      "displayText": "example.com/a%20b",
+      "input": "example.com/a%20b",
+      "kind": "url",
+      "resolvedURLString": "https://example.com/a%20b"
+    },
+    {
+      "displayText": "example.com/a%zz",
+      "input": "example.com/a%zz",
+      "kind": "url",
+      "resolvedURLString": "https://example.com/a%25zz"
+    },
+    {
+      "displayText": "example.com/a%",
+      "input": "example.com/a%",
+      "kind": "url",
+      "resolvedURLString": "https://example.com/a%25"
+    },
+    {
+      "displayText": "https://example.com/a%2",
+      "input": "https://example.com/a%2",
+      "kind": "url",
+      "resolvedURLString": "https://example.com/a%252"
+    },
+    {
+      "displayText": "github.com",
+      "input": "github.com",
+      "kind": "url",
+      "resolvedURLString": "https://github.com"
+    },
+    {
+      "displayText": "ya.ru",
+      "input": "ya.ru",
+      "kind": "url",
+      "resolvedURLString": "https://ya.ru"
+    },
+    {
+      "displayText": "google.com/search?q=hello world",
+      "input": "google.com/search?q=hello world",
+      "kind": "url",
+      "resolvedURLString": "https://google.com/search?q=hello%20world"
+    },
+    {
+      "displayText": "https://www.google.com/search?q=a+b&c=d",
+      "input": "https://www.google.com/search?q=a+b&c=d",
+      "kind": "url",
+      "resolvedURLString": "https://www.google.com/search?q=a+b&c=d"
+    },
+    {
+      "displayText": "ex%41mple.com",
+      "input": "ex%41mple.com",
+      "kind": "url",
+      "resolvedURLString": "https://ex%41mple.com"
+    },
+    {
+      "displayText": "http://ex%41mple.com",
+      "input": "http://ex%41mple.com",
+      "kind": "url",
+      "resolvedURLString": "http://ex%41mple.com"
+    },
+    {
+      "displayText": "HTTPS://EXAMPLE.COM",
+      "input": "HTTPS://EXAMPLE.COM",
+      "kind": "url",
+      "resolvedURLString": "HTTPS://EXAMPLE.COM"
+    },
+    {
+      "displayText": "Https://Example.Com/Path",
+      "input": "Https://Example.Com/Path",
+      "kind": "url",
+      "resolvedURLString": "Https://Example.Com/Path"
+    },
+    {
+      "displayText": "s3.amazonaws.com",
+      "input": "s3.amazonaws.com",
+      "kind": "url",
+      "resolvedURLString": "https://s3.amazonaws.com"
+    },
+    {
+      "displayText": "foo.github.io",
+      "input": "foo.github.io",
+      "kind": "url",
+      "resolvedURLString": "https://foo.github.io"
+    },
+    {
+      "displayText": "foo.blogspot.com",
+      "input": "foo.blogspot.com",
+      "kind": "url",
+      "resolvedURLString": "https://foo.blogspot.com"
+    },
+    {
+      "displayText": "bar.appspot.com",
+      "input": "bar.appspot.com",
+      "kind": "url",
+      "resolvedURLString": "https://bar.appspot.com"
+    },
+    {
+      "displayText": "test.dev",
+      "input": "test.dev",
+      "kind": "url",
+      "resolvedURLString": "https://test.dev"
+    },
+    {
+      "displayText": "test.app",
+      "input": "test.app",
+      "kind": "url",
+      "resolvedURLString": "https://test.app"
+    },
+    {
+      "displayText": "my.server.internal",
+      "input": "my.server.internal",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=my.server.internal"
+    },
+    {
+      "displayText": "router.lan",
+      "input": "router.lan",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=router.lan"
+    },
+    {
+      "displayText": "nas.home.arpa",
+      "input": "nas.home.arpa",
+      "kind": "url",
+      "resolvedURLString": "https://nas.home.arpa"
+    },
+    {
+      "displayText": "test.localhost",
+      "input": "test.localhost",
+      "kind": "url",
+      "resolvedURLString": "http://test.localhost"
+    },
+    {
+      "displayText": "x.local:8080",
+      "input": "x.local:8080",
+      "kind": "url",
+      "resolvedURLString": "http://x.local:8080"
+    },
+    {
+      "displayText": "myhost",
+      "input": "myhost",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=myhost"
+    },
+    {
+      "displayText": "myhost:8080",
+      "input": "myhost:8080",
+      "kind": "url",
+      "resolvedURLString": "myhost:8080"
+    },
+    {
+      "displayText": "myhost/path",
+      "input": "myhost/path",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=myhost/path"
+    },
+    {
+      "displayText": "intranet/wiki",
+      "input": "intranet/wiki",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=intranet/wiki"
+    },
+    {
+      "displayText": "https://intranet/wiki",
+      "input": "https://intranet/wiki",
+      "kind": "url",
+      "resolvedURLString": "https://intranet/wiki"
+    },
+    {
+      "displayText": "http://myhost:8080",
+      "input": "http://myhost:8080",
+      "kind": "url",
+      "resolvedURLString": "http://myhost:8080"
+    },
+    {
+      "displayText": "a b c",
+      "input": "a b c",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=a%20b%20c"
+    },
+    {
+      "displayText": "example.com",
+      "input": "  example.com  ",
+      "kind": "url",
+      "resolvedURLString": "https://example.com"
+    },
+    {
+      "displayText": "example.com",
+      "input": "\texample.com",
+      "kind": "url",
+      "resolvedURLString": "https://example.com"
+    },
+    {
+      "displayText": "example.com\\path",
+      "input": "example.com\\path",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=example.com%5Cpath"
+    },
+    {
+      "displayText": "http://example.com\\path",
+      "input": "http://example.com\\path",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=http://example.com%5Cpath"
+    },
+    {
+      "displayText": "http://exa\tmple.com",
+      "input": "http://exa\tmple.com",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=http://exa%09mple.com"
+    },
+    {
+      "displayText": "example.com/<script>",
+      "input": "example.com/<script>",
+      "kind": "url",
+      "resolvedURLString": "https://example.com/%3Cscript%3E"
+    },
+    {
+      "displayText": "example.com/{a}",
+      "input": "example.com/{a}",
+      "kind": "url",
+      "resolvedURLString": "https://example.com/%7Ba%7D"
+    },
+    {
+      "displayText": "example.com/|pipe",
+      "input": "example.com/|pipe",
+      "kind": "url",
+      "resolvedURLString": "https://example.com/%7Cpipe"
+    },
+    {
+      "displayText": "example.com/^caret",
+      "input": "example.com/^caret",
+      "kind": "url",
+      "resolvedURLString": "https://example.com/%5Ecaret"
+    },
+    {
+      "displayText": "example.com/`tick`",
+      "input": "example.com/`tick`",
+      "kind": "url",
+      "resolvedURLString": "https://example.com/%60tick%60"
+    },
+    {
+      "displayText": "example.com/\"quote\"",
+      "input": "example.com/\"quote\"",
+      "kind": "url",
+      "resolvedURLString": "https://example.com/%22quote%22"
+    },
+    {
+      "displayText": "example.com/a[1]",
+      "input": "example.com/a[1]",
+      "kind": "url",
+      "resolvedURLString": "https://example.com/a%5B1%5D"
+    },
+    {
+      "displayText": "https://example.com/a[1]",
+      "input": "https://example.com/a[1]",
+      "kind": "url",
+      "resolvedURLString": "https://example.com/a%5B1%5D"
+    },
+    {
+      "displayText": "https://example.com?q=[1]",
+      "input": "https://example.com?q=[1]",
+      "kind": "url",
+      "resolvedURLString": "https://example.com?q=%5B1%5D"
+    },
+    {
+      "displayText": "https://example.com#a#b",
+      "input": "https://example.com#a#b",
+      "kind": "url",
+      "resolvedURLString": "https://example.com#a%23b"
+    },
+    {
+      "displayText": "https://example.com?a?b",
+      "input": "https://example.com?a?b",
+      "kind": "url",
+      "resolvedURLString": "https://example.com?a?b"
+    },
+    {
+      "displayText": "example.com/?q=%",
+      "input": "example.com/?q=%",
+      "kind": "url",
+      "resolvedURLString": "https://example.com/?q=%25"
+    },
+    {
+      "displayText": "search:term",
+      "input": "search:term",
+      "kind": "url",
+      "resolvedURLString": "search:term"
+    },
+    {
+      "displayText": "site:example.com rust",
+      "input": "site:example.com rust",
+      "kind": "url",
+      "resolvedURLString": "site:example.com%20rust"
+    },
+    {
+      "displayText": "define:word",
+      "input": "define:word",
+      "kind": "url",
+      "resolvedURLString": "define:word"
+    },
+    {
+      "displayText": "https://xn--80ak6aa92e.com",
+      "input": "https://xn--80ak6aa92e.com",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=https://xn--80ak6aa92e.com"
+    },
+    {
+      "displayText": "apple.com:8080/path?x=y",
+      "input": "apple.com:8080/path?x=y",
+      "kind": "url",
+      "resolvedURLString": "https://apple.com:8080/path?x=y"
+    },
+    {
+      "displayText": "http://localhost:0",
+      "input": "http://localhost:0",
+      "kind": "url",
+      "resolvedURLString": "http://localhost:0"
+    },
+    {
+      "displayText": "http://localhost:65536",
+      "input": "http://localhost:65536",
+      "kind": "url",
+      "resolvedURLString": "http://localhost:65536"
+    },
+    {
+      "displayText": "http://localhost:99999999999999999999",
+      "input": "http://localhost:99999999999999999999",
+      "kind": "url",
+      "resolvedURLString": "http://localhost:99999999999999999999"
+    },
+    {
+      "displayText": "localhost:99999999999999999999",
+      "input": "localhost:99999999999999999999",
+      "kind": "url",
+      "resolvedURLString": "http://localhost:99999999999999999999"
+    },
+    {
+      "displayText": "4294967296",
+      "input": "4294967296",
+      "kind": "url",
+      "resolvedURLString": "http://4294967296"
+    },
+    {
+      "displayText": "0x7f.1",
+      "input": "0x7f.1",
+      "kind": "url",
+      "resolvedURLString": "http://0x7f.1"
+    },
+    {
+      "displayText": "http://0x7f.1/",
+      "input": "http://0x7f.1/",
+      "kind": "url",
+      "resolvedURLString": "http://0x7f.1/"
+    },
+    {
+      "displayText": "127.1",
+      "input": "127.1",
+      "kind": "url",
+      "resolvedURLString": "http://127.1"
+    },
+    {
+      "displayText": "http://127.1/",
+      "input": "http://127.1/",
+      "kind": "url",
+      "resolvedURLString": "http://127.1/"
+    },
+    {
+      "displayText": "foo.bar/baz?q",
+      "input": "foo.bar/baz?q",
+      "kind": "url",
+      "resolvedURLString": "https://foo.bar/baz?q"
+    },
+    {
+      "displayText": "xn--.com",
+      "input": "xn--.com",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=xn--.com"
+    },
+    {
+      "displayText": "münchen.de",
+      "input": "münchen.de",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=m%C3%BCnchen.de"
+    },
+    {
+      "displayText": "MÜNCHEN.DE",
+      "input": "MÜNCHEN.DE",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=M%C3%9CNCHEN.DE"
+    },
+    {
+      "displayText": "straße.de",
+      "input": "straße.de",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=stra%C3%9Fe.de"
+    },
+    {
+      "displayText": "faß.de",
+      "input": "faß.de",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=fa%C3%9F.de"
+    },
+    {
+      "displayText": "ß.com",
+      "input": "ß.com",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=%C3%9F.com"
+    },
+    {
+      "displayText": "www.",
+      "input": "www.",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=www."
+    },
+    {
+      "displayText": "www.com",
+      "input": "www.com",
+      "kind": "url",
+      "resolvedURLString": "https://www.com"
+    },
+    {
+      "displayText": "w",
+      "input": "w",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=w"
+    },
+    {
+      "displayText": "sub.example.com/path/../other",
+      "input": "sub.example.com/path/../other",
+      "kind": "url",
+      "resolvedURLString": "https://sub.example.com/path/../other"
+    },
+    {
+      "displayText": "example.com/./a",
+      "input": "example.com/./a",
+      "kind": "url",
+      "resolvedURLString": "https://example.com/./a"
+    },
+    {
+      "displayText": "http://example.com/../a",
+      "input": "http://example.com/../a",
+      "kind": "url",
+      "resolvedURLString": "http://example.com/../a"
+    },
+    {
+      "displayText": ":8080",
+      "input": ":8080",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=:8080"
+    },
+    {
+      "displayText": ":80/path",
+      "input": ":80/path",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=:80/path"
+    },
+    {
+      "displayText": "//example.com",
+      "input": "//example.com",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=//example.com"
+    },
+    {
+      "displayText": "//example.com/path",
+      "input": "//example.com/path",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=//example.com/path"
+    },
+    {
+      "displayText": "///example.com",
+      "input": "///example.com",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=///example.com"
+    },
+    {
+      "displayText": "@example.com",
+      "input": "@example.com",
+      "kind": "url",
+      "resolvedURLString": "https://@example.com"
+    },
+    {
+      "displayText": "example.com@",
+      "input": "example.com@",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=example.com@"
+    },
+    {
+      "displayText": "[example.com]",
+      "input": "[example.com]",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=%5Bexample.com%5D"
+    },
+    {
+      "displayText": "[::1",
+      "input": "[::1",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=%5B::1"
+    },
+    {
+      "displayText": "::1]",
+      "input": "::1]",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=::1%5D"
+    },
+    {
+      "displayText": "1::",
+      "input": "1::",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=1::"
+    },
+    {
+      "displayText": "https://[::1",
+      "input": "https://[::1",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=https://%5B::1"
+    },
+    {
+      "displayText": "https://[invalid]/",
+      "input": "https://[invalid]/",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=https://%5Binvalid%5D/"
+    },
+    {
+      "displayText": "https://[v1.fe]/",
+      "input": "https://[v1.fe]/",
+      "kind": "search",
+      "resolvedURLString": "https://www.google.com/search?q=https://%5Bv1.fe%5D/"
+    },
+    {
+      "displayText": null,
+      "input": "",
+      "kind": null,
+      "resolvedURLString": null
+    },
+    {
+      "displayText": null,
+      "input": " ",
+      "kind": null,
+      "resolvedURLString": null
+    },
+    {
+      "displayText": null,
+      "input": "\n",
+      "kind": null,
+      "resolvedURLString": null
+    },
+    {
+      "displayText": null,
+      "input": "\t",
+      "kind": null,
+      "resolvedURLString": null
+    }
+  ],
+  "search": [
+    {
+      "baidu": "https://www.baidu.com/s?wd=",
+      "brave": "https://search.brave.com/search?q=",
+      "duckDuckGo": "https://duckduckgo.com/?q=",
+      "ecosia": "https://www.ecosia.org/search?q=",
+      "google": "https://www.google.com/search?q=",
+      "microsoftBing": "https://www.bing.com/search?q=",
+      "query": "",
+      "qwant": "https://www.qwant.com/?q=",
+      "yahoo": "https://search.yahoo.com/search?p=",
+      "yandex": "https://yandex.com/search/?text="
+    },
+    {
+      "baidu": "https://www.baidu.com/s?wd=%20",
+      "brave": "https://search.brave.com/search?q=%20",
+      "duckDuckGo": "https://duckduckgo.com/?q=%20",
+      "ecosia": "https://www.ecosia.org/search?q=%20",
+      "google": "https://www.google.com/search?q=%20",
+      "microsoftBing": "https://www.bing.com/search?q=%20",
+      "query": " ",
+      "qwant": "https://www.qwant.com/?q=%20",
+      "yahoo": "https://search.yahoo.com/search?p=%20",
+      "yandex": "https://yandex.com/search/?text=%20"
+    },
+    {
+      "baidu": "https://www.baidu.com/s?wd=rust",
+      "brave": "https://search.brave.com/search?q=rust",
+      "duckDuckGo": "https://duckduckgo.com/?q=rust",
+      "ecosia": "https://www.ecosia.org/search?q=rust",
+      "google": "https://www.google.com/search?q=rust",
+      "microsoftBing": "https://www.bing.com/search?q=rust",
+      "query": "rust",
+      "qwant": "https://www.qwant.com/?q=rust",
+      "yahoo": "https://search.yahoo.com/search?p=rust",
+      "yandex": "https://yandex.com/search/?text=rust"
+    },
+    {
+      "baidu": "https://www.baidu.com/s?wd=lofi%20beats",
+      "brave": "https://search.brave.com/search?q=lofi%20beats",
+      "duckDuckGo": "https://duckduckgo.com/?q=lofi%20beats",
+      "ecosia": "https://www.ecosia.org/search?q=lofi%20beats",
+      "google": "https://www.google.com/search?q=lofi%20beats",
+      "microsoftBing": "https://www.bing.com/search?q=lofi%20beats",
+      "query": "lofi beats",
+      "qwant": "https://www.qwant.com/?q=lofi%20beats",
+      "yahoo": "https://search.yahoo.com/search?p=lofi%20beats",
+      "yandex": "https://yandex.com/search/?text=lofi%20beats"
+    },
+    {
+      "baidu": "https://www.baidu.com/s?wd=c++%20%26%20go?",
+      "brave": "https://search.brave.com/search?q=c++%20%26%20go?",
+      "duckDuckGo": "https://duckduckgo.com/?q=c++%20%26%20go?",
+      "ecosia": "https://www.ecosia.org/search?q=c++%20%26%20go?",
+      "google": "https://www.google.com/search?q=c++%20%26%20go?",
+      "microsoftBing": "https://www.bing.com/search?q=c++%20%26%20go?",
+      "query": "c++ & go?",
+      "qwant": "https://www.qwant.com/?q=c++%20%26%20go?",
+      "yahoo": "https://search.yahoo.com/search?p=c++%20%26%20go?",
+      "yandex": "https://yandex.com/search/?text=c++%20%26%20go?"
+    },
+    {
+      "baidu": "https://www.baidu.com/s?wd=%D0%BF%D1%80%D0%B8%D0%B2%D0%B5%D1%82",
+      "brave": "https://search.brave.com/search?q=%D0%BF%D1%80%D0%B8%D0%B2%D0%B5%D1%82",
+      "duckDuckGo": "https://duckduckgo.com/?q=%D0%BF%D1%80%D0%B8%D0%B2%D0%B5%D1%82",
+      "ecosia": "https://www.ecosia.org/search?q=%D0%BF%D1%80%D0%B8%D0%B2%D0%B5%D1%82",
+      "google": "https://www.google.com/search?q=%D0%BF%D1%80%D0%B8%D0%B2%D0%B5%D1%82",
+      "microsoftBing": "https://www.bing.com/search?q=%D0%BF%D1%80%D0%B8%D0%B2%D0%B5%D1%82",
+      "query": "привет",
+      "qwant": "https://www.qwant.com/?q=%D0%BF%D1%80%D0%B8%D0%B2%D0%B5%D1%82",
+      "yahoo": "https://search.yahoo.com/search?p=%D0%BF%D1%80%D0%B8%D0%B2%D0%B5%D1%82",
+      "yandex": "https://yandex.com/search/?text=%D0%BF%D1%80%D0%B8%D0%B2%D0%B5%D1%82"
+    },
+    {
+      "baidu": "https://www.baidu.com/s?wd=a%20b",
+      "brave": "https://search.brave.com/search?q=a%20b",
+      "duckDuckGo": "https://duckduckgo.com/?q=a%20b",
+      "ecosia": "https://www.ecosia.org/search?q=a%20b",
+      "google": "https://www.google.com/search?q=a%20b",
+      "microsoftBing": "https://www.bing.com/search?q=a%20b",
+      "query": "a b",
+      "qwant": "https://www.qwant.com/?q=a%20b",
+      "yahoo": "https://search.yahoo.com/search?p=a%20b",
+      "yandex": "https://yandex.com/search/?text=a%20b"
+    },
+    {
+      "baidu": "https://www.baidu.com/s?wd=a+b",
+      "brave": "https://search.brave.com/search?q=a+b",
+      "duckDuckGo": "https://duckduckgo.com/?q=a+b",
+      "ecosia": "https://www.ecosia.org/search?q=a+b",
+      "google": "https://www.google.com/search?q=a+b",
+      "microsoftBing": "https://www.bing.com/search?q=a+b",
+      "query": "a+b",
+      "qwant": "https://www.qwant.com/?q=a+b",
+      "yahoo": "https://search.yahoo.com/search?p=a+b",
+      "yandex": "https://yandex.com/search/?text=a+b"
+    },
+    {
+      "baidu": "https://www.baidu.com/s?wd=100%25",
+      "brave": "https://search.brave.com/search?q=100%25",
+      "duckDuckGo": "https://duckduckgo.com/?q=100%25",
+      "ecosia": "https://www.ecosia.org/search?q=100%25",
+      "google": "https://www.google.com/search?q=100%25",
+      "microsoftBing": "https://www.bing.com/search?q=100%25",
+      "query": "100%",
+      "qwant": "https://www.qwant.com/?q=100%25",
+      "yahoo": "https://search.yahoo.com/search?p=100%25",
+      "yandex": "https://yandex.com/search/?text=100%25"
+    },
+    {
+      "baidu": "https://www.baidu.com/s?wd=a%26b%3Dc",
+      "brave": "https://search.brave.com/search?q=a%26b%3Dc",
+      "duckDuckGo": "https://duckduckgo.com/?q=a%26b%3Dc",
+      "ecosia": "https://www.ecosia.org/search?q=a%26b%3Dc",
+      "google": "https://www.google.com/search?q=a%26b%3Dc",
+      "microsoftBing": "https://www.bing.com/search?q=a%26b%3Dc",
+      "query": "a&b=c",
+      "qwant": "https://www.qwant.com/?q=a%26b%3Dc",
+      "yahoo": "https://search.yahoo.com/search?p=a%26b%3Dc",
+      "yandex": "https://yandex.com/search/?text=a%26b%3Dc"
+    },
+    {
+      "baidu": "https://www.baidu.com/s?wd=%23tag",
+      "brave": "https://search.brave.com/search?q=%23tag",
+      "duckDuckGo": "https://duckduckgo.com/?q=%23tag",
+      "ecosia": "https://www.ecosia.org/search?q=%23tag",
+      "google": "https://www.google.com/search?q=%23tag",
+      "microsoftBing": "https://www.bing.com/search?q=%23tag",
+      "query": "#tag",
+      "qwant": "https://www.qwant.com/?q=%23tag",
+      "yahoo": "https://search.yahoo.com/search?p=%23tag",
+      "yandex": "https://yandex.com/search/?text=%23tag"
+    },
+    {
+      "baidu": "https://www.baidu.com/s?wd=q?x",
+      "brave": "https://search.brave.com/search?q=q?x",
+      "duckDuckGo": "https://duckduckgo.com/?q=q?x",
+      "ecosia": "https://www.ecosia.org/search?q=q?x",
+      "google": "https://www.google.com/search?q=q?x",
+      "microsoftBing": "https://www.bing.com/search?q=q?x",
+      "query": "q?x",
+      "qwant": "https://www.qwant.com/?q=q?x",
+      "yahoo": "https://search.yahoo.com/search?p=q?x",
+      "yandex": "https://yandex.com/search/?text=q?x"
+    },
+    {
+      "baidu": "https://www.baidu.com/s?wd=/path",
+      "brave": "https://search.brave.com/search?q=/path",
+      "duckDuckGo": "https://duckduckgo.com/?q=/path",
+      "ecosia": "https://www.ecosia.org/search?q=/path",
+      "google": "https://www.google.com/search?q=/path",
+      "microsoftBing": "https://www.bing.com/search?q=/path",
+      "query": "/path",
+      "qwant": "https://www.qwant.com/?q=/path",
+      "yahoo": "https://search.yahoo.com/search?p=/path",
+      "yandex": "https://yandex.com/search/?text=/path"
+    },
+    {
+      "baidu": "https://www.baidu.com/s?wd=emoji%20%F0%9F%9A%80",
+      "brave": "https://search.brave.com/search?q=emoji%20%F0%9F%9A%80",
+      "duckDuckGo": "https://duckduckgo.com/?q=emoji%20%F0%9F%9A%80",
+      "ecosia": "https://www.ecosia.org/search?q=emoji%20%F0%9F%9A%80",
+      "google": "https://www.google.com/search?q=emoji%20%F0%9F%9A%80",
+      "microsoftBing": "https://www.bing.com/search?q=emoji%20%F0%9F%9A%80",
+      "query": "emoji 🚀",
+      "qwant": "https://www.qwant.com/?q=emoji%20%F0%9F%9A%80",
+      "yahoo": "https://search.yahoo.com/search?p=emoji%20%F0%9F%9A%80",
+      "yandex": "https://yandex.com/search/?text=emoji%20%F0%9F%9A%80"
+    },
+    {
+      "baidu": "https://www.baidu.com/s?wd=%22quoted%22",
+      "brave": "https://search.brave.com/search?q=%22quoted%22",
+      "duckDuckGo": "https://duckduckgo.com/?q=%22quoted%22",
+      "ecosia": "https://www.ecosia.org/search?q=%22quoted%22",
+      "google": "https://www.google.com/search?q=%22quoted%22",
+      "microsoftBing": "https://www.bing.com/search?q=%22quoted%22",
+      "query": "\"quoted\"",
+      "qwant": "https://www.qwant.com/?q=%22quoted%22",
+      "yahoo": "https://search.yahoo.com/search?p=%22quoted%22",
+      "yandex": "https://yandex.com/search/?text=%22quoted%22"
+    },
+    {
+      "baidu": "https://www.baidu.com/s?wd=line%0Abreak",
+      "brave": "https://search.brave.com/search?q=line%0Abreak",
+      "duckDuckGo": "https://duckduckgo.com/?q=line%0Abreak",
+      "ecosia": "https://www.ecosia.org/search?q=line%0Abreak",
+      "google": "https://www.google.com/search?q=line%0Abreak",
+      "microsoftBing": "https://www.bing.com/search?q=line%0Abreak",
+      "query": "line\nbreak",
+      "qwant": "https://www.qwant.com/?q=line%0Abreak",
+      "yahoo": "https://search.yahoo.com/search?p=line%0Abreak",
+      "yandex": "https://yandex.com/search/?text=line%0Abreak"
+    },
+    {
+      "baidu": "https://www.baidu.com/s?wd=tab%09here",
+      "brave": "https://search.brave.com/search?q=tab%09here",
+      "duckDuckGo": "https://duckduckgo.com/?q=tab%09here",
+      "ecosia": "https://www.ecosia.org/search?q=tab%09here",
+      "google": "https://www.google.com/search?q=tab%09here",
+      "microsoftBing": "https://www.bing.com/search?q=tab%09here",
+      "query": "tab\there",
+      "qwant": "https://www.qwant.com/?q=tab%09here",
+      "yahoo": "https://search.yahoo.com/search?p=tab%09here",
+      "yandex": "https://yandex.com/search/?text=tab%09here"
+    },
+    {
+      "baidu": "https://www.baidu.com/s?wd=a;b",
+      "brave": "https://search.brave.com/search?q=a;b",
+      "duckDuckGo": "https://duckduckgo.com/?q=a;b",
+      "ecosia": "https://www.ecosia.org/search?q=a;b",
+      "google": "https://www.google.com/search?q=a;b",
+      "microsoftBing": "https://www.bing.com/search?q=a;b",
+      "query": "a;b",
+      "qwant": "https://www.qwant.com/?q=a;b",
+      "yahoo": "https://search.yahoo.com/search?p=a;b",
+      "yandex": "https://yandex.com/search/?text=a;b"
+    },
+    {
+      "baidu": "https://www.baidu.com/s?wd=a,b",
+      "brave": "https://search.brave.com/search?q=a,b",
+      "duckDuckGo": "https://duckduckgo.com/?q=a,b",
+      "ecosia": "https://www.ecosia.org/search?q=a,b",
+      "google": "https://www.google.com/search?q=a,b",
+      "microsoftBing": "https://www.bing.com/search?q=a,b",
+      "query": "a,b",
+      "qwant": "https://www.qwant.com/?q=a,b",
+      "yahoo": "https://search.yahoo.com/search?p=a,b",
+      "yandex": "https://yandex.com/search/?text=a,b"
+    },
+    {
+      "baidu": "https://www.baidu.com/s?wd=a'b",
+      "brave": "https://search.brave.com/search?q=a'b",
+      "duckDuckGo": "https://duckduckgo.com/?q=a'b",
+      "ecosia": "https://www.ecosia.org/search?q=a'b",
+      "google": "https://www.google.com/search?q=a'b",
+      "microsoftBing": "https://www.bing.com/search?q=a'b",
+      "query": "a'b",
+      "qwant": "https://www.qwant.com/?q=a'b",
+      "yahoo": "https://search.yahoo.com/search?p=a'b",
+      "yandex": "https://yandex.com/search/?text=a'b"
+    },
+    {
+      "baidu": "https://www.baidu.com/s?wd=a@b",
+      "brave": "https://search.brave.com/search?q=a@b",
+      "duckDuckGo": "https://duckduckgo.com/?q=a@b",
+      "ecosia": "https://www.ecosia.org/search?q=a@b",
+      "google": "https://www.google.com/search?q=a@b",
+      "microsoftBing": "https://www.bing.com/search?q=a@b",
+      "query": "a@b",
+      "qwant": "https://www.qwant.com/?q=a@b",
+      "yahoo": "https://search.yahoo.com/search?p=a@b",
+      "yandex": "https://yandex.com/search/?text=a@b"
+    },
+    {
+      "baidu": "https://www.baidu.com/s?wd=a:b",
+      "brave": "https://search.brave.com/search?q=a:b",
+      "duckDuckGo": "https://duckduckgo.com/?q=a:b",
+      "ecosia": "https://www.ecosia.org/search?q=a:b",
+      "google": "https://www.google.com/search?q=a:b",
+      "microsoftBing": "https://www.bing.com/search?q=a:b",
+      "query": "a:b",
+      "qwant": "https://www.qwant.com/?q=a:b",
+      "yahoo": "https://search.yahoo.com/search?p=a:b",
+      "yandex": "https://yandex.com/search/?text=a:b"
+    },
+    {
+      "baidu": "https://www.baidu.com/s?wd=a%3Db",
+      "brave": "https://search.brave.com/search?q=a%3Db",
+      "duckDuckGo": "https://duckduckgo.com/?q=a%3Db",
+      "ecosia": "https://www.ecosia.org/search?q=a%3Db",
+      "google": "https://www.google.com/search?q=a%3Db",
+      "microsoftBing": "https://www.bing.com/search?q=a%3Db",
+      "query": "a=b",
+      "qwant": "https://www.qwant.com/?q=a%3Db",
+      "yahoo": "https://search.yahoo.com/search?p=a%3Db",
+      "yandex": "https://yandex.com/search/?text=a%3Db"
+    },
+    {
+      "baidu": "https://www.baidu.com/s?wd=~tilde",
+      "brave": "https://search.brave.com/search?q=~tilde",
+      "duckDuckGo": "https://duckduckgo.com/?q=~tilde",
+      "ecosia": "https://www.ecosia.org/search?q=~tilde",
+      "google": "https://www.google.com/search?q=~tilde",
+      "microsoftBing": "https://www.bing.com/search?q=~tilde",
+      "query": "~tilde",
+      "qwant": "https://www.qwant.com/?q=~tilde",
+      "yahoo": "https://search.yahoo.com/search?p=~tilde",
+      "yandex": "https://yandex.com/search/?text=~tilde"
+    },
+    {
+      "baidu": "https://www.baidu.com/s?wd=a%2520b",
+      "brave": "https://search.brave.com/search?q=a%2520b",
+      "duckDuckGo": "https://duckduckgo.com/?q=a%2520b",
+      "ecosia": "https://www.ecosia.org/search?q=a%2520b",
+      "google": "https://www.google.com/search?q=a%2520b",
+      "microsoftBing": "https://www.bing.com/search?q=a%2520b",
+      "query": "a%20b",
+      "qwant": "https://www.qwant.com/?q=a%2520b",
+      "yahoo": "https://search.yahoo.com/search?p=a%2520b",
+      "yandex": "https://yandex.com/search/?text=a%2520b"
+    },
+    {
+      "baidu": "https://www.baidu.com/s?wd=%5Bx%5D",
+      "brave": "https://search.brave.com/search?q=%5Bx%5D",
+      "duckDuckGo": "https://duckduckgo.com/?q=%5Bx%5D",
+      "ecosia": "https://www.ecosia.org/search?q=%5Bx%5D",
+      "google": "https://www.google.com/search?q=%5Bx%5D",
+      "microsoftBing": "https://www.bing.com/search?q=%5Bx%5D",
+      "query": "[x]",
+      "qwant": "https://www.qwant.com/?q=%5Bx%5D",
+      "yahoo": "https://search.yahoo.com/search?p=%5Bx%5D",
+      "yandex": "https://yandex.com/search/?text=%5Bx%5D"
+    },
+    {
+      "baidu": "https://www.baidu.com/s?wd=%7By%7D",
+      "brave": "https://search.brave.com/search?q=%7By%7D",
+      "duckDuckGo": "https://duckduckgo.com/?q=%7By%7D",
+      "ecosia": "https://www.ecosia.org/search?q=%7By%7D",
+      "google": "https://www.google.com/search?q=%7By%7D",
+      "microsoftBing": "https://www.bing.com/search?q=%7By%7D",
+      "query": "{y}",
+      "qwant": "https://www.qwant.com/?q=%7By%7D",
+      "yahoo": "https://search.yahoo.com/search?p=%7By%7D",
+      "yandex": "https://yandex.com/search/?text=%7By%7D"
+    },
+    {
+      "baidu": "https://www.baidu.com/s?wd=%3Cz%3E",
+      "brave": "https://search.brave.com/search?q=%3Cz%3E",
+      "duckDuckGo": "https://duckduckgo.com/?q=%3Cz%3E",
+      "ecosia": "https://www.ecosia.org/search?q=%3Cz%3E",
+      "google": "https://www.google.com/search?q=%3Cz%3E",
+      "microsoftBing": "https://www.bing.com/search?q=%3Cz%3E",
+      "query": "<z>",
+      "qwant": "https://www.qwant.com/?q=%3Cz%3E",
+      "yahoo": "https://search.yahoo.com/search?p=%3Cz%3E",
+      "yandex": "https://yandex.com/search/?text=%3Cz%3E"
+    },
+    {
+      "baidu": "https://www.baidu.com/s?wd=a%7Cb",
+      "brave": "https://search.brave.com/search?q=a%7Cb",
+      "duckDuckGo": "https://duckduckgo.com/?q=a%7Cb",
+      "ecosia": "https://www.ecosia.org/search?q=a%7Cb",
+      "google": "https://www.google.com/search?q=a%7Cb",
+      "microsoftBing": "https://www.bing.com/search?q=a%7Cb",
+      "query": "a|b",
+      "qwant": "https://www.qwant.com/?q=a%7Cb",
+      "yahoo": "https://search.yahoo.com/search?p=a%7Cb",
+      "yandex": "https://yandex.com/search/?text=a%7Cb"
+    },
+    {
+      "baidu": "https://www.baidu.com/s?wd=a%5Cb",
+      "brave": "https://search.brave.com/search?q=a%5Cb",
+      "duckDuckGo": "https://duckduckgo.com/?q=a%5Cb",
+      "ecosia": "https://www.ecosia.org/search?q=a%5Cb",
+      "google": "https://www.google.com/search?q=a%5Cb",
+      "microsoftBing": "https://www.bing.com/search?q=a%5Cb",
+      "query": "a\\b",
+      "qwant": "https://www.qwant.com/?q=a%5Cb",
+      "yahoo": "https://search.yahoo.com/search?p=a%5Cb",
+      "yandex": "https://yandex.com/search/?text=a%5Cb"
+    },
+    {
+      "baidu": "https://www.baidu.com/s?wd=a%5Eb",
+      "brave": "https://search.brave.com/search?q=a%5Eb",
+      "duckDuckGo": "https://duckduckgo.com/?q=a%5Eb",
+      "ecosia": "https://www.ecosia.org/search?q=a%5Eb",
+      "google": "https://www.google.com/search?q=a%5Eb",
+      "microsoftBing": "https://www.bing.com/search?q=a%5Eb",
+      "query": "a^b",
+      "qwant": "https://www.qwant.com/?q=a%5Eb",
+      "yahoo": "https://search.yahoo.com/search?p=a%5Eb",
+      "yandex": "https://yandex.com/search/?text=a%5Eb"
+    },
+    {
+      "baidu": "https://www.baidu.com/s?wd=a%60b",
+      "brave": "https://search.brave.com/search?q=a%60b",
+      "duckDuckGo": "https://duckduckgo.com/?q=a%60b",
+      "ecosia": "https://www.ecosia.org/search?q=a%60b",
+      "google": "https://www.google.com/search?q=a%60b",
+      "microsoftBing": "https://www.bing.com/search?q=a%60b",
+      "query": "a`b",
+      "qwant": "https://www.qwant.com/?q=a%60b",
+      "yahoo": "https://search.yahoo.com/search?p=a%60b",
+      "yandex": "https://yandex.com/search/?text=a%60b"
+    }
+  ],
+  "urls": [
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "https://youtube.com/watch?v=1",
+      "chromeEngineLoad": "https://youtube.com/watch?v=1",
+      "chromiumInternal": null,
+      "display": "youtube.com",
+      "fullDisplay": "https://youtube.com/watch?v=1",
+      "input": "https://youtube.com/watch?v=1",
+      "internalHost": null,
+      "trackingCleaned": "https://youtube.com/watch?v=1"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "https://www.youtube.com/feed",
+      "chromeEngineLoad": "https://www.youtube.com/feed",
+      "chromiumInternal": null,
+      "display": "youtube.com",
+      "fullDisplay": "https://youtube.com/feed",
+      "input": "https://www.youtube.com/feed",
+      "internalHost": null,
+      "trackingCleaned": "https://www.youtube.com/feed"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "https://example.com:8443/path",
+      "chromeEngineLoad": "https://example.com:8443/path",
+      "chromiumInternal": null,
+      "display": "example.com:8443",
+      "fullDisplay": "https://example.com:8443/path",
+      "input": "https://example.com:8443/path",
+      "internalHost": null,
+      "trackingCleaned": "https://example.com:8443/path"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "http://example.com:8080/path",
+      "chromeEngineLoad": "http://example.com:8080/path",
+      "chromiumInternal": null,
+      "display": "example.com:8080",
+      "fullDisplay": "http://example.com:8080/path",
+      "input": "http://example.com:8080/path",
+      "internalHost": null,
+      "trackingCleaned": "http://example.com:8080/path"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "https://www.example.com:8443/path",
+      "chromeEngineLoad": "https://www.example.com:8443/path",
+      "chromiumInternal": null,
+      "display": "example.com:8443",
+      "fullDisplay": "https://example.com:8443/path",
+      "input": "https://www.example.com:8443/path",
+      "internalHost": null,
+      "trackingCleaned": "https://www.example.com:8443/path"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "http://example.com:80/path",
+      "chromeEngineLoad": "http://example.com:80/path",
+      "chromiumInternal": null,
+      "display": "example.com",
+      "fullDisplay": "http://example.com:80/path",
+      "input": "http://example.com:80/path",
+      "internalHost": null,
+      "trackingCleaned": "http://example.com:80/path"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "https://example.com:443/path",
+      "chromeEngineLoad": "https://example.com:443/path",
+      "chromiumInternal": null,
+      "display": "example.com",
+      "fullDisplay": "https://example.com:443/path",
+      "input": "https://example.com:443/path",
+      "internalHost": null,
+      "trackingCleaned": "https://example.com:443/path"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "http://localhost:3000/path",
+      "chromeEngineLoad": "http://localhost:3000/path",
+      "chromiumInternal": null,
+      "display": "localhost:3000",
+      "fullDisplay": "http://localhost:3000/path",
+      "input": "http://localhost:3000/path",
+      "internalHost": null,
+      "trackingCleaned": "http://localhost:3000/path"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "http://127.0.0.1:9222/json",
+      "chromeEngineLoad": "http://127.0.0.1:9222/json",
+      "chromiumInternal": null,
+      "display": "127.0.0.1:9222",
+      "fullDisplay": "http://127.0.0.1:9222/json",
+      "input": "http://127.0.0.1:9222/json",
+      "internalHost": null,
+      "trackingCleaned": "http://127.0.0.1:9222/json"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "http://[::1]:3000/path",
+      "chromeEngineLoad": "http://[::1]:3000/path",
+      "chromiumInternal": null,
+      "display": "[::1]:3000",
+      "fullDisplay": "http://[::1]:3000/path",
+      "input": "http://[::1]:3000/path",
+      "internalHost": null,
+      "trackingCleaned": "http://[::1]:3000/path"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "http://localhost:80/path",
+      "chromeEngineLoad": "http://localhost:80/path",
+      "chromiumInternal": null,
+      "display": "localhost:80",
+      "fullDisplay": "http://localhost:80/path",
+      "input": "http://localhost:80/path",
+      "internalHost": null,
+      "trackingCleaned": "http://localhost:80/path"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "https://127.0.0.1:443/json",
+      "chromeEngineLoad": "https://127.0.0.1:443/json",
+      "chromiumInternal": null,
+      "display": "127.0.0.1:443",
+      "fullDisplay": "https://127.0.0.1:443/json",
+      "input": "https://127.0.0.1:443/json",
+      "internalHost": null,
+      "trackingCleaned": "https://127.0.0.1:443/json"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "http://[::1]:80/path",
+      "chromeEngineLoad": "http://[::1]:80/path",
+      "chromiumInternal": null,
+      "display": "[::1]:80",
+      "fullDisplay": "http://[::1]:80/path",
+      "input": "http://[::1]:80/path",
+      "internalHost": null,
+      "trackingCleaned": "http://[::1]:80/path"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "https://[::1]:443/json",
+      "chromeEngineLoad": "https://[::1]:443/json",
+      "chromiumInternal": null,
+      "display": "[::1]:443",
+      "fullDisplay": "https://[::1]:443/json",
+      "input": "https://[::1]:443/json",
+      "internalHost": null,
+      "trackingCleaned": "https://[::1]:443/json"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "http://[::1]/path",
+      "chromeEngineLoad": "http://[::1]/path",
+      "chromiumInternal": null,
+      "display": "[::1]",
+      "fullDisplay": "http://[::1]/path",
+      "input": "http://[::1]/path",
+      "internalHost": null,
+      "trackingCleaned": "http://[::1]/path"
+    },
+    {
+      "canonicalInternal": "openarc://settings/privacy",
+      "chromeEngineDisplay": "openarc://settings/privacy",
+      "chromeEngineLoad": "chrome://settings/privacy",
+      "chromiumInternal": "chrome://settings/privacy",
+      "display": "openarc://settings/privacy",
+      "fullDisplay": "openarc://settings/privacy",
+      "input": "openarc://settings/privacy",
+      "internalHost": "settings",
+      "trackingCleaned": "openarc://settings/privacy"
+    },
+    {
+      "canonicalInternal": "openarc://extensions/?id=abc",
+      "chromeEngineDisplay": "openarc://extensions/?id=abc",
+      "chromeEngineLoad": "chrome://extensions/?id=abc",
+      "chromiumInternal": "chrome://extensions/?id=abc",
+      "display": "openarc://extensions/?id=abc",
+      "fullDisplay": "openarc://extensions/?id=abc",
+      "input": "openarc://extensions/?id=abc",
+      "internalHost": "extensions",
+      "trackingCleaned": "openarc://extensions/?id=abc"
+    },
+    {
+      "canonicalInternal": "openarc://extensions/",
+      "chromeEngineDisplay": "openarc://extensions/",
+      "chromeEngineLoad": "chrome://extensions/",
+      "chromiumInternal": "chrome://extensions/",
+      "display": "openarc://extensions/",
+      "fullDisplay": "openarc://extensions/",
+      "input": "openarc://extensions/",
+      "internalHost": "extensions",
+      "trackingCleaned": "openarc://extensions/"
+    },
+    {
+      "canonicalInternal": "openarc://extensions/shortcuts",
+      "chromeEngineDisplay": "openarc://extensions/shortcuts",
+      "chromeEngineLoad": "chrome://extensions/shortcuts",
+      "chromiumInternal": "chrome://extensions/shortcuts",
+      "display": "openarc://extensions/shortcuts",
+      "fullDisplay": "openarc://extensions/shortcuts",
+      "input": "openarc://extensions/shortcuts",
+      "internalHost": "extensions",
+      "trackingCleaned": "openarc://extensions/shortcuts"
+    },
+    {
+      "canonicalInternal": "openarc://settings/",
+      "chromeEngineDisplay": "openarc://settings",
+      "chromeEngineLoad": "chrome://settings/",
+      "chromiumInternal": "chrome://settings/",
+      "display": "openarc://settings",
+      "fullDisplay": "openarc://settings",
+      "input": "openarc://settings",
+      "internalHost": "settings",
+      "trackingCleaned": "openarc://settings"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "https://example.com/",
+      "chromeEngineLoad": "https://example.com/",
+      "chromiumInternal": null,
+      "display": "example.com",
+      "fullDisplay": "https://example.com/",
+      "input": "https://example.com/",
+      "internalHost": null,
+      "trackingCleaned": "https://example.com/"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "openarc://easel/abc",
+      "chromeEngineLoad": "openarc://easel/abc",
+      "chromiumInternal": null,
+      "display": "openarc://easel/abc",
+      "fullDisplay": "openarc://easel/abc",
+      "input": "openarc://easel/abc",
+      "internalHost": null,
+      "trackingCleaned": "openarc://easel/abc"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "openarc://credits/",
+      "chromeEngineLoad": "chrome://credits/",
+      "chromiumInternal": null,
+      "display": "openarc://credits/",
+      "fullDisplay": "openarc://credits/",
+      "input": "openarc://credits/",
+      "internalHost": null,
+      "trackingCleaned": "openarc://credits/"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "openarc://credits",
+      "chromeEngineLoad": "chrome://credits/",
+      "chromiumInternal": null,
+      "display": "openarc://credits",
+      "fullDisplay": "openarc://credits",
+      "input": "openarc://credits",
+      "internalHost": null,
+      "trackingCleaned": "openarc://credits"
+    },
+    {
+      "canonicalInternal": "openarc://extensions/",
+      "chromeEngineDisplay": "openarc://extensions/",
+      "chromeEngineLoad": "chrome://extensions/",
+      "chromiumInternal": null,
+      "display": "chrome://extensions/",
+      "fullDisplay": "chrome://extensions/",
+      "input": "chrome://extensions/",
+      "internalHost": "extensions",
+      "trackingCleaned": "chrome://extensions/"
+    },
+    {
+      "canonicalInternal": "openarc://history/?q=news",
+      "chromeEngineDisplay": "openarc://history/?q=news",
+      "chromeEngineLoad": "chrome://history/?q=news",
+      "chromiumInternal": null,
+      "display": "chrome://history/?q=news",
+      "fullDisplay": "chrome://history/?q=news",
+      "input": "chrome://history/?q=news",
+      "internalHost": "history",
+      "trackingCleaned": "chrome://history/?q=news"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "openarc://credits/",
+      "chromeEngineLoad": "chrome://credits/",
+      "chromiumInternal": null,
+      "display": "chrome://credits/",
+      "fullDisplay": "chrome://credits/",
+      "input": "chrome://credits/",
+      "internalHost": null,
+      "trackingCleaned": "chrome://credits/"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "chrome-extension://abc/popup.html",
+      "chromeEngineLoad": "chrome-extension://abc/popup.html",
+      "chromiumInternal": null,
+      "display": "chrome-extension://abc/popup.html",
+      "fullDisplay": "chrome-extension://abc/popup.html",
+      "input": "chrome-extension://abc/popup.html",
+      "internalHost": null,
+      "trackingCleaned": "chrome-extension://abc/popup.html"
+    },
+    {
+      "canonicalInternal": "openarc://settings/",
+      "chromeEngineDisplay": "openarc://settings/",
+      "chromeEngineLoad": "chrome://settings",
+      "chromiumInternal": null,
+      "display": "chrome://settings",
+      "fullDisplay": "chrome://settings",
+      "input": "chrome://settings",
+      "internalHost": "settings",
+      "trackingCleaned": "chrome://settings"
+    },
+    {
+      "canonicalInternal": "openarc://password-manager/passwords",
+      "chromeEngineDisplay": "openarc://password-manager/passwords",
+      "chromeEngineLoad": "chrome://settings/passwords",
+      "chromiumInternal": null,
+      "display": "chrome://settings/passwords",
+      "fullDisplay": "chrome://settings/passwords",
+      "input": "chrome://settings/passwords",
+      "internalHost": "password-manager",
+      "trackingCleaned": "chrome://settings/passwords"
+    },
+    {
+      "canonicalInternal": "openarc://password-manager/passwords",
+      "chromeEngineDisplay": "openarc://password-manager/passwords",
+      "chromeEngineLoad": "chrome://passwords",
+      "chromiumInternal": null,
+      "display": "chrome://passwords",
+      "fullDisplay": "chrome://passwords",
+      "input": "chrome://passwords",
+      "internalHost": "password-manager",
+      "trackingCleaned": "chrome://passwords"
+    },
+    {
+      "canonicalInternal": "openarc://bookmarks/",
+      "chromeEngineDisplay": "openarc://bookmarks/",
+      "chromeEngineLoad": "chrome://bookmarks",
+      "chromiumInternal": null,
+      "display": "chrome://bookmarks",
+      "fullDisplay": "chrome://bookmarks",
+      "input": "chrome://bookmarks",
+      "internalHost": "bookmarks",
+      "trackingCleaned": "chrome://bookmarks"
+    },
+    {
+      "canonicalInternal": "openarc://bookmarks/",
+      "chromeEngineDisplay": "openarc://bookmarks",
+      "chromeEngineLoad": "chrome://bookmarks/",
+      "chromiumInternal": "chrome://bookmarks/",
+      "display": "openarc://bookmarks",
+      "fullDisplay": "openarc://bookmarks",
+      "input": "openarc://bookmarks",
+      "internalHost": "bookmarks",
+      "trackingCleaned": "openarc://bookmarks"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "openarc://notes/1",
+      "chromeEngineLoad": "openarc://notes/1",
+      "chromiumInternal": null,
+      "display": "openarc://notes/1",
+      "fullDisplay": "openarc://notes/1",
+      "input": "openarc://notes/1",
+      "internalHost": null,
+      "trackingCleaned": "openarc://notes/1"
+    },
+    {
+      "canonicalInternal": "openarc://settings/",
+      "chromeEngineDisplay": "OPENARC://SETTINGS",
+      "chromeEngineLoad": "chrome://settings/",
+      "chromiumInternal": "chrome://settings/",
+      "display": "OPENARC://SETTINGS",
+      "fullDisplay": "OPENARC://SETTINGS",
+      "input": "OPENARC://SETTINGS",
+      "internalHost": "settings",
+      "trackingCleaned": "OPENARC://SETTINGS"
+    },
+    {
+      "canonicalInternal": "openarc://extensions/",
+      "chromeEngineDisplay": "openarc://extensions/",
+      "chromeEngineLoad": "Chrome://Extensions",
+      "chromiumInternal": null,
+      "display": "Chrome://Extensions",
+      "fullDisplay": "Chrome://Extensions",
+      "input": "Chrome://Extensions",
+      "internalHost": "extensions",
+      "trackingCleaned": "Chrome://Extensions"
+    },
+    {
+      "canonicalInternal": "openarc://history",
+      "chromeEngineDisplay": "arc://history",
+      "chromeEngineLoad": "arc://history",
+      "chromiumInternal": null,
+      "display": "arc://history",
+      "fullDisplay": "arc://history",
+      "input": "arc://history",
+      "internalHost": "history",
+      "trackingCleaned": "arc://history"
+    },
+    {
+      "canonicalInternal": "openarc://settings/",
+      "chromeEngineDisplay": "about:settings",
+      "chromeEngineLoad": "about:settings",
+      "chromiumInternal": null,
+      "display": "about:settings",
+      "fullDisplay": "about:settings",
+      "input": "about:settings",
+      "internalHost": "settings",
+      "trackingCleaned": "about:settings"
+    },
+    {
+      "canonicalInternal": "openarc://bookmarks/",
+      "chromeEngineDisplay": "about:bookmarks",
+      "chromeEngineLoad": "about:bookmarks",
+      "chromiumInternal": null,
+      "display": "about:bookmarks",
+      "fullDisplay": "about:bookmarks",
+      "input": "about:bookmarks",
+      "internalHost": "bookmarks",
+      "trackingCleaned": "about:bookmarks"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "about:blank",
+      "chromeEngineLoad": "about:blank",
+      "chromiumInternal": null,
+      "display": "about:blank",
+      "fullDisplay": "about:blank",
+      "input": "about:blank",
+      "internalHost": null,
+      "trackingCleaned": "about:blank"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "",
+      "chromeEngineLoad": "",
+      "chromiumInternal": null,
+      "display": "New Tab",
+      "fullDisplay": "New Tab",
+      "input": "",
+      "internalHost": null,
+      "trackingCleaned": ""
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "   ",
+      "chromeEngineLoad": "   ",
+      "chromiumInternal": null,
+      "display": "New Tab",
+      "fullDisplay": "New Tab",
+      "input": "   ",
+      "internalHost": null,
+      "trackingCleaned": "   "
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "www.example.com",
+      "chromeEngineLoad": "www.example.com",
+      "chromiumInternal": null,
+      "display": "example.com",
+      "fullDisplay": "example.com",
+      "input": "www.example.com",
+      "internalHost": null,
+      "trackingCleaned": "www.example.com"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "www.",
+      "chromeEngineLoad": "www.",
+      "chromiumInternal": null,
+      "display": "www.",
+      "fullDisplay": "www.",
+      "input": "www.",
+      "internalHost": null,
+      "trackingCleaned": "www."
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "wwwx",
+      "chromeEngineLoad": "wwwx",
+      "chromiumInternal": null,
+      "display": "wwwx",
+      "fullDisplay": "wwwx",
+      "input": "wwwx",
+      "internalHost": null,
+      "trackingCleaned": "wwwx"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "www.a",
+      "chromeEngineLoad": "www.a",
+      "chromiumInternal": null,
+      "display": "a",
+      "fullDisplay": "a",
+      "input": "www.a",
+      "internalHost": null,
+      "trackingCleaned": "www.a"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "not a url",
+      "chromeEngineLoad": "not a url",
+      "chromiumInternal": null,
+      "display": "not a url",
+      "fullDisplay": "not a url",
+      "input": "not a url",
+      "internalHost": null,
+      "trackingCleaned": "not a url"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "https://www.example.com",
+      "chromeEngineLoad": "https://www.example.com",
+      "chromiumInternal": null,
+      "display": "example.com",
+      "fullDisplay": "https://example.com",
+      "input": "https://www.example.com",
+      "internalHost": null,
+      "trackingCleaned": "https://www.example.com"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "https://WWW.Example.com/Path",
+      "chromeEngineLoad": "https://WWW.Example.com/Path",
+      "chromiumInternal": null,
+      "display": "Example.com",
+      "fullDisplay": "https://Example.com/Path",
+      "input": "https://WWW.Example.com/Path",
+      "internalHost": null,
+      "trackingCleaned": "https://WWW.Example.com/Path"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "https://www.яндекс.рф/путь",
+      "chromeEngineLoad": "https://www.яндекс.рф/путь",
+      "chromiumInternal": null,
+      "display": "яндекс.рф",
+      "fullDisplay": "https://xn--d1acpjx3f.xn--p1ai/%D0%BF%D1%83%D1%82%D1%8C",
+      "input": "https://www.яндекс.рф/путь",
+      "internalHost": null,
+      "trackingCleaned": "https://www.яндекс.рф/путь"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "https://xn--d1acpjx3f.xn--p1ai/",
+      "chromeEngineLoad": "https://xn--d1acpjx3f.xn--p1ai/",
+      "chromiumInternal": null,
+      "display": "яндекс.рф",
+      "fullDisplay": "https://xn--d1acpjx3f.xn--p1ai/",
+      "input": "https://xn--d1acpjx3f.xn--p1ai/",
+      "internalHost": null,
+      "trackingCleaned": "https://xn--d1acpjx3f.xn--p1ai/"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "https://www.xn--d1acpjx3f.xn--p1ai/",
+      "chromeEngineLoad": "https://www.xn--d1acpjx3f.xn--p1ai/",
+      "chromiumInternal": null,
+      "display": "яндекс.рф",
+      "fullDisplay": "https://xn--d1acpjx3f.xn--p1ai/",
+      "input": "https://www.xn--d1acpjx3f.xn--p1ai/",
+      "internalHost": null,
+      "trackingCleaned": "https://www.xn--d1acpjx3f.xn--p1ai/"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "https://user:pass@www.example.com:8080/p?q=1#f",
+      "chromeEngineLoad": "https://user:pass@www.example.com:8080/p?q=1#f",
+      "chromiumInternal": null,
+      "display": "example.com:8080",
+      "fullDisplay": "https://user:pass@example.com:8080/p?q=1#f",
+      "input": "https://user:pass@www.example.com:8080/p?q=1#f",
+      "internalHost": null,
+      "trackingCleaned": "https://user:pass@www.example.com:8080/p?q=1#f"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "ftp://www.example.com/file",
+      "chromeEngineLoad": "ftp://www.example.com/file",
+      "chromiumInternal": null,
+      "display": "ftp://www.example.com/file",
+      "fullDisplay": "ftp://example.com/file",
+      "input": "ftp://www.example.com/file",
+      "internalHost": null,
+      "trackingCleaned": "ftp://www.example.com/file"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "file:///Users/lev/a.txt",
+      "chromeEngineLoad": "file:///Users/lev/a.txt",
+      "chromiumInternal": null,
+      "display": "file:///Users/lev/a.txt",
+      "fullDisplay": "file:///Users/lev/a.txt",
+      "input": "file:///Users/lev/a.txt",
+      "internalHost": null,
+      "trackingCleaned": "file:///Users/lev/a.txt"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "mailto:a@b.com",
+      "chromeEngineLoad": "mailto:a@b.com",
+      "chromiumInternal": null,
+      "display": "mailto:a@b.com",
+      "fullDisplay": "mailto:a@b.com",
+      "input": "mailto:a@b.com",
+      "internalHost": null,
+      "trackingCleaned": "mailto:a@b.com"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "https://example.com/?utm_source=x&utm_medium=y",
+      "chromeEngineLoad": "https://example.com/?utm_source=x&utm_medium=y",
+      "chromiumInternal": null,
+      "display": "example.com",
+      "fullDisplay": "https://example.com/?utm_source=x&utm_medium=y",
+      "input": "https://example.com/?utm_source=x&utm_medium=y",
+      "internalHost": null,
+      "trackingCleaned": "https://example.com/"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "https://example.com/?gclid=1&UTM_Campaign=2",
+      "chromeEngineLoad": "https://example.com/?gclid=1&UTM_Campaign=2",
+      "chromiumInternal": null,
+      "display": "example.com",
+      "fullDisplay": "https://example.com/?gclid=1&UTM_Campaign=2",
+      "input": "https://example.com/?gclid=1&UTM_Campaign=2",
+      "internalHost": null,
+      "trackingCleaned": "https://example.com/"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "https://www.youtube.com/watch?v=abc&si=share",
+      "chromeEngineLoad": "https://www.youtube.com/watch?v=abc&si=share",
+      "chromiumInternal": null,
+      "display": "youtube.com",
+      "fullDisplay": "https://youtube.com/watch?v=abc&si=share",
+      "input": "https://www.youtube.com/watch?v=abc&si=share",
+      "internalHost": null,
+      "trackingCleaned": "https://www.youtube.com/watch?v=abc"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "https://example.com/search?si=1&q=a%20b",
+      "chromeEngineLoad": "https://example.com/search?si=1&q=a%20b",
+      "chromiumInternal": null,
+      "display": "example.com",
+      "fullDisplay": "https://example.com/search?si=1&q=a%20b",
+      "input": "https://example.com/search?si=1&q=a%20b",
+      "internalHost": null,
+      "trackingCleaned": "https://example.com/search?si=1&q=a%20b"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "https://example.com/p?q=1",
+      "chromeEngineLoad": "https://example.com/p?q=1",
+      "chromiumInternal": null,
+      "display": "example.com",
+      "fullDisplay": "https://example.com/p?q=1",
+      "input": "https://example.com/p?q=1",
+      "internalHost": null,
+      "trackingCleaned": "https://example.com/p?q=1"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "https://example.com/p?utm_source=a#frag",
+      "chromeEngineLoad": "https://example.com/p?utm_source=a#frag",
+      "chromiumInternal": null,
+      "display": "example.com",
+      "fullDisplay": "https://example.com/p?utm_source=a#frag",
+      "input": "https://example.com/p?utm_source=a#frag",
+      "internalHost": null,
+      "trackingCleaned": "https://example.com/p#frag"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "https://example.com/p?fbclid=abc",
+      "chromeEngineLoad": "https://example.com/p?fbclid=abc",
+      "chromiumInternal": null,
+      "display": "example.com",
+      "fullDisplay": "https://example.com/p?fbclid=abc",
+      "input": "https://example.com/p?fbclid=abc",
+      "internalHost": null,
+      "trackingCleaned": "https://example.com/p"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "https://example.com/p?a=1&fbclid=abc&b=2",
+      "chromeEngineLoad": "https://example.com/p?a=1&fbclid=abc&b=2",
+      "chromiumInternal": null,
+      "display": "example.com",
+      "fullDisplay": "https://example.com/p?a=1&fbclid=abc&b=2",
+      "input": "https://example.com/p?a=1&fbclid=abc&b=2",
+      "internalHost": null,
+      "trackingCleaned": "https://example.com/p?a=1&b=2"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "https://youtu.be/abc?si=xyz&t=10",
+      "chromeEngineLoad": "https://youtu.be/abc?si=xyz&t=10",
+      "chromiumInternal": null,
+      "display": "youtu.be",
+      "fullDisplay": "https://youtu.be/abc?si=xyz&t=10",
+      "input": "https://youtu.be/abc?si=xyz&t=10",
+      "internalHost": null,
+      "trackingCleaned": "https://youtu.be/abc?t=10"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "https://m.youtube.com/watch?v=1&pp=x&feature=share",
+      "chromeEngineLoad": "https://m.youtube.com/watch?v=1&pp=x&feature=share",
+      "chromiumInternal": null,
+      "display": "m.youtube.com",
+      "fullDisplay": "https://m.youtube.com/watch?v=1&pp=x&feature=share",
+      "input": "https://m.youtube.com/watch?v=1&pp=x&feature=share",
+      "internalHost": null,
+      "trackingCleaned": "https://m.youtube.com/watch?v=1"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "https://open.spotify.com/track/1?si=abc",
+      "chromeEngineLoad": "https://open.spotify.com/track/1?si=abc",
+      "chromiumInternal": null,
+      "display": "open.spotify.com",
+      "fullDisplay": "https://open.spotify.com/track/1?si=abc",
+      "input": "https://open.spotify.com/track/1?si=abc",
+      "internalHost": null,
+      "trackingCleaned": "https://open.spotify.com/track/1"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "https://x.com/user/status/1?s=20&t=abc",
+      "chromeEngineLoad": "https://x.com/user/status/1?s=20&t=abc",
+      "chromiumInternal": null,
+      "display": "x.com",
+      "fullDisplay": "https://x.com/user/status/1?s=20&t=abc",
+      "input": "https://x.com/user/status/1?s=20&t=abc",
+      "internalHost": null,
+      "trackingCleaned": "https://x.com/user/status/1"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "https://twitter.com/u/status/1?s=20",
+      "chromeEngineLoad": "https://twitter.com/u/status/1?s=20",
+      "chromiumInternal": null,
+      "display": "twitter.com",
+      "fullDisplay": "https://twitter.com/u/status/1?s=20",
+      "input": "https://twitter.com/u/status/1?s=20",
+      "internalHost": null,
+      "trackingCleaned": "https://twitter.com/u/status/1"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "https://www.instagram.com/p/abc/?igsh=xyz&img_index=1",
+      "chromeEngineLoad": "https://www.instagram.com/p/abc/?igsh=xyz&img_index=1",
+      "chromiumInternal": null,
+      "display": "instagram.com",
+      "fullDisplay": "https://instagram.com/p/abc/?igsh=xyz&img_index=1",
+      "input": "https://www.instagram.com/p/abc/?igsh=xyz&img_index=1",
+      "internalHost": null,
+      "trackingCleaned": "https://www.instagram.com/p/abc/"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "https://instagram.com/p/abc/?utm_source=ig_web_copy_link",
+      "chromeEngineLoad": "https://instagram.com/p/abc/?utm_source=ig_web_copy_link",
+      "chromiumInternal": null,
+      "display": "instagram.com",
+      "fullDisplay": "https://instagram.com/p/abc/?utm_source=ig_web_copy_link",
+      "input": "https://instagram.com/p/abc/?utm_source=ig_web_copy_link",
+      "internalHost": null,
+      "trackingCleaned": "https://instagram.com/p/abc/"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "https://example.com/?s=20&t=abc",
+      "chromeEngineLoad": "https://example.com/?s=20&t=abc",
+      "chromiumInternal": null,
+      "display": "example.com",
+      "fullDisplay": "https://example.com/?s=20&t=abc",
+      "input": "https://example.com/?s=20&t=abc",
+      "internalHost": null,
+      "trackingCleaned": "https://example.com/?s=20&t=abc"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "https://example.com/?_ga=1&_gl=2&spm=3&scm=4",
+      "chromeEngineLoad": "https://example.com/?_ga=1&_gl=2&spm=3&scm=4",
+      "chromiumInternal": null,
+      "display": "example.com",
+      "fullDisplay": "https://example.com/?_ga=1&_gl=2&spm=3&scm=4",
+      "input": "https://example.com/?_ga=1&_gl=2&spm=3&scm=4",
+      "internalHost": null,
+      "trackingCleaned": "https://example.com/"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "https://example.com/?q=a+b&utm_term=c",
+      "chromeEngineLoad": "https://example.com/?q=a+b&utm_term=c",
+      "chromiumInternal": null,
+      "display": "example.com",
+      "fullDisplay": "https://example.com/?q=a+b&utm_term=c",
+      "input": "https://example.com/?q=a+b&utm_term=c",
+      "internalHost": null,
+      "trackingCleaned": "https://example.com/?q=a+b"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "https://example.com/?=x&utm_x=1",
+      "chromeEngineLoad": "https://example.com/?=x&utm_x=1",
+      "chromiumInternal": null,
+      "display": "example.com",
+      "fullDisplay": "https://example.com/?=x&utm_x=1",
+      "input": "https://example.com/?=x&utm_x=1",
+      "internalHost": null,
+      "trackingCleaned": "https://example.com/?=x"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "https://example.com/?&&utm_a=1&&",
+      "chromeEngineLoad": "https://example.com/?&&utm_a=1&&",
+      "chromiumInternal": null,
+      "display": "example.com",
+      "fullDisplay": "https://example.com/?&&utm_a=1&&",
+      "input": "https://example.com/?&&utm_a=1&&",
+      "internalHost": null,
+      "trackingCleaned": "https://example.com/?&&&"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "https://example.com/?utm_a",
+      "chromeEngineLoad": "https://example.com/?utm_a",
+      "chromiumInternal": null,
+      "display": "example.com",
+      "fullDisplay": "https://example.com/?utm_a",
+      "input": "https://example.com/?utm_a",
+      "internalHost": null,
+      "trackingCleaned": "https://example.com/"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "https://example.com/?a=%zz&utm_a=1",
+      "chromeEngineLoad": "https://example.com/?a=%zz&utm_a=1",
+      "chromiumInternal": null,
+      "display": "example.com",
+      "fullDisplay": "https://example.com/?a=%zz&utm_a=1",
+      "input": "https://example.com/?a=%zz&utm_a=1",
+      "internalHost": null,
+      "trackingCleaned": "https://example.com/?a=%25zz"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "https://example.com?utm_source=x",
+      "chromeEngineLoad": "https://example.com?utm_source=x",
+      "chromiumInternal": null,
+      "display": "example.com",
+      "fullDisplay": "https://example.com?utm_source=x",
+      "input": "https://example.com?utm_source=x",
+      "internalHost": null,
+      "trackingCleaned": "https://example.com"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "https://example.com/path?q=hello world&utm_source=x",
+      "chromeEngineLoad": "https://example.com/path?q=hello world&utm_source=x",
+      "chromiumInternal": null,
+      "display": "example.com",
+      "fullDisplay": "https://example.com/path?q=hello world&utm_source=x",
+      "input": "https://example.com/path?q=hello world&utm_source=x",
+      "internalHost": null,
+      "trackingCleaned": "https://example.com/path?q=hello%20world"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "https://example.com/путь?utm_source=x",
+      "chromeEngineLoad": "https://example.com/путь?utm_source=x",
+      "chromiumInternal": null,
+      "display": "example.com",
+      "fullDisplay": "https://example.com/путь?utm_source=x",
+      "input": "https://example.com/путь?utm_source=x",
+      "internalHost": null,
+      "trackingCleaned": "https://example.com/%D0%BF%D1%83%D1%82%D1%8C"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "https://яндекс.рф/?utm_source=x",
+      "chromeEngineLoad": "https://яндекс.рф/?utm_source=x",
+      "chromiumInternal": null,
+      "display": "яндекс.рф",
+      "fullDisplay": "https://яндекс.рф/?utm_source=x",
+      "input": "https://яндекс.рф/?utm_source=x",
+      "internalHost": null,
+      "trackingCleaned": "https://xn--d1acpjx3f.xn--p1ai/"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "http://[::1]:3000/?gclid=1",
+      "chromeEngineLoad": "http://[::1]:3000/?gclid=1",
+      "chromiumInternal": null,
+      "display": "[::1]:3000",
+      "fullDisplay": "http://[::1]:3000/?gclid=1",
+      "input": "http://[::1]:3000/?gclid=1",
+      "internalHost": null,
+      "trackingCleaned": "http://[::1]:3000/"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "http://localhost:3000/?gclid=1",
+      "chromeEngineLoad": "http://localhost:3000/?gclid=1",
+      "chromiumInternal": null,
+      "display": "localhost:3000",
+      "fullDisplay": "http://localhost:3000/?gclid=1",
+      "input": "http://localhost:3000/?gclid=1",
+      "internalHost": null,
+      "trackingCleaned": "http://localhost:3000/"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "https://www.google.com/search?q=a&srsltid=x",
+      "chromeEngineLoad": "https://www.google.com/search?q=a&srsltid=x",
+      "chromiumInternal": null,
+      "display": "google.com",
+      "fullDisplay": "https://google.com/search?q=a&srsltid=x",
+      "input": "https://www.google.com/search?q=a&srsltid=x",
+      "internalHost": null,
+      "trackingCleaned": "https://www.google.com/search?q=a"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "https://example.com/?MC_CID=1&mc_eid=2",
+      "chromeEngineLoad": "https://example.com/?MC_CID=1&mc_eid=2",
+      "chromiumInternal": null,
+      "display": "example.com",
+      "fullDisplay": "https://example.com/?MC_CID=1&mc_eid=2",
+      "input": "https://example.com/?MC_CID=1&mc_eid=2",
+      "internalHost": null,
+      "trackingCleaned": "https://example.com/"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "https://example.com/#?utm_source=x",
+      "chromeEngineLoad": "https://example.com/#?utm_source=x",
+      "chromiumInternal": null,
+      "display": "example.com",
+      "fullDisplay": "https://example.com/#?utm_source=x",
+      "input": "https://example.com/#?utm_source=x",
+      "internalHost": null,
+      "trackingCleaned": "https://example.com/#?utm_source=x"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "https://example.com:8080",
+      "chromeEngineLoad": "https://example.com:8080",
+      "chromiumInternal": null,
+      "display": "example.com:8080",
+      "fullDisplay": "https://example.com:8080",
+      "input": "https://example.com:8080",
+      "internalHost": null,
+      "trackingCleaned": "https://example.com:8080"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "http://example.com:",
+      "chromeEngineLoad": "http://example.com:",
+      "chromiumInternal": null,
+      "display": "example.com",
+      "fullDisplay": "http://example.com:",
+      "input": "http://example.com:",
+      "internalHost": null,
+      "trackingCleaned": "http://example.com:"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "https://example.com:0/",
+      "chromeEngineLoad": "https://example.com:0/",
+      "chromiumInternal": null,
+      "display": "example.com:0",
+      "fullDisplay": "https://example.com:0/",
+      "input": "https://example.com:0/",
+      "internalHost": null,
+      "trackingCleaned": "https://example.com:0/"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "http://localhost/",
+      "chromeEngineLoad": "http://localhost/",
+      "chromiumInternal": null,
+      "display": "localhost",
+      "fullDisplay": "http://localhost/",
+      "input": "http://localhost/",
+      "internalHost": null,
+      "trackingCleaned": "http://localhost/"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "http://LOCALHOST:8080/",
+      "chromeEngineLoad": "http://LOCALHOST:8080/",
+      "chromiumInternal": null,
+      "display": "LOCALHOST:8080",
+      "fullDisplay": "http://LOCALHOST:8080/",
+      "input": "http://LOCALHOST:8080/",
+      "internalHost": null,
+      "trackingCleaned": "http://LOCALHOST:8080/"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "http://127.0.0.1/",
+      "chromeEngineLoad": "http://127.0.0.1/",
+      "chromiumInternal": null,
+      "display": "127.0.0.1",
+      "fullDisplay": "http://127.0.0.1/",
+      "input": "http://127.0.0.1/",
+      "internalHost": null,
+      "trackingCleaned": "http://127.0.0.1/"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "http://[2001:db8::1]:8443/x",
+      "chromeEngineLoad": "http://[2001:db8::1]:8443/x",
+      "chromiumInternal": null,
+      "display": "[2001:db8::1]:8443",
+      "fullDisplay": "http://[2001:db8::1]:8443/x",
+      "input": "http://[2001:db8::1]:8443/x",
+      "internalHost": null,
+      "trackingCleaned": "http://[2001:db8::1]:8443/x"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "http://[fe80::1%25en0]:8080/",
+      "chromeEngineLoad": "http://[fe80::1%25en0]:8080/",
+      "chromiumInternal": null,
+      "display": "[fe80::1%en0]:8080",
+      "fullDisplay": "http://[fe80::1%25en0]:8080/",
+      "input": "http://[fe80::1%25en0]:8080/",
+      "internalHost": null,
+      "trackingCleaned": "http://[fe80::1%25en0]:8080/"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "https://www.example.com:443",
+      "chromeEngineLoad": "https://www.example.com:443",
+      "chromiumInternal": null,
+      "display": "example.com",
+      "fullDisplay": "https://example.com:443",
+      "input": "https://www.example.com:443",
+      "internalHost": null,
+      "trackingCleaned": "https://www.example.com:443"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "http://sub.www.example.com/",
+      "chromeEngineLoad": "http://sub.www.example.com/",
+      "chromiumInternal": null,
+      "display": "sub.www.example.com",
+      "fullDisplay": "http://sub.www.example.com/",
+      "input": "http://sub.www.example.com/",
+      "internalHost": null,
+      "trackingCleaned": "http://sub.www.example.com/"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "javascript:alert(1)",
+      "chromeEngineLoad": "javascript:alert(1)",
+      "chromiumInternal": null,
+      "display": "javascript:alert(1)",
+      "fullDisplay": "javascript:alert(1)",
+      "input": "javascript:alert(1)",
+      "internalHost": null,
+      "trackingCleaned": "javascript:alert(1)"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "data:text/plain,hi",
+      "chromeEngineLoad": "data:text/plain,hi",
+      "chromiumInternal": null,
+      "display": "data:text/plain,hi",
+      "fullDisplay": "data:text/plain,hi",
+      "input": "data:text/plain,hi",
+      "internalHost": null,
+      "trackingCleaned": "data:text/plain,hi"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "about:blank#x",
+      "chromeEngineLoad": "about:blank#x",
+      "chromiumInternal": null,
+      "display": "about:blank#x",
+      "fullDisplay": "about:blank#x",
+      "input": "about:blank#x",
+      "internalHost": null,
+      "trackingCleaned": "about:blank#x"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "https://",
+      "chromeEngineLoad": "https://",
+      "chromiumInternal": null,
+      "display": "https://",
+      "fullDisplay": "https://",
+      "input": "https://",
+      "internalHost": null,
+      "trackingCleaned": "https://"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "http://www",
+      "chromeEngineLoad": "http://www",
+      "chromiumInternal": null,
+      "display": "www",
+      "fullDisplay": "http://www",
+      "input": "http://www",
+      "internalHost": null,
+      "trackingCleaned": "http://www"
+    },
+    {
+      "canonicalInternal": null,
+      "chromeEngineDisplay": "http://www./",
+      "chromeEngineLoad": "http://www./",
+      "chromiumInternal": null,
+      "display": "www.",
+      "fullDisplay": "http://www./",
+      "input": "http://www./",
+      "internalHost": null,
+      "trackingCleaned": "http://www./"
+    }
+  ]
+}
