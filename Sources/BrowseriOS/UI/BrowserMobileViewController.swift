@@ -235,6 +235,8 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
     }
 
     static let phoneSheetColor = UIColor(white: 0.2, alpha: 1)
+    /// How far a row in a folder steps in, per level, in the phone sheet.
+    static let phoneSheetIndent: CGFloat = 20
 
     private static let spaceBarItemWidth: CGFloat = 44
 
@@ -335,6 +337,9 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
     /// fingers or the trackpad in the sidebar): the neighbor's rows slide in
     /// beside the current ones.
     private var phoneSpacePage: (spaceID: String, side: CGFloat, preview: UIView)?
+    /// The Space names over the phone sheet while a sideways drag moves them
+    /// with the rows: the current one and, once there is one, the neighbor's.
+    private var phoneTitleSlides: (current: UILabel, neighbor: UILabel?)?
     /// The drag session UIKit began, as opposed to one it only asked items for.
     private var startedSessionID: ObjectIdentifier?
     private weak var phoneSpacePan: UIPanGestureRecognizer?
@@ -1347,7 +1352,10 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
     }
 
     @objc private func phoneSpacePanned(_ gesture: UIPanGestureRecognizer) {
-        let width = tableView.bounds.width
+        // A page is as wide as the rows, without a status column at the side
+        // (iPhone Duo), so the neighbor's rows come in right beside them.
+        let safe = tableView.safeAreaInsets
+        let width = tableView.bounds.width - safe.left - safe.right
         guard let host = tableView.superview else { return }
         let dx = gesture.translation(in: host).x
         let spaces = workspace.spaces
@@ -1387,7 +1395,7 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
                 self.phoneSpacePage?.preview.removeFromSuperview()
                 self.phoneSpacePage = nil
                 self.tableView.transform = .identity
-                self.phoneTitleButton.alpha = 1
+                self.removePhoneTitleSlides()
                 if completes, let page {
                     self.workspace.dismissFindInPage()
                     self.workspace.selectSpace(id: page.spaceID)
@@ -1415,18 +1423,65 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         }
         let past = progress > 0.5 && phoneSpacePage != nil
         let shownID = past ? phoneSpacePage?.spaceID : workspace.selectedSpaceID
-        // The sidebar's name heads the rows and slides with them.
+        // The sidebar's name heads the rows and slides with them; the phone
+        // sheet's names slide over the rows the same way.
         if isPhoneSheet {
-            setPhoneTitle(phoneSpaceTitle(shownID))
-            phoneTitleButton.alpha = abs(1 - progress * 2)
+            layoutPhoneTitleSlides(offset: offset, width: width, progress: progress)
         }
         highlightPhoneSpace(shownID)
+    }
+
+    /// Each Space's name rides with its rows, fading out as it leaves and in
+    /// as it comes.
+    private func layoutPhoneTitleSlides(offset: CGFloat, width: CGFloat, progress: CGFloat) {
+        // In the bar, not over the whole sheet: laying out the sheet would
+        // put the moved rows back in place.
+        guard let host = navigationController?.navigationBar, phoneTitleButton.window != nil else { return }
+        let slides = phoneTitleSlides ?? (phoneTitleLabel(workspace.selectedSpaceID, in: host), nil)
+        var neighbor = slides.neighbor
+        if neighbor?.accessibilityIdentifier != phoneSpacePage?.spaceID {
+            neighbor?.removeFromSuperview()
+            neighbor = phoneSpacePage.map { phoneTitleLabel($0.spaceID, in: host) }
+        }
+        phoneTitleSlides = (slides.current, neighbor)
+        phoneTitleButton.alpha = 0
+        slides.current.transform = CGAffineTransform(translationX: offset, y: 0)
+        slides.current.alpha = 1 - progress
+        if let neighbor, let page = phoneSpacePage {
+            neighbor.transform = CGAffineTransform(translationX: offset + page.side * width, y: 0)
+            neighbor.alpha = progress
+        }
+    }
+
+    /// A still copy of the title for `spaceID`, where the title button shows its text.
+    private func phoneTitleLabel(_ spaceID: String?, in host: UIView) -> UILabel {
+        let label = UILabel()
+        label.text = phoneSpaceTitle(spaceID)
+        label.font = .systemFont(ofSize: 22, weight: .bold)
+        label.textColor = .white
+        label.lineBreakMode = .byTruncatingTail
+        label.accessibilityIdentifier = spaceID
+        label.isUserInteractionEnabled = false
+        let leading = phoneTitleButton.configuration?.contentInsets.leading ?? 0
+        label.frame = phoneTitleButton.convert(phoneTitleButton.bounds, to: host)
+            .inset(by: UIEdgeInsets(top: 0, left: leading, bottom: 0, right: 0))
+        host.addSubview(label)
+        return label
+    }
+
+    private func removePhoneTitleSlides() {
+        phoneTitleSlides?.current.removeFromSuperview()
+        phoneTitleSlides?.neighbor?.removeFromSuperview()
+        phoneTitleSlides = nil
+        phoneTitleButton.alpha = 1
     }
 
     /// The rows another Space would show, laid out like the table at its top.
     private func phoneSpacePreview(for spaceID: String) -> UIView {
         let preview = UIView(frame: CGRect(origin: .zero, size: tableView.bounds.size))
-        preview.backgroundColor = isPhoneSheet ? Self.phoneSheetColor : tableView.backgroundColor
+        // The phone sheet's color shows through: a page there is narrower
+        // than the table beside a status column, so the neighbor overlaps it.
+        preview.backgroundColor = isPhoneSheet ? .clear : tableView.backgroundColor
         preview.clipsToBounds = true
         preview.isUserInteractionEnabled = false
         guard let document = workspace.profileDocument else { return preview }
@@ -1502,6 +1557,9 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
             item.tintColor = selected ? .white : UIColor(white: 1, alpha: 0.3)
             item.hidesSharedBackground = true
             item.accessibilityTraits = selected ? [.button, .selected] : [.button]
+            item.accessibilityIdentifier = "browser.space.\(space.id)"
+            // Held, the Space's icon offers renaming and deleting it.
+            item.menu = document.map { spaceItemMenu(spaceID: space.id, document: $0) }
             phoneSpaceItems[space.id] = item
             items.append(item)
         }
@@ -1710,7 +1768,9 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
         content.imageProperties.cornerRadius = 4
         content.imageProperties.tintColor = .white
         content.imageToTextPadding = 10
-        content.directionalLayoutMargins.leading = 28
+        // Rows in a folder step in under it.
+        content.directionalLayoutMargins.leading = 28 + CGFloat(row?.depth ?? 0) * Self.phoneSheetIndent
+        cell.indentationLevel = 0
         var background = UIBackgroundConfiguration.clear()
         switch row {
         case .tab(let id, _):
@@ -2399,8 +2459,70 @@ final class BrowserMobileTabsViewController: UITableViewController, UITableViewD
                 self?.createFolder(spaceID: id, parent: nil)
             })
         }
+        if let id = workspace.selectedSpaceID {
+            edits.append(deleteSpaceAction(spaceID: id, document: document))
+        }
         actions.append(UIMenu(options: .displayInline, children: edits))
         return UIMenu(children: actions)
+    }
+
+    private func spaceItemMenu(spaceID: String, document: BrowserMobileProfileDocument) -> UIMenu {
+        let disabled: UIMenuElement.Attributes = document.canEdit ? [] : .disabled
+        let rename = UIAction(
+            title: String(localized: "Rename Space", table: "Mobile"),
+            image: UIImage(systemName: "pencil"),
+            attributes: disabled,
+        ) { [weak self, weak document] _ in
+            guard let title = document?.snapshot.spaces?.first(where: { $0.id == spaceID })?.title else { return }
+            self?.prompt(title: String(localized: "Rename Space", table: "Mobile"), value: title) { [weak document] in
+                document?.renameSpace(id: spaceID, title: $0)
+            }
+        }
+        return UIMenu(
+            title: phoneSpaceTitle(spaceID),
+            children: [rename, deleteSpaceAction(spaceID: spaceID, document: document)],
+        )
+    }
+
+    /// Deletes a Space with its pinned tabs, folders and Today tabs, after
+    /// asking; Favorites stay. The last Space stays too.
+    private func deleteSpaceAction(spaceID: String, document: BrowserMobileProfileDocument) -> UIAction {
+        let spaces = workspace.spaces
+        var attributes = UIMenuElement.Attributes.destructive
+        if !document.canEdit || spaces.count < 2 {
+            attributes.insert(.disabled)
+        }
+        return UIAction(
+            title: String(localized: "Delete Space", table: "Mobile"),
+            image: UIImage(systemName: "trash"),
+            attributes: attributes,
+        ) { [weak self, weak document] _ in
+            guard let self, presentedViewController == nil else { return }
+            workspace.dismissFindInPage()
+            let alert = UIAlertController(
+                title: String(localized: "Delete Space", table: "Mobile"),
+                message: String(
+                    localized: "Deleting \(phoneSpaceTitle(spaceID)) removes its pinned tabs, folders, and Today tabs. Favorites are kept.",
+                    table: "Mobile",
+                ),
+                preferredStyle: .alert,
+            )
+            alert.addAction(UIAlertAction(title: String(localized: "Cancel", table: "Mobile"), style: .cancel))
+            alert.addAction(UIAlertAction(
+                title: String(localized: "Delete", table: "Mobile"), style: .destructive,
+            ) { [weak self, weak document] _ in
+                guard let self, let document else { return }
+                let spaces = workspace.spaces
+                guard spaces.count > 1, let index = spaces.firstIndex(where: { $0.id == spaceID }) else { return }
+                // The Space shown next is its neighbor, as when one closes.
+                if workspace.selectedSpaceID == spaceID {
+                    workspace.selectSpace(id: spaces[index > 0 ? index - 1 : index + 1].id)
+                }
+                document.delete(entity: .init(entityType: .space, entityID: spaceID))
+                render()
+            })
+            present(alert, animated: true)
+        }
     }
 
     private func menu(for row: Row) -> UIMenu? {

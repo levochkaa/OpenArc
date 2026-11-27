@@ -40,6 +40,8 @@
 "Collapsed" = "Collapsed";
 "Delete" = "Delete";
 "Delete Folder and Contents" = "Delete Folder and Contents";
+"Delete Space" = "Delete Space";
+"Deleting %@ removes its pinned tabs, folders, and Today tabs. Favorites are kept." = "Deleting %@ removes its pinned tabs, folders, and Today tabs. Favorites are kept.";
 "Expanded" = "Expanded";
 "Favorites" = "Favorites";
 "Move To" = "Move To";
