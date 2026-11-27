@@ -79,6 +79,7 @@
 #include "ui/gfx/text_constants.h"
 #include "ui/views/accessibility/view_accessibility.h"
 #include "ui/views/background.h"
+#include "ui/views/border.h"
 #include "ui/views/controls/image_view.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/controls/slider.h"
@@ -132,9 +133,11 @@ constexpr gfx::Size kFaviconSize(24, 24);
 // The size of the favicon image itself.
 constexpr gfx::Size kFaviconIconSize(16, 16);
 
-// OpenArc: the volume slider beside the mute button.
+// OpenArc: the volume slider beside the mute button: its track, and the room
+// on each side of the track for the thumb's pressed highlight (12 pt across a
+// 4 pt thumb), which the slider draws inside its own bounds.
 constexpr int kVolumeSliderWidth = 80;
-constexpr int kVolumeSliderGap = 4;
+constexpr int kVolumeSliderThumbRoom = 8;
 // How long the pointer rests on the mute button before the slider opens, and
 // how long the slider stays after the pointer leaves it and the button.
 constexpr base::TimeDelta kVolumeSliderShowDelay = base::Milliseconds(150);
@@ -1323,6 +1326,11 @@ void VideoOverlayWindowViews::SetUpViews() {
   if (toggle_mute_button) {
     volume_slider = std::make_unique<PipVolumeSlider>(this);
     volume_slider->SetValue(1);
+    volume_slider->SetBorder(views::CreateEmptyBorder(
+        gfx::Insets::VH(0, kVolumeSliderThumbRoom)));
+    // A click leaves no focus ring around the thumb; keyboard and
+    // accessibility users still reach it.
+    volume_slider->SetFocusBehavior(views::View::FocusBehavior::ACCESSIBLE_ONLY);
     volume_slider->SetVisible(false);
     volume_slider->GetViewAccessibility().SetName(u"Volume");
   }
@@ -1745,15 +1753,15 @@ void VideoOverlayWindowViews::OnUpdateControlsBounds() {
   if (volume_slider_ && toggle_mute_button_) {
     const gfx::Rect mute_bounds = toggle_mute_button_->bounds();
     const int slider_x =
-        std::max(mute_bounds.x() - kVolumeSliderGap - kVolumeSliderWidth,
+        std::max(mute_bounds.x() - kVolumeSliderWidth -
+                     2 * kVolumeSliderThumbRoom,
                  kBottomControlsHorizontalMargin);
     volume_slider_->SetBounds(slider_x, mute_bounds.y(),
-                              mute_bounds.x() - kVolumeSliderGap - slider_x,
+                              mute_bounds.x() - slider_x,
                               mute_bounds.height());
     if (volume_slider_->GetVisible()) {
-      const int time_width = std::clamp(
-          slider_x - kVolumeSliderGap - timestamp_position.x(), 0,
-          max_timestamp_width);
+      const int time_width =
+          std::clamp(slider_x - timestamp_position.x(), 0, max_timestamp_width);
       timestamp_->SetSize({time_width, kTimestampHeight});
       live_status_->SetSize(
           {std::min(live_status_->width(), time_width), kTimestampHeight});
