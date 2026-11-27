@@ -3777,6 +3777,7 @@ class BrowserTabClient final : public CefClient,
                      CefBrowserSettings &settings,
                      CefRefPtr<CefDictionaryValue> &extra_info,
                      bool *no_javascript_access) override;
+  void OnBeforePopupAborted(CefRefPtr<CefBrowser> browser, int popup_id) override;
 
   bool OnShowPermissionPrompt(
       CefRefPtr<CefBrowser> browser,
@@ -3979,6 +3980,7 @@ class BrowserPeekClient final : public CefClient,
                      CefBrowserSettings &settings,
                      CefRefPtr<CefDictionaryValue> &extra_info,
                      bool *no_javascript_access) override;
+  void OnBeforePopupAborted(CefRefPtr<CefBrowser> browser, int popup_id) override;
   void OnRenderProcessTerminated(CefRefPtr<CefBrowser> browser,
                                  TerminationStatus status,
                                  int error_code,
@@ -4236,6 +4238,13 @@ id<BrowserChromePage> ChromePageOfRecord(const TabRecord &record) {
 - (void)handlePageFullscreen:(BOOL)fullscreen forTabID:(NSString *)tabID;
 - (void)captureVideoFrameForTabID:(NSString *)tabID sourceURL:(NSString *)sourceURL save:(BOOL)save;
 - (NSString *)openTabWithURLString:(NSString *)urlString fromTabID:(NSString *)openerTabID makeActive:(BOOL)makeActive;
+- (BOOL)adoptPopupWithURLString:(NSString *)urlString
+                         opener:(CefRefPtr<CefBrowser>)opener
+                    openerTabID:(nullable NSString *)openerTabID
+                        popupID:(int)popupID
+                     windowInfo:(CefWindowInfo &)windowInfo
+                         client:(CefRefPtr<CefClient> &)client;
+- (void)handlePopupAbortedForOpener:(CefRefPtr<CefBrowser>)opener popupID:(int)popupID;
 - (void)applyMediaVolumeForTabID:(NSString *)tabID toFrame:(CefRefPtr<CefFrame>)frame;
 - (void)handleAddressChange:(NSString *)urlString forTabID:(NSString *)tabID;
 - (void)handleFaviconURLChange:(nullable NSString *)faviconURLString
@@ -4581,6 +4590,8 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
   NSMutableDictionary<NSString *, NSNumber *> *_mediaVolumes;
   __weak BrowserTabHostView *_hostView;
   std::map<std::string, TabRecord> _tabRecords;
+  // Tabs waiting for the popup CEF creates for them, by opener browser and popup id.
+  std::map<std::pair<int, int>, std::string> _pendingPopupTabs;
   CefRefPtr<CefRequestContext> _requestContext;
   std::map<std::string, CefRefPtr<CefRequestContext>> _spaceProfileContexts;
   NSTimer *_smallWindowSweepTimer;
@@ -9107,6 +9118,7 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
   it->second.browser = browser;
   it->second.creationState = BrowserTabEngineCreationStateReady;
   it->second.creationTimedOut = false;
+  std::erase_if(_pendingPopupTabs, [&tabKey](const auto &entry) { return entry.second == tabKey; });
   if (it->second.audioMuted) {
     SetBrowserAudioMutedOnUI(browser, true);
   }
@@ -9301,6 +9313,75 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
     [delegate browserTabController:self didOpenTabWithID:tabID fromTabWithID:openerTabID];
   }
   return tabID;
+}
+
+/// A window a page opens with a script (a sign-in window, say) becomes a tab whose page CEF creates from the
+/// opener, so the opener keeps `window.opener` and hears back from it, as sign-in with Google, Apple or Microsoft
+/// needs. NO leaves the popup to the caller, which opens its address in a plain tab.
+- (BOOL)adoptPopupWithURLString:(NSString *)urlString
+                         opener:(CefRefPtr<CefBrowser>)opener
+                    openerTabID:(nullable NSString *)openerTabID
+                        popupID:(int)popupID
+                     windowInfo:(CefWindowInfo &)windowInfo
+                         client:(CefRefPtr<CefClient> &)client {
+  NSString *resolvedURLString = urlString.length > 0 ? [urlString copy] : @"about:blank";
+  if (!BrowserUsesCEF() || _autoResizesPages || _hostView == nil || !opener || !opener->IsValid() ||
+      [self engineForURLString:resolvedURLString] != BrowserPageEngineChromium) {
+    return NO;
+  }
+  CefRefPtr<CefBrowserHost> openerHost = opener->GetHost();
+  NSString *tabID = NSUUID.UUID.UUIDString;
+  std::string tabKey = ToStdString(tabID);
+
+  TabRecord record;
+  record.client = new BrowserTabClient(self, tabKey);
+  // A popup shares its opener's data store whatever CEF is given.
+  record.requestContext = openerHost->GetRequestContext();
+  auto openerRecord = openerTabID.length > 0 ? _tabRecords.find(ToStdString(openerTabID)) : _tabRecords.end();
+  record.profileCachePath = openerRecord != _tabRecords.end() ? [openerRecord->second.profileCachePath copy]
+                                                              : [self.profileCachePathForNewTabs copy];
+  record.latestURL = ToStdString(resolvedURLString);
+  // CEF loads the address into the popup itself, with the opener's request.
+  record.hasIssuedNavigation = true;
+  _tabRecords[tabKey] = record;
+  _pendingPopupTabs[{opener->GetIdentifier(), popupID}] = tabKey;
+  _activeTabID = [tabID copy];
+
+  id<BrowserTabControllerDelegate> delegate = self.delegate;
+  [delegate browserTabController:self
+              didCreateTabWithID:tabID
+                           title:DefaultTitleForURLString(resolvedURLString)
+                       urlString:resolvedURLString
+                        isActive:YES];
+  if (openerTabID.length > 0 &&
+      [delegate respondsToSelector:@selector(browserTabController:didOpenTabWithID:fromTabWithID:)]) {
+    [delegate browserTabController:self didOpenTabWithID:tabID fromTabWithID:openerTabID];
+  }
+  [delegate browserTabController:self
+      didChangeCreationStateForTabWithID:tabID
+                                   state:BrowserTabEngineCreationStateCreating];
+
+  windowInfo.SetAsChild((__bridge CefWindowHandle)_hostView, CefRectFromBounds(_hostView.bounds));
+  // CEF gives a popup its opener's runtime style.
+  windowInfo.runtime_style = openerHost->GetRuntimeStyle();
+  client = record.client;
+  [self watchBrowserCreationForTabID:tabID];
+  [self updateBrowserVisibilityFocusingActiveTab:YES];
+  return YES;
+}
+
+/// CEF did not create the popup after all (a blocked or cancelled window); its tab goes.
+- (void)handlePopupAbortedForOpener:(CefRefPtr<CefBrowser>)opener popupID:(int)popupID {
+  auto pending = _pendingPopupTabs.find({opener->GetIdentifier(), popupID});
+  if (pending == _pendingPopupTabs.end()) {
+    return;
+  }
+  NSString *tabID = ToNSString(pending->second);
+  _pendingPopupTabs.erase(pending);
+  auto it = _tabRecords.find(ToStdString(tabID));
+  if (it != _tabRecords.end() && !it->second.browser) {
+    [self closeTabWithID:tabID];
+  }
 }
 
 - (void)updateBrowserVisibility {
@@ -10630,9 +10711,23 @@ bool BrowserTabClient::OnBeforePopup(
     [controller showLittleWindowWithURLString:urlString];
     return true;
   }
+  if ((target_disposition == CEF_WOD_NEW_POPUP || target_disposition == CEF_WOD_NEW_FOREGROUND_TAB) &&
+      [controller adoptPopupWithURLString:urlString
+                                   opener:browser
+                              openerTabID:ToNSString(tab_id_)
+                                  popupID:popup_id
+                               windowInfo:windowInfo
+                                   client:client]) {
+    return false;
+  }
   return [controller openURLFromTabWithURLString:urlString
                                     sourceTabID:ToNSString(tab_id_)
                               targetDisposition:target_disposition];
+}
+
+void BrowserTabClient::OnBeforePopupAborted(CefRefPtr<CefBrowser> browser, int popup_id) {
+  CEF_REQUIRE_UI_THREAD();
+  [controller_ handlePopupAbortedForOpener:browser popupID:popup_id];
 }
 
 /// Chromium's permission prompts (location, notifications, clipboard and
@@ -10893,26 +10988,41 @@ bool BrowserPeekClient::OnOpenURLFromTab(CefRefPtr<CefBrowser>,
   return true;
 }
 
-bool BrowserPeekClient::OnBeforePopup(CefRefPtr<CefBrowser>,
+bool BrowserPeekClient::OnBeforePopup(CefRefPtr<CefBrowser> browser,
                                       CefRefPtr<CefFrame>,
-                                      int,
+                                      int popup_id,
                                       const CefString &target_url,
                                       const CefString &,
-                                      WindowOpenDisposition,
+                                      WindowOpenDisposition target_disposition,
                                       bool,
                                       const CefPopupFeatures &,
-                                      CefWindowInfo &,
-                                      CefRefPtr<CefClient> &,
+                                      CefWindowInfo &windowInfo,
+                                      CefRefPtr<CefClient> &client,
                                       CefBrowserSettings &,
                                       CefRefPtr<CefDictionaryValue> &,
                                       bool *) {
   CEF_REQUIRE_UI_THREAD();
-  // A link that opens a new window from the card becomes a tab.
+  // A link or script that opens a new window from the card becomes a tab; a script's keeps its opener.
   BrowserTabController *controller = controller_;
-  [controller openURLFromTabWithURLString:ToNSString(target_url.ToString())
+  NSString *urlString = ToNSString(target_url.ToString());
+  if ((target_disposition == CEF_WOD_NEW_POPUP || target_disposition == CEF_WOD_NEW_FOREGROUND_TAB) &&
+      [controller adoptPopupWithURLString:urlString
+                                   opener:browser
+                              openerTabID:nil
+                                  popupID:popup_id
+                               windowInfo:windowInfo
+                                   client:client]) {
+    return false;
+  }
+  [controller openURLFromTabWithURLString:urlString
                               sourceTabID:@""
                         targetDisposition:CEF_WOD_NEW_FOREGROUND_TAB];
   return true;
+}
+
+void BrowserPeekClient::OnBeforePopupAborted(CefRefPtr<CefBrowser> browser, int popup_id) {
+  CEF_REQUIRE_UI_THREAD();
+  [controller_ handlePopupAbortedForOpener:browser popupID:popup_id];
 }
 
 }  // namespace
