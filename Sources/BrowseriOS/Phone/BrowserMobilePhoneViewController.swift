@@ -1437,6 +1437,12 @@ final class BrowserMobilePhoneViewController: UIViewController {
         keyboardTop = top < view.bounds.height ? top : nil
         bar.isHidden = workspace.isFindInPageVisible && mode == .browsing
         guard mode == .search, surface != nil, keyboardTop != nil || searchPanel.isFieldExpanded else { return }
+        // The keyboard pulled away under a finger takes search with it, so
+        // the drag goes on into closing instead of leaving the panel at the bottom.
+        if hides, searchPanel.isPullingKeyboard {
+            closePanel()
+            return
+        }
         isSearchKeyboardDismissed = keyboardTop == nil
         let bottom = searchKeyboardTop
         UIView.animate(springDuration: 0.42, bounce: 0.1) {

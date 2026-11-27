@@ -190,8 +190,17 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
     /// The text before dictation started; what is heard goes after it.
     private var dictationPrefix = ""
 
+    /// When a finger last let go of the suggestions.
+    private var suggestionsReleaseTime = -CFTimeInterval.infinity
+
     /// A finger is on the suggestions, so the keyboard may be following it.
     var isDraggingSuggestions: Bool { table.isTracking }
+
+    /// A finger on the suggestions is pulling the keyboard down, or has just
+    /// let it go: the keyboard leaves a moment after the release.
+    var isPullingKeyboard: Bool {
+        table.isTracking || CACurrentMediaTime() - suggestionsReleaseTime < 0.5
+    }
 
     private var hasText: Bool { field.text?.isEmpty == false }
 
@@ -244,7 +253,7 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
         table.rowHeight = Self.rowHeight
         table.dataSource = self
         table.delegate = self
-        // A drag down the suggestions takes the keyboard with it.
+        // A drag down the suggestions takes the keyboard with it, and search closes after it.
         table.keyboardDismissMode = .interactive
         table.alwaysBounceVertical = true
         table.showsVerticalScrollIndicator = false
@@ -394,6 +403,10 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
         dictation.stop()
         onSubmit?(text)
         return true
+    }
+
+    func scrollViewDidEndDragging(_: UIScrollView, willDecelerate _: Bool) {
+        suggestionsReleaseTime = CACurrentMediaTime()
     }
 
     func tableView(_: UITableView, numberOfRowsInSection _: Int) -> Int { suggestions.items.count }
