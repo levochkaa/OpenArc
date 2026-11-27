@@ -45,8 +45,11 @@ import Testing
         ALTER TABLE old_state RENAME TO browser_sync_state;
         DROP TABLE browser_sync_expiry_imports;
         DROP TABLE browser_sync_boost_baseline;
+        DROP TABLE browser_sync_mobile_tab_baseline;
+        DROP TABLE browser_mobile_tabs;
         DELETE FROM grdb_migrations WHERE identifier IN (
-            'addFolderSyncOutbox', 'addSyncExpiryRecovery', 'addExpirySyncOutbox', 'addBoostSyncOutbox'
+            'addFolderSyncOutbox', 'addSyncExpiryRecovery', 'addExpirySyncOutbox', 'addBoostSyncOutbox',
+            'addMobileTabSync'
         );
         """)
     }

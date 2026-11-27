@@ -25,6 +25,7 @@ final class BrowserRemoteSyncClient: @unchecked Sendable {
         "Protocol 4 bootstrap requires cursor 0": .folderBootstrapRequired,
         "Protocol 5 bootstrap requires cursor 0": .expiryBootstrapRequired,
         "Protocol 6 bootstrap requires cursor 0": .boostBootstrapRequired,
+        "Protocol 7 bootstrap requires cursor 0": .mobileTabBootstrapRequired,
     ]
 
     private let configuration: BrowserSyncConfiguration
@@ -236,7 +237,7 @@ final class BrowserRemoteSyncClient: @unchecked Sendable {
         authSession: BrowserAuthSession,
     ) async throws -> BrowserSyncPullResponse {
         guard authSession.belongs(to: baseURL) else { throw BrowserSyncAccountError.serverChanged }
-        guard [2, 4, 5, 6].contains(protocolVersion) else { throw BrowserRemoteSyncError.unsupportedSyncProtocol }
+        guard [2, 4, 5, 6, 7].contains(protocolVersion) else { throw BrowserRemoteSyncError.unsupportedSyncProtocol }
         return try await send(
             path: "/v1/sync/pull",
             method: "POST",
@@ -316,6 +317,22 @@ final class BrowserRemoteSyncClient: @unchecked Sendable {
         return response
     }
 
+    func push(
+        mutation: BrowserSyncMobileTabMutation,
+        authSession: BrowserAuthSession,
+    ) async throws -> BrowserSyncMobileTabPushResponse {
+        guard authSession.belongs(to: baseURL) else { throw BrowserSyncAccountError.serverChanged }
+        try mutation.validate()
+        let response: BrowserSyncMobileTabPushResponse = try await send(
+            path: "/v1/sync/push", method: "POST",
+            body: BrowserSyncMobileTabPushRequest(
+                mutationID: mutation.id, deviceID: authSession.deviceID, operations: mutation.operations,
+            ), accessToken: authSession.accessToken,
+        )
+        try response.validate(for: mutation)
+        return response
+    }
+
     private func openAPIClient(accessToken: String?) -> Client {
         Client(
             serverURL: configuration.baseURL,
@@ -380,8 +397,16 @@ enum BrowserRemoteSyncError: Error {
     case folderBootstrapRequired
     case expiryBootstrapRequired
     case boostBootstrapRequired
+    case mobileTabBootstrapRequired
 
     // MARK: Internal
+
+    var isMobileTabBootstrapRequired: Bool {
+        if case .mobileTabBootstrapRequired = self {
+            return true
+        }
+        return false
+    }
 
     var isBoostBootstrapRequired: Bool {
         if case .boostBootstrapRequired = self {
@@ -558,9 +583,21 @@ enum BrowserAuthSessionStoreError: Error {
         mutation: BrowserSyncBoostMutation,
         authSession: BrowserAuthSession,
     ) async throws -> BrowserSyncBoostPushResponse
+
+    func push(
+        mutation: BrowserSyncMobileTabMutation,
+        authSession: BrowserAuthSession,
+    ) async throws -> BrowserSyncMobileTabPushResponse
 }
 
 extension BrowserSyncRemoteServing {
+    func push(
+        mutation _: BrowserSyncMobileTabMutation,
+        authSession _: BrowserAuthSession,
+    ) throws -> BrowserSyncMobileTabPushResponse {
+        throw BrowserRemoteSyncError.unsupportedSyncProtocol
+    }
+
     func push(
         mutation _: BrowserSyncBoostMutation,
         authSession _: BrowserAuthSession,
@@ -728,6 +765,7 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
     private let waitForInputPause: @MainActor () async -> Void
     private weak var snapshotApplier: (any BrowserSyncSnapshotApplying)?
     private weak var boostApplier: (any BrowserSyncBoostApplying)?
+    private weak var mobileTabApplier: (any BrowserSyncMobileTabApplying)?
 
     init(
         localStore: BrowserSQLiteSessionStore,
@@ -951,6 +989,11 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
         self.boostApplier = boostApplier
     }
 
+    /// Mobile tabs follow the profile whose service has this applier.
+    func setMobileTabApplier(_ mobileTabApplier: (any BrowserSyncMobileTabApplying)?) {
+        self.mobileTabApplier = mobileTabApplier
+    }
+
     /// Wakes the sender for writes queued outside a snapshot save, such as boosts.
     func scheduleQueuedPush() {
         schedulePush(snapshot: BrowserTabSessionSnapshot(tabs: []))
@@ -1149,6 +1192,11 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
                     guard isCurrent(context), !Task.isCancelled else { return }
                     try response.validate(for: payload)
                     events = response.events
+                case .mobileTabs(let payload):
+                    let response = try await remoteClient.push(mutation: payload, authSession: context.session)
+                    guard isCurrent(context), !Task.isCancelled else { return }
+                    try response.validate(for: payload)
+                    events = response.events
                 }
                 guard isCurrent(context), !Task.isCancelled else { return }
                 await waitForInputPause()
@@ -1156,6 +1204,7 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
                 let previous = try localStore.loadSnapshotForSync(for: context.owner)
                 let archiveRevision = try localStore.syncArchiveRevision(for: context.owner)
                 let boostRevision = try localStore.syncBoostRevision(for: context.owner)
+                let mobileTabRevision = try localStore.syncMobileTabRevision(for: context.owner)
                 let projected = try localStore.acknowledgeSyncMutation(
                     id: mutation.id,
                     protocolVersion: mutation.protocolVersion,
@@ -1176,6 +1225,10 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
                 guard isCurrent(context), !Task.isCancelled else { return }
                 if try boostRevision != localStore.syncBoostRevision(for: context.owner) {
                     boostApplier?.syncBoostsDidChange()
+                }
+                guard isCurrent(context), !Task.isCancelled else { return }
+                if try mobileTabRevision != localStore.syncMobileTabRevision(for: context.owner) {
+                    mobileTabApplier?.syncMobileTabsDidChange()
                 }
                 // Model projection can itself fail to persist and synchronously
                 // block sync. Do not restore work from the invalidated generation.
@@ -1326,7 +1379,8 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
                 } catch let error as BrowserRemoteSyncError where !bootstrap &&
                     ((protocolVersion == 4 && error.isFolderBootstrapRequired) ||
                         (protocolVersion == 5 && error.isExpiryBootstrapRequired) ||
-                        (protocolVersion == 6 && error.isBoostBootstrapRequired))
+                        (protocolVersion == 6 && error.isBoostBootstrapRequired) ||
+                        (protocolVersion == 7 && error.isMobileTabBootstrapRequired))
                 {
                     // A freshly registered device has no v4 read fence yet, even
                     // when this profile already has an adopted v4 baseline.
@@ -1342,6 +1396,18 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
                     throw BrowserRemoteSyncError.unsupportedSyncProtocol
                 }
                 let pageVersions = Set(response.supportedPushVersions ?? [2]).intersection(Self.knownPushVersions)
+                if protocolVersion == 7, !pageVersions.contains(7), pageVersions.isSuperset(of: [4, 5]) {
+                    // The server stopped carrying mobile tabs. Everything else
+                    // keeps syncing at v6 from the same cursor; mobile tab sync
+                    // starts again from cursor zero once the server offers v7 again.
+                    try localStore.suspendMobileTabSync(for: context.owner)
+                    guard isCurrent(context), !Task.isCancelled else { return }
+                    protocolVersion = 6
+                    cursor = bootstrap ? 0 : startCursor
+                    latestEvents.removeAll()
+                    advertisedVersions = nil
+                    continue
+                }
                 if protocolVersion == 6, !pageVersions.contains(6), pageVersions.isSuperset(of: [4, 5]) {
                     // The server stopped carrying boosts. Spaces and tabs keep
                     // syncing at v5 from the same cursor; boost sync starts again
@@ -1357,7 +1423,8 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
                 }
                 guard protocolVersion == 2 || pageVersions.contains(4),
                       protocolVersion < 5 || pageVersions.contains(5),
-                      protocolVersion != 6 || pageVersions.contains(6)
+                      protocolVersion < 6 || pageVersions.contains(6),
+                      protocolVersion != 7 || pageVersions.contains(7)
                 else {
                     throw BrowserRemoteSyncError.unsupportedSyncProtocol
                 }
@@ -1391,7 +1458,7 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
                     }
                     // Each upgrade replays the history from cursor zero; only
                     // the newest read commits.
-                    if (4...5).contains(protocolVersion),
+                    if (4...6).contains(protocolVersion),
                        advertisedVersions?.contains(protocolVersion + 1) == true
                     {
                         protocolVersion += 1
@@ -1411,8 +1478,15 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
             let events = latestEvents.values.sorted { $0.serverSeq < $1.serverSeq }
             let archiveRevision = try localStore.syncArchiveRevision(for: context.owner)
             let boostRevision = try localStore.syncBoostRevision(for: context.owner)
+            let mobileTabRevision = try localStore.syncMobileTabRevision(for: context.owner)
             let projected: BrowserTabSessionSnapshot =
-                if bootstrap, protocolVersion == 6 {
+                if bootstrap, protocolVersion == 7 {
+                    try localStore.completeMobileTabSyncBootstrap(
+                        events: events, cursor: cursor, for: context.owner,
+                        localBoosts: boostApplier?.localSyncBoosts() ?? [],
+                        localMobileTabs: mobileTabApplier?.localSyncMobileTabs() ?? [],
+                    )
+                } else if bootstrap, protocolVersion == 6 {
                     try localStore.completeBoostSyncBootstrap(
                         events: events, cursor: cursor, for: context.owner,
                         localBoosts: boostApplier?.localSyncBoosts() ?? [],
@@ -1436,6 +1510,10 @@ enum BrowserSyncAccountError: LocalizedError, Equatable {
             guard isCurrent(context), !Task.isCancelled else { return }
             if try boostRevision != localStore.syncBoostRevision(for: context.owner) {
                 boostApplier?.syncBoostsDidChange()
+            }
+            guard isCurrent(context), !Task.isCancelled else { return }
+            if try mobileTabRevision != localStore.syncMobileTabRevision(for: context.owner) {
+                mobileTabApplier?.syncMobileTabsDidChange()
             }
             guard isCurrent(context), !Task.isCancelled else { return }
             supportedPushVersions = versions

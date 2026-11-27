@@ -290,7 +290,8 @@ import Testing
             ))
         case .boosts,
              .expiry,
-             .folders:
+             .folders,
+             .mobileTabs:
             Issue.record("Legacy migration fixture must contain only v2/v3 rows")
             return
         }

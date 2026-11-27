@@ -770,7 +770,8 @@ private func replayDeleteKeys(_ row: BrowserSyncQueuedMutation) -> [String] {
             }
         }
     case .boosts,
-         .expiry: []
+         .expiry,
+         .mobileTabs: []
     }
 }
 
@@ -847,6 +848,7 @@ private func replayIdentity(_ row: BrowserSyncQueuedMutation) -> BrowserSyncQueu
         case .folders(let mutation): try? encoder.encode(mutation)
         case .expiry(let mutation): try? encoder.encode(mutation)
         case .boosts(let mutation): try? encoder.encode(mutation)
+        case .mobileTabs(let mutation): try? encoder.encode(mutation)
         }
     return .init(protocolVersion: row.protocolVersion, payload: payload ?? Data())
 }

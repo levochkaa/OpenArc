@@ -257,9 +257,16 @@ struct BrowserSyncEvent: Codable, Equatable {
                 case "tab": try .tab(values.decode(BrowserSyncEventTabData.self, forKey: .data))
                 case "folder": try .folder(values.decode(BrowserSyncEventFolderData.self, forKey: .data))
                 case "boost": try .boost(values.decode(BrowserSyncEventBoostData.self, forKey: .data))
+                case BrowserSyncMobileTabOperation.entityType:
+                    try .mobileTab(values.decode(BrowserSyncEventMobileTabData.self, forKey: .data))
                 default: .unknown
                 }
             }
+    }
+
+    /// Spaces, tabs and folders; boosts and mobile tabs keep baselines of their own.
+    var belongsToSpaces: Bool {
+        entityType != "boost" && entityType != BrowserSyncMobileTabOperation.entityType
     }
 
     // MARK: Private
@@ -276,11 +283,19 @@ enum BrowserSyncEventData: Codable, Equatable {
     case tab(BrowserSyncEventTabData)
     case folder(BrowserSyncEventFolderData)
     case boost(BrowserSyncEventBoostData)
+    case mobileTab(BrowserSyncEventMobileTabData)
     case deleted(id: String, autoArchive: BrowserSyncAutoArchiveData? = nil)
     case unknown
 
     init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
+        // A mobile tab has a URL like a tab, but a creation date and no placement.
+        if let tab = try? container.decode(BrowserSyncEventMobileTabData.self), tab.urlString != nil,
+           tab.createdAt != nil, (try? container.decode(BrowserSyncEventTabData.self))?.placement == nil
+        {
+            self = .mobileTab(tab)
+            return
+        }
         if let tab = try? container.decode(BrowserSyncEventTabData.self), tab.urlString != nil {
             self = .tab(tab)
             return
@@ -317,6 +332,7 @@ enum BrowserSyncEventData: Codable, Equatable {
         case .tab(let data): try values.encode(data)
         case .folder(let data): try values.encode(data)
         case .boost(let data): try values.encode(data)
+        case .mobileTab(let data): try values.encode(data)
         case .deleted(let id, let autoArchive): try values.encode(BrowserSyncDeletedData(
                 id: id,
                 autoArchive: autoArchive,

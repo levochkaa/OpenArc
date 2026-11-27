@@ -310,6 +310,40 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
             CREATE INDEX browser_note_images_note_id ON browser_note_images (note_id);
             """)
         }
+        migrator.registerMigration("addMobileTabSync") { db in
+            let sequence = try Int64.fetchOne(
+                db, sql: "SELECT seq FROM sqlite_sequence WHERE name = 'browser_sync_outbox'",
+            )
+            // Version 7 rows carry mobile tab writes. Copy rows byte for byte, as
+            // the version 6 migration did, keeping consumed-row high-water marks.
+            try db.execute(sql: """
+            CREATE TABLE browser_sync_outbox_v7 (
+                position INTEGER PRIMARY KEY AUTOINCREMENT,
+                mutation_id TEXT NOT NULL UNIQUE,
+                payload BLOB NOT NULL,
+                protocol_version INTEGER NOT NULL DEFAULT 2 CHECK (protocol_version IN (2, 3, 4, 5, 6, 7))
+            );
+            INSERT INTO browser_sync_outbox_v7 (position, mutation_id, payload, protocol_version)
+                SELECT position, mutation_id, payload, protocol_version FROM browser_sync_outbox ORDER BY position;
+            DROP TABLE browser_sync_outbox;
+            ALTER TABLE browser_sync_outbox_v7 RENAME TO browser_sync_outbox;
+            ALTER TABLE browser_sync_state ADD COLUMN mobile_tab_sync_enabled INTEGER NOT NULL DEFAULT 0 CHECK (mobile_tab_sync_enabled IN (0, 1));
+            ALTER TABLE browser_sync_state ADD COLUMN mobile_tab_revision INTEGER NOT NULL DEFAULT 0;
+            CREATE TABLE browser_sync_mobile_tab_baseline (
+                id INTEGER PRIMARY KEY CHECK (id = 1), payload BLOB NOT NULL
+            );
+            CREATE TABLE browser_mobile_tabs (
+                id INTEGER PRIMARY KEY CHECK (id = 1), payload BLOB NOT NULL
+            );
+            """)
+            if let sequence {
+                try db.execute(sql: "DELETE FROM sqlite_sequence WHERE name = 'browser_sync_outbox'")
+                try db.execute(
+                    sql: "INSERT INTO sqlite_sequence (name, seq) VALUES ('browser_sync_outbox', ?)",
+                    arguments: [sequence],
+                )
+            }
+        }
         return migrator
     }
 
@@ -818,6 +852,9 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
     func syncPullProtocolVersion(for owner: BrowserSyncOwner) throws -> Int {
         try dbQueue.read { db in
             try requireSyncOwner(owner, in: db)
+            if try mobileTabSyncEnabled(in: db) {
+                return 7
+            }
             if try boostSyncEnabled(in: db) {
                 return 6
             }
@@ -896,6 +933,106 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
         }
     }
 
+    /// Call only after every page of a v7 pull from cursor zero. Boosts and the
+    /// local mobile tabs the server has not seen are queued in the same transaction.
+    func completeMobileTabSyncBootstrap(
+        events: [BrowserSyncEvent], cursor: Int, for owner: BrowserSyncOwner,
+        localBoosts: [BrowserSyncBoostEntry], localMobileTabs: [BrowserSyncMobileTabEntry],
+    ) throws -> BrowserTabSessionSnapshot {
+        try completeSyncBootstrap(
+            events: events, cursor: cursor, for: owner, expiryRecovery: true, localBoosts: localBoosts,
+            localMobileTabs: localMobileTabs,
+        )
+    }
+
+    /// The server no longer offers v7: read at v6 until it does, then bootstrap
+    /// mobile tabs again. Their baseline and queued rows stay.
+    func suspendMobileTabSync(for owner: BrowserSyncOwner) throws {
+        try dbQueue.write { db in
+            try requireSyncOwner(owner, in: db)
+            try db.execute(sql: """
+            UPDATE browser_sync_state SET mobile_tab_sync_enabled = 0, mobile_tab_revision = mobile_tab_revision + 1
+            WHERE id = 1
+            """)
+        }
+    }
+
+    /// Changes whenever the synced mobile tabs change.
+    func syncMobileTabRevision(for owner: BrowserSyncOwner) throws -> Int64 {
+        try dbQueue.read { db in
+            try requireSyncOwner(owner, in: db)
+            return try Int64.fetchOne(db, sql: "SELECT mobile_tab_revision FROM browser_sync_state WHERE id = 1") ?? 0
+        }
+    }
+
+    /// The synced mobile tabs with queued writes on top. Nil until the profile
+    /// has an account whose server carries mobile tabs.
+    func loadSyncMobileTabState() throws -> BrowserSyncMobileTabState? {
+        try dbQueue.read { db in
+            guard try storedSyncOwner(db) != nil, try mobileTabSyncEnabled(in: db) else { return nil }
+            return try BrowserSyncMobileTabState(baseline: readMobileTabBaseline(db), pending: readSyncQueue(db))
+        }
+    }
+
+    /// This device's own mobile tabs; nil before the first save.
+    func loadMobileTabs() throws -> [BrowserSyncMobileTabEntry]? {
+        try dbQueue.read { db in
+            guard let payload = try Data.fetchOne(db, sql: "SELECT payload FROM browser_mobile_tabs WHERE id = 1")
+            else { return nil }
+            return try JSONDecoder().decode([BrowserSyncMobileTabEntry].self, from: payload)
+        }
+    }
+
+    /// Saves this device's mobile tabs and, in the same transaction, queues
+    /// their sync writes and archives or restores a closed tab. Writes are
+    /// queued only once mobile tab sync started: its first upload takes every
+    /// local tab. Returns whether anything was queued.
+    @discardableResult func saveMobileTabs(
+        _ tabs: [BrowserSyncMobileTabEntry], operations: [BrowserSyncMobileTabOperation] = [],
+        archiving entry: BrowserTabArchiveEntry? = nil, restoringArchiveID: String? = nil,
+    ) throws -> Bool {
+        for operation in operations {
+            try operation.validate()
+        }
+        try entry?.validate()
+        return try dbQueue.write { db in
+            if let entry {
+                try db.execute(
+                    sql: "INSERT INTO browser_tab_archive_receipts (id, entry_digest) VALUES (?, ?)",
+                    arguments: [entry.id, Self.archiveFingerprint(entry)],
+                )
+                try Self.insertArchiveContent(entry, in: db)
+            }
+            if let restoringArchiveID {
+                guard let row = try Row.fetchOne(
+                    db, sql: "SELECT id, payload, archived_at FROM browser_tab_archive WHERE id = ?",
+                    arguments: [restoringArchiveID],
+                ) else { throw BrowserTabArchiveError.entryMissing }
+                let restored = try Self.decodeArchiveEntry(row)
+                guard let tabID = tabs.last?.id, tabID != restored.tab.id else {
+                    throw BrowserTabArchiveError.restoredTabIDNotFresh
+                }
+                try db.execute(
+                    sql: "UPDATE browser_tab_archive_receipts SET restored_tab_id = ? WHERE id = ? AND restored_tab_id IS NULL",
+                    arguments: [tabID, restoringArchiveID],
+                )
+                try db.execute(sql: "DELETE FROM browser_tab_archive WHERE id = ?", arguments: [restoringArchiveID])
+            }
+            try db.execute(
+                sql: "INSERT INTO browser_mobile_tabs (id, payload) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET payload = excluded.payload",
+                arguments: [JSONEncoder().encode(tabs)],
+            )
+            guard !operations.isEmpty, try storedSyncOwner(db) != nil, try mobileTabSyncEnabled(in: db) else {
+                return false
+            }
+            try appendMobileTabSyncMutations(operations, to: db)
+            try db.execute(
+                sql: "UPDATE browser_sync_state SET mobile_tab_revision = mobile_tab_revision + 1 WHERE id = 1",
+            )
+            return true
+        }
+    }
+
     /// Call only after every page of an explicit v4 pull starting at cursor zero.
     /// Re-registering a device can require the same bootstrap again; adoption is
     /// tied to the profile's durable version and never repeats on that path.
@@ -924,11 +1061,17 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
             guard storedVersion == protocolVersion else { throw BrowserSyncQueueError.protocolVersionMismatch }
             try importExpiryRecovery(events, owner: owner, in: db)
             var baseline = try readSyncBaseline(db)
-            try baseline.apply(events.filter { $0.entityType != "boost" })
+            try baseline.apply(events.filter(\.belongsToSpaces))
             try applyBoostEvents(events, in: db)
+            try applyMobileTabEvents(events, in: db)
             if storedVersion == 6 {
                 // The queued write left the overlay even when the server kept a newer state.
                 try db.execute(sql: "UPDATE browser_sync_state SET boost_revision = boost_revision + 1 WHERE id = 1")
+            }
+            if storedVersion == 7 {
+                try db.execute(
+                    sql: "UPDATE browser_sync_state SET mobile_tab_revision = mobile_tab_revision + 1 WHERE id = 1",
+                )
             }
             try db.execute(sql: "DELETE FROM browser_sync_outbox WHERE mutation_id = ?", arguments: [id])
             try db.execute(sql: "DELETE FROM browser_sync_automatic_expiry WHERE mutation_id = ?", arguments: [id])
@@ -944,8 +1087,9 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
             try requireSyncOwner(owner, in: db)
             try importExpiryRecovery(events, owner: owner, in: db)
             var baseline = try readSyncBaseline(db)
-            try baseline.apply(events.filter { $0.entityType != "boost" })
+            try baseline.apply(events.filter(\.belongsToSpaces))
             try applyBoostEvents(events, in: db)
+            try applyMobileTabEvents(events, in: db)
             let snapshot = try writeSyncProjection(baseline, in: db)
             try db.execute(
                 sql: "UPDATE browser_sync_state SET cursor = MAX(cursor, ?) WHERE id = 1", arguments: [cursor],
@@ -1194,6 +1338,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
             DELETE FROM browser_sync_expiry_imports;
             DELETE FROM browser_sync_automatic_expiry;
             DELETE FROM browser_sync_boost_baseline;
+            DELETE FROM browser_sync_mobile_tab_baseline;
             """)
             try db.execute(
                 sql: "UPDATE browser_preferences SET value = '0' WHERE key = ?",
@@ -1247,13 +1392,13 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
 
     private func completeSyncBootstrap(
         events: [BrowserSyncEvent], cursor: Int, for owner: BrowserSyncOwner, expiryRecovery: Bool,
-        localBoosts: [BrowserSyncBoostEntry]? = nil,
+        localBoosts: [BrowserSyncBoostEntry]? = nil, localMobileTabs: [BrowserSyncMobileTabEntry]? = nil,
     ) throws -> BrowserTabSessionSnapshot {
         guard cursor >= 0 else { throw BrowserSyncStoreError.invalidCursor }
         return try dbQueue.write { db in
             try requireSyncOwner(owner, in: db)
             let pending = try readSyncQueue(db)
-            guard pending.allSatisfy({ (4...6).contains($0.protocolVersion) }) else {
+            guard pending.allSatisfy({ (4...7).contains($0.protocolVersion) }) else {
                 throw BrowserSyncQueueError.bootstrapRequiresLegacyDrain
             }
             let local = try readSnapshot(db) ?? BrowserTabSessionSnapshot(tabs: [])
@@ -1261,7 +1406,7 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
             try importExpiryRecovery(events, owner: owner, in: db)
             var baseline = BrowserSyncOutboxBaseline()
             baseline.deletedKeys = previous.deletedKeys
-            try baseline.apply(events.filter { $0.entityType != "boost" })
+            try baseline.apply(events.filter(\.belongsToSpaces))
             if let localBoosts {
                 // Rebuild from zero, keeping deletions this device already knows.
                 var boosts = try readBoostBaseline(db).tombstones
@@ -1271,6 +1416,18 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
                 try appendBoostSyncMutations(state.adoptionOperations(for: localBoosts), to: db)
                 try db.execute(sql: """
                 UPDATE browser_sync_state SET boost_sync_enabled = 1, boost_revision = boost_revision + 1 WHERE id = 1
+                """)
+            }
+            if let localMobileTabs {
+                // Rebuild from zero, keeping deletions this device already knows.
+                var tabs = try readMobileTabBaseline(db).tombstones
+                try tabs.apply(events)
+                try writeMobileTabBaseline(tabs, to: db)
+                let state = BrowserSyncMobileTabState(baseline: tabs, pending: pending)
+                try appendMobileTabSyncMutations(state.adoptionOperations(for: localMobileTabs), to: db)
+                try db.execute(sql: """
+                UPDATE browser_sync_state SET mobile_tab_sync_enabled = 1, mobile_tab_revision = mobile_tab_revision + 1
+                WHERE id = 1
                 """)
             }
             if try !folderSyncEnabled(in: db) {
@@ -1707,6 +1864,48 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
         }
     }
 
+    private func appendMobileTabSyncMutations(
+        _ operations: [BrowserSyncMobileTabOperation], to db: Database,
+    ) throws {
+        for chunk in try syncChunks(operations) {
+            let mutation = BrowserSyncMobileTabMutation(id: UUID().uuidString, operations: chunk)
+            try db.execute(
+                sql: "INSERT INTO browser_sync_outbox (mutation_id, payload, protocol_version) VALUES (?, ?, 7)",
+                arguments: [mutation.id, JSONEncoder().encode(mutation)],
+            )
+        }
+    }
+
+    private func mobileTabSyncEnabled(in db: Database) throws -> Bool {
+        try Bool.fetchOne(db, sql: "SELECT mobile_tab_sync_enabled FROM browser_sync_state WHERE id = 1") == true
+    }
+
+    private func readMobileTabBaseline(_ db: Database) throws -> BrowserSyncMobileTabBaseline {
+        guard let payload = try Data.fetchOne(
+            db, sql: "SELECT payload FROM browser_sync_mobile_tab_baseline WHERE id = 1",
+        ) else { return BrowserSyncMobileTabBaseline() }
+        return try JSONDecoder().decode(BrowserSyncMobileTabBaseline.self, from: payload)
+    }
+
+    private func writeMobileTabBaseline(_ baseline: BrowserSyncMobileTabBaseline, to db: Database) throws {
+        try db.execute(
+            sql: "INSERT INTO browser_sync_mobile_tab_baseline (id, payload) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET payload = excluded.payload",
+            arguments: [JSONEncoder().encode(baseline)],
+        )
+    }
+
+    /// Mobile tab events go to their own baseline; a change bumps the mobile tab revision.
+    private func applyMobileTabEvents(_ events: [BrowserSyncEvent], in db: Database) throws {
+        let tabEvents = events.filter { $0.entityType == BrowserSyncMobileTabOperation.entityType }
+        guard !tabEvents.isEmpty else { return }
+        let previous = try readMobileTabBaseline(db)
+        var baseline = previous
+        try baseline.apply(tabEvents)
+        guard baseline != previous else { return }
+        try writeMobileTabBaseline(baseline, to: db)
+        try db.execute(sql: "UPDATE browser_sync_state SET mobile_tab_revision = mobile_tab_revision + 1 WHERE id = 1")
+    }
+
     private func boostSyncEnabled(in db: Database) throws -> Bool {
         try Bool.fetchOne(db, sql: "SELECT boost_sync_enabled FROM browser_sync_state WHERE id = 1") == true
     }
@@ -1795,6 +1994,10 @@ final class BrowserSQLiteSessionStore: BrowserTabSessionSnapshotStoring, Browser
                 let boosts = try JSONDecoder().decode(BrowserSyncBoostMutation.self, from: row["payload"] as Data)
                 try boosts.validate()
                 mutation = .boosts(boosts)
+            case 7:
+                let tabs = try JSONDecoder().decode(BrowserSyncMobileTabMutation.self, from: row["payload"] as Data)
+                try tabs.validate()
+                mutation = .mobileTabs(tabs)
             default: throw BrowserSyncQueueError.unsupportedProtocolVersion(version)
             }
             guard mutation.id == row["mutation_id"] as String

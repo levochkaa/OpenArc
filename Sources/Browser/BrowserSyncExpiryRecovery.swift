@@ -118,8 +118,9 @@ enum BrowserSyncExpiryRecovery {
                     }
                 }
             case .boosts,
-                 .expiry:
-                // Expiry carries a condition, boosts no page content.
+                 .expiry,
+                 .mobileTabs:
+                // Expiry carries a condition; boosts and mobile tabs no Space tab content.
                 break
             }
         }

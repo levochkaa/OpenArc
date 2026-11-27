@@ -416,7 +416,8 @@ private struct PersistenceGuardDiskState: Equatable {
             case .folders(let batch):
                 BrowserSyncFolderProjection.apply(batch.operations, to: &values, deleted: &deleted)
             case .boosts,
-                 .expiry:
+                 .expiry,
+                 .mobileTabs:
                 throw BrowserRemoteSyncError.unsupportedSyncProtocol
             }
             if let extra = extraOnNextPush {

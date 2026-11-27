@@ -39,8 +39,8 @@ extension BrowserSyncHTTPIntegrationTests {
         _ = try await remote.push(mutation: seed, authSession: auth[0])
         await first.activate()
         await second.activate()
-        #expect(try first.store.syncPullProtocolVersion(for: first.owner) == 6)
-        #expect(try second.store.syncPullProtocolVersion(for: second.owner) == 6)
+        #expect(try first.store.syncPullProtocolVersion(for: first.owner) == 7)
+        #expect(try second.store.syncPullProtocolVersion(for: second.owner) == 7)
 
         let live = try DesktopArchiveHTTPModel(profile: first)
         defer { live.close() }
