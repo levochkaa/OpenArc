@@ -24,6 +24,8 @@ int BrowserUsesLadybirdEngine(void);
 int BrowserUsesCEF(void);
 /// Ends the app's run loop: CEF's or WebKit's, Chrome's orderly quit on the Chrome engine, or Ladybird's.
 void BrowserStopApplicationLoop(void);
+/// Ends CefRunMessageLoop the way CEF expects; does nothing without CEF.
+void BrowserQuitCefMessageLoop(void);
 
 #ifdef __OBJC__
 

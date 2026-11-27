@@ -112,6 +112,12 @@ void BrowserStopApplicationLoop(void) {
     [BrowserLadybirdEngineClass() quit];
     return;
   }
+  if (BrowserUsesCEF()) {
+    // CefRunMessageLoop keeps Chromium alive until CefQuitMessageLoop lets go; a loop ended by -stop: left
+    // that for CefShutdown, after Chromium's exit callbacks ran, and quitting crashed there.
+    BrowserQuitCefMessageLoop();
+    return;
+  }
   if (!gUsesChromeEngine) {
     [NSApp stop:nil];
     // -stop: ends the loop after the next event; outside one, this event is it.

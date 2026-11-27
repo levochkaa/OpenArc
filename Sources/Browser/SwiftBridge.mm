@@ -11,6 +11,7 @@
 #import "OpenArc-Swift.h"
 
 #include "Shared/ClientManager.h"
+#include "include/cef_app.h"
 #include "include/cef_trace.h"
 #include "include/cef_version.h"
 
@@ -94,6 +95,13 @@ int BrowserEndTrace(const char* path, void (^completion)(void)) {
     return 0;
   }
   return CefEndTracing(path, new BrowserTraceEnd([completion copy])) ? 1 : 0;
+}
+
+void BrowserQuitCefMessageLoop(void) {
+  if (!BrowserUsesCEF()) {
+    return;
+  }
+  CefQuitMessageLoop();
 }
 
 void BrowserCloseAllBrowsers(void) {
