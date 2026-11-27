@@ -1483,7 +1483,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
         guard mode == .search, let surface, searchPanel.isFieldExpanded else { return }
         let keyboardTop = searchKeyboardTop
         guard let offset else {
-            UIView.animate(springDuration: 0.4, bounce: 0.1, initialSpringVelocity: 0, delay: 0, options: [
+            UIView.animate(springDuration: 0.32, bounce: 0.1, initialSpringVelocity: 0, delay: 0, options: [
                 .allowUserInteraction, .beginFromCurrentState,
             ]) {
                 self.layoutSearchPanel(keyboardTop: keyboardTop)
@@ -2474,7 +2474,7 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
                 return
             }
             let top = surfaceDragStartTop
-            UIView.animate(springDuration: 0.4, bounce: 0.1, initialSpringVelocity: 0, delay: 0, options: [
+            UIView.animate(springDuration: 0.32, bounce: 0.1, initialSpringVelocity: 0, delay: 0, options: [
                 .allowUserInteraction, .beginFromCurrentState,
             ]) {
                 surface.frame = CGRect(
@@ -2720,12 +2720,13 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
     }
 
     /// How far an open panel at `top` rises for a finger that lifts it `value`
-    /// points past its place: it follows the finger at first and each point
-    /// comes harder after that; it stops at the safe area's top.
+    /// points past its place: a scroll view's rubber band over most of the
+    /// screen, about half the finger's way at first and harder with each
+    /// point after that, and never past the safe area's top.
     private func liftResistance(_ value: CGFloat, from top: CGFloat) -> CGFloat {
         let reach = top - view.safeAreaInsets.top
         guard value > 0, reach > 0 else { return 0 }
-        return reach * (1 - exp(-value / reach))
+        return min(rubberBand(value, limit: view.bounds.height * 0.8), reach)
     }
 
     private func rubberBand(_ value: CGFloat, limit: CGFloat) -> CGFloat {
