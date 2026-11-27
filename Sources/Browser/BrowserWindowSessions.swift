@@ -68,6 +68,14 @@ final class BrowserMainWindow: NSWindow {
         }
     }
 
+    /// Engines read this to pause covered pages; see `BrowserWindowPresentation`.
+    override var occlusionState: NSWindow.OcclusionState {
+        BrowserWindowPresentation.current == .behindOthers
+            ? super.occlusionState.union(.visible)
+            : super
+                .occlusionState
+    }
+
     var browserUndoManager: UndoManager?
 
     /// A borderless window would otherwise disable File > Close Window.

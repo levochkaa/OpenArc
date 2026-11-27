@@ -38,42 +38,36 @@ COPY_DIR = Path.home() / "Library" / "Caches" / "OpenArcSmokeTest"
 RUN_LOCK = COPY_DIR / "run.lock"
 CHROME_ENGINE_FRAMEWORK = "OpenArc Framework.framework"
 LADYBIRD_ENGINE_FRAMEWORK = "OpenArc Ladybird.framework"
-# Checks of features the Chrome engine does not have yet (docs/chrome-engine.md); they skip on it.
-CHROME_ENGINE_GAPS = {
-    "extension-sees-tabs": "extensions also see the blank tab of the engine's hidden window",
-    "screen-share-picker": "OpenArc's screen share picker",
-    "extension-popup": "extension buttons in OpenArc's toolbar",
-    "notification-after-site-permission": "site permission prompts in OpenArc's own card",
-    "translate-in-place": "translation",
+# Every check runs on every engine. ENGINE_GAPS lists, per engine, the features it does not have; a check, or the part
+# of one, that needs such a feature skips there with the reason, so a new check needs no entry here unless an engine
+# lacks what it tests (docs/cef-smoke-test.md).
+ENGINE_GAPS = {
+    "chrome": {
+        "extension-tab-list": "extensions also see the blank tab of the engine's hidden window",
+        "screen-share-picker": "OpenArc's screen share picker",
+        "extension-toolbar": "extension buttons in OpenArc's toolbar",
+        "site-permission-prompts": "site permission prompts in OpenArc's own card",
+        "translation": "translation",
+    },
+    "webkit": {
+        "chromium-extensions": "--load-extension loads a Chromium extension",
+        "chromium-history": "WebKit pages write no Chromium History database",
+        "screen-share-picker": "OpenArc's screen share picker",
+        "notifications": "WKWebView gives apps no call for a site's notification permission; "
+                         "Notification.requestPermission() answers denied",
+        "translation": "translation is Chromium's",
+    },
+    "ladybird": {
+        "chromium-extensions": "--load-extension loads a Chromium extension",
+        "chromium-history": "Ladybird pages write no Chromium History database",
+        "webauthn": "Ladybird has no WebAuthn",
+        "display-capture": "Ladybird has no getDisplayMedia",
+        "translation": "translation is Chromium's",
+    },
 }
-# Checks of what only Chromium has; they skip when the copy runs on WebKit alone (docs/webkit-engine.md).
-WEBKIT_ENGINE_GAPS = {
-    "extension-sees-tabs": "--load-extension loads a Chromium extension",
-    "history": "WebKit pages write no Chromium History database",
-    "print-preview": "the agent CLI clicks through DevTools' DOM methods, which WebKit pages lack",
-    "screen-share-picker": "the agent CLI clicks through DevTools' DOM methods, which WebKit pages lack",
-    "extension-popup": "the toolbar button of a Chromium extension",
-    "notification-after-site-permission": "the agent CLI clicks through DevTools' DOM methods, which WebKit "
-                                          "pages lack",
-    "translate-in-place": "translation is Chromium's",
-    "sandbox": "no Chromium process runs",
-}
+ENGINE_GAP_PREFIX = {"chrome": "not on the Chrome engine yet", "webkit": "not on WebKit", "ladybird": "not on Ladybird"}
 # Utility services Chromium itself starts without a sandbox on macOS: video capture opens the cameras.
 UNSANDBOXED_SERVICES = {"video_capture.mojom.VideoCaptureService"}
-# Checks of what Ladybird does not have (docs/ladybird-engine.md); they skip when the copy runs on Ladybird.
-LADYBIRD_ENGINE_GAPS = {
-    "media-devices": "Ladybird has no getDisplayMedia, and the fixture server's http://127.0.0.1 is no secure context "
-                     "there",
-    "extension-sees-tabs": "--load-extension loads a Chromium extension",
-    "passkeys": "Ladybird has no WebAuthn",
-    "history": "Ladybird pages write no Chromium History database",
-    "print-preview": "the agent CLI clicks through DevTools' DOM methods, which Ladybird pages lack",
-    "screen-share-picker": "the agent CLI clicks through DevTools' DOM methods, which Ladybird pages lack",
-    "extension-popup": "the toolbar button of a Chromium extension",
-    "notification-after-site-permission": "the agent CLI clicks through DevTools' DOM methods, which Ladybird "
-                                          "pages lack",
-    "translate-in-place": "translation is Chromium's",
-}
 SYSTEM_TCC = Path("/Library/Application Support/com.apple.TCC/TCC.db")
 LSREGISTER = ("/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/"
               "lsregister")
@@ -92,15 +86,17 @@ What it does:
   the Chrome engine (OpenArc Framework.framework, docs/chrome-engine.md) with
   --openarc-engine=chrome, and checks that its pages run there. --engine webkit
   starts it on WebKit alone (docs/webkit-engine.md) and checks that no Chromium
-  loads; checks of Chromium's own features skip. --engine ladybird starts it on
-  Ladybird (OpenArc Ladybird.framework, docs/ladybird-engine.md) and checks
-  that its pages run in Ladybird's WebContent helpers and no Chromium loads. Afterwards the copy is killed with
+  loads. --engine ladybird starts it on Ladybird (OpenArc Ladybird.framework,
+  docs/ladybird-engine.md) and checks that its pages run in Ladybird's
+  WebContent helpers and no Chromium loads. Every engine runs every check; one
+  that needs a feature the engine lacks (ENGINE_GAPS) skips with the reason.
+  Afterwards the copy is killed with
   SIGKILL, and its app copy, CEF- and Session- data and defaults are deleted.
   One run at a time: a run waits while another holds {RUN_LOCK} (--wait).
 
 Checks:
   chromium-engine, sandbox, no-notification-request-at-launch, engine-version, page-load-js-navigation,
-  webassembly, proprietary-codecs, extension-sees-tabs, passkeys, media-devices, history,
+  webassembly, proprietary-codecs, agent-actions, extension-sees-tabs, passkeys, media-devices, history,
   webkit-engine, print-preview, screen-share-picker, extension-popup,
   notification-after-site-permission, translate-in-place, background-launch,
   stability.
@@ -712,13 +708,14 @@ class SmokeTest:
 
     # Recording
 
-    def check(self, name: str, function) -> None:
-        gaps = {"chrome": CHROME_ENGINE_GAPS, "webkit": WEBKIT_ENGINE_GAPS,
-                "ladybird": LADYBIRD_ENGINE_GAPS}.get(self.options.engine, {})
-        if name in gaps:
-            prefix = {"chrome": "not on the Chrome engine yet", "ladybird": "not on Ladybird"}.get(
-                self.options.engine, "Chromium only")
-            reason = f"{prefix}: {gaps[name]}"
+    def lacks(self, *features: str) -> str | None:
+        """Why the engine under test cannot run something that needs `features`, or None when it has them all."""
+        gaps = ENGINE_GAPS.get(self.options.engine, {})
+        missing = [gaps[feature] for feature in features if feature in gaps]
+        return f"{ENGINE_GAP_PREFIX[self.options.engine]}: {'; '.join(missing)}" if missing else None
+
+    def check(self, name: str, function, needs: tuple[str, ...] = ()) -> None:
+        if reason := self.lacks(*needs):
             log(f"• {name}: SKIP, {reason}")
             self.results.append({"name": name, "status": "skip", "evidence": reason, "details": {}})
             return
@@ -813,21 +810,26 @@ class SmokeTest:
         self.check("page-load-js-navigation", self.check_navigation)
         self.check("webassembly", self.check_webassembly)
         self.check("proprietary-codecs", self.check_codecs)
-        self.check("extension-sees-tabs", self.check_extension_tabs)
-        self.check("passkeys", self.check_passkeys)
+        self.check("agent-actions", self.check_agent_actions)
+        self.check("extension-sees-tabs", self.check_extension_tabs, needs=("chromium-extensions", "extension-tab-list"))
+        self.check("passkeys", self.check_passkeys, needs=("webauthn",))
         self.check("media-devices", self.check_media_devices)
         self.check("history", self.check_history)
         self.check("webkit-engine", self.check_webkit)
-        if self.options.no_gui:
-            for name in ("print-preview", "screen-share-picker", "extension-popup",
-                         "notification-after-site-permission"):
+        gui_checks = [
+            ("print-preview", self.check_print_preview, ()),
+            ("screen-share-picker", lambda: self.check_screen_share(screen_capture_before),
+             ("display-capture", "screen-share-picker")),
+            ("extension-popup", self.check_extension_popup, ("chromium-extensions", "extension-toolbar")),
+            ("notification-after-site-permission", self.check_notification_permission,
+             ("notifications", "site-permission-prompts")),
+        ]
+        for name, function, needs in gui_checks:
+            if self.options.no_gui:
                 self.results.append({"name": name, "status": "skip", "evidence": "--no-gui", "details": {}})
-        else:
-            self.check("print-preview", self.check_print_preview)
-            self.check("screen-share-picker", lambda: self.check_screen_share(screen_capture_before))
-            self.check("extension-popup", self.check_extension_popup)
-            self.check("notification-after-site-permission", self.check_notification_permission)
-        self.check("translate-in-place", self.check_translate)
+            else:
+                self.check(name, function, needs=needs)
+        self.check("translate-in-place", self.check_translate, needs=("translation",))
         self.qualify_launch_notification_check()
         self.check("background-launch", self.check_background)
         self.check("stability", self.check_stability)
@@ -964,6 +966,8 @@ class SmokeTest:
         sandbox_check.restype = ctypes.c_int
         if self.options.engine == "ladybird":
             return self.check_ladybird_sandbox(sandbox_check)
+        if self.options.engine == "webkit":
+            return self.check_webkit_sandbox(sandbox_check)
         processes, unsandboxed = [], []
         for line in run(["/bin/ps", "-axww", "-o", "pid=,command="], check=False).stdout.splitlines():
             pid, _, command = line.strip().partition(" ")
@@ -986,6 +990,31 @@ class SmokeTest:
         if unsandboxed:
             raise CheckFailed(f"{len(unsandboxed)} of {len(processes)} processes run without the sandbox", details)
         return {"evidence": f"all {len(processes)} renderer, GPU and utility processes run in the sandbox", **details}
+
+    def check_webkit_sandbox(self, sandbox_check) -> dict:
+        """WebKit's page, network and GPU processes for the copy run in the sandbox macOS starts them in."""
+        responsible = ctypes.CDLL("/usr/lib/libSystem.B.dylib").responsibility_get_pid_responsible_for_pid
+        responsible.argtypes = [ctypes.c_int]
+        responsible.restype = ctypes.c_int
+        processes, unsandboxed = [], []
+        for line in run(["/bin/ps", "-axww", "-o", "pid=,comm="], check=False).stdout.splitlines():
+            pid, _, command = line.strip().partition(" ")
+            name = command.rsplit("/", 1)[-1]
+            if not name.startswith("com.apple.WebKit.") or responsible(int(pid)) != self.instance.pid:
+                continue
+            processes.append(name.removeprefix("com.apple.WebKit."))
+            if sandbox_check(int(pid), None, 0) != 1:
+                unsandboxed.append(f"{pid} {name}")
+        details = {"processes": sorted(processes), "unsandboxed": unsandboxed,
+                   "method": "sandbox_check() on every com.apple.WebKit.* process macOS counts as the copy's "
+                             "(responsibility_get_pid_responsible_for_pid)"}
+        if "WebContent" not in processes:
+            raise CheckFailed("no WebKit WebContent process of the copy was found", details)
+        if unsandboxed:
+            raise CheckFailed(f"{len(unsandboxed)} of {len(processes)} WebKit processes run without the sandbox",
+                              details)
+        return {"evidence": f"all {len(processes)} WebKit processes run in the sandbox: "
+                            f"{', '.join(sorted(set(processes)))}", **details}
 
     def check_no_chromium(self, frameworks: Path) -> dict:
         """On WebKit, no Chromium loads: no helper process from the bundle and neither framework in the app."""
@@ -1190,6 +1219,51 @@ class SmokeTest:
 
         return wait_until(answer, timeout, 0.5)
 
+    def check_agent_actions(self) -> dict:
+        """The agent CLI reads and drives a page alike on every engine: snapshot refs, fill, keys, clicks, scroll."""
+        tab = self.open_tab("agent", self.server.url("agent.html"))
+        self.select(tab)
+        steps: dict = {}
+        outline = self.instance.cli("snapshot", "--tab", tab, "-i")["snapshot"]
+        steps["snapshot"] = outline
+        refs = {}
+        for role, name in (("textbox", "Name"), ("button", "Go"), ("checkbox", "Keep"), ("button", "Far")):
+            found = re.search(rf'- {role} "{name}" \[ref=(e\d+)\]', outline)
+            if not found:
+                raise CheckFailed(f"the interactive snapshot has no {role} \"{name}\" with a ref", {"steps": steps})
+            refs[name] = "@" + found.group(1)
+        self.instance.cli("fill", "--tab", tab, refs["Name"], "smoke")
+        self.instance.cli("type", "--tab", tab, "test")
+        self.instance.cli("press", "--tab", tab, "Enter")
+        self.instance.cli("click", "--tab", tab, refs["Go"])
+        self.instance.cli("click", "--tab", tab, refs["Keep"])
+        self.instance.cli("click", "--tab", tab, "#far")
+        steps["read"] = self.instance.cli("read", "--tab", tab, "h1").get("text")
+        result = wait_until(lambda: (lambda v: v if v and v.get("far") else None)(
+            self.instance.eval("window.smoke", tab)), 10, 0.5)
+        steps["page"] = result
+        expected = {"enter": {"trusted": True, "value": "smoketest"},
+                    "keep": {"trusted": True, "checked": True}}
+        wrong = {key: (result or {}).get(key) for key, value in expected.items() if (result or {}).get(key) != value}
+        go = (result or {}).get("go") or {}
+        if go.get("trusted") is not True or go.get("value") != "smoketest":
+            wrong["go"] = go
+        far = (result or {}).get("far") or {}
+        if far.get("trusted") is not True or not far.get("scrolled"):
+            wrong["far"] = far
+        if steps["read"] != "Agent actions":
+            wrong["read"] = steps["read"]
+        self.instance.cli("close", tab)
+        details = {"method": "agent.html: `snapshot -i` gives refs for the field, the buttons and the checkbox; "
+                             "fill, type, press Enter, click by ref and by selector act on them; the page records "
+                             "each event and whether it was trusted", "steps": steps}
+        if wrong:
+            raise CheckFailed(f"unexpected page state: {wrong}", details)
+        activation = "with user activation" if go.get("activation") else "user activation not reported"
+        return {"evidence": f"snapshot gave 4 refs; fill + type wrote 'smoketest'; Enter, the Go click ({activation}), "
+                            f"the checkbox and a click 3000 px down (scrolled to {far['scrolled']}) arrived as "
+                            "trusted events", **details}
+
     def check_extension_tabs(self) -> dict:
         tab = self.tabs["start"]
         # A tab that was never shown must be visible to extensions too.
@@ -1238,18 +1312,41 @@ class SmokeTest:
 
     def check_media_devices(self) -> dict:
         tab = self.tabs["start"]
+        # Device enumeration waits for a page in view; Ladybird keeps it waiting in a background tab.
+        self.select(tab)
         values = self.instance.eval(
-            "(async () => ({mediaDevices: !!navigator.mediaDevices,"
+            "(async () => ({mediaDevices: !!navigator.mediaDevices, secure: isSecureContext,"
             " getDisplayMedia: typeof navigator.mediaDevices?.getDisplayMedia,"
             " getUserMedia: typeof navigator.mediaDevices?.getUserMedia,"
-            " devices: (await navigator.mediaDevices.enumerateDevices()).map(d => d.kind)}))()", tab)
-        if not values.get("mediaDevices") or values.get("getDisplayMedia") != "function":
+            " devices: navigator.mediaDevices"
+            "   ? (await navigator.mediaDevices.enumerateDevices()).map(d => d.kind) : null}))()", tab)
+        display = self.lacks("display-capture")
+        if not values.get("mediaDevices") or values.get("getUserMedia") != "function" or (
+                not display and values.get("getDisplayMedia") != "function"):
             raise CheckFailed(f"navigator.mediaDevices is incomplete: {values}", values)
-        return {"evidence": f"navigator.mediaDevices present; getDisplayMedia is a function; enumerateDevices "
+        shown = f"getDisplayMedia left out ({display})" if display else "getDisplayMedia is a function"
+        return {"evidence": f"navigator.mediaDevices present; getUserMedia is a function; {shown}; enumerateDevices "
                             f"listed {len(values['devices'])} device(s)", **values}
 
     def check_history(self) -> dict:
+        """Visited pages come back in OpenArc's history on every engine; Chromium engines also keep them in History."""
         wanted = [self.server.url("index.html"), self.server.url("two.html")]
+        prefix = f"http://127.0.0.1:{self.server.port}/"
+
+        def listed():
+            urls = {page["url"] for page in self.instance.cli("history", "--limit", "100") or []}
+            return urls if all(url in urls for url in wanted) else None
+
+        urls = wait_until(listed, 15, 1)
+        details = {"method": "`openarc history` (OpenArc's history: this session's pages and the engine's History "
+                             "database) lists both fixture pages; on Chromium engines the copy's CEF profile History "
+                             "database, which the history page reads, has them too"}
+        if not urls:
+            raise CheckFailed("`openarc history` does not list the visited fixture pages", details)
+        details["cli"] = sorted(url for url in urls if url.startswith(prefix))
+        evidence = "`openarc history` lists index.html and two.html"
+        if reason := self.lacks("chromium-history"):
+            return {"evidence": f"{evidence}; the History database is left out ({reason})", **details}
 
         def visited():
             found = {}
@@ -1260,8 +1357,7 @@ class SmokeTest:
                         shutil.copy(profile / "History", copy)
                         connection = sqlite3.connect(f"file:{copy}?mode=ro", uri=True)
                         rows = connection.execute(
-                            "SELECT url, title, visit_count FROM urls WHERE url LIKE ?",
-                            (f"http://127.0.0.1:{self.server.port}/%",)).fetchall()
+                            "SELECT url, title, visit_count FROM urls WHERE url LIKE ?", (f"{prefix}%",)).fetchall()
                         connection.close()
                     except (OSError, sqlite3.Error):
                         continue
@@ -1271,16 +1367,10 @@ class SmokeTest:
 
         # Chromium writes history in batches, about every ten seconds.
         found = wait_until(visited, 30, 2)
-        details = {"method": "reads the History database of the copy's CEF profile (what OpenArc's history "
-                             "and command bar search read), then `openarc history`", "rows": found}
+        details["rows"] = found
         if not found:
             raise CheckFailed(f"{wanted} did not reach the History database within 30 s", details)
-        listed = {page["url"] for page in self.instance.cli("history", "--limit", "100") or []}
-        details["cli"] = sorted(url for url in listed if url.startswith(f"http://127.0.0.1:{self.server.port}/"))
-        if not all(url in listed for url in wanted):
-            raise CheckFailed("`openarc history` does not list the visited fixture pages", details)
-        return {"evidence": f"{len(found)} fixture URL(s) in History, including index.html and two.html, "
-                            "and `openarc history` lists both", **details}
+        return {"evidence": f"{evidence}; {len(found)} fixture URL(s) in History, including both", **details}
 
     def check_webkit(self) -> dict:
         url = f"http://127.0.0.1:{self.webkit_server.port}/webkit.html"
@@ -1343,14 +1433,22 @@ class SmokeTest:
         self.instance.cli("click", "--tab", tab, "#print")
         preview = self.wait_new_window(before, 15)
         details = {"method": "clicks the fixture's Print button (window.print()); the engine's print preview "
-                             "opens as a window of its own over the browser window; Escape sent to it in the "
-                             "background (cua-driver press_key) cancels it"}
+                             "(Chromium's Print window, or macOS's print panel on WebKit and Ladybird) opens over "
+                             "the browser window; Escape sent to it in the background (cua-driver press_key) "
+                             "cancels it"}
         if not preview:
             details["screenshots"] = [self.shot("print-preview-missing", window["window_id"])]
             raise CheckFailed("no print preview window appeared within 15 s", details)
         state = self.cua.state(self.instance.pid, preview["window_id"], max_elements=5)
         title = (find_row(state, r"AXWindow") or ("", ""))[1]
-        details.update(window=preview, ax_window=title,
+        # Chromium shows its preview in a window titled Print; WebKit and Ladybird show macOS's print panel, an
+        # untitled window with Print and Cancel buttons.
+        kind = "Print window" if '"Print"' in title else None
+        if not kind:
+            panel = self.cua.state(self.instance.pid, preview["window_id"], max_elements=400)
+            if find_row(panel, r"AXButton", r'"Print"') and find_row(panel, r"AXButton", r'"Cancel"'):
+                kind = "macOS print panel"
+        details.update(window=preview, ax_window=title, kind=kind,
                        screenshots=[self.shot("print-preview", preview["window_id"])])
         inside = (window["bounds"]["x"] <= preview["bounds"]["x"]
                   and preview["bounds"]["x"] + preview["bounds"]["width"]
@@ -1359,13 +1457,14 @@ class SmokeTest:
         closed = wait_until(lambda: preview["window_id"] not in self.copy_windows(), 10, 0.5)
         responsive = self.instance.eval("6 * 7", tab)
         details.update(closed=bool(closed), page_after=responsive)
-        if '"Print"' not in title:
-            raise CheckFailed(f"a window appeared but its title is {title!r}, not Print", details)
+        if not kind:
+            raise CheckFailed(f"a window appeared but it is no print preview: title {title!r}, no Print and Cancel "
+                              "buttons", details)
         if not closed:
             raise CheckFailed("the print preview did not close on Escape", details)
         if responsive != 42:
             raise CheckFailed(f"the page did not answer after the preview closed ({responsive!r})", details)
-        return {"evidence": f"a {preview['bounds']['width']:.0f}x{preview['bounds']['height']:.0f} 'Print' window "
+        return {"evidence": f"a {preview['bounds']['width']:.0f}x{preview['bounds']['height']:.0f} {kind} "
                             f"opened {'over' if inside else 'beside'} the browser window; Escape closed it and the "
                             f"page still runs scripts", **details}
 

@@ -5,22 +5,22 @@
     ./build.sh build
     script/cef_smoke_test.sh .build/xcode/Build/Products/Debug/OpenArc.app
 
-`--engine chrome` runs the same checks on the Chrome engine ([chrome-engine.md](chrome-engine.md)) for a build that carries `OpenArc Framework.framework`: the copy starts with `--openarc-engine=chrome`, and checks of features the engine does not have yet skip with the reason.
+`--engine chrome` runs the same checks on the Chrome engine ([chrome-engine.md](chrome-engine.md)) for a build that carries `OpenArc Framework.framework`: the copy starts with `--openarc-engine=chrome`. Every engine runs every check; see [One suite for every engine](#one-suite-for-every-engine) for what skips and why.
 
     ./script/chrome_engine.sh pull && ./build.sh build
     script/cef_smoke_test.sh .build/xcode/Build/Products/Debug/OpenArc.app --engine chrome
 
 `--engine webkit` starts the copy with `--openarc-engine=webkit` ([webkit-engine.md](webkit-engine.md)), on a full
 build or one made with `OPENARC_STAGE_CEF=0`. chromium-engine then checks that no Chromium runs: no helper process
-from the bundle, and neither CEF nor the Chrome engine among the main process's open files. engine-version expects
-Safari's user agent, webkit-engine expects WebKit on both ports, and the checks of Chromium's own features skip.
+from the bundle, and neither CEF nor the Chrome engine among the main process's open files; sandbox checks WebKit's
+own processes. engine-version expects Safari's user agent and webkit-engine expects WebKit on both ports.
 
 `--engine ladybird` starts the copy with `--openarc-engine=ladybird` ([ladybird-engine.md](ladybird-engine.md)) for a
 build that carries `OpenArc Ladybird.framework`. chromium-engine then checks that pages run in WebContent helpers
 from that framework, that no Chromium renderer runs and that the main process loaded no framework but Ladybird's;
 sandbox checks that Ladybird's page, worker, image, request, media and drawing helpers run in the macOS sandbox.
-engine-version expects Ladybird's user agent, webkit-engine expects WebKit for the site routed there and Ladybird
-for the other, and the checks of what Ladybird lacks skip.
+engine-version expects Ladybird's user agent, and webkit-engine expects WebKit for the site routed there and Ladybird
+for the other.
 
     ./script/ladybird_engine.sh all && ./build.sh build
     script/cef_smoke_test.sh .build/xcode/Build/Products/Debug/OpenArc.app --engine ladybird
@@ -37,25 +37,45 @@ It starts the copy through LaunchServices with `open -g` and `--no-activate`, `-
 
 Only one run can execute at a time because every run shares the same copy path, bundle ID, and defaults domain. Each run first takes an exclusive lock on `~/Library/Caches/OpenArcSmokeTest/run.lock` and waits while a run from another checkout holds it (`--wait MINUTES`, 30 by default; exits with status 2 on timeout). The lock file records the holder's checkout, app, and engine, and the system releases the lock when that process exits, even on `SIGKILL`. A copy left by `--keep` is not covered; the next run kills it.
 
-`--no-activate` is a launch argument for automated checks: OpenArc then never activates itself and opens its windows behind other apps' windows. A copy started with `--agent-socket` leaves `~/.local/bin/openarc` alone.
+`--no-activate` is a launch argument for automated checks: OpenArc then never activates itself and opens its windows behind other apps' windows. Its windows still count as shown (`BrowserMainWindow.occlusionState`), since the check stands in for a person looking at them: on every engine pages draw, take clicks and run what waits for a page in view, such as device enumeration on Ladybird. A copy started with `--agent-socket` leaves `~/.local/bin/openarc` alone.
+
+## One suite for every engine
+
+Every check runs on every engine and tests the feature as a person meets it, through the agent CLI and the copy's
+windows, so it needs no engine of its own. The agent CLI drives WebKit and Ladybird pages as it drives Chromium's
+([agent-access.md](agent-access.md)), so the checks that click a page run there too.
+
+`ENGINE_GAPS` in `cef_smoke_test.py` lists, per engine, the features it lacks, each with the reason. A check names
+the features it needs (`self.check(name, function, needs=(...))`), and skips on an engine that lacks one; a part of
+a check asks `self.lacks(feature)` and leaves that part out, saying so in the evidence (the History database on
+WebKit and Ladybird, `getDisplayMedia` on Ladybird). A new check needs no entry: it runs everywhere unless it tests
+something an engine lacks, and then that feature goes into `ENGINE_GAPS` for that engine. Checks of how an engine
+is built (chromium-engine, sandbox, engine-version, webkit-engine) expect what each engine should be.
+
+| Engine | Lacks |
+| --- | --- |
+| chrome | extensions see the blank tab of its hidden window, OpenArc's screen share picker, extension buttons in the toolbar, site permission prompts in OpenArc's own card, translation (not yet built) |
+| webkit | Chromium extensions, Chromium's History database, OpenArc's screen share picker, site notifications (WKWebView answers `denied` without a private call), translation |
+| ladybird | Chromium extensions, Chromium's History database, WebAuthn, `getDisplayMedia`, translation |
 
 ## Checks
 
 | Check | How |
 | --- | --- |
 | chromium-engine | The copy's renderer processes run from the engine `--engine` names: CEF's helpers in `Contents/Frameworks`, or the helpers inside `OpenArc Framework.framework`. |
-| sandbox | `sandbox_check()` returns 1 for every renderer, GPU and utility process of the copy, and none has `--no-sandbox`: a page that breaks the engine stays inside the macOS sandbox. Chromium starts `VideoCaptureService` without a sandbox on macOS, so it is left out. |
+| sandbox | `sandbox_check()` returns 1 for every renderer, GPU and utility process of the copy, and none has `--no-sandbox`: a page that breaks the engine stays inside the macOS sandbox. Chromium starts `VideoCaptureService` without a sandbox on macOS, so it is left out. On WebKit, every `com.apple.WebKit.*` process macOS counts as the copy's (`responsibility_get_pid_responsible_for_pid`); on Ladybird, its helpers. |
 | no-notification-request-at-launch | `Notification.permission` is `default` and `permissions.query` is `prompt` on a page; the system log, streamed from before launch, has no `Requesting authorization` from the copy and no `Sending request for permission` from `usernoted` for its bundle ids; no NotificationCenter banner names "OpenArc Smoke" in the first 10 s. |
 | engine-version | `navigator.userAgent` and `userAgentData` report the `CHROME_VERSION_MAJOR` of `ThirdParty/cef/export/include/cef_version.h`. |
 | page-load-js-navigation | A fixture page runs its script; `navigate`, `back` and `forward` land on the right titles. |
 | webassembly | A page compiles a WebAssembly module and runs it, and no process of the copy wrote a crash report meanwhile (on Ladybird the module goes through WasmCompiler's compiler). |
+| agent-actions | On `fixtures/agent.html`, `openarc snapshot -i` gives refs for a field, two buttons and a checkbox; `fill`, `type`, `press Enter`, `click` by ref and by selector act on them, one 3000 px down, and the page records each event as trusted. |
 | proprietary-codecs | `canPlayType` is `probably` for H.264 (`avc1.42E01E`) and AAC (`mp4a.40.2`); `fixtures/h264-aac.mp4` (2 s, 96x64, made with ffmpeg's `testsrc` and `sine` sources) plays and `currentTime` advances. |
 | extension-sees-tabs | The test extension's service worker answers `chrome.tabs.query({})`; the count matches `openarc tabs`, including a tab that was never shown. |
 | passkeys | `isUserVerifyingPlatformAuthenticatorAvailable()` and `getClientCapabilities()` resolve. False is a WARN: the copy has no webauthn keychain group. |
-| media-devices | `navigator.mediaDevices` exists, `getDisplayMedia` is a function, `enumerateDevices` resolves. |
-| history | The visited fixture URLs are in the profile's `History` database, which OpenArc's history reads, and `openarc history` lists them. |
+| media-devices | `navigator.mediaDevices` exists, `getUserMedia` and `getDisplayMedia` are functions, `enumerateDevices` resolves. |
+| history | `openarc history` lists the visited fixture pages on every engine. On Chromium engines they are also in the profile's `History` database, which the history page reads. |
 | webkit-engine | The copy's `browser.settings.siteEngines` sends a second fixture port to WebKit. The fixture writes the engine it sees into its title, which `openarc tabs` lists: `Engine webkit 42` there, `Engine chromium 42` on the other port. |
-| print-preview | `window.print()` opens a "Print" window over the browser window; Escape, sent in the background, closes it and the page still runs scripts. |
+| print-preview | `window.print()` opens Chromium's "Print" window, or macOS's print panel on WebKit and Ladybird, over the browser window; Escape, sent in the background, closes it and the page still runs scripts. |
 | screen-share-picker | `getDisplayMedia` from a click opens OpenArc's picker sheet. With Screen Recording allowed for the copy it shares the first source and checks the track, then stops it; otherwise it presses Cancel and expects `NotAllowedError`. |
 | extension-popup | Extensions > OpenArc Smoke Test, pressed through accessibility, opens the popup; its `chrome.tabs.query({active: true, currentWindow: true})` sees the selected tab. |
 | notification-after-site-permission | A click calls `Notification.requestPermission()`; the script presses Allow on OpenArc's prompt. The copy must turn to macOS only after that. The page gets `granted` whatever macOS answers, and the notification fires `onshow`; whether macOS shows it depends on the copy's notification settings and Focus. |
