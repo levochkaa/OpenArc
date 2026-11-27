@@ -585,6 +585,10 @@ struct PendingEvaluation {
                               page->async_permission_response(request_id, answer);
                           }];
     };
+    // window.print() opens the same print panel as File › Print.
+    view.on_request_print = [weak_self] {
+        [weak_self print];
+    };
     view.on_show_notification = [weak_self](String const& title, String const& body, String const& tag, String const&) {
         OpenArcLadybirdPage* self = weak_self;
         [self showNotificationWithTitle:Ladybird::string_to_ns_string(title.bytes_as_string_view())
@@ -1556,7 +1560,7 @@ static void collect_accessible_nodes(JsonObject const& node, NSMutableArray* out
     });
 }
 
-// Ladybird does not print; File › Print prints the whole page as Ladybird draws it.
+// Ladybird has no printing of its own; File › Print and window.print() print the whole page as Ladybird draws it.
 - (void)print
 {
     NSWindow* window = [_container window];

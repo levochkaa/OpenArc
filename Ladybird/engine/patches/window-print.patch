@@ -1,0 +1,153 @@
+diff --git a/Libraries/LibWeb/HTML/Window.cpp b/Libraries/LibWeb/HTML/Window.cpp
+index 231e22fb68..d1939bd50a 100644
+--- a/Libraries/LibWeb/HTML/Window.cpp
++++ b/Libraries/LibWeb/HTML/Window.cpp
+@@ -1525,6 +1525,29 @@ void Window::alert(Utf16String const& message)
+     page().did_request_alert(message);
+ }
+ 
++// https://html.spec.whatwg.org/multipage/timers-and-user-prompts.html#dom-print
++void Window::print()
++{
++    // 1. Let document be this's associated Document.
++    auto& document = associated_document();
++
++    // 2. If document is not fully active, then return.
++    if (!document.is_fully_active())
++        return;
++
++    // 3. If document's unload counter is greater than 0, then return.
++    if (document.unload_counter() > 0)
++        return;
++
++    // 4. If document is ready for post-load tasks, then run the printing steps for document.
++    // 5. Otherwise, set document's print when loaded flag.
++    // AD-HOC: The UI prints the document as it is drawn, so it asks at once; beforeprint and afterprint go around the
++    //         request, as the printing steps fire them around the printing.
++    dispatch_event(DOM::Event::create(relevant_global_object(*this), HTML::EventNames::beforeprint));
++    page().client().page_did_request_print();
++    dispatch_event(DOM::Event::create(relevant_global_object(*this), HTML::EventNames::afterprint));
++}
++
+ // https://html.spec.whatwg.org/multipage/timers-and-user-prompts.html#dom-confirm
+ bool Window::confirm(Optional<Utf16String> const& message)
+ {
+diff --git a/Libraries/LibWeb/HTML/Window.h b/Libraries/LibWeb/HTML/Window.h
+index 8ea91ba5d6..3c8cf60cac 100644
+--- a/Libraries/LibWeb/HTML/Window.h
++++ b/Libraries/LibWeb/HTML/Window.h
+@@ -213,6 +213,7 @@ public:
+     [[nodiscard]] GC::Ref<Speech::SpeechSynthesis> speech_synthesis();
+ 
+     void alert(Utf16String const& message = {});
++    void print();
+     bool confirm(Optional<Utf16String> const& message);
+     Optional<Utf16String> prompt(Optional<Utf16String> const& message, Optional<Utf16String> const& default_);
+ 
+diff --git a/Libraries/LibWeb/HTML/Window.idl b/Libraries/LibWeb/HTML/Window.idl
+index 27e5ae6bca..a7c78794ba 100644
+--- a/Libraries/LibWeb/HTML/Window.idl
++++ b/Libraries/LibWeb/HTML/Window.idl
+@@ -47,7 +47,7 @@ interface Window : EventTarget {
+     undefined alert(DOMString message);
+     boolean confirm(optional DOMString message = "");
+     DOMString? prompt(optional DOMString message = "", optional DOMString default = "");
+-    [FIXME] undefined print();
++    undefined print();
+ 
+     [NeedsCallerRealm] undefined postMessage(any message, USVString targetOrigin, optional sequence<object> transfer = []);
+     [NeedsCallerRealm, ImplementedInBindings] undefined postMessage(any message, optional WindowPostMessageOptions options = {});
+diff --git a/Libraries/LibWeb/Page/Page.h b/Libraries/LibWeb/Page/Page.h
+index a006641ca4..ed2f467d83 100644
+--- a/Libraries/LibWeb/Page/Page.h
++++ b/Libraries/LibWeb/Page/Page.h
+@@ -695,6 +695,7 @@ public:
+     virtual void page_did_unhover_link() { }
+     virtual void page_did_change_favicon(Gfx::Bitmap const&) { }
+     virtual void page_did_request_alert(Utf16String const&) { }
++    virtual void page_did_request_print() { }
+     virtual void page_did_request_confirm(Utf16String const&) { }
+     virtual void page_did_request_prompt(Utf16String const&, Utf16String const&) { }
+     virtual void page_did_request_set_prompt_text(Utf16String const&) { }
+diff --git a/Libraries/LibWebView/ViewImplementation.h b/Libraries/LibWebView/ViewImplementation.h
+index 1e25e84bc7..235dbedf5e 100644
+--- a/Libraries/LibWebView/ViewImplementation.h
++++ b/Libraries/LibWebView/ViewImplementation.h
+@@ -431,6 +431,8 @@ public:
+     Function<void(ByteString const&)> on_enter_tooltip_area;
+     Function<void()> on_leave_tooltip_area;
+     Function<void(Utf16String const& message)> on_request_alert;
++    // window.print(); unset, it does nothing.
++    Function<void()> on_request_print;
+     Function<void(Utf16String const& message)> on_request_confirm;
+     Function<void(Utf16String const& message, Utf16String const& default_)> on_request_prompt;
+     Function<void(Utf16String const& message)> on_request_set_prompt_text;
+diff --git a/Libraries/LibWebView/WebContentPage.cpp b/Libraries/LibWebView/WebContentPage.cpp
+index 063c78af42..209865cf23 100644
+--- a/Libraries/LibWebView/WebContentPage.cpp
++++ b/Libraries/LibWebView/WebContentPage.cpp
+@@ -2178,6 +2178,12 @@ void WebContentPage::did_get_debugger_source_positions(u64 request_id, Vector<De
+     }
+ }
+ 
++void WebContentPage::did_request_print()
++{
++    if (view().on_request_print)
++        view().on_request_print();
++}
++
+ void WebContentPage::did_request_alert(Utf16String message)
+ {
+     did_open_dialog(Web::PendingDialog::Alert, message);
+diff --git a/Libraries/LibWebView/WebContentPage.h b/Libraries/LibWebView/WebContentPage.h
+index 838f8992f7..2eb7221624 100644
+--- a/Libraries/LibWebView/WebContentPage.h
++++ b/Libraries/LibWebView/WebContentPage.h
+@@ -270,6 +270,7 @@ private:
+     virtual void did_get_debugger_object_properties(u64 request_id, Optional<String> error, DebuggerObjectProperties properties) override;
+     virtual void did_get_debugger_source_positions(u64 request_id, Vector<DebuggerSourcePosition> positions) override;
+     virtual void did_request_alert(Utf16String message) override;
++    virtual void did_request_print() override;
+     virtual void did_request_confirm(Utf16String message) override;
+     virtual void did_request_prompt(Utf16String message, Utf16String default_) override;
+     virtual void did_change_favicon(Gfx::ShareableBitmap favicon) override;
+diff --git a/Services/WebContent/PageClient.cpp b/Services/WebContent/PageClient.cpp
+index 0f95b2a9e0..a4a60db3e5 100644
+--- a/Services/WebContent/PageClient.cpp
++++ b/Services/WebContent/PageClient.cpp
+@@ -1140,6 +1140,11 @@ void PageClient::page_did_stop_geolocation_position_watch(u64 request_id)
+     client().async_did_stop_geolocation_position_watch(m_id, request_id);
+ }
+ 
++void PageClient::page_did_request_print()
++{
++    client().async_did_request_print(m_id);
++}
++
+ void PageClient::page_did_request_alert(Utf16String const& message)
+ {
+     client().async_did_request_alert(m_id, message);
+diff --git a/Services/WebContent/PageClient.h b/Services/WebContent/PageClient.h
+index 4bb2185c28..2313499553 100644
+--- a/Services/WebContent/PageClient.h
++++ b/Services/WebContent/PageClient.h
+@@ -257,6 +257,7 @@ private:
+     virtual void page_did_unregister_download(u64 download_id) override;
+     virtual bool page_is_download_canceled(u64 download_id) const override;
+     virtual void page_did_request_alert(Utf16String const&) override;
++    virtual void page_did_request_print() override;
+     virtual void page_did_request_confirm(Utf16String const&) override;
+     virtual void page_did_request_prompt(Utf16String const&, Utf16String const&) override;
+     virtual void page_did_request_set_prompt_text(Utf16String const&) override;
+diff --git a/Services/WebContent/WebContentClient.ipc b/Services/WebContent/WebContentClient.ipc
+index bedc5e912c..12bf0e0811 100644
+--- a/Services/WebContent/WebContentClient.ipc
++++ b/Services/WebContent/WebContentClient.ipc
+@@ -132,6 +132,7 @@ endpoint WebContentClient routed by Compositing::PageId page_id
+     did_request_image_context_menu(Compositing::PageId page_id, Web::HTML::CrossProcessId local_root_id, Gfx::IntPoint content_position, URL::URL url, ByteString target, unsigned modifiers, Optional<Gfx::ShareableBitmap> bitmap) =|
+     did_request_media_context_menu(Compositing::PageId page_id, Web::HTML::CrossProcessId local_root_id, Gfx::IntPoint content_position, ByteString target, unsigned modifiers, Web::MediaContextMenu menu) =|
+     did_request_alert(Compositing::PageId page_id, Utf16String message) =|
++    did_request_print(Compositing::PageId page_id) =|
+     did_request_confirm(Compositing::PageId page_id, Utf16String message) =|
+     did_request_prompt(Compositing::PageId page_id, Utf16String message, Utf16String default_) =|
+     did_request_set_prompt_text(Compositing::PageId page_id, Utf16String message) =|

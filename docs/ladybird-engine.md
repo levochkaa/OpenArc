@@ -77,7 +77,8 @@ for one launch. A bundle without the framework runs Ladybird's choice on the Chr
     Pressing a link, button or check box clicks it in the page.
   - **Links to `openarc://`** on a page (the passwords page's Open Settings) open in the page's tab, as the app's own
     navigations do, rather than going to macOS, which would hand them to the default OpenArc.
-  - **Print.** Ladybird does not print; File › Print prints the whole page as Ladybird draws it.
+  - **Print.** Ladybird has no printing of its own; File › Print and a page's `window.print()` print the whole page
+    as Ladybird draws it.
   - **Developer Tools.** Ladybird speaks Firefox's DevTools protocol. The Developer Tools commands start Ladybird's
     DevTools server and say where to connect from Firefox's `about:debugging`.
 - **Ladybird's code.** The layer pins Ladybird to `Ladybird/engine/LADYBIRD_COMMIT`, the last commit with the AppKit
@@ -95,7 +96,9 @@ for one launch. A bundle without the framework runs Ladybird's choice on the Chr
     hands a shown notification to the UI;
   - `sandbox-child-dyld.patch` lets a sandboxed helper's child start: dyld in `cranelift-compiler`, which inherits
     WasmCompiler's sandbox, aborted at launch on macOS 26 without `F_GETPATH`, so every module ran in the interpreter
-    and left a crash report.
+    and left a crash report;
+  - `window-print.patch` implements `window.print()`, which Ladybird left out: it fires `beforeprint` and
+    `afterprint` around a request to the UI process.
 
 ## Building
 

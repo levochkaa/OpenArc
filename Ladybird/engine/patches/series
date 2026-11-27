@@ -5,3 +5,4 @@ context-menu-position.patch
 request-finish-reentrancy.patch
 sandbox-child-dyld.patch
 site-permissions.patch
+window-print.patch
