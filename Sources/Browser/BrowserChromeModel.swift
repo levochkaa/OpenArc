@@ -6619,6 +6619,10 @@ enum BrowserWindowMode: Equatable {
         if pages.count < maximumCount {
             pages += noteSuggestions(for: trimmedQuery, maximumCount: min(maximumCount - pages.count, 4))
         }
+        // Then the tabs open on the account's phones and tablets.
+        if pages.count < maximumCount {
+            pages += mobileTabSuggestions(for: trimmedQuery, maximumCount: min(maximumCount - pages.count, 3))
+        }
         if pages.count < maximumCount {
             pages += bookmarksModel.suggestions(for: trimmedQuery, maximumCount: maximumCount - pages.count)
         }
@@ -6648,6 +6652,27 @@ enum BrowserWindowMode: Equatable {
             return action
         }
         return Array(pages.prefix(maximumCount)) + actions
+    }
+
+    /// Mobile tabs whose title or address holds the text, the latest used first.
+    private func mobileTabSuggestions(for query: String, maximumCount: Int) -> [BrowserCommandSuggestion] {
+        guard maximumCount > 0, !isIncognito else { return [] }
+        let needle = query.lowercased()
+        return (BrowserMobileTabsFeed.current?.tabs ?? [])
+            .filter { tab in
+                (tab.record.title?.lowercased().contains(needle) ?? false)
+                    || tab.record.urlString.lowercased().contains(needle)
+            }
+            .prefix(maximumCount)
+            .map { tab in
+                let address = BrowserCommandSuggestion.addressText(for: tab.record.urlString)
+                return BrowserCommandSuggestion(
+                    kind: .history,
+                    displayText: tab.record.title ?? address,
+                    detailText: "\(BrowserStrings.menuFromIPhone) · \(address)",
+                    resolvedURLString: tab.record.urlString,
+                )
+            }
     }
 
     private func newDocumentSuggestions(for query: String) -> [BrowserCommandSuggestion] {

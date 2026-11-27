@@ -14,6 +14,7 @@ NSMenuDelegate, NSUserInterfaceValidations {
     // MARK: Private
 
     private static let spacesMenuIdentifier = NSUserInterfaceItemIdentifier("browser.menu.spaces")
+    private static let mobileTabsMenuIdentifier = NSUserInterfaceItemIdentifier("browser.menu.mobileTabs")
     private static let extensionsMenuIdentifier = NSUserInterfaceItemIdentifier("browser.menu.extensions")
     private static let spaceProfileItemIdentifier = NSUserInterfaceItemIdentifier("browser.menu.space-profile")
     private static let spaceListEndIdentifier = NSUserInterfaceItemIdentifier("browser.menu.spaces.list-end")
@@ -32,6 +33,9 @@ NSMenuDelegate, NSUserInterfaceValidations {
     private static var isOnboardingForced: Bool {
         ProcessInfo.processInfo.arguments.contains("--show-onboarding")
     }
+
+    /// The mobile tabs of the default profile's account, for History › From iPhone.
+    private(set) var mobileTabsFeed: BrowserMobileTabsFeed?
 
     private var aboutWindow: NSWindow?
     private lazy var extensionsMenuDelegate = BrowserOnOpenMenuDelegate { [weak self] in
@@ -357,6 +361,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
         }
         if menu.identifier == Self.spacesMenuIdentifier {
             updateSpacesMenu(menu)
+            return
+        }
+        if menu.identifier == Self.mobileTabsMenuIdentifier {
+            updateMobileTabsMenu(menu)
             return
         }
         guard let installWebAppItem = menu.items.first(where: {
@@ -2422,6 +2430,14 @@ NSMenuDelegate, NSUserInterfaceValidations {
             descriptor: shortcutStore.descriptor(for: .openHistory),
             action: #selector(openHistory(_:)),
         ))
+        // The phones' and tablets' tabs, filled when the menu opens.
+        let mobileTabsMenu = NSMenu(title: BrowserStrings.menuFromIPhone)
+        mobileTabsMenu.identifier = Self.mobileTabsMenuIdentifier
+        mobileTabsMenu.delegate = self
+        let mobileTabsItem = NSMenuItem(title: BrowserStrings.menuFromIPhone, action: nil, keyEquivalent: "")
+        mobileTabsItem.image = BrowserIconImage.image(named: "iphone", pointSize: 13)
+        mobileTabsItem.submenu = mobileTabsMenu
+        menu.addItem(mobileTabsItem)
         for item in BrowserArchiveCommandRouting.menuItems(
             shortcutResolver: shortcutStore,
             viewAction: #selector(showArchive(_:)),
@@ -3016,6 +3032,35 @@ NSMenuDelegate, NSUserInterfaceValidations {
             ),
         )
         historyMenuItem.submenu = historyMenu
+    }
+
+    /// One item per mobile tab, the latest used first; choosing one opens it here.
+    private func updateMobileTabsMenu(_ menu: NSMenu) {
+        menu.removeAllItems()
+        let tabs = mobileTabsFeed?.tabs ?? []
+        guard !tabs.isEmpty else {
+            let empty = NSMenuItem(title: BrowserStrings.menuFromIPhoneEmpty, action: nil, keyEquivalent: "")
+            empty.isEnabled = false
+            menu.addItem(empty)
+            return
+        }
+        for tab in tabs.prefix(50) {
+            let address = BrowserCommandSuggestion.address(for: tab.record.urlString) ?? tab.record.urlString
+            let item = NSMenuItem(
+                title: tab.record.title ?? address, action: #selector(openMobileTabFromMenu(_:)), keyEquivalent: "",
+            )
+            item.toolTip = tab.record.urlString
+            item.representedObject = tab.record.urlString
+            item.target = self
+            menu.addItem(item)
+        }
+    }
+
+    @objc private func openMobileTabFromMenu(_ sender: NSMenuItem) {
+        guard let urlString = sender.representedObject as? String, let url = URL(string: urlString) else { return }
+        let model = activeProfileWindowSession?.chromeModel ?? profileWindowSessions.first?.chromeModel
+        guard let model, model.canCreateTab else { return }
+        model.openURLInNewTab(url)
     }
 
     /// Services and the Hide items every Mac app menu has, ending with the
@@ -4237,6 +4282,10 @@ NSMenuDelegate, NSUserInterfaceValidations {
             }
             boostSyncBridge = bridge
             syncCoordinator?.setBoostApplier(bridge)
+            let feed = BrowserMobileTabsFeed(store: sqliteSessionStore)
+            mobileTabsFeed = feed
+            BrowserMobileTabsFeed.current = feed
+            syncCoordinator?.setMobileTabApplier(feed)
         }
         let shareStore = source?.shareStore ?? BrowserShareStore(transport: syncClient) { [weak accountStore] in
             accountStore?.session

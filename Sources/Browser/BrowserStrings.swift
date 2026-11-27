@@ -1373,6 +1373,16 @@ enum BrowserStrings {
         comment: "History menu item title.",
     )
 
+    static let menuFromIPhone = NSLocalizedString(
+        "browser.menu.from_iphone",
+        comment: "History menu submenu listing the tabs open on the account's phones and tablets.",
+    )
+
+    static let menuFromIPhoneEmpty = NSLocalizedString(
+        "browser.menu.from_iphone.empty",
+        comment: "Disabled item in the From iPhone submenu when no phone or tablet has tabs.",
+    )
+
     static let menuSavePageAs = NSLocalizedString(
         "browser.menu.save_page_as",
         comment: "Save Page As menu item title.",

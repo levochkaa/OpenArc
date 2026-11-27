@@ -272,6 +272,8 @@
 "browser.incognito.banner.title" = "Incognito";
 "browser.incognito.tabs.title" = "Incognito Tabs";
 "browser.menu.history" = "View History";
+"browser.menu.from_iphone" = "From iPhone";
+"browser.menu.from_iphone.empty" = "No Tabs on iPhone or iPad";
 "browser.menu.save_page_as" = "Save Page As";
 "browser.menu.print" = "Print";
 "browser.menu.force_refresh" = "Force Refresh the Page";
