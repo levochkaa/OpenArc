@@ -351,13 +351,18 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
             x: 0, y: full.midY, width: bounds.width, height: max(bounds.height - full.midY, 0),
         )
         table.frame = suggestionsClip.bounds
-        let cutout = UIBezierPath(rect: suggestionsClip.bounds)
+        // The list clips itself at its animated bottom; the mask only cuts
+        // the field out at the top, and reaches the window's bottom so a
+        // panel changing height in an animation is never cut short early.
+        var maskBounds = suggestionsClip.bounds
+        maskBounds.size.height = max(maskBounds.height, window?.bounds.height ?? 0)
+        let cutout = UIBezierPath(rect: maskBounds)
         cutout.append(UIBezierPath(
             roundedRect: full.offsetBy(dx: 0, dy: -full.midY), cornerRadius: full.height / 2,
         ))
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        capsuleCutout.frame = suggestionsClip.bounds
+        capsuleCutout.frame = maskBounds
         capsuleCutout.path = cutout.cgPath
         CATransaction.commit()
         let listTop = full.maxY + Self.suggestionsTopInset

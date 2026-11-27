@@ -180,6 +180,10 @@ final class BrowserMobilePhoneViewController: UIViewController {
     private weak var surfacePan: UIPanGestureRecognizer?
     private var surfaceGhosts = [UIView]()
     private var surfaceDragStartTop: CGFloat = 0
+    /// Where the finger last turned, in the drag's translation, and whether it
+    /// was going up from there: a panel brought back up is let go open.
+    private var surfaceDragTurn: CGFloat = 0
+    private var surfaceDragGoesUp = false
     /// Search opened from the switcher: it rises over the cards, and closing
     /// it goes back to them instead of to the last tab.
     private var searchOverSwitcher = false
@@ -1495,7 +1499,9 @@ final class BrowserMobilePhoneViewController: UIViewController {
             // springing back now would jump the panel up before either.
             if keyboardTracker.frame.minY > keyboardTop + 1 {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-                    self?.settleSearchPanel()
+                    // A finger back on the list holds the panel again.
+                    guard let self, !searchPanel.isDraggingSuggestions else { return }
+                    settleSearchPanel()
                 }
                 return
             }
@@ -1512,14 +1518,36 @@ final class BrowserMobilePhoneViewController: UIViewController {
 
     /// An open search panel let go goes back on top of the keyboard.
     private func settleSearchPanel() {
-        guard mode == .search, let surface, searchPanel.isFieldExpanded,
-              !searchPanel.isDraggingSuggestions else { return }
+        guard mode == .search, let surface, searchPanel.isFieldExpanded else { return }
         let keyboardTop = searchKeyboardTop
         guard surface.frame.minY != searchPanelTop(keyboardTop: keyboardTop) else { return }
+        let height = searchPanel.frame.height
         UIView.animate(springDuration: 0.32, bounce: 0.1, initialSpringVelocity: 0, delay: 0, options: [
             .allowUserInteraction, .beginFromCurrentState,
         ]) {
             self.layoutSearchPanel(keyboardTop: keyboardTop)
+            self.holdSearchPanelHeight(height)
+        } completion: { _ in
+            self.fitSearchPanelAfterHold()
+        }
+    }
+
+    /// A table cut shorter in an animation drops the rows below its new
+    /// bottom at once, so a lifted list going back would lose its lower rows
+    /// before the panel gets there. It keeps its height, the rest hidden by
+    /// the keyboard, until the panel has settled.
+    private func holdSearchPanelHeight(_ height: CGFloat) {
+        if searchPanel.frame.height < height {
+            searchPanel.frame.size.height = height
+        }
+    }
+
+    private func fitSearchPanelAfterHold() {
+        guard mode == .search, let surface, !searchPanel.isDraggingSuggestions,
+              surfacePan.map({ $0.state != .began && $0.state != .changed }) ?? true
+        else { return }
+        UIView.performWithoutAnimation {
+            fitSearchPanel(top: surface.frame.minY)
         }
     }
 
@@ -2480,8 +2508,15 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
         switch gesture.state {
         case .began:
             surfaceDragStartTop = surface.frame.minY
+            surfaceDragTurn = 0
+            surfaceDragGoesUp = false
         case .changed:
             let dy = gesture.translation(in: view).y
+            // A few points of jitter are not a turn.
+            if surfaceDragGoesUp ? dy > surfaceDragTurn + 6 : dy < surfaceDragTurn - 6 {
+                surfaceDragGoesUp.toggle()
+            }
+            surfaceDragTurn = surfaceDragGoesUp ? min(surfaceDragTurn, dy) : max(surfaceDragTurn, dy)
             let y = dy >= 0
                 ? surfaceDragStartTop + dy
                 : surfaceDragStartTop - liftResistance(-dy, from: surfaceDragStartTop)
@@ -2494,11 +2529,12 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
         case .cancelled, .ended, .failed:
             let dy = gesture.translation(in: view).y
             let velocity = gesture.velocity(in: view).y
-            if gesture.state == .ended, dy > 80 || velocity > 500 {
+            if gesture.state == .ended, velocity > 500 || dy > 80 && !surfaceDragGoesUp && velocity > -100 {
                 closePanel(velocity: velocity)
                 return
             }
             let top = surfaceDragStartTop
+            let height = searchPanel.frame.height
             UIView.animate(springDuration: 0.32, bounce: 0.1, initialSpringVelocity: 0, delay: 0, options: [
                 .allowUserInteraction, .beginFromCurrentState,
             ]) {
@@ -2510,7 +2546,12 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
                 )
                 if isSearch {
                     self.fitSearchPanel(top: top)
+                    self.holdSearchPanelHeight(height)
                     self.applyPageCard(card)
+                }
+            } completion: { _ in
+                if isSearch {
+                    self.fitSearchPanelAfterHold()
                 }
             }
         default: break
