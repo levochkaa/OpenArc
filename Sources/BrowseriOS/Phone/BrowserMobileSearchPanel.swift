@@ -134,6 +134,8 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
     static let fieldTop: CGFloat = 17
     static let fieldHeight: CGFloat = 46
     static let rowHeight: CGFloat = 56
+    /// The room above the first suggestion, inside the list.
+    static let suggestionsTopInset: CGFloat = 6
     /// The eyes' center, from the field's trailing edge.
     static let eyesInset: CGFloat = 29
     /// The distance between the microphone's and the eyes' centers.
@@ -164,6 +166,10 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
     /// Whether the field is full width, or still the bar's New Tab capsule.
     private(set) var isFieldExpanded = true
 
+    /// Moves the panel while a drag on the suggestions holds it: how far below
+    /// its place, negative above; nil when the finger lets go.
+    var onPanelPull: ((CGFloat?) -> Void)?
+
     private let fieldBackground = UIView()
     private let plusGlyph = UIImageView(image: UIImage(
         systemName: "plus", withConfiguration: UIImage.SymbolConfiguration(pointSize: 20, weight: .semibold),
@@ -192,10 +198,12 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
 
     /// When a finger last let go of the suggestions.
     private var suggestionsReleaseTime = -CFTimeInterval.infinity
-    /// The last drag on the suggestions pulled the keyboard and the panel,
-    /// so the list holds still, through the release too; any other drag
-    /// scrolls it and leaves the keyboard.
-    private var isSuggestionsDragPullingKeyboard = false
+    /// Where the finger was, in the pan's translation, when the list reached
+    /// its top and the drag went on to move the panel; nil while it scrolls.
+    private var panelPullStart: CGFloat?
+
+    /// A drag on the suggestions moves the panel instead of scrolling them.
+    var isPullingPanel: Bool { panelPullStart != nil && table.isTracking }
 
     /// A finger is on the suggestions, so the keyboard may be following it.
     var isDraggingSuggestions: Bool { table.isTracking }
@@ -257,9 +265,12 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
         table.rowHeight = Self.rowHeight
         table.dataSource = self
         table.delegate = self
-        // A drag down the suggestions from their top takes the keyboard with
-        // it, and search closes after it; see scrollViewWillBeginDragging.
+        // Once the list is at its top, a drag down moves the panel and then
+        // takes the keyboard with it as the finger reaches it; search closes
+        // after the keyboard. See scrollViewDidScroll.
         table.keyboardDismissMode = .interactive
+        // The rows scroll up to the field's edge, not to a gap under it.
+        table.contentInset.top = Self.suggestionsTopInset
         table.alwaysBounceVertical = true
         table.showsVerticalScrollIndicator = false
         table.register(Cell.self, forCellReuseIdentifier: "Suggestion")
@@ -322,9 +333,11 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
             x: isFieldExpanded ? 4 : (frame.width - glyphSide) / 2, y: (frame.height - glyphSide) / 2,
             width: glyphSide, height: glyphSide,
         )
-        let tableTop = frame.maxY + 6
+        let tableTop = frame.maxY
         table.frame = CGRect(x: 0, y: tableTop, width: bounds.width, height: max(bounds.height - tableTop, 0))
-        incognitoNote.frame = table.frame.insetBy(dx: Self.margin, dy: 0)
+        incognitoNote.frame = table.frame.inset(by: UIEdgeInsets(
+            top: Self.suggestionsTopInset, left: Self.margin, bottom: 0, right: Self.margin,
+        ))
         incognitoShade.frame = bounds
     }
 
@@ -410,27 +423,44 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
         return true
     }
 
-    /// A drag either scrolls the suggestions or, going down from their top
-    /// with the keyboard up, pulls the keyboard and the panel; never both.
-    func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
-        let atTop = scrollView.contentOffset.y <= -scrollView.adjustedContentInset.top + 1
-        // The pan's translation is already spent on the slop by now; its velocity tells the direction.
-        let pan = scrollView.panGestureRecognizer
-        let downward = pan.velocity(in: scrollView).y > 0 || pan.translation(in: scrollView).y > 0
-        isSuggestionsDragPullingKeyboard = field.isFirstResponder && atTop && downward
-        scrollView.keyboardDismissMode = isSuggestionsDragPullingKeyboard ? .interactive : .none
+    func scrollViewWillBeginDragging(_: UIScrollView) {
+        panelPullStart = nil
     }
 
+    /// With the keyboard up, a drag scrolls the suggestions until they reach
+    /// their top; from there on it moves the panel, down and back up past its
+    /// place, while the list holds still.
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
-        guard isSuggestionsDragPullingKeyboard else { return }
         let top = -scrollView.adjustedContentInset.top
+        guard scrollView.isTracking, field.isFirstResponder else {
+            // The list stays put through the release of a drag that moved the panel.
+            if panelPullStart != nil, scrollView.contentOffset.y < top { scrollView.contentOffset.y = top }
+            return
+        }
+        // In the window, as the panel itself moves under the finger.
+        let translation = scrollView.panGestureRecognizer.translation(in: nil).y
+        if panelPullStart == nil {
+            guard scrollView.contentOffset.y < top else { return }
+            panelPullStart = translation - (top - scrollView.contentOffset.y)
+        }
         if scrollView.contentOffset.y != top {
             scrollView.contentOffset.y = top
         }
+        onPanelPull?(translation - (panelPullStart ?? translation))
+    }
+
+    func scrollViewWillEndDragging(
+        _ scrollView: UIScrollView, withVelocity _: CGPoint, targetContentOffset: UnsafeMutablePointer<CGPoint>,
+    ) {
+        guard panelPullStart != nil else { return }
+        targetContentOffset.pointee.y = -scrollView.adjustedContentInset.top
     }
 
     func scrollViewDidEndDragging(_: UIScrollView, willDecelerate _: Bool) {
         suggestionsReleaseTime = CACurrentMediaTime()
+        if panelPullStart != nil {
+            onPanelPull?(nil)
+        }
     }
 
     func tableView(_: UITableView, numberOfRowsInSection _: Int) -> Int { suggestions.items.count }

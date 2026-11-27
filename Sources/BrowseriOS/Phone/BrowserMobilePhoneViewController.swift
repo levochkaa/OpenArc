@@ -1351,6 +1351,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
         searchPanel.candidates = searchCandidates()
         searchPanel.onSubmit = { [weak self] text in self?.submitSearch(text) }
         searchPanel.onSelect = { [weak self] item in self?.selectSuggestion(item) }
+        searchPanel.onPanelPull = { [weak self] offset in self?.pullSearchPanel(by: offset) }
         searchPanel.onRemove = { [weak self] item in
             guard let self, let page = item.iconPage else { return }
             BrowserMobileRemovedSuggestions.remove(page)
@@ -1450,14 +1451,39 @@ final class BrowserMobilePhoneViewController: UIViewController {
         }
     }
 
-    /// A drag down the suggestions pulls the keyboard, and the panel stays on top of it.
+    /// A drag down the suggestions pulls the keyboard, and the panel stays on top of it,
+    /// unless the drag holds the panel itself.
     private func followKeyboardUnderFinger() {
         guard mode == .search, surface != nil, searchPanel.isFieldExpanded, searchPanel.isDraggingSuggestions,
+              !searchPanel.isPullingPanel,
               surfacePan.map({ $0.state != .began && $0.state != .changed }) ?? true
         else { return }
         let top = keyboardTracker.frame.minY
         UIView.performWithoutAnimation {
             layoutSearchPanel(keyboardTop: top < view.bounds.height ? top : view.bounds.height)
+        }
+    }
+
+    /// A drag on the suggestions past their top moves the panel with the
+    /// finger: down it slides under the keyboard until the finger reaches the
+    /// keyboard and takes it along, up it gives only a little. Let go, it goes
+    /// back on top of the keyboard, unless the keyboard leaves and closes search.
+    private func pullSearchPanel(by offset: CGFloat?) {
+        guard mode == .search, let surface, searchPanel.isFieldExpanded else { return }
+        let keyboardTop = searchKeyboardTop
+        guard let offset else {
+            UIView.animate(springDuration: 0.4, bounce: 0.1, initialSpringVelocity: 0, delay: 0, options: [
+                .allowUserInteraction, .beginFromCurrentState,
+            ]) {
+                self.layoutSearchPanel(keyboardTop: keyboardTop)
+            }
+            return
+        }
+        let restTop = searchPanelTop(keyboardTop: keyboardTop)
+        let y = offset >= 0 ? restTop + offset : restTop - rubberBand(-offset, limit: 30)
+        UIView.performWithoutAnimation {
+            surface.frame = CGRect(x: 0, y: y, width: view.bounds.width, height: view.bounds.height - y)
+            searchPanel.frame = CGRect(x: 0, y: 0, width: view.bounds.width, height: keyboardTop - restTop)
         }
     }
 
