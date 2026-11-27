@@ -52,7 +52,10 @@ for one launch. A bundle without the framework runs Ladybird's choice on the Chr
     Content Security Policy does not block. An expression runs inside a wrapper that keeps its value, or its promise's
     result, in the page as JSON, read back until it settles; statements do not parse there and run as they are, with
     the completion value the console reports. `Page.captureScreenshot` and the tab's picture copy the frame the view
-    shows (`--full` asks WebContent for the whole page).
+    shows (`--full` asks WebContent for the whole page). The agent CLI's clicks, keys and text arrive as AppKit
+    events in `LadybirdWebView` (`BrowserPeerPageInput`), and its snapshots and selectors come from the page's DOM
+    ([agent-access.md](agent-access.md)). A page in a covered window is hidden and hits nothing, so one that takes
+    pointer input counts as shown for 5 seconds: only an agent clicks into a covered window.
   - **`openarc://` addresses.** Settings, history, bookmarks, downloads and version open Ladybird's own pages
     (`about:settings` …) and show under `openarc://`. The Easel's and the note's empty pages, the credits and a
     short "Not Available in Ladybird" page for extensions come from the app

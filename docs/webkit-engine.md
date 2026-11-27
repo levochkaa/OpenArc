@@ -39,9 +39,9 @@ says. That is the base of a Mac App Store build (below).
   page script hands it to the app.
 - **Undo.** A WebKit page's text edits use their own undo manager. The window's manager holds tab actions and never
   groups by event, and WebKit's edits used to throw there and quit the app.
-- **The agent CLI** runs scripts and takes screenshots in WebKit pages: `BrowserWebKitPage` answers
-  `Runtime.evaluate` and `Page.captureScreenshot` as Chromium does. Clicks, snapshots and other DevTools methods still
-  need Chromium.
+- **The agent CLI** works in WebKit pages as in Chromium's: `BrowserWebKitPage` answers `Runtime.evaluate` and
+  `Page.captureScreenshot` as Chromium does; clicks, keys and text arrive as AppKit events in the web view
+  (`BrowserPeerPageInput`), and snapshots and selectors come from the page's DOM ([agent-access.md](agent-access.md)).
 
 ## Data
 
@@ -55,6 +55,8 @@ WebKit supports them ([extensions-webkit.md](extensions-webkit.md)); new ones fr
 - Peek cards and small windows open as tabs; web sign-in windows need CEF.
 - Developer Tools: pages are inspectable from Safari's Develop menu, but OpenArc's toolbar and menu commands do
   nothing.
+- Site notifications: WKWebView gives apps no call for the permission, and `Notification.requestPermission()`
+  answers `denied`.
 - Chromium's own pages, translation, site settings, battery saver throttling, tracing, screen share through
   OpenArc's picker, and Chromium extensions' toolbar buttons and side panels.
 - Chromium's History database, which the history page reads: visits on WebKit do not reach it.

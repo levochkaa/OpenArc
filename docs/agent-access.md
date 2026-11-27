@@ -35,6 +35,17 @@ Every command has a tool (`browser_snapshot`, `browser_click`, `browser_history`
 
 Limits: a program that can already read this user's files can also talk to the socket, so the setting trusts everything the user runs; that includes the history, notes and cookies above. Incognito windows are out of reach, their history and notes too. A tab must be on screen for a screenshot to be reliable.
 
+## Engines
+
+The commands work alike on every engine. Chromium pages (CEF, the Chrome engine) answer DevTools' DOM, accessibility
+and input methods. WebKit and Ladybird pages answer scripts and screenshots; the tab controller turns DevTools' input
+methods into AppKit events in their web view (`BrowserPeerPageInput`), so clicks count as the person's own and open
+what needs a gesture, and `snapshot`, refs and selectors come from a script that reads the page's DOM and keeps its
+elements by ref for as long as the page's document lives; `hover`, `check` and `choose` run on those elements too.
+File uploads, PDFs, viewport sizes, downloads with the page's cookies, labelled screenshots and element screenshots
+still need Chromium's DevTools. `Tests/OpenArcTests/BrowserAgentEngineTests.swift` runs each action on both kinds of
+page.
+
 ## Protocol
 
 One JSON object per line: `{"id":1,"method":"snapshot","params":{"interactive":true}}`, answered by `{"id":1,"result":...}` or `{"id":1,"error":"..."}`. See `BrowserAgentService.handle`.

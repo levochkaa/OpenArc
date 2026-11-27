@@ -74,6 +74,7 @@ static constexpr auto s_internal_hosts = Array { "settings"sv, "history"sv, "boo
 - (void)containerDidResize;
 - (void)containerDidMoveToWindow:(NSWindow*)window;
 - (void)windowDidChangeOcclusionState;
+- (void)webViewDidTakePointerInput;
 @end
 
 // Shows a page's notifications in the app, as banners even while OpenArc is in front, and brings the page's window
@@ -194,6 +195,38 @@ static NSString* const OpenArcLadybirdPageKey = @"OpenArcLadybirdPage";
     if ([self.openArcPage handleKeyEventBeforePage:event])
         return;
     [super keyDown:event];
+}
+
+// A covered window takes pointer input only from an agent (the agent CLI's clicks arrive as these events). A hidden
+// page hits nothing, so a page that takes it counts as shown for a moment.
+- (void)mouseMoved:(NSEvent*)event
+{
+    [self.openArcPage webViewDidTakePointerInput];
+    [super mouseMoved:event];
+}
+
+- (void)mouseDown:(NSEvent*)event
+{
+    [self.openArcPage webViewDidTakePointerInput];
+    [super mouseDown:event];
+}
+
+- (void)mouseUp:(NSEvent*)event
+{
+    [self.openArcPage webViewDidTakePointerInput];
+    [super mouseUp:event];
+}
+
+- (void)rightMouseDown:(NSEvent*)event
+{
+    [self.openArcPage webViewDidTakePointerInput];
+    [super rightMouseDown:event];
+}
+
+- (void)scrollWheel:(NSEvent*)event
+{
+    [self.openArcPage webViewDidTakePointerInput];
+    [super scrollWheel:event];
 }
 
 @end
@@ -340,6 +373,8 @@ struct PendingEvaluation {
     BOOL _accessibilityRefreshing;
     BOOL _fullscreen;
     BOOL _visible;
+    // Until when the page counts as shown in a covered window, after it took pointer input.
+    NSDate* _shownForInputUntil;
     // openarc:// pages Ladybird shows from the app's HTML: the address the tab shows while the page is up.
     NSString* _schemeURLString;
     NSString* _lastFindText;
@@ -1071,8 +1106,22 @@ static void collect_accessible_nodes(JsonObject const& node, NSMutableArray* out
 - (void)windowDidChangeOcclusionState
 {
     NSWindow* window = _container.window;
-    BOOL on_screen = window != nil && ([window occlusionState] & NSWindowOcclusionStateVisible) != 0 && ![_container isHiddenOrHasHiddenAncestor];
+    BOOL taking_input = _shownForInputUntil != nil && [_shownForInputUntil timeIntervalSinceNow] > 0;
+    BOOL uncovered = ([window occlusionState] & NSWindowOcclusionStateVisible) != 0 || taking_input;
+    BOOL on_screen = window != nil && uncovered && ![_container isHiddenOrHasHiddenAncestor];
     [_webView handleVisibility:on_screen && _visible];
+}
+
+- (void)webViewDidTakePointerInput
+{
+    BOOL was_shown = _shownForInputUntil != nil && [_shownForInputUntil timeIntervalSinceNow] > 0;
+    _shownForInputUntil = [NSDate dateWithTimeIntervalSinceNow:5];
+    if (!was_shown)
+        [self windowDidChangeOcclusionState];
+    __weak OpenArcLadybirdPage* weak_self = self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        [weak_self windowDidChangeOcclusionState];
+    });
 }
 
 #pragma mark - BrowserPeerPage

@@ -225,6 +225,103 @@ enum BrowserAgentSnapshot {
         """
     }
 
+    /// The same outline from the page's own DOM, for an engine without DevTools' accessibility tree (WebKit,
+    /// Ladybird). The page keeps the elements by ref in `window[storeKey]`, so refs last as long as its document.
+    /// `root` is a script expression for the element a scoped snapshot starts at.
+    static func pageOutlineScript(storeKey: String, interactiveOnly: Bool, root: String? = nil) -> String {
+        let interactive = interactiveRoles.sorted().map { "\"\($0)\"" }.joined(separator: ",")
+        return #"""
+        ((key, interactiveOnly, maximum, root) => {
+          const store = window[key] || (window[key] = {byRef: new Map(), refOf: new WeakMap(), next: 1});
+          const interactive = new Set([\#(interactive)]);
+          const inputRoles = {button: "button", submit: "button", reset: "button", image: "button",
+            checkbox: "checkbox", radio: "radio", range: "slider", number: "spinbutton", search: "searchbox"};
+          const tagRoles = {BUTTON: "button", SELECT: "combobox", TEXTAREA: "textbox", H1: "heading", H2: "heading",
+            H3: "heading", H4: "heading", H5: "heading", H6: "heading", IMG: "img", NAV: "navigation", MAIN: "main",
+            HEADER: "banner", FOOTER: "contentinfo", FORM: "form", UL: "list", OL: "list", LI: "listitem",
+            TABLE: "table", TR: "row", TD: "cell", TH: "columnheader", SUMMARY: "button", OPTION: "option",
+            DIALOG: "dialog", ASIDE: "complementary", ARTICLE: "article"};
+          const namedByContent = new Set(["link", "button", "heading", "tab", "menuitem", "option", "cell",
+            "columnheader", "treeitem", "switch", "checkbox", "radio"]);
+          const skipped = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "TEMPLATE", "HEAD"]);
+          const clean = (text) => (text || "").replace(/\s+/g, " ").trim().slice(0, 200);
+          const roleOf = (e) => {
+            const explicit = (e.getAttribute("role") || "").trim().split(/\s+/)[0];
+            if (explicit) return explicit;
+            if (e.tagName === "A") return e.hasAttribute("href") ? "link" : "";
+            if (e.tagName === "INPUT") {
+              const type = (e.getAttribute("type") || "text").toLowerCase();
+              return type === "hidden" ? "" : inputRoles[type] || "textbox";
+            }
+            if (e.isContentEditable && !(e.parentElement && e.parentElement.isContentEditable)) return "textbox";
+            return tagRoles[e.tagName] || "";
+          };
+          const nameOf = (e, role) => {
+            const label = e.getAttribute("aria-label");
+            if (clean(label)) return clean(label);
+            const by = (e.getAttribute("aria-labelledby") || "").split(/\s+/).map((id) => document.getElementById(id));
+            const labelled = clean(by.filter(Boolean).map((n) => n.innerText || n.textContent).join(" "));
+            if (labelled) return labelled;
+            if (e.labels && e.labels.length) return clean([...e.labels].map((l) => l.innerText).join(" "));
+            if (e.tagName === "IMG") return clean(e.alt);
+            if (e.tagName === "INPUT" && ["button", "submit", "reset"].includes(e.type)) return clean(e.value);
+            if (namedByContent.has(role)) return clean(e.innerText || e.textContent);
+            return clean(e.getAttribute("title") || e.getAttribute("placeholder"));
+          };
+          const hidden = (e) => e.hidden || e.getAttribute("aria-hidden") === "true" ||
+            (e.checkVisibility ? !e.checkVisibility({visibilityProperty: true}) : !e.getClientRects().length);
+          const lines = [];
+          let length = 0;
+          const add = (line) => { lines.push(line); length += line.length + 1; };
+          const visit = (node, depth, quiet) => {
+            for (const child of node.childNodes) {
+              if (length >= maximum) return;
+              if (child.nodeType === 3) {
+                const text = clean(child.textContent);
+                if (text && !quiet && !interactiveOnly) add("  ".repeat(depth) + "- text " + JSON.stringify(text));
+                continue;
+              }
+              if (child.nodeType !== 1 || skipped.has(child.tagName) || hidden(child)) continue;
+              const role = roleOf(child);
+              const isInteractive = interactive.has(role);
+              const shown = isInteractive ||
+                (!interactiveOnly && role && !["none", "presentation", "generic", "group"].includes(role));
+              let name = "";
+              if (shown) {
+                name = nameOf(child, role);
+                let line = "  ".repeat(depth) + "- " + role + (name ? " " + JSON.stringify(name) : "");
+                if (isInteractive) {
+                  let ref = store.refOf.get(child);
+                  if (!ref) {
+                    ref = "e" + store.next++;
+                    store.refOf.set(child, ref);
+                    store.byRef.set(ref, child);
+                  }
+                  line += " [ref=" + ref + "]";
+                }
+                const value = "value" in child && typeof child.value === "string" ? clean(child.value) : "";
+                if (value && value !== name && role !== "button") line += " value=" + JSON.stringify(value);
+                if (child.checked) line += " [checked]";
+                if (child.selected) line += " [selected]";
+                if (child.getAttribute("aria-expanded") === "true") line += " [expanded]";
+                if (child.disabled) line += " [disabled]";
+                if (document.activeElement === child) line += " [focused]";
+                if (child.required) line += " [required]";
+                add(line);
+              }
+              visit(child, shown ? depth + 1 : depth, quiet || (shown && namedByContent.has(role) && !!name));
+            }
+          };
+          if (root === null) return null;
+          visit(root || document.body || document.documentElement, 0, false);
+          if (length >= maximum) {
+            lines.push("… the page is longer than this snapshot; scroll, or read one part with a selector.");
+          }
+          return lines.join("\n");
+        })(\#(String(reflecting: storeKey)), \#(interactiveOnly), \#(maximumLength), \#(root ?? "undefined"))
+        """#
+    }
+
     /// A key for Input.dispatchKeyEvent, by the names people and agents use.
     static func keyEvent(named name: String) -> (key: String, code: String, virtualCode: Int, text: String?)? {
         let named: [String: (String, String, Int, String?)] = [

@@ -18,6 +18,23 @@ struct BrowserAgentError: Error {
 @MainActor final class BrowserAgentService {
     /// Seconds to wait for a DevTools answer; a script may take a while, a stalled page never answers.
     static let devToolsTimeout: Double = 60
+    /// The key of a node on an engine without DevTools' DOM (WebKit, Ladybird): a script expression that finds the
+    /// element in the page, in place of DevTools' node ids.
+    static let scriptNodeKey = "openArcScript"
+    static let scriptNodeMissingKey = "openArcMissing"
+
+    /// Focuses a field and empties it, so typed text replaces what it held.
+    static let clearFieldFunction = """
+    function() {
+      this.focus();
+      if ('value' in this) {
+        this.value = '';
+        this.dispatchEvent(new Event('input', {bubbles: true}));
+      } else if (this.isContentEditable) {
+        this.textContent = '';
+      }
+    }
+    """
 
     // MARK: Internal
 
@@ -30,6 +47,9 @@ struct BrowserAgentError: Error {
     var sealedTabs = [String: String]()
     /// Each tab's last outline per scope, so the next snapshot can say what changed.
     var outlinesByTab = [String: (urlString: String, outlines: [String: String])]()
+    /// Tabs whose last snapshot came from the page's own DOM: their refs live in the page, in `window[scriptRefsKey]`.
+    var scriptRefTabs = [String: String]()
+    let scriptRefsKey = "__openArcAgentRefs" + UUID().uuidString.prefix(8)
 
     init(
         models: @escaping () -> [BrowserChromeModel],
@@ -272,29 +292,31 @@ struct BrowserAgentError: Error {
 
     func snapshot(_ params: [String: Any]) async throws -> [String: Any] {
         let (model, tab) = try await loadedTarget(params)
-        _ = try await devTools(model, tab.id, "Accessibility.enable")
-        let tree = try await devTools(model, tab.id, "Accessibility.getFullAXTree")
-        var known = refsByTab[tab.id]
-        if known?.urlString != tab.urlString {
-            known = (tab.urlString, [:])
-        }
-        let scope: Int? =
-            if params["ref"] != nil || params["selector"] != nil {
-                try await backendID(of: node(params, model, tab), model, tab.id)
-            } else {
-                nil
-            }
-        var refs = known?.refs ?? [:]
         let interactive = params["interactive"] as? Bool ?? false
-        let frames = await frameTrees(in: tree, model, tab.id)
-        guard let outline = BrowserAgentSnapshot.outline(
-            fromAXTree: tree,
-            interactiveOnly: interactive,
-            refs: &refs,
-            scope: scope,
-            frames: frames,
-        ) else { throw BrowserAgentError("That element is not in the page's accessibility tree.") }
-        refsByTab[tab.id] = (tab.urlString, refs)
+        let outline: String
+        if await (try? devTools(model, tab.id, "Accessibility.enable")) != nil {
+            outline = try await accessibilityOutline(params, interactive: interactive, model, tab)
+            scriptRefTabs[tab.id] = nil
+        } else {
+            // An engine without DevTools: the page outlines its own DOM.
+            let root: String? =
+                if params["ref"] != nil || params["selector"] != nil {
+                    try await node(params, model, tab)[Self.scriptNodeKey] as? String
+                } else {
+                    nil
+                }
+            let script = BrowserAgentSnapshot.pageOutlineScript(
+                storeKey: scriptRefsKey,
+                interactiveOnly: interactive,
+                root: root.map { "((\($0)) ?? null)" },
+            )
+            guard let pageOutline = try await run(model, tab.id, script: script) as? String else {
+                throw BrowserAgentError("That element is not on the page.")
+            }
+            outline = pageOutline
+            refsByTab[tab.id] = nil
+            scriptRefTabs[tab.id] = tab.urlString
+        }
         // The diff compares with the last outline of the same page, scope and filter.
         let key = "\(interactive) \(params["ref"] ?? "") \(params["selector"] ?? "")"
         var outlines = outlinesByTab[tab.id]
@@ -312,21 +334,37 @@ struct BrowserAgentError: Error {
 
     // MARK: Acting
 
-    /// A DOM node from a snapshot ref or a CSS selector, in DevTools' terms.
+    /// A DOM node from a snapshot ref or a CSS selector, in DevTools' terms; on an engine without DevTools' DOM, a
+    /// script node (`scriptNodeKey`) that finds the element in the page.
     func node(
         _ params: [String: Any],
         _ model: BrowserChromeModel,
         _ tab: BrowserChromeModel.Tab,
     ) async throws -> [String: Any] {
-        _ = try await devTools(model, tab.id, "DOM.enable")
         if let ref = params["ref"] as? String {
             let name = ref.hasPrefix("@") ? String(ref.dropFirst()) : ref
-            guard let known = refsByTab[tab.id], known.urlString == tab.urlString,
-                  let backendID = known.refs.first(where: { $0.value == name })?.key
-            else { throw BrowserAgentError("No \(ref) on this page. Take a fresh snapshot.") }
-            return ["backendNodeId": backendID]
+            let missing = "No \(ref) on this page. Take a fresh snapshot."
+            if let known = refsByTab[tab.id], known.urlString == tab.urlString,
+               let backendID = known.refs.first(where: { $0.value == name })?.key
+            {
+                _ = try await devTools(model, tab.id, "DOM.enable")
+                return ["backendNodeId": backendID]
+            }
+            guard scriptRefTabs[tab.id] == tab.urlString, let literal = Self.javaScriptLiteral(name),
+                  let store = Self.javaScriptLiteral(scriptRefsKey)
+            else { throw BrowserAgentError(missing) }
+            return [Self.scriptNodeKey: "window[\(store)]?.byRef.get(\(literal))", Self.scriptNodeMissingKey: missing]
         }
         let selector = try requiredString(params, "selector")
+        guard await (try? devTools(model, tab.id, "DOM.enable")) != nil else {
+            guard let literal = Self.javaScriptLiteral(selector) else {
+                throw BrowserAgentError("Nothing matches \(selector).")
+            }
+            return [
+                Self.scriptNodeKey: "document.querySelector(\(literal))",
+                Self.scriptNodeMissingKey: "Nothing matches \(selector).",
+            ]
+        }
         let document = try await devTools(model, tab.id, "DOM.getDocument")
         guard let rootID = (document["root"] as? [String: Any])?["nodeId"] as? Int else {
             throw BrowserAgentError("The page has no document yet.")
@@ -343,6 +381,19 @@ struct BrowserAgentError: Error {
         _ model: BrowserChromeModel,
         _ tabID: String,
     ) async throws -> (x: Double, y: Double) {
+        if let expression = node[Self.scriptNodeKey] as? String {
+            let value = try await run(model, tabID, script: """
+            (() => { const e = \(expression); if (!e) return null;
+            try { e.scrollIntoView({block: 'center', inline: 'center', behavior: 'instant'}); }
+            catch (_) { e.scrollIntoView(); }
+            const r = e.getClientRects()[0]; return r ? [r.left + r.width / 2, r.top + r.height / 2] : []; })()
+            """)
+            guard let point = value as? [Double] else {
+                throw BrowserAgentError(node[Self.scriptNodeMissingKey] as? String ?? "That element is gone.")
+            }
+            guard point.count == 2 else { throw BrowserAgentError("That element has no place on screen.") }
+            return (point[0], point[1])
+        }
         _ = try await devTools(model, tabID, "DOM.scrollIntoViewIfNeeded", node)
         let quads = try await devTools(model, tabID, "DOM.getContentQuads", node)
         guard let quad = (quads["quads"] as? [[Double]])?.first, quad.count == 8 else {
@@ -376,6 +427,37 @@ struct BrowserAgentError: Error {
         }
         await settleAfterClick(model, tab.id)
         return pageSummary(model, tab.id)
+    }
+
+    /// The outline of Chromium's accessibility tree, with refs kept by DOM node.
+    private func accessibilityOutline(
+        _ params: [String: Any],
+        interactive: Bool,
+        _ model: BrowserChromeModel,
+        _ tab: BrowserChromeModel.Tab,
+    ) async throws -> String {
+        let tree = try await devTools(model, tab.id, "Accessibility.getFullAXTree")
+        var known = refsByTab[tab.id]
+        if known?.urlString != tab.urlString {
+            known = (tab.urlString, [:])
+        }
+        let scope: Int? =
+            if params["ref"] != nil || params["selector"] != nil {
+                try await backendID(of: node(params, model, tab), model, tab.id)
+            } else {
+                nil
+            }
+        var refs = known?.refs ?? [:]
+        let frames = await frameTrees(in: tree, model, tab.id)
+        guard let outline = BrowserAgentSnapshot.outline(
+            fromAXTree: tree,
+            interactiveOnly: interactive,
+            refs: &refs,
+            scope: scope,
+            frames: frames,
+        ) else { throw BrowserAgentError("That element is not in the page's accessibility tree.") }
+        refsByTab[tab.id] = (tab.urlString, refs)
+        return outline
     }
 
     /// A click may start a navigation: gives it a moment to show, and waits for the page it started.
@@ -451,6 +533,7 @@ struct BrowserAgentError: Error {
         let (model, tab) = try target(params)
         model.closeTab(id: tab.id)
         refsByTab[tab.id] = nil
+        scriptRefTabs[tab.id] = nil
         sealedTabs[tab.id] = nil
         return ["closed": tab.id]
     }
@@ -571,24 +654,7 @@ struct BrowserAgentError: Error {
     private func fill(_ params: [String: Any]) async throws -> [String: Any] {
         let (model, tab) = try await loadedTarget(params)
         let text = params["text"] as? String ?? ""
-        let resolved = try await devTools(model, tab.id, "DOM.resolveNode", node(params, model, tab))
-        guard let objectID = (resolved["object"] as? [String: Any])?["objectId"] as? String else {
-            throw BrowserAgentError("That element is gone. Take a fresh snapshot.")
-        }
-        _ = try await devTools(model, tab.id, "Runtime.callFunctionOn", [
-            "objectId": objectID,
-            "functionDeclaration": """
-            function() {
-              this.focus();
-              if ('value' in this) {
-                this.value = '';
-                this.dispatchEvent(new Event('input', {bubbles: true}));
-              } else if (this.isContentEditable) {
-                this.textContent = '';
-              }
-            }
-            """,
-        ])
+        _ = try await call(Self.clearFieldFunction, on: node(params, model, tab), model, tab.id)
         _ = try await devTools(model, tab.id, "Input.insertText", ["text": text])
         return pageSummary(model, tab.id)
     }
@@ -782,6 +848,9 @@ struct BrowserAgentError: Error {
         return [
             "open": model.commandBarModel.isPresented,
             "results": model.commandBarModel.suggestions.map(\.displayText),
+            "suggestions": model.commandBarModel.suggestions.map {
+                ["kind": "\($0.kind)", "title": $0.displayText, "url": $0.resolvedURLString]
+            },
         ]
     }
 

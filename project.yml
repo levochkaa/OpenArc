@@ -327,6 +327,7 @@ targets:
           - Chrome/BrowserChromeLayout.swift
           - BrowserWindowGeometry.swift
           - Sidebar/BrowserSidebarSnapshot.swift
+          - Support/BrowserPeerPageInput.swift
           - OpenAPI/**
           - Resources/filter-list-*.txt
         excludes:

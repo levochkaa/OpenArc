@@ -6819,15 +6819,29 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
                   inTabWithID:(NSString *)tabID
                    completion:(void (^)(NSString *))completion {
   auto it = _tabRecords.find(ToStdString(tabID));
-  if (it != _tabRecords.end()) {
-    if (id<BrowserChromePage> page = ChromePageOfRecord(it->second)) {
-      [page executeDevToolsMethod:method params:paramsJSON completion:completion];
-      return;
-    }
-    if (IsWebKitRecord(it->second)) {
-      [(BrowserWebKitPage *)it->second.peerPage executeDevToolsMethod:method params:paramsJSON completion:completion];
-      return;
-    }
+  if (it != _tabRecords.end() && it->second.peerPage != nil) {
+    // A Chrome engine page answers every method; WebKit and Ladybird pages answer scripts and screenshots, and
+    // their input arrives as AppKit events instead.
+    id<BrowserPeerPage> peer = it->second.peerPage;
+    void (^devTools)(NSString *, NSString *, void (^)(NSString *)) =
+        ^(NSString *name, NSString *params, void (^done)(NSString *)) {
+          [(id<BrowserChromePage>)peer executeDevToolsMethod:name params:params completion:done];
+        };
+    devTools(method, paramsJSON, ^(NSString *answer) {
+      if (answer != nil || ![BrowserPeerPageInput handles:method]) {
+        completion(answer);
+        return;
+      }
+      [BrowserPeerPageInput answer:method
+                            params:paramsJSON
+                                 in:peer.view
+                           devTools:devTools
+                             reload:^(BOOL ignoringCache) {
+                               [peer reloadWithIgnoringCache:ignoringCache];
+                             }
+                         completion:completion];
+    });
+    return;
   }
   if (it == _tabRecords.end() || !it->second.browser) {
     completion(nil);

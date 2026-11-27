@@ -164,6 +164,10 @@ import Foundation
     var importedCookieProfilePaths = [String?]()
     var devToolsMethods = [String]()
     var devToolsResults = [String: String]()
+    /// Every method with its params, in order.
+    var devToolsCalls = [(method: String, params: [String: Any])]()
+    /// Answers in place of `devToolsResults` when set; nil is a method the page does not answer.
+    var devToolsAnswer: ((_ method: String, _ params: [String: Any]) -> String?)?
     var mainFrameFills = [(username: String, password: String)]()
 
     var onPageFullscreenChanged: ((String, Bool) -> Void)?
@@ -202,11 +206,18 @@ import Foundation
 
     func executeDevTools(
         method: String,
-        paramsJSON _: String,
+        paramsJSON: String,
         tabID _: String,
         completion: @escaping @MainActor (String?) -> Void,
     ) {
         devToolsMethods.append(method)
+        let params = paramsJSON.data(using: .utf8)
+            .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+        devToolsCalls.append((method, params))
+        if let devToolsAnswer {
+            completion(devToolsAnswer(method, params))
+            return
+        }
         completion(devToolsResults[method] ?? "{}")
     }
 

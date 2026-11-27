@@ -119,6 +119,18 @@ extension BrowserAgentService {
         _ model: BrowserChromeModel,
         _ tabID: String,
     ) async throws -> Any? {
+        if let expression = node[Self.scriptNodeKey] as? String {
+            let argumentsJSON = (try? JSONSerialization.data(withJSONObject: arguments))
+                .flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
+            let answer = try await run(model, tabID, script: """
+            (() => { const e = \(expression); if (!e) return {found: false};
+            return {found: true, value: (\(function)).apply(e, \(argumentsJSON))}; })()
+            """) as? [String: Any]
+            guard answer?["found"] as? Bool == true else {
+                throw BrowserAgentError(node[Self.scriptNodeMissingKey] as? String ?? "That element is gone.")
+            }
+            return answer?["value"]
+        }
         let resolved = try await devTools(model, tabID, "DOM.resolveNode", node)
         guard let objectID = (resolved["object"] as? [String: Any])?["objectId"] as? String else {
             throw BrowserAgentError("That element is gone. Take a fresh snapshot.")
