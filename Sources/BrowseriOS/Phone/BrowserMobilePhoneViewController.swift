@@ -1446,7 +1446,13 @@ final class BrowserMobilePhoneViewController: UIViewController {
         // The keyboard pulled away under a finger takes search with it, so
         // the drag goes on into closing instead of leaving the panel at the bottom.
         if hides, searchPanel.isPullingKeyboard {
-            closePanel(velocity: 0)
+            // A keyboard pulled all the way off is announced inside the
+            // keyboard's own animation, or with animations off; closing a
+            // turn later keeps the panel's own animation.
+            DispatchQueue.main.async { [weak self] in
+                guard let self, mode == .search else { return }
+                closePanel(velocity: 0)
+            }
             return
         }
         isSearchKeyboardDismissed = keyboardTop == nil
@@ -1488,8 +1494,17 @@ final class BrowserMobilePhoneViewController: UIViewController {
         let y = offset >= 0 ? restTop + offset : restTop - liftResistance(-offset, from: restTop)
         UIView.performWithoutAnimation {
             surface.frame = CGRect(x: 0, y: y, width: view.bounds.width, height: view.bounds.height - y)
-            searchPanel.frame = CGRect(x: 0, y: 0, width: view.bounds.width, height: keyboardTop - restTop)
+            fitSearchPanel(top: y)
         }
+    }
+
+    /// The search panel's content reaches down to the keyboard from wherever
+    /// the panel is lifted to, so a lifted list shows more rows instead of
+    /// ending short; lowered, it keeps its size and slides under the keyboard.
+    private func fitSearchPanel(top y: CGFloat) {
+        let keyboardTop = searchKeyboardTop
+        let restTop = searchPanelTop(keyboardTop: keyboardTop)
+        searchPanel.frame = CGRect(x: 0, y: 0, width: view.bounds.width, height: keyboardTop - min(y, restTop))
     }
 
     private func searchCandidates() -> [BrowserMobileSearchSuggestions.Candidate] {
@@ -2447,6 +2462,7 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
                 : surfaceDragStartTop - liftResistance(-dy, from: surfaceDragStartTop)
             surface.frame = CGRect(x: 0, y: y, width: view.bounds.width, height: view.bounds.height - y)
             if isSearch {
+                fitSearchPanel(top: y)
                 let progress = max(dy, 0) / max(expandedBarFrame.minY - surfaceDragStartTop, 1)
                 applyPageCard(interpolate(card, view.bounds, min(progress, 1)))
             }
@@ -2468,6 +2484,7 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
                     height: self.view.bounds.height - top,
                 )
                 if isSearch {
+                    self.fitSearchPanel(top: top)
                     self.applyPageCard(card)
                 }
             }
@@ -2704,12 +2721,11 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
 
     /// How far an open panel at `top` rises for a finger that lifts it `value`
     /// points past its place: it follows the finger at first and each point
-    /// comes harder after that, so a finger taken to the top of the screen
-    /// brings the panel close to it, never past it.
+    /// comes harder after that; it stops at the safe area's top.
     private func liftResistance(_ value: CGFloat, from top: CGFloat) -> CGFloat {
-        guard value > 0, top > 0 else { return 0 }
-        let limit = top * 3
-        return min(limit * value / (value + limit), top)
+        let reach = top - view.safeAreaInsets.top
+        guard value > 0, reach > 0 else { return 0 }
+        return reach * (1 - exp(-value / reach))
     }
 
     private func rubberBand(_ value: CGFloat, limit: CGFloat) -> CGFloat {

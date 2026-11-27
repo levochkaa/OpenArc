@@ -175,7 +175,7 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
         systemName: "plus", withConfiguration: UIImage.SymbolConfiguration(pointSize: 20, weight: .semibold),
     ))
     private let table = UITableView(frame: .zero, style: .plain)
-    /// Holds the suggestions from the field's top down, so they scroll up
+    /// Holds the suggestions from the field's middle down, so they scroll up
     /// behind the field; the field's capsule is cut out of it, so rows show
     /// around the capsule and never through it.
     private let suggestionsClip = UIView()
@@ -275,7 +275,7 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
         // after the keyboard. See scrollViewDidScroll.
         table.keyboardDismissMode = .interactive
         // The first row starts under the field; scrolled up, rows pass behind it.
-        table.contentInset.top = Self.fieldHeight + Self.suggestionsTopInset
+        table.contentInset.top = Self.fieldHeight / 2 + Self.suggestionsTopInset
         table.contentOffset.y = -table.contentInset.top
         table.alwaysBounceVertical = true
         table.showsVerticalScrollIndicator = false
@@ -342,13 +342,15 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
             x: isFieldExpanded ? 4 : (frame.width - glyphSide) / 2, y: (frame.height - glyphSide) / 2,
             width: glyphSide, height: glyphSide,
         )
+        // From the field's middle down: nothing shows above the field, only
+        // around the lower half of its rounded ends.
         suggestionsClip.frame = CGRect(
-            x: 0, y: full.minY, width: bounds.width, height: max(bounds.height - full.minY, 0),
+            x: 0, y: full.midY, width: bounds.width, height: max(bounds.height - full.midY, 0),
         )
         table.frame = suggestionsClip.bounds
         let cutout = UIBezierPath(rect: suggestionsClip.bounds)
         cutout.append(UIBezierPath(
-            roundedRect: full.offsetBy(dx: 0, dy: -full.minY), cornerRadius: full.height / 2,
+            roundedRect: full.offsetBy(dx: 0, dy: -full.midY), cornerRadius: full.height / 2,
         ))
         CATransaction.begin()
         CATransaction.setDisableActions(true)
