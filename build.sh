@@ -56,9 +56,9 @@ Options:
   --release             Build the Release configuration.
   --full-output         Print complete xcodebuild output instead of warnings/errors only.
   --skip-build          For run/debug/logs/telemetry/verify, launch the existing app bundle.
-  --all                 For test, also run the tests that need the active app (key windows, focus).
-                        They take the keyboard and the front app, so run them before a pre-release
-                        or when the Mac is free. Without it, the test process can never become active.
+  --all                 For test, also run the tests that need the active app (key windows, focus),
+                        marked OpenArcTestEnvironment.focusTrait; none exist yet. The test process may
+                        then become active and take the keyboard. Without it, it never can.
   --runtime-suffix ID   Override the stable per-worktree CEF/session identity.
                         Such an instance syncs only when OPENARC_SYNC_BASE_URL is set.
   --ios-destination DEST
