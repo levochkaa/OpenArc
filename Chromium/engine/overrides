@@ -8,3 +8,5 @@ chrome/services/mac_notifications/mac_notification_provider_impl.mm
 components/history/core/browser/history_database.cc
 ui/base/cocoa/secure_password_input.mm
 content/browser/renderer_host/render_widget_host_view_mac.mm
+chrome/browser/ui/views/overlay/video_overlay_window_views.cc
+chrome/browser/ui/views/overlay/video_overlay_window_views.h
