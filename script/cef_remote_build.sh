@@ -142,6 +142,9 @@ pull() {
   [[ -d "$framework" ]] || { echo "error: the distribution has no Release framework" >&2; exit 1; }
 
   DEVELOPER_DIR="$CEF_XCODE/Contents/Developer" strip_framework "$framework"
+  # The host's umask leaves group-writable files, which Sparkle's appcast
+  # tool flags in a release.
+  chmod -R go-w "$tmp"
   rm -rf "$tmp/Debug"
   ln -s Release "$tmp/Debug"
   touch "$tmp/$CHROMIUM_FORK_MARKER"
