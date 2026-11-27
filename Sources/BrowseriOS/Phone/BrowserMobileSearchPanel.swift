@@ -192,6 +192,10 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
 
     /// When a finger last let go of the suggestions.
     private var suggestionsReleaseTime = -CFTimeInterval.infinity
+    /// The last drag on the suggestions pulled the keyboard and the panel,
+    /// so the list holds still, through the release too; any other drag
+    /// scrolls it and leaves the keyboard.
+    private var isSuggestionsDragPullingKeyboard = false
 
     /// A finger is on the suggestions, so the keyboard may be following it.
     var isDraggingSuggestions: Bool { table.isTracking }
@@ -253,7 +257,8 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
         table.rowHeight = Self.rowHeight
         table.dataSource = self
         table.delegate = self
-        // A drag down the suggestions takes the keyboard with it, and search closes after it.
+        // A drag down the suggestions from their top takes the keyboard with
+        // it, and search closes after it; see scrollViewWillBeginDragging.
         table.keyboardDismissMode = .interactive
         table.alwaysBounceVertical = true
         table.showsVerticalScrollIndicator = false
@@ -403,6 +408,25 @@ final class BrowserMobileSearchPanel: UIView, UITextFieldDelegate, UITableViewDa
         dictation.stop()
         onSubmit?(text)
         return true
+    }
+
+    /// A drag either scrolls the suggestions or, going down from their top
+    /// with the keyboard up, pulls the keyboard and the panel; never both.
+    func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+        let atTop = scrollView.contentOffset.y <= -scrollView.adjustedContentInset.top + 1
+        // The pan's translation is already spent on the slop by now; its velocity tells the direction.
+        let pan = scrollView.panGestureRecognizer
+        let downward = pan.velocity(in: scrollView).y > 0 || pan.translation(in: scrollView).y > 0
+        isSuggestionsDragPullingKeyboard = field.isFirstResponder && atTop && downward
+        scrollView.keyboardDismissMode = isSuggestionsDragPullingKeyboard ? .interactive : .none
+    }
+
+    func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        guard isSuggestionsDragPullingKeyboard else { return }
+        let top = -scrollView.adjustedContentInset.top
+        if scrollView.contentOffset.y != top {
+            scrollView.contentOffset.y = top
+        }
     }
 
     func scrollViewDidEndDragging(_: UIScrollView, willDecelerate _: Bool) {
