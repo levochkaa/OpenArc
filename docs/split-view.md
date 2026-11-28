@@ -36,7 +36,7 @@ A `BrowserSplitDividerView` fills each gap above the pane views. Dragging resize
 
 Dividers only act when every pane has a live engine, because the fractions name all panes.
 
-While two or more panes are shown, the controller draws a 2 pt accent ring (`BrowserSplitFocusRingView`, rounded like the content corners) inside the active pane's frame. It sits above the pane views, ignores mouse events and hides outside a split. Settings ▸ General ▸ Outline Focused Split View Pane (`splitFocusRingEnabled`, on by default) turns it off: the engine reads `BrowserSplitPaneLayout.showsFocusRing` and lays the panes out again on `focusRingPreferenceDidChange`, and the pane bar and docked Developer Tools then fill the pane edge to edge.
+While two or more panes are shown, the focused pane is highlighted: the controller draws a 2 pt black border (`BrowserSplitFocusRingView`, rounded like the content corners) inside the active pane's frame, above the pane views and ignoring mouse events, and `BrowserContentNSView` draws a white glow around the pane (`BrowserSplitPaneLayout.focusGlowRadius` 7, opacity 0.33) in a shadow layer below the pages, so it shows only in the gaps. Both hide outside a split. Settings ▸ General ▸ Highlight Focused Split View Pane (`splitFocusRingEnabled`, on by default) turns them off: the engine reads `BrowserSplitPaneLayout.showsFocusRing` and lays the panes out again on `focusRingPreferenceDidChange`, the glow follows `BrowserSplitPaneBarsView.focusedPaneFrame`, and the pane bar and docked Developer Tools then fill the pane edge to edge. A pane a dragged tab or pane would land on is outlined in the accent color.
 
 ## Actions
 

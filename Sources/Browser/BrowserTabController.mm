@@ -4440,8 +4440,9 @@ class BrowserTabNavigationTask final : public CefTask {
 
 @end
 
-// Accent border inside the focused Split View pane. It stays above the pane
-// views and never takes mouse events, so clicks still reach the page.
+// Black border inside the focused Split View pane; the content view draws its
+// glow. It stays above the pane views and never takes mouse events, so clicks
+// still reach the page.
 @interface BrowserSplitFocusRingView : NSView
 @end
 

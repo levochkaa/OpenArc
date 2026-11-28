@@ -565,7 +565,7 @@
 "browser.updates.download_action" = "Download Update";
 "browser.settings.general.warn_before_quitting" = "Warn Before Quitting";
 "browser.settings.general.blurred_background" = "Blur Browser Background";
-"browser.settings.general.split_focus_ring" = "Outline Focused Split View Pane";
+"browser.settings.general.split_focus_ring" = "Highlight Focused Split View Pane";
 "browser.settings.general.battery_saver" = "Battery Saver";
 "browser.settings.general.battery_saver.detail" = "Reduce Chromium frame updates when running on battery at 20% or below.";
 "browser.settings.profiles" = "Profiles";

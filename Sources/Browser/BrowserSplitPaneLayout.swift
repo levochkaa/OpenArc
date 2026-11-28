@@ -29,11 +29,16 @@ import AppKit
     /// Panes are as far apart as the content is from the window edge.
     static let paneGap: CGFloat = BrowserWindowGeometry.browserContentEdgeInset
 
-    /// Accent border drawn inside the focused pane while a split is shown.
+    /// Black border drawn inside the focused pane while a split is shown.
     @objc static let focusRingWidth: CGFloat = 2
 
-    /// Settings ▸ General can turn the focused pane's border off. The engine
-    /// reads it here and lays the panes out again on the notification.
+    /// White glow around the focused pane, outside its border: about 15 % white
+    /// at the edge, gone some 14 pt out.
+    static let focusGlowRadius: CGFloat = 7
+    static let focusGlowOpacity: Float = 0.33
+
+    /// Settings ▸ General can turn the focused pane's border and glow off. The
+    /// engine reads it here and lays the panes out again on the notification.
     @objc static let showsFocusRingKey = "browser.settings.splitFocusRingEnabled"
     @objc static let focusRingPreferenceDidChange = Notification.Name("BrowserSplitFocusRingPreferenceDidChange")
 
@@ -76,6 +81,7 @@ import AppKit
     @objc static var paneCornerRadius: CGFloat { BrowserChromeLayout.leadingContentCornerRadius }
 
     @objc static var focusRingColor: NSColor { BrowserChromeColors.splitFocusedPaneBorder }
+    static var focusGlowColor: NSColor { BrowserChromeColors.splitFocusedPaneGlow }
 
     static func pageDropEdge(at point: CGPoint, in pane: CGRect) -> PageDropEdge? {
         guard pane.contains(point) else { return nil }

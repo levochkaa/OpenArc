@@ -50,6 +50,18 @@ final class BrowserSplitPaneBarsView: NSView {
     private(set) var pageAsideEdge: BrowserSplitPaneLayout.PageDropEdge?
     var onPageDropPreviewChange: (() -> Void)?
 
+    /// The focused pane while two or more panes are shown and the highlight is
+    /// on, in this view's coordinates. The content view draws its glow below the pages.
+    private(set) var focusedPaneFrame: CGRect? {
+        didSet {
+            if oldValue != focusedPaneFrame {
+                onFocusedPaneFrameChange?()
+            }
+        }
+    }
+
+    var onFocusedPaneFrameChange: (() -> Void)?
+
     /// The page's frame before it moved aside, so the drop zones hold still.
     private var restingPageFrame: CGRect?
 
@@ -106,10 +118,10 @@ final class BrowserSplitPaneBarsView: NSView {
             xRadius: radius,
             yRadius: radius,
         )
-        BrowserSplitPaneLayout.focusRingColor.withAlphaComponent(0.12).setFill()
+        BrowserChromeColors.splitDropTarget.withAlphaComponent(0.12).setFill()
         path.fill()
         path.lineWidth = ring
-        BrowserSplitPaneLayout.focusRingColor.setStroke()
+        BrowserChromeColors.splitDropTarget.setStroke()
         path.stroke()
     }
 
@@ -132,6 +144,7 @@ final class BrowserSplitPaneBarsView: NSView {
     func refresh() {
         guard let model, let hostView, hostView.window === window || window == nil else {
             removeBars(keeping: [])
+            focusedPaneFrame = nil
             return
         }
         let ids = model.splitPaneLayoutTabIDs
@@ -166,6 +179,9 @@ final class BrowserSplitPaneBarsView: NSView {
             )
             bar.showsWindowControls = showsWindowControls && id == topLeadingID
         }
+        focusedPaneFrame = ids.count > 1 && model.userPreferencesStore.splitFocusRingEnabled
+            ? model.selectedTabID.flatMap { paneRects[$0] }
+            : nil
     }
 
     /// The page part of a shown pane, below its bar, or nil outside a split.
@@ -458,7 +474,7 @@ final class BrowserSplitPaneBarView: NSView {
     }
 
     /// The bar fills the pane's top with rounded top corners. On the focused
-    /// pane it stays inside the accent ring the engine host draws around it.
+    /// pane it stays inside the border the engine host draws around it.
     override func draw(_: NSRect) {
         let ring = isFocused && isRinged ? BrowserSplitPaneLayout.focusRingWidth : 0
         let rect = bounds.insetBy(dx: ring, dy: 0).divided(atDistance: ring, from: .minYEdge).remainder

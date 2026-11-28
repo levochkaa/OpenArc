@@ -27,7 +27,11 @@ enum BrowserChromeColors {
     static let sidebarChromePressed = adaptive(light: rgba(0, 0, 0, 0.103), dark: rgba(255, 255, 255, 0.103))
     /// A Space's dock icon while another Space is selected.
     static let sidebarDockForeground = adaptive(light: rgba(0, 0, 0, 0.21), dark: rgba(255, 255, 255, 0.21))
-    static let splitFocusedPaneBorder = NSColor.controlAccentColor
+    /// The focused Split View pane: a black border inside it and a white glow around it.
+    static let splitFocusedPaneBorder = NSColor.black
+    static let splitFocusedPaneGlow = NSColor.white
+    /// The pane or half a dragged tab or pane would land on.
+    static let splitDropTarget = NSColor.controlAccentColor
     /// Member chips of a Split View row; dark mode fills them with white at 7 %.
     static let splitChip = adaptive(light: rgba(0, 0, 0, 0.05), dark: rgba(255, 255, 255, 0.07))
     static let splitChipFocused = adaptive(light: rgba(0, 0, 0, 0.1), dark: rgba(255, 255, 255, 0.16))

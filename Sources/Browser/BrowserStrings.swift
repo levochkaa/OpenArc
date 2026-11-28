@@ -3615,7 +3615,7 @@ enum BrowserStrings {
 
     static let settingsSplitFocusRing = NSLocalizedString(
         "browser.settings.general.split_focus_ring",
-        comment: "Setting title: outline the focused pane of a Split View.",
+        comment: "Setting title: highlight the focused pane of a Split View with a border and a glow.",
     )
 
     static let settingsBatterySaverDetail = NSLocalizedString(

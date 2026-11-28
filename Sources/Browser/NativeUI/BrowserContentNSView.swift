@@ -52,18 +52,21 @@ final class BrowserContentNSView: NSView {
     private(set) var easelViews = [String: BrowserEaselView]()
     /// A note's editor over each note tab on screen, by tab ID.
     private(set) var notePages = [String: BrowserNoteEditorView]()
-    /// The tab whose note took the keyboard last, so selecting it again focuses it once.
-    private var focusedNoteTabID: String?
     let movedPage = BrowserMovedPageView()
-
     /// The area with no tab, in place of the usual page color.
     var emptyPageColor: NSColor? {
         didSet { empty.fillColor = emptyPageColor ?? BrowserChromeColors.contentBackground }
     }
 
+    /// The tab whose note took the keyboard last, so selecting it again focuses it once.
+    private var focusedNoteTabID: String?
+
     // MARK: Private
 
     private let pageShadow = CALayer()
+    /// White glow around the focused Split View pane, below the pages so it
+    /// shows only in the gaps around the pane.
+    private let splitFocusGlow = CALayer()
     private var pageShadowRadius: CGFloat = 0
     private var easelClipping: BrowserContentClipping?
     private var noteClipping = BrowserContentClipping(isSidebarVisible: true, usesWindowContentInsets: false)
@@ -108,9 +111,14 @@ final class BrowserContentNSView: NSView {
         pageShadow.shadowRadius = BrowserChromeLayout.contentShadowRadius
         pageShadow.shadowOffset = CGSize(width: 0, height: BrowserChromeLayout.contentShadowOffset)
         layer?.addSublayer(pageShadow)
+        splitFocusGlow.shadowRadius = BrowserSplitPaneLayout.focusGlowRadius
+        splitFocusGlow.shadowOffset = .zero
+        splitFocusGlow.shadowOpacity = 0
+        layer?.addSublayer(splitFocusGlow)
         addSubview(viewport)
         addSubview(splitPaneBars)
         splitPaneBars.hostView = hostView
+        splitPaneBars.onFocusedPaneFrameChange = { [weak self] in self?.updateSplitFocusGlow() }
         for overlay in [empty, loading, failure] {
             overlay.fillColor = BrowserChromeColors.contentBackground
             overlay.wantsLayer = true
@@ -163,6 +171,7 @@ final class BrowserContentNSView: NSView {
         viewport.frame = aside ?? bounds
         splitPaneBars.frame = bounds
         splitPaneBars.refresh()
+        updateSplitFocusGlow()
         empty.frame = bounds
         loading.frame = bounds
         failure.frame = bounds
@@ -390,6 +399,7 @@ final class BrowserContentNSView: NSView {
         splitPaneBars.isHidden = viewport.isHidden
         splitPaneBars.showsWindowControls = !isSidebarVisible
         splitPaneBars.refresh()
+        updateSplitFocusGlow()
         let clipping = BrowserContentClipping(
             isSidebarVisible: isSidebarVisible,
             usesWindowContentInsets: usesWindowContentInsets,
@@ -495,11 +505,15 @@ final class BrowserContentNSView: NSView {
             notePages[id] = page
         }
         for page in notePages.values {
-            page.layer?.cornerRadius = notePages.count > 1 ? BrowserChromeLayout.leadingContentCornerRadius : noteClipping
-                .radius
-            page.layer?.maskedCorners = notePages.count > 1 ? [
-                .layerMinXMinYCorner, .layerMaxXMinYCorner, .layerMinXMaxYCorner, .layerMaxXMaxYCorner,
-            ] : noteClipping.corners
+            page.layer?.cornerRadius = notePages.count > 1
+                ? BrowserChromeLayout.leadingContentCornerRadius
+                : noteClipping
+                    .radius
+            page.layer?.maskedCorners = notePages.count > 1
+                ? [
+                    .layerMinXMinYCorner, .layerMaxXMinYCorner, .layerMinXMaxYCorner, .layerMaxXMaxYCorner,
+                ]
+                : noteClipping.corners
         }
         // The selected note takes the keyboard once each time it is selected.
         let selected = model.selectedTabID.flatMap { notePages[$0] != nil ? $0 : nil }
@@ -598,6 +612,24 @@ final class BrowserContentNSView: NSView {
             transform: nil,
         )
         CATransaction.commit()
+    }
+
+    private func updateSplitFocusGlow() {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+        guard let pane = splitPaneBars.focusedPaneFrame.map({ convert($0, from: splitPaneBars) }),
+              !splitPaneBars.isHidden
+        else {
+            splitFocusGlow.shadowOpacity = 0
+            splitFocusGlow.shadowPath = nil
+            return
+        }
+        let radius = BrowserSplitPaneLayout.paneCornerRadius
+        splitFocusGlow.frame = bounds
+        splitFocusGlow.shadowColor = BrowserSplitPaneLayout.focusGlowColor.cgColor
+        splitFocusGlow.shadowOpacity = BrowserSplitPaneLayout.focusGlowOpacity
+        splitFocusGlow.shadowPath = CGPath(roundedRect: pane, cornerWidth: radius, cornerHeight: radius, transform: nil)
     }
 
     /// The page part of a split pane, or the whole content outside a split.
