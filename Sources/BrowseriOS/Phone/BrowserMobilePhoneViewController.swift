@@ -1438,7 +1438,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
             let progress = (y - rest) / max(expandedBarFrame.minY - rest, 1)
             return interpolate(card, view.bounds, min(progress, 1))
         }
-        let width = max(card.width - (rest - y) * 0.12, card.width * 0.85)
+        let width = max(card.width - (rest - y) * 0.045, card.width * 0.85)
         let height = width * card.height / card.width
         return CGRect(x: card.midX - width / 2, y: card.midY - height / 2, width: width, height: height)
     }
@@ -1485,14 +1485,22 @@ final class BrowserMobilePhoneViewController: UIViewController {
             }
             return
         }
-        // Search stays open only with its keyboard: a keyboard that goes for
-        // any other reason, while the app is in front and nothing covers
-        // search, closes it.
+        // Search stays open only while its field has focus: a keyboard that
+        // goes with the focus, while the app is in front and nothing covers
+        // search, closes it. A keyboard that goes while the field keeps focus
+        // (a hardware keyboard took over) leaves the panel at the bottom.
         if hides, searchPanel.isFieldExpanded, presentedViewController == nil,
            view.window?.windowScene?.activationState == .foregroundActive
         {
-            closePanel()
-            return
+            if !searchPanel.field.isFirstResponder {
+                closePanel()
+                return
+            }
+            DispatchQueue.main.async { [weak self] in
+                guard let self, mode == .search, keyboardTop == nil, searchPanel.isFieldExpanded,
+                      presentedViewController == nil, !searchPanel.field.isFirstResponder else { return }
+                closePanel()
+            }
         }
         isSearchKeyboardDismissed = keyboardTop == nil
         // A panel a finger holds stays under it; let go, it settles on the keyboard.
@@ -1603,8 +1611,13 @@ final class BrowserMobilePhoneViewController: UIViewController {
     }
 
     private func searchCandidates() -> [BrowserMobileSearchSuggestions.Candidate] {
-        // Private tabs are not suggested.
-        var result = workspace.switcherTabs.reversed().filter { !$0.isPrivate }.map { tab in
+        // Private tabs are not suggested. The tab on screen comes first, then
+        // the stack from its top: swiping along the bar keeps the stack's order.
+        var tabs = workspace.switcherTabs.reversed().filter { !$0.isPrivate }
+        if let current = tabs.firstIndex(where: { $0.id == workspace.selectedTabID }) {
+            tabs.insert(tabs.remove(at: current), at: 0)
+        }
+        var result = tabs.map { tab in
             BrowserMobileSearchSuggestions.Candidate(
                 tabID: tab.id, title: tab.userTitleOverride ?? tab.title, urlString: tab.urlString,
                 location: location(of: tab),
@@ -2579,7 +2592,12 @@ extension BrowserMobilePhoneViewController: UIGestureRecognizerDelegate {
         case .cancelled, .ended, .failed:
             let dy = gesture.translation(in: view).y
             let velocity = gesture.velocity(in: view).y
-            if gesture.state == .ended, velocity > 500 || dy > 80 && !surfaceDragGoesUp && velocity > -100 {
+            // Search closes when the finger last moved down, however little
+            // and even after it stopped; a last move up keeps it open.
+            let closes = isSearch
+                ? velocity > 500 || dy > 0 && !surfaceDragGoesUp && velocity > -100
+                : velocity > 500 || dy > 80 && !surfaceDragGoesUp && velocity > -100
+            if gesture.state == .ended, closes {
                 closePanel(velocity: velocity)
                 return
             }
