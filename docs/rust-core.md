@@ -25,7 +25,16 @@ What the core does today:
 - `web::tracking`: tracking parameters Copy URL leaves out (`BrowserTrackingParameters`).
 - `web::domain`: public suffixes and registrable domains from the Public Suffix List (`BrowserPublicSuffixDomainParser`,
   `BrowserFilterDomains`), which replaced the SwiftDomainParser package.
-- `sync`: the protocol constants above, for `BrowserSyncService`, the expiry models and boost records.
+- `sync::outbox`: canonical v2 session entities, the server baseline with applied events, replay of queued push rows
+  over it, and the resulting app session (`BrowserSyncOutboxProjection`, `BrowserSyncOutboxBaseline`). An ACK reuses
+  the last replay instead of replaying the rest of the queue (`CoreSyncReplayMemo`, `BrowserSyncOutboxReplayMemo`).
+- `sync::semantic` and `sync::folders`: protocol version 3 and 4 operations between two sessions, their replay over
+  canonical values, and the v4 session with pinned folders (`BrowserSyncSemanticProjection`,
+  `BrowserSyncFolderProjection`).
+- `sync::dates`: activity dates on the wire as ISO 8601 strings (`BrowserSyncActivityDates`).
+- `sync::model`: session and protocol records the projections read and write; the default Space's ID and icon
+  (`BrowserSessionDefaults`).
+- `sync` (module root): the protocol constants above, for `BrowserSyncService`, the expiry models, and boost records.
 
 The Swift types in parentheses keep their API and call the core, so callers did not change.
 
@@ -42,6 +51,28 @@ the `url` crate would canonicalize differently, and stored sessions, history and
 against it. The fixture differs from the old Swift answers only where the Public Suffix List of the `psl` crate is
 newer than SwiftDomainParser's (`home.arpa`, `*.bd`) or reads Punycode suffixes (`xn--p1ai`), and for hosts with an
 empty label, which now have no registrable domain.
+
+## Sync projections as Swift computed them
+
+The app keeps its `Codable` types for SQLite and the wire; `Sources/Browser/BrowserSyncCoreBridge.swift` converts
+them to the core's records and back. The JSON codecs stay in Swift for now.
+
+Strings compare as Swift compares them (`sync::text`): by canonical equivalence, so a title or address that changed
+only its Unicode normalization ("é" as `U+00E9` or as `e` + `U+0301`) is not an edit, and ties in sibling order break
+by the NFC form. Identities (the keys of maps and sets) compare byte for byte. Swift's dictionaries merge two IDs
+that differ only in normalization; the core keeps them apart.
+
+`sync::dates` parses dates as `Date.ISO8601FormatStyle` in `swift-foundation` 6.2 does (the version macOS 26 and iOS
+26 ship): it accepts `2026-02-30`, `T25:00:00`, `GMT+3`, and trailing text after the zone, counts days before 15
+October 1582 in the Julian calendar, and runs the same floating-point steps so a parsed time matches `TimeInterval`
+to the bit. Newer `swift-foundation` is stricter (it rejects `T25:00:00`); the core keeps the 6.2 behavior so results
+no longer depend on the OS version. Dates are written as `ISO8601DateFormatter` writes them: whole seconds, UTC.
+
+`Core/openarc-core/tests/fixtures/sync-projections.json.gz` holds 70 random sessions, edits, move intents, queues,
+and server event streams in wire format, with Swift's answers for every projection, plus 88 date strings to parse
+and 232 dates to compare, project or write. `src/sync/fixture_tests.rs` checks the Rust code against them. Before
+the switch, it also passed 1,800 more cases; `OPENARC_SYNC_FIXTURES` names extra fixture files (comma-separated,
+plain or gzip JSON) for such a run.
 
 ## Building
 
@@ -74,9 +105,7 @@ SwiftFormat skips `Sources/Core/Generated`.
 
 ## Next
 
-The sync engine is the next part to move: the protocol models (`BrowserSyncSemanticModels`,
-`BrowserSyncFolderModels`, `BrowserSyncBoostModels`), the projections between a session snapshot and operations
-(`BrowserSyncSemanticProjection`, `BrowserSyncFolderProjection`), the outbox and its replay (`BrowserSyncOutbox`), and
-the Spaces, tabs and folders model they read (`BrowserTabSessionSnapshot`). Storage follows (`BrowserSQLiteSessionStore`
-on GRDB to `rusqlite`), then the importers of other browsers' data. Each step keeps the Swift API and checks the Rust
-code against recorded Swift answers, as the web addresses did.
+The wire codecs come next: JSON for queue rows, events, and the baseline, so the core reads SQLite rows directly and
+the app stops converting the whole baseline on every call. Then storage (`BrowserSQLiteSessionStore` on `GRDB` to
+`rusqlite`) and the sync service's network loop (`BrowserSyncService`), then importers for other browsers' data. Each
+step keeps the Swift API and checks the Rust code against recorded Swift answers.

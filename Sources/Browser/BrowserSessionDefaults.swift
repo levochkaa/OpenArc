@@ -2,8 +2,8 @@
 
 import Foundation
 
-/// Stable shared identities must not depend on either platform's browser model.
+/// Stable shared identities must not depend on either platform's browser model; the Rust core holds them.
 enum BrowserSessionDefaults {
-    static let defaultSpaceID = "default-space"
-    static let defaultSpaceIconName = "square.grid.2x2"
+    static let defaultSpaceID = coreDefaultSpaceId()
+    static let defaultSpaceIconName = coreDefaultSpaceIcon()
 }

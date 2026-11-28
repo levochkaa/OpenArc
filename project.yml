@@ -74,6 +74,7 @@ targetTemplates:
       - path: Sources/Browser/BrowserSyncSemanticProjection.swift
       - path: Sources/Browser/BrowserSyncFolderProjection.swift
       - path: Sources/Browser/BrowserSyncOutbox.swift
+      - path: Sources/Browser/BrowserSyncCoreBridge.swift
       - path: Sources/Browser/BrowserSyncQueuedMutation.swift
       - path: Sources/Browser/BrowserSyncOwner.swift
       - path: Sources/Browser/BrowserSyncMoveIntent.swift

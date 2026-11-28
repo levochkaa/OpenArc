@@ -503,6 +503,22 @@ fileprivate struct FfiConverterUInt32: FfiConverterPrimitive {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterUInt64: FfiConverterPrimitive {
+    typealias FfiType = UInt64
+    typealias SwiftType = UInt64
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> UInt64 {
+        return try lift(readInt(&buf))
+    }
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterInt64: FfiConverterPrimitive {
     typealias FfiType = Int64
     typealias SwiftType = Int64
@@ -513,6 +529,22 @@ fileprivate struct FfiConverterInt64: FfiConverterPrimitive {
 
     public static func write(_ value: Int64, into buf: inout [UInt8]) {
         writeInt(&buf, lower(value))
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterDouble: FfiConverterPrimitive {
+    typealias FfiType = Double
+    typealias SwiftType = Double
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Double {
+        return try lift(readDouble(&buf))
+    }
+
+    public static func write(_ value: Double, into buf: inout [UInt8]) {
+        writeDouble(&buf, lower(value))
     }
 }
 
@@ -584,6 +616,241 @@ fileprivate struct FfiConverterString: FfiConverter {
         writeInt(&buf, len)
         writeBytes(&buf, value.utf8)
     }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterData: FfiConverterRustBuffer {
+    typealias SwiftType = Data
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Data {
+        let len: Int32 = try readInt(&buf)
+        return Data(try readBytes(&buf, count: Int(len)))
+    }
+
+    public static func write(_ value: Data, into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        writeBytes(&buf, value)
+    }
+}
+
+
+
+
+/**
+ * The last queue replay, kept so an ACK need not replay the rest of the queue. It holds only facts
+ * about the pure replay: for the exact rows in `rows`, the state after the first row and the state after
+ * all of them, reached from one start. A rolled-back transaction, another account or another writer can
+ * make it useless, never wrong: reuse also requires a byte-identical start.
+ */
+public protocol CoreSyncReplayMemoProtocol: AnyObject, Sendable {
+    
+    /**
+     * How many replays this memo skipped.
+     */
+    func reuses()  -> UInt64
+    
+}
+/**
+ * The last queue replay, kept so an ACK need not replay the rest of the queue. It holds only facts
+ * about the pure replay: for the exact rows in `rows`, the state after the first row and the state after
+ * all of them, reached from one start. A rolled-back transaction, another account or another writer can
+ * make it useless, never wrong: reuse also requires a byte-identical start.
+ */
+open class CoreSyncReplayMemo: CoreSyncReplayMemoProtocol, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_openarc_core_fn_clone_coresyncreplaymemo(self.handle, $0) }
+    }
+public convenience init() {
+    let handle =
+        try! rustCall() {
+        uniffiCallStatus in
+    uniffi_openarc_core_fn_constructor_coresyncreplaymemo_new(uniffiCallStatus
+    )
+}
+    self.init(unsafeFromHandle: handle)
+}
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_openarc_core_fn_free_coresyncreplaymemo(handle, $0) }
+    }
+
+    
+
+    
+    /**
+     * How many replays this memo skipped.
+     */
+open func reuses() -> UInt64  {
+    return try!  FfiConverterUInt64.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_openarc_core_fn_method_coresyncreplaymemo_reuses(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+
+    
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCoreSyncReplayMemo: FfiConverter {
+    typealias FfiType = UInt64
+    typealias SwiftType = CoreSyncReplayMemo
+
+    public static func lift(_ handle: UInt64) throws -> CoreSyncReplayMemo {
+        return CoreSyncReplayMemo(unsafeFromHandle: handle)
+    }
+
+    public static func lower(_ value: CoreSyncReplayMemo) -> UInt64 {
+        return value.uniffiCloneHandle()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CoreSyncReplayMemo {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: CoreSyncReplayMemo, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCoreSyncReplayMemo_lift(_ handle: UInt64) throws -> CoreSyncReplayMemo {
+    return try FfiConverterTypeCoreSyncReplayMemo.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+@Sendable public func FfiConverterTypeCoreSyncReplayMemo_lower(_ value: CoreSyncReplayMemo) -> UInt64 {
+    return FfiConverterTypeCoreSyncReplayMemo.lower(value)
+}
+
+
+
+
+public struct CoreFolderSnapshot: Equatable, Hashable {
+    public var id: String
+    public var spaceId: String
+    public var parentFolderId: String?
+    public var title: String
+    public var systemImageName: String?
+    public var isExpanded: Bool
+    public var pinnedSiblingRank: Double?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: String, spaceId: String, parentFolderId: String?, title: String, systemImageName: String?, isExpanded: Bool, pinnedSiblingRank: Double?) {
+        self.id = id
+        self.spaceId = spaceId
+        self.parentFolderId = parentFolderId
+        self.title = title
+        self.systemImageName = systemImageName
+        self.isExpanded = isExpanded
+        self.pinnedSiblingRank = pinnedSiblingRank
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension CoreFolderSnapshot: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCoreFolderSnapshot: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CoreFolderSnapshot {
+        return
+            try CoreFolderSnapshot(
+                id: FfiConverterString.read(from: &buf), 
+                spaceId: FfiConverterString.read(from: &buf), 
+                parentFolderId: FfiConverterOptionString.read(from: &buf), 
+                title: FfiConverterString.read(from: &buf), 
+                systemImageName: FfiConverterOptionString.read(from: &buf), 
+                isExpanded: FfiConverterBool.read(from: &buf), 
+                pinnedSiblingRank: FfiConverterOptionDouble.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: CoreFolderSnapshot, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterString.write(value.spaceId, into: &buf)
+        FfiConverterOptionString.write(value.parentFolderId, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterOptionString.write(value.systemImageName, into: &buf)
+        FfiConverterBool.write(value.isExpanded, into: &buf)
+        FfiConverterOptionDouble.write(value.pinnedSiblingRank, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCoreFolderSnapshot_lift(_ buf: RustBuffer) throws -> CoreFolderSnapshot {
+    return try FfiConverterTypeCoreFolderSnapshot.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+@Sendable public func FfiConverterTypeCoreFolderSnapshot_lower(_ value: CoreFolderSnapshot) -> RustBuffer {
+    return FfiConverterTypeCoreFolderSnapshot.lower(value)
 }
 
 
@@ -721,6 +988,313 @@ public func FfiConverterTypeCoreParsedHost_lift(_ buf: RustBuffer) throws -> Cor
 
 
 /**
+ * A window's Spaces, pinned folders and tabs. Split View groups stay with the app.
+ */
+public struct CoreSessionSnapshot: Equatable, Hashable {
+    public var spaces: [CoreSpaceSnapshot]?
+    public var pinnedTabFolders: [CoreFolderSnapshot]?
+    public var tabs: [CoreTabSnapshot]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(spaces: [CoreSpaceSnapshot]?, pinnedTabFolders: [CoreFolderSnapshot]?, tabs: [CoreTabSnapshot]) {
+        self.spaces = spaces
+        self.pinnedTabFolders = pinnedTabFolders
+        self.tabs = tabs
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension CoreSessionSnapshot: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCoreSessionSnapshot: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CoreSessionSnapshot {
+        return
+            try CoreSessionSnapshot(
+                spaces: FfiConverterOptionSequenceTypeCoreSpaceSnapshot.read(from: &buf), 
+                pinnedTabFolders: FfiConverterOptionSequenceTypeCoreFolderSnapshot.read(from: &buf), 
+                tabs: FfiConverterSequenceTypeCoreTabSnapshot.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: CoreSessionSnapshot, into buf: inout [UInt8]) {
+        FfiConverterOptionSequenceTypeCoreSpaceSnapshot.write(value.spaces, into: &buf)
+        FfiConverterOptionSequenceTypeCoreFolderSnapshot.write(value.pinnedTabFolders, into: &buf)
+        FfiConverterSequenceTypeCoreTabSnapshot.write(value.tabs, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCoreSessionSnapshot_lift(_ buf: RustBuffer) throws -> CoreSessionSnapshot {
+    return try FfiConverterTypeCoreSessionSnapshot.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+@Sendable public func FfiConverterTypeCoreSessionSnapshot_lower(_ value: CoreSessionSnapshot) -> RustBuffer {
+    return FfiConverterTypeCoreSessionSnapshot.lower(value)
+}
+
+
+public struct CoreSpaceSnapshot: Equatable, Hashable {
+    public var id: String
+    public var title: String
+    public var systemImageName: String
+    public var isPinnedSectionCollapsed: Bool
+    public var selectedTabIndex: Int64?
+    /**
+     * Local, like the tab's page title: never synced.
+     */
+    public var colorName: String?
+    public var profileDirectory: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: String, title: String, systemImageName: String, isPinnedSectionCollapsed: Bool, selectedTabIndex: Int64?, 
+        /**
+         * Local, like the tab's page title: never synced.
+         */colorName: String?, profileDirectory: String?) {
+        self.id = id
+        self.title = title
+        self.systemImageName = systemImageName
+        self.isPinnedSectionCollapsed = isPinnedSectionCollapsed
+        self.selectedTabIndex = selectedTabIndex
+        self.colorName = colorName
+        self.profileDirectory = profileDirectory
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension CoreSpaceSnapshot: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCoreSpaceSnapshot: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CoreSpaceSnapshot {
+        return
+            try CoreSpaceSnapshot(
+                id: FfiConverterString.read(from: &buf), 
+                title: FfiConverterString.read(from: &buf), 
+                systemImageName: FfiConverterString.read(from: &buf), 
+                isPinnedSectionCollapsed: FfiConverterBool.read(from: &buf), 
+                selectedTabIndex: FfiConverterOptionInt64.read(from: &buf), 
+                colorName: FfiConverterOptionString.read(from: &buf), 
+                profileDirectory: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: CoreSpaceSnapshot, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterString.write(value.systemImageName, into: &buf)
+        FfiConverterBool.write(value.isPinnedSectionCollapsed, into: &buf)
+        FfiConverterOptionInt64.write(value.selectedTabIndex, into: &buf)
+        FfiConverterOptionString.write(value.colorName, into: &buf)
+        FfiConverterOptionString.write(value.profileDirectory, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCoreSpaceSnapshot_lift(_ buf: RustBuffer) throws -> CoreSpaceSnapshot {
+    return try FfiConverterTypeCoreSpaceSnapshot.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+@Sendable public func FfiConverterTypeCoreSpaceSnapshot_lower(_ value: CoreSpaceSnapshot) -> RustBuffer {
+    return FfiConverterTypeCoreSpaceSnapshot.lower(value)
+}
+
+
+public struct CoreSyncBaseline: Equatable, Hashable {
+    public var entities: [String: CoreSyncBaselineEntity]
+    public var deletedKeys: [String]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(entities: [String: CoreSyncBaselineEntity], deletedKeys: [String]) {
+        self.entities = entities
+        self.deletedKeys = deletedKeys
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension CoreSyncBaseline: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCoreSyncBaseline: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CoreSyncBaseline {
+        return
+            try CoreSyncBaseline(
+                entities: FfiConverterDictionaryStringTypeCoreSyncBaselineEntity.read(from: &buf), 
+                deletedKeys: FfiConverterSequenceString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: CoreSyncBaseline, into buf: inout [UInt8]) {
+        FfiConverterDictionaryStringTypeCoreSyncBaselineEntity.write(value.entities, into: &buf)
+        FfiConverterSequenceString.write(value.deletedKeys, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCoreSyncBaseline_lift(_ buf: RustBuffer) throws -> CoreSyncBaseline {
+    return try FfiConverterTypeCoreSyncBaseline.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+@Sendable public func FfiConverterTypeCoreSyncBaseline_lower(_ value: CoreSyncBaseline) -> RustBuffer {
+    return FfiConverterTypeCoreSyncBaseline.lower(value)
+}
+
+
+public struct CoreSyncBaselineEntity: Equatable, Hashable {
+    public var serverSeq: Int64
+    public var change: CoreSyncChange
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(serverSeq: Int64, change: CoreSyncChange) {
+        self.serverSeq = serverSeq
+        self.change = change
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension CoreSyncBaselineEntity: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCoreSyncBaselineEntity: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CoreSyncBaselineEntity {
+        return
+            try CoreSyncBaselineEntity(
+                serverSeq: FfiConverterInt64.read(from: &buf), 
+                change: FfiConverterTypeCoreSyncChange.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: CoreSyncBaselineEntity, into buf: inout [UInt8]) {
+        FfiConverterInt64.write(value.serverSeq, into: &buf)
+        FfiConverterTypeCoreSyncChange.write(value.change, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCoreSyncBaselineEntity_lift(_ buf: RustBuffer) throws -> CoreSyncBaselineEntity {
+    return try FfiConverterTypeCoreSyncBaselineEntity.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+@Sendable public func FfiConverterTypeCoreSyncBaselineEntity_lower(_ value: CoreSyncBaselineEntity) -> RustBuffer {
+    return FfiConverterTypeCoreSyncBaselineEntity.lower(value)
+}
+
+
+/**
+ * What server events change in a baseline: the entities they name, as they end up, and the keys they
+ * delete. `Baseline::apply` reads only the entities events name, so the app sends just those.
+ */
+public struct CoreSyncBaselineUpdate: Equatable, Hashable {
+    public var entities: [String: CoreSyncBaselineEntity]
+    public var deletedKeys: [String]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(entities: [String: CoreSyncBaselineEntity], deletedKeys: [String]) {
+        self.entities = entities
+        self.deletedKeys = deletedKeys
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension CoreSyncBaselineUpdate: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCoreSyncBaselineUpdate: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CoreSyncBaselineUpdate {
+        return
+            try CoreSyncBaselineUpdate(
+                entities: FfiConverterDictionaryStringTypeCoreSyncBaselineEntity.read(from: &buf), 
+                deletedKeys: FfiConverterSequenceString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: CoreSyncBaselineUpdate, into buf: inout [UInt8]) {
+        FfiConverterDictionaryStringTypeCoreSyncBaselineEntity.write(value.entities, into: &buf)
+        FfiConverterSequenceString.write(value.deletedKeys, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCoreSyncBaselineUpdate_lift(_ buf: RustBuffer) throws -> CoreSyncBaselineUpdate {
+    return try FfiConverterTypeCoreSyncBaselineUpdate.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+@Sendable public func FfiConverterTypeCoreSyncBaselineUpdate_lower(_ value: CoreSyncBaselineUpdate) -> RustBuffer {
+    return FfiConverterTypeCoreSyncBaselineUpdate.lower(value)
+}
+
+
+/**
  * Limits the server applies to a boost, in UTF-16 code units.
  */
 public struct CoreSyncBoostLimits: Equatable, Hashable {
@@ -789,6 +1363,1576 @@ public func FfiConverterTypeCoreSyncBoostLimits_lift(_ buf: RustBuffer) throws -
 }
 
 
+/**
+ * One entity's state: an upsert with its payload, or a delete.
+ */
+public struct CoreSyncChange: Equatable, Hashable {
+    public var entityType: CoreSyncEntityType
+    public var entityId: String
+    public var op: CoreSyncOp
+    public var spaceData: CoreSyncSpacePayload?
+    public var tabData: CoreSyncTabPayload?
+    public var folderData: CoreSyncFolderPayload?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(entityType: CoreSyncEntityType, entityId: String, op: CoreSyncOp, spaceData: CoreSyncSpacePayload?, tabData: CoreSyncTabPayload?, folderData: CoreSyncFolderPayload?) {
+        self.entityType = entityType
+        self.entityId = entityId
+        self.op = op
+        self.spaceData = spaceData
+        self.tabData = tabData
+        self.folderData = folderData
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension CoreSyncChange: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCoreSyncChange: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CoreSyncChange {
+        return
+            try CoreSyncChange(
+                entityType: FfiConverterTypeCoreSyncEntityType.read(from: &buf), 
+                entityId: FfiConverterString.read(from: &buf), 
+                op: FfiConverterTypeCoreSyncOp.read(from: &buf), 
+                spaceData: FfiConverterOptionTypeCoreSyncSpacePayload.read(from: &buf), 
+                tabData: FfiConverterOptionTypeCoreSyncTabPayload.read(from: &buf), 
+                folderData: FfiConverterOptionTypeCoreSyncFolderPayload.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: CoreSyncChange, into buf: inout [UInt8]) {
+        FfiConverterTypeCoreSyncEntityType.write(value.entityType, into: &buf)
+        FfiConverterString.write(value.entityId, into: &buf)
+        FfiConverterTypeCoreSyncOp.write(value.op, into: &buf)
+        FfiConverterOptionTypeCoreSyncSpacePayload.write(value.spaceData, into: &buf)
+        FfiConverterOptionTypeCoreSyncTabPayload.write(value.tabData, into: &buf)
+        FfiConverterOptionTypeCoreSyncFolderPayload.write(value.folderData, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCoreSyncChange_lift(_ buf: RustBuffer) throws -> CoreSyncChange {
+    return try FfiConverterTypeCoreSyncChange.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+@Sendable public func FfiConverterTypeCoreSyncChange_lower(_ value: CoreSyncChange) -> RustBuffer {
+    return FfiConverterTypeCoreSyncChange.lower(value)
+}
+
+
+public struct CoreSyncEntityRef: Equatable, Hashable {
+    public var entityType: CoreSyncEntityType
+    public var entityId: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(entityType: CoreSyncEntityType, entityId: String) {
+        self.entityType = entityType
+        self.entityId = entityId
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension CoreSyncEntityRef: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCoreSyncEntityRef: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CoreSyncEntityRef {
+        return
+            try CoreSyncEntityRef(
+                entityType: FfiConverterTypeCoreSyncEntityType.read(from: &buf), 
+                entityId: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: CoreSyncEntityRef, into buf: inout [UInt8]) {
+        FfiConverterTypeCoreSyncEntityType.write(value.entityType, into: &buf)
+        FfiConverterString.write(value.entityId, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCoreSyncEntityRef_lift(_ buf: RustBuffer) throws -> CoreSyncEntityRef {
+    return try FfiConverterTypeCoreSyncEntityRef.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+@Sendable public func FfiConverterTypeCoreSyncEntityRef_lower(_ value: CoreSyncEntityRef) -> RustBuffer {
+    return FfiConverterTypeCoreSyncEntityRef.lower(value)
+}
+
+
+/**
+ * A server event, as far as the baseline reads it.
+ */
+public struct CoreSyncEvent: Equatable, Hashable {
+    public var serverSeq: Int64
+    public var entityType: String
+    public var entityId: String
+    public var op: String
+    public var data: CoreSyncEventData
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(serverSeq: Int64, entityType: String, entityId: String, op: String, data: CoreSyncEventData) {
+        self.serverSeq = serverSeq
+        self.entityType = entityType
+        self.entityId = entityId
+        self.op = op
+        self.data = data
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension CoreSyncEvent: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCoreSyncEvent: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CoreSyncEvent {
+        return
+            try CoreSyncEvent(
+                serverSeq: FfiConverterInt64.read(from: &buf), 
+                entityType: FfiConverterString.read(from: &buf), 
+                entityId: FfiConverterString.read(from: &buf), 
+                op: FfiConverterString.read(from: &buf), 
+                data: FfiConverterTypeCoreSyncEventData.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: CoreSyncEvent, into buf: inout [UInt8]) {
+        FfiConverterInt64.write(value.serverSeq, into: &buf)
+        FfiConverterString.write(value.entityType, into: &buf)
+        FfiConverterString.write(value.entityId, into: &buf)
+        FfiConverterString.write(value.op, into: &buf)
+        FfiConverterTypeCoreSyncEventData.write(value.data, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCoreSyncEvent_lift(_ buf: RustBuffer) throws -> CoreSyncEvent {
+    return try FfiConverterTypeCoreSyncEvent.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+@Sendable public func FfiConverterTypeCoreSyncEvent_lower(_ value: CoreSyncEvent) -> RustBuffer {
+    return FfiConverterTypeCoreSyncEvent.lower(value)
+}
+
+
+public struct CoreSyncEventFolderData: Equatable, Hashable {
+    public var spaceId: String?
+    public var parentFolderId: String?
+    public var title: String?
+    public var systemImageName: String?
+    public var rank: Double?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(spaceId: String?, parentFolderId: String?, title: String?, systemImageName: String?, rank: Double?) {
+        self.spaceId = spaceId
+        self.parentFolderId = parentFolderId
+        self.title = title
+        self.systemImageName = systemImageName
+        self.rank = rank
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension CoreSyncEventFolderData: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCoreSyncEventFolderData: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CoreSyncEventFolderData {
+        return
+            try CoreSyncEventFolderData(
+                spaceId: FfiConverterOptionString.read(from: &buf), 
+                parentFolderId: FfiConverterOptionString.read(from: &buf), 
+                title: FfiConverterOptionString.read(from: &buf), 
+                systemImageName: FfiConverterOptionString.read(from: &buf), 
+                rank: FfiConverterOptionDouble.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: CoreSyncEventFolderData, into buf: inout [UInt8]) {
+        FfiConverterOptionString.write(value.spaceId, into: &buf)
+        FfiConverterOptionString.write(value.parentFolderId, into: &buf)
+        FfiConverterOptionString.write(value.title, into: &buf)
+        FfiConverterOptionString.write(value.systemImageName, into: &buf)
+        FfiConverterOptionDouble.write(value.rank, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCoreSyncEventFolderData_lift(_ buf: RustBuffer) throws -> CoreSyncEventFolderData {
+    return try FfiConverterTypeCoreSyncEventFolderData.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+@Sendable public func FfiConverterTypeCoreSyncEventFolderData_lower(_ value: CoreSyncEventFolderData) -> RustBuffer {
+    return FfiConverterTypeCoreSyncEventFolderData.lower(value)
+}
+
+
+public struct CoreSyncEventSpaceData: Equatable, Hashable {
+    public var title: String?
+    public var systemImageName: String?
+    public var rank: Double?
+    public var isPinnedSectionCollapsed: Bool?
+    public var selectedTabId: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(title: String?, systemImageName: String?, rank: Double?, isPinnedSectionCollapsed: Bool?, selectedTabId: String?) {
+        self.title = title
+        self.systemImageName = systemImageName
+        self.rank = rank
+        self.isPinnedSectionCollapsed = isPinnedSectionCollapsed
+        self.selectedTabId = selectedTabId
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension CoreSyncEventSpaceData: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCoreSyncEventSpaceData: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CoreSyncEventSpaceData {
+        return
+            try CoreSyncEventSpaceData(
+                title: FfiConverterOptionString.read(from: &buf), 
+                systemImageName: FfiConverterOptionString.read(from: &buf), 
+                rank: FfiConverterOptionDouble.read(from: &buf), 
+                isPinnedSectionCollapsed: FfiConverterOptionBool.read(from: &buf), 
+                selectedTabId: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: CoreSyncEventSpaceData, into buf: inout [UInt8]) {
+        FfiConverterOptionString.write(value.title, into: &buf)
+        FfiConverterOptionString.write(value.systemImageName, into: &buf)
+        FfiConverterOptionDouble.write(value.rank, into: &buf)
+        FfiConverterOptionBool.write(value.isPinnedSectionCollapsed, into: &buf)
+        FfiConverterOptionString.write(value.selectedTabId, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCoreSyncEventSpaceData_lift(_ buf: RustBuffer) throws -> CoreSyncEventSpaceData {
+    return try FfiConverterTypeCoreSyncEventSpaceData.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+@Sendable public func FfiConverterTypeCoreSyncEventSpaceData_lower(_ value: CoreSyncEventSpaceData) -> RustBuffer {
+    return FfiConverterTypeCoreSyncEventSpaceData.lower(value)
+}
+
+
+public struct CoreSyncEventTabData: Equatable, Hashable {
+    public var spaceId: String?
+    public var placement: CoreTabPlacement?
+    public var rank: Double?
+    public var urlString: String?
+    public var pinnedUrlString: String?
+    public var title: String?
+    public var userTitleOverride: String?
+    public var faviconUrlString: String?
+    public var lastActivityAt: String?
+    public var pinnedFolderId: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(spaceId: String?, placement: CoreTabPlacement?, rank: Double?, urlString: String?, pinnedUrlString: String?, title: String?, userTitleOverride: String?, faviconUrlString: String?, lastActivityAt: String?, pinnedFolderId: String?) {
+        self.spaceId = spaceId
+        self.placement = placement
+        self.rank = rank
+        self.urlString = urlString
+        self.pinnedUrlString = pinnedUrlString
+        self.title = title
+        self.userTitleOverride = userTitleOverride
+        self.faviconUrlString = faviconUrlString
+        self.lastActivityAt = lastActivityAt
+        self.pinnedFolderId = pinnedFolderId
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension CoreSyncEventTabData: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCoreSyncEventTabData: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CoreSyncEventTabData {
+        return
+            try CoreSyncEventTabData(
+                spaceId: FfiConverterOptionString.read(from: &buf), 
+                placement: FfiConverterOptionTypeCoreTabPlacement.read(from: &buf), 
+                rank: FfiConverterOptionDouble.read(from: &buf), 
+                urlString: FfiConverterOptionString.read(from: &buf), 
+                pinnedUrlString: FfiConverterOptionString.read(from: &buf), 
+                title: FfiConverterOptionString.read(from: &buf), 
+                userTitleOverride: FfiConverterOptionString.read(from: &buf), 
+                faviconUrlString: FfiConverterOptionString.read(from: &buf), 
+                lastActivityAt: FfiConverterOptionString.read(from: &buf), 
+                pinnedFolderId: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: CoreSyncEventTabData, into buf: inout [UInt8]) {
+        FfiConverterOptionString.write(value.spaceId, into: &buf)
+        FfiConverterOptionTypeCoreTabPlacement.write(value.placement, into: &buf)
+        FfiConverterOptionDouble.write(value.rank, into: &buf)
+        FfiConverterOptionString.write(value.urlString, into: &buf)
+        FfiConverterOptionString.write(value.pinnedUrlString, into: &buf)
+        FfiConverterOptionString.write(value.title, into: &buf)
+        FfiConverterOptionString.write(value.userTitleOverride, into: &buf)
+        FfiConverterOptionString.write(value.faviconUrlString, into: &buf)
+        FfiConverterOptionString.write(value.lastActivityAt, into: &buf)
+        FfiConverterOptionString.write(value.pinnedFolderId, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCoreSyncEventTabData_lift(_ buf: RustBuffer) throws -> CoreSyncEventTabData {
+    return try FfiConverterTypeCoreSyncEventTabData.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+@Sendable public func FfiConverterTypeCoreSyncEventTabData_lower(_ value: CoreSyncEventTabData) -> RustBuffer {
+    return FfiConverterTypeCoreSyncEventTabData.lower(value)
+}
+
+
+public struct CoreSyncFolderCreate: Equatable, Hashable {
+    public var spaceId: String
+    public var parentFolderId: String?
+    public var title: String
+    public var systemImageName: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(spaceId: String, parentFolderId: String?, title: String, systemImageName: String?) {
+        self.spaceId = spaceId
+        self.parentFolderId = parentFolderId
+        self.title = title
+        self.systemImageName = systemImageName
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension CoreSyncFolderCreate: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCoreSyncFolderCreate: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CoreSyncFolderCreate {
+        return
+            try CoreSyncFolderCreate(
+                spaceId: FfiConverterString.read(from: &buf), 
+                parentFolderId: FfiConverterOptionString.read(from: &buf), 
+                title: FfiConverterString.read(from: &buf), 
+                systemImageName: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: CoreSyncFolderCreate, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.spaceId, into: &buf)
+        FfiConverterOptionString.write(value.parentFolderId, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterOptionString.write(value.systemImageName, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCoreSyncFolderCreate_lift(_ buf: RustBuffer) throws -> CoreSyncFolderCreate {
+    return try FfiConverterTypeCoreSyncFolderCreate.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+@Sendable public func FfiConverterTypeCoreSyncFolderCreate_lower(_ value: CoreSyncFolderCreate) -> RustBuffer {
+    return FfiConverterTypeCoreSyncFolderCreate.lower(value)
+}
+
+
+public struct CoreSyncFolderPatch: Equatable, Hashable {
+    public var title: String?
+    public var systemImageName: CorePatch
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(title: String?, systemImageName: CorePatch) {
+        self.title = title
+        self.systemImageName = systemImageName
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension CoreSyncFolderPatch: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCoreSyncFolderPatch: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CoreSyncFolderPatch {
+        return
+            try CoreSyncFolderPatch(
+                title: FfiConverterOptionString.read(from: &buf), 
+                systemImageName: FfiConverterTypeCorePatch.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: CoreSyncFolderPatch, into buf: inout [UInt8]) {
+        FfiConverterOptionString.write(value.title, into: &buf)
+        FfiConverterTypeCorePatch.write(value.systemImageName, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCoreSyncFolderPatch_lift(_ buf: RustBuffer) throws -> CoreSyncFolderPatch {
+    return try FfiConverterTypeCoreSyncFolderPatch.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+@Sendable public func FfiConverterTypeCoreSyncFolderPatch_lower(_ value: CoreSyncFolderPatch) -> RustBuffer {
+    return FfiConverterTypeCoreSyncFolderPatch.lower(value)
+}
+
+
+public struct CoreSyncFolderPayload: Equatable, Hashable {
+    public var spaceId: String
+    public var parentFolderId: String?
+    public var title: String
+    public var systemImageName: String?
+    public var rank: Double
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(spaceId: String, parentFolderId: String?, title: String, systemImageName: String?, rank: Double) {
+        self.spaceId = spaceId
+        self.parentFolderId = parentFolderId
+        self.title = title
+        self.systemImageName = systemImageName
+        self.rank = rank
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension CoreSyncFolderPayload: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCoreSyncFolderPayload: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CoreSyncFolderPayload {
+        return
+            try CoreSyncFolderPayload(
+                spaceId: FfiConverterString.read(from: &buf), 
+                parentFolderId: FfiConverterOptionString.read(from: &buf), 
+                title: FfiConverterString.read(from: &buf), 
+                systemImageName: FfiConverterOptionString.read(from: &buf), 
+                rank: FfiConverterDouble.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: CoreSyncFolderPayload, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.spaceId, into: &buf)
+        FfiConverterOptionString.write(value.parentFolderId, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterOptionString.write(value.systemImageName, into: &buf)
+        FfiConverterDouble.write(value.rank, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCoreSyncFolderPayload_lift(_ buf: RustBuffer) throws -> CoreSyncFolderPayload {
+    return try FfiConverterTypeCoreSyncFolderPayload.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+@Sendable public func FfiConverterTypeCoreSyncFolderPayload_lower(_ value: CoreSyncFolderPayload) -> RustBuffer {
+    return FfiConverterTypeCoreSyncFolderPayload.lower(value)
+}
+
+
+public struct CoreSyncFolderTabCreate: Equatable, Hashable {
+    public var base: CoreSyncTabCreate
+    public var pinnedFolderId: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(base: CoreSyncTabCreate, pinnedFolderId: String?) {
+        self.base = base
+        self.pinnedFolderId = pinnedFolderId
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension CoreSyncFolderTabCreate: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCoreSyncFolderTabCreate: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CoreSyncFolderTabCreate {
+        return
+            try CoreSyncFolderTabCreate(
+                base: FfiConverterTypeCoreSyncTabCreate.read(from: &buf), 
+                pinnedFolderId: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: CoreSyncFolderTabCreate, into buf: inout [UInt8]) {
+        FfiConverterTypeCoreSyncTabCreate.write(value.base, into: &buf)
+        FfiConverterOptionString.write(value.pinnedFolderId, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCoreSyncFolderTabCreate_lift(_ buf: RustBuffer) throws -> CoreSyncFolderTabCreate {
+    return try FfiConverterTypeCoreSyncFolderTabCreate.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+@Sendable public func FfiConverterTypeCoreSyncFolderTabCreate_lower(_ value: CoreSyncFolderTabCreate) -> RustBuffer {
+    return FfiConverterTypeCoreSyncFolderTabCreate.lower(value)
+}
+
+
+/**
+ * One stored queue row as bytes. Rows that decode to equal values can still differ in bytes, for
+ * example in Unicode normalization.
+ */
+public struct CoreSyncQueuedRowIdentity: Equatable, Hashable {
+    public var protocolVersion: Int64
+    public var payload: Data
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(protocolVersion: Int64, payload: Data) {
+        self.protocolVersion = protocolVersion
+        self.payload = payload
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension CoreSyncQueuedRowIdentity: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCoreSyncQueuedRowIdentity: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CoreSyncQueuedRowIdentity {
+        return
+            try CoreSyncQueuedRowIdentity(
+                protocolVersion: FfiConverterInt64.read(from: &buf), 
+                payload: FfiConverterData.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: CoreSyncQueuedRowIdentity, into buf: inout [UInt8]) {
+        FfiConverterInt64.write(value.protocolVersion, into: &buf)
+        FfiConverterData.write(value.payload, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCoreSyncQueuedRowIdentity_lift(_ buf: RustBuffer) throws -> CoreSyncQueuedRowIdentity {
+    return try FfiConverterTypeCoreSyncQueuedRowIdentity.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+@Sendable public func FfiConverterTypeCoreSyncQueuedRowIdentity_lower(_ value: CoreSyncQueuedRowIdentity) -> RustBuffer {
+    return FfiConverterTypeCoreSyncQueuedRowIdentity.lower(value)
+}
+
+
+/**
+ * Positions in a session's lists of the entries `removed_entities` takes out.
+ */
+public struct CoreSyncRemovedEntities: Equatable, Hashable {
+    public var spaces: [UInt32]
+    public var folders: [UInt32]
+    public var tabs: [UInt32]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(spaces: [UInt32], folders: [UInt32], tabs: [UInt32]) {
+        self.spaces = spaces
+        self.folders = folders
+        self.tabs = tabs
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension CoreSyncRemovedEntities: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCoreSyncRemovedEntities: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CoreSyncRemovedEntities {
+        return
+            try CoreSyncRemovedEntities(
+                spaces: FfiConverterSequenceUInt32.read(from: &buf), 
+                folders: FfiConverterSequenceUInt32.read(from: &buf), 
+                tabs: FfiConverterSequenceUInt32.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: CoreSyncRemovedEntities, into buf: inout [UInt8]) {
+        FfiConverterSequenceUInt32.write(value.spaces, into: &buf)
+        FfiConverterSequenceUInt32.write(value.folders, into: &buf)
+        FfiConverterSequenceUInt32.write(value.tabs, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCoreSyncRemovedEntities_lift(_ buf: RustBuffer) throws -> CoreSyncRemovedEntities {
+    return try FfiConverterTypeCoreSyncRemovedEntities.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+@Sendable public func FfiConverterTypeCoreSyncRemovedEntities_lower(_ value: CoreSyncRemovedEntities) -> RustBuffer {
+    return FfiConverterTypeCoreSyncRemovedEntities.lower(value)
+}
+
+
+/**
+ * Canonical values with queued operations applied, and the keys hidden so far.
+ */
+public struct CoreSyncReplayState: Equatable, Hashable {
+    public var values: [String: CoreSyncChange]
+    public var deleted: [String]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(values: [String: CoreSyncChange], deleted: [String]) {
+        self.values = values
+        self.deleted = deleted
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension CoreSyncReplayState: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCoreSyncReplayState: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CoreSyncReplayState {
+        return
+            try CoreSyncReplayState(
+                values: FfiConverterDictionaryStringTypeCoreSyncChange.read(from: &buf), 
+                deleted: FfiConverterSequenceString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: CoreSyncReplayState, into buf: inout [UInt8]) {
+        FfiConverterDictionaryStringTypeCoreSyncChange.write(value.values, into: &buf)
+        FfiConverterSequenceString.write(value.deleted, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCoreSyncReplayState_lift(_ buf: RustBuffer) throws -> CoreSyncReplayState {
+    return try FfiConverterTypeCoreSyncReplayState.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+@Sendable public func FfiConverterTypeCoreSyncReplayState_lower(_ value: CoreSyncReplayState) -> RustBuffer {
+    return FfiConverterTypeCoreSyncReplayState.lower(value)
+}
+
+
+public struct CoreSyncSpaceCreate: Equatable, Hashable {
+    public var title: String
+    public var systemImageName: String
+    public var isPinnedSectionCollapsed: Bool
+    public var selectedTabId: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(title: String, systemImageName: String, isPinnedSectionCollapsed: Bool, selectedTabId: String?) {
+        self.title = title
+        self.systemImageName = systemImageName
+        self.isPinnedSectionCollapsed = isPinnedSectionCollapsed
+        self.selectedTabId = selectedTabId
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension CoreSyncSpaceCreate: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCoreSyncSpaceCreate: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CoreSyncSpaceCreate {
+        return
+            try CoreSyncSpaceCreate(
+                title: FfiConverterString.read(from: &buf), 
+                systemImageName: FfiConverterString.read(from: &buf), 
+                isPinnedSectionCollapsed: FfiConverterBool.read(from: &buf), 
+                selectedTabId: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: CoreSyncSpaceCreate, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterString.write(value.systemImageName, into: &buf)
+        FfiConverterBool.write(value.isPinnedSectionCollapsed, into: &buf)
+        FfiConverterOptionString.write(value.selectedTabId, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCoreSyncSpaceCreate_lift(_ buf: RustBuffer) throws -> CoreSyncSpaceCreate {
+    return try FfiConverterTypeCoreSyncSpaceCreate.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+@Sendable public func FfiConverterTypeCoreSyncSpaceCreate_lower(_ value: CoreSyncSpaceCreate) -> RustBuffer {
+    return FfiConverterTypeCoreSyncSpaceCreate.lower(value)
+}
+
+
+public struct CoreSyncSpacePatch: Equatable, Hashable {
+    public var title: String?
+    public var systemImageName: String?
+    public var isPinnedSectionCollapsed: Bool?
+    public var selectedTabId: CorePatch
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(title: String?, systemImageName: String?, isPinnedSectionCollapsed: Bool?, selectedTabId: CorePatch) {
+        self.title = title
+        self.systemImageName = systemImageName
+        self.isPinnedSectionCollapsed = isPinnedSectionCollapsed
+        self.selectedTabId = selectedTabId
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension CoreSyncSpacePatch: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCoreSyncSpacePatch: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CoreSyncSpacePatch {
+        return
+            try CoreSyncSpacePatch(
+                title: FfiConverterOptionString.read(from: &buf), 
+                systemImageName: FfiConverterOptionString.read(from: &buf), 
+                isPinnedSectionCollapsed: FfiConverterOptionBool.read(from: &buf), 
+                selectedTabId: FfiConverterTypeCorePatch.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: CoreSyncSpacePatch, into buf: inout [UInt8]) {
+        FfiConverterOptionString.write(value.title, into: &buf)
+        FfiConverterOptionString.write(value.systemImageName, into: &buf)
+        FfiConverterOptionBool.write(value.isPinnedSectionCollapsed, into: &buf)
+        FfiConverterTypeCorePatch.write(value.selectedTabId, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCoreSyncSpacePatch_lift(_ buf: RustBuffer) throws -> CoreSyncSpacePatch {
+    return try FfiConverterTypeCoreSyncSpacePatch.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+@Sendable public func FfiConverterTypeCoreSyncSpacePatch_lower(_ value: CoreSyncSpacePatch) -> RustBuffer {
+    return FfiConverterTypeCoreSyncSpacePatch.lower(value)
+}
+
+
+public struct CoreSyncSpacePayload: Equatable, Hashable {
+    public var title: String
+    public var systemImageName: String
+    public var rank: Double
+    public var isPinnedSectionCollapsed: Bool
+    public var selectedTabId: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(title: String, systemImageName: String, rank: Double, isPinnedSectionCollapsed: Bool, selectedTabId: String?) {
+        self.title = title
+        self.systemImageName = systemImageName
+        self.rank = rank
+        self.isPinnedSectionCollapsed = isPinnedSectionCollapsed
+        self.selectedTabId = selectedTabId
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension CoreSyncSpacePayload: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCoreSyncSpacePayload: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CoreSyncSpacePayload {
+        return
+            try CoreSyncSpacePayload(
+                title: FfiConverterString.read(from: &buf), 
+                systemImageName: FfiConverterString.read(from: &buf), 
+                rank: FfiConverterDouble.read(from: &buf), 
+                isPinnedSectionCollapsed: FfiConverterBool.read(from: &buf), 
+                selectedTabId: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: CoreSyncSpacePayload, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterString.write(value.systemImageName, into: &buf)
+        FfiConverterDouble.write(value.rank, into: &buf)
+        FfiConverterBool.write(value.isPinnedSectionCollapsed, into: &buf)
+        FfiConverterOptionString.write(value.selectedTabId, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCoreSyncSpacePayload_lift(_ buf: RustBuffer) throws -> CoreSyncSpacePayload {
+    return try FfiConverterTypeCoreSyncSpacePayload.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+@Sendable public func FfiConverterTypeCoreSyncSpacePayload_lower(_ value: CoreSyncSpacePayload) -> RustBuffer {
+    return FfiConverterTypeCoreSyncSpacePayload.lower(value)
+}
+
+
+public struct CoreSyncTabCreate: Equatable, Hashable {
+    public var spaceId: String
+    public var placement: CoreTabPlacement
+    public var urlString: String
+    public var pinnedUrlString: String?
+    public var title: String?
+    public var userTitleOverride: String?
+    public var faviconUrlString: String?
+    public var lastActivityAt: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(spaceId: String, placement: CoreTabPlacement, urlString: String, pinnedUrlString: String?, title: String?, userTitleOverride: String?, faviconUrlString: String?, lastActivityAt: String?) {
+        self.spaceId = spaceId
+        self.placement = placement
+        self.urlString = urlString
+        self.pinnedUrlString = pinnedUrlString
+        self.title = title
+        self.userTitleOverride = userTitleOverride
+        self.faviconUrlString = faviconUrlString
+        self.lastActivityAt = lastActivityAt
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension CoreSyncTabCreate: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCoreSyncTabCreate: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CoreSyncTabCreate {
+        return
+            try CoreSyncTabCreate(
+                spaceId: FfiConverterString.read(from: &buf), 
+                placement: FfiConverterTypeCoreTabPlacement.read(from: &buf), 
+                urlString: FfiConverterString.read(from: &buf), 
+                pinnedUrlString: FfiConverterOptionString.read(from: &buf), 
+                title: FfiConverterOptionString.read(from: &buf), 
+                userTitleOverride: FfiConverterOptionString.read(from: &buf), 
+                faviconUrlString: FfiConverterOptionString.read(from: &buf), 
+                lastActivityAt: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: CoreSyncTabCreate, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.spaceId, into: &buf)
+        FfiConverterTypeCoreTabPlacement.write(value.placement, into: &buf)
+        FfiConverterString.write(value.urlString, into: &buf)
+        FfiConverterOptionString.write(value.pinnedUrlString, into: &buf)
+        FfiConverterOptionString.write(value.title, into: &buf)
+        FfiConverterOptionString.write(value.userTitleOverride, into: &buf)
+        FfiConverterOptionString.write(value.faviconUrlString, into: &buf)
+        FfiConverterOptionString.write(value.lastActivityAt, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCoreSyncTabCreate_lift(_ buf: RustBuffer) throws -> CoreSyncTabCreate {
+    return try FfiConverterTypeCoreSyncTabCreate.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+@Sendable public func FfiConverterTypeCoreSyncTabCreate_lower(_ value: CoreSyncTabCreate) -> RustBuffer {
+    return FfiConverterTypeCoreSyncTabCreate.lower(value)
+}
+
+
+public struct CoreSyncTabDestination: Equatable, Hashable {
+    public var spaceId: String
+    public var placement: CoreTabPlacement
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(spaceId: String, placement: CoreTabPlacement) {
+        self.spaceId = spaceId
+        self.placement = placement
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension CoreSyncTabDestination: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCoreSyncTabDestination: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CoreSyncTabDestination {
+        return
+            try CoreSyncTabDestination(
+                spaceId: FfiConverterString.read(from: &buf), 
+                placement: FfiConverterTypeCoreTabPlacement.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: CoreSyncTabDestination, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.spaceId, into: &buf)
+        FfiConverterTypeCoreTabPlacement.write(value.placement, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCoreSyncTabDestination_lift(_ buf: RustBuffer) throws -> CoreSyncTabDestination {
+    return try FfiConverterTypeCoreSyncTabDestination.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+@Sendable public func FfiConverterTypeCoreSyncTabDestination_lower(_ value: CoreSyncTabDestination) -> RustBuffer {
+    return FfiConverterTypeCoreSyncTabDestination.lower(value)
+}
+
+
+public struct CoreSyncTabPatch: Equatable, Hashable {
+    public var urlString: String?
+    public var pinnedUrlString: CorePatch
+    public var title: CorePatch
+    public var userTitleOverride: CorePatch
+    public var faviconUrlString: CorePatch
+    public var lastActivityAt: CorePatch
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(urlString: String?, pinnedUrlString: CorePatch, title: CorePatch, userTitleOverride: CorePatch, faviconUrlString: CorePatch, lastActivityAt: CorePatch) {
+        self.urlString = urlString
+        self.pinnedUrlString = pinnedUrlString
+        self.title = title
+        self.userTitleOverride = userTitleOverride
+        self.faviconUrlString = faviconUrlString
+        self.lastActivityAt = lastActivityAt
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension CoreSyncTabPatch: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCoreSyncTabPatch: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CoreSyncTabPatch {
+        return
+            try CoreSyncTabPatch(
+                urlString: FfiConverterOptionString.read(from: &buf), 
+                pinnedUrlString: FfiConverterTypeCorePatch.read(from: &buf), 
+                title: FfiConverterTypeCorePatch.read(from: &buf), 
+                userTitleOverride: FfiConverterTypeCorePatch.read(from: &buf), 
+                faviconUrlString: FfiConverterTypeCorePatch.read(from: &buf), 
+                lastActivityAt: FfiConverterTypeCorePatch.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: CoreSyncTabPatch, into buf: inout [UInt8]) {
+        FfiConverterOptionString.write(value.urlString, into: &buf)
+        FfiConverterTypeCorePatch.write(value.pinnedUrlString, into: &buf)
+        FfiConverterTypeCorePatch.write(value.title, into: &buf)
+        FfiConverterTypeCorePatch.write(value.userTitleOverride, into: &buf)
+        FfiConverterTypeCorePatch.write(value.faviconUrlString, into: &buf)
+        FfiConverterTypeCorePatch.write(value.lastActivityAt, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCoreSyncTabPatch_lift(_ buf: RustBuffer) throws -> CoreSyncTabPatch {
+    return try FfiConverterTypeCoreSyncTabPatch.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+@Sendable public func FfiConverterTypeCoreSyncTabPatch_lower(_ value: CoreSyncTabPatch) -> RustBuffer {
+    return FfiConverterTypeCoreSyncTabPatch.lower(value)
+}
+
+
+public struct CoreSyncTabPayload: Equatable, Hashable {
+    public var spaceId: String
+    public var placement: CoreTabPlacement
+    public var rank: Double
+    public var urlString: String
+    public var pinnedUrlString: String?
+    public var title: String?
+    public var userTitleOverride: String?
+    public var faviconUrlString: String?
+    public var lastActivityAt: String?
+    public var pinnedFolderId: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(spaceId: String, placement: CoreTabPlacement, rank: Double, urlString: String, pinnedUrlString: String?, title: String?, userTitleOverride: String?, faviconUrlString: String?, lastActivityAt: String?, pinnedFolderId: String?) {
+        self.spaceId = spaceId
+        self.placement = placement
+        self.rank = rank
+        self.urlString = urlString
+        self.pinnedUrlString = pinnedUrlString
+        self.title = title
+        self.userTitleOverride = userTitleOverride
+        self.faviconUrlString = faviconUrlString
+        self.lastActivityAt = lastActivityAt
+        self.pinnedFolderId = pinnedFolderId
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension CoreSyncTabPayload: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCoreSyncTabPayload: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CoreSyncTabPayload {
+        return
+            try CoreSyncTabPayload(
+                spaceId: FfiConverterString.read(from: &buf), 
+                placement: FfiConverterTypeCoreTabPlacement.read(from: &buf), 
+                rank: FfiConverterDouble.read(from: &buf), 
+                urlString: FfiConverterString.read(from: &buf), 
+                pinnedUrlString: FfiConverterOptionString.read(from: &buf), 
+                title: FfiConverterOptionString.read(from: &buf), 
+                userTitleOverride: FfiConverterOptionString.read(from: &buf), 
+                faviconUrlString: FfiConverterOptionString.read(from: &buf), 
+                lastActivityAt: FfiConverterOptionString.read(from: &buf), 
+                pinnedFolderId: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: CoreSyncTabPayload, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.spaceId, into: &buf)
+        FfiConverterTypeCoreTabPlacement.write(value.placement, into: &buf)
+        FfiConverterDouble.write(value.rank, into: &buf)
+        FfiConverterString.write(value.urlString, into: &buf)
+        FfiConverterOptionString.write(value.pinnedUrlString, into: &buf)
+        FfiConverterOptionString.write(value.title, into: &buf)
+        FfiConverterOptionString.write(value.userTitleOverride, into: &buf)
+        FfiConverterOptionString.write(value.faviconUrlString, into: &buf)
+        FfiConverterOptionString.write(value.lastActivityAt, into: &buf)
+        FfiConverterOptionString.write(value.pinnedFolderId, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCoreSyncTabPayload_lift(_ buf: RustBuffer) throws -> CoreSyncTabPayload {
+    return try FfiConverterTypeCoreSyncTabPayload.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+@Sendable public func FfiConverterTypeCoreSyncTabPayload_lower(_ value: CoreSyncTabPayload) -> RustBuffer {
+    return FfiConverterTypeCoreSyncTabPayload.lower(value)
+}
+
+
+public struct CoreTabSnapshot: Equatable, Hashable {
+    public var id: String?
+    public var urlString: String
+    public var pinnedUrlString: String?
+    public var userTitleOverride: String?
+    public var placement: CoreTabPlacement
+    public var spaceId: String?
+    public var pinnedFolderId: String?
+    public var pinnedSiblingRank: Double?
+    public var lastActivityTimestamp: Double?
+    /**
+     * Local display data: never synced.
+     */
+    public var pageTitle: String?
+    public var systemImageName: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: String?, urlString: String, pinnedUrlString: String?, userTitleOverride: String?, placement: CoreTabPlacement, spaceId: String?, pinnedFolderId: String?, pinnedSiblingRank: Double?, lastActivityTimestamp: Double?, 
+        /**
+         * Local display data: never synced.
+         */pageTitle: String?, systemImageName: String?) {
+        self.id = id
+        self.urlString = urlString
+        self.pinnedUrlString = pinnedUrlString
+        self.userTitleOverride = userTitleOverride
+        self.placement = placement
+        self.spaceId = spaceId
+        self.pinnedFolderId = pinnedFolderId
+        self.pinnedSiblingRank = pinnedSiblingRank
+        self.lastActivityTimestamp = lastActivityTimestamp
+        self.pageTitle = pageTitle
+        self.systemImageName = systemImageName
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension CoreTabSnapshot: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCoreTabSnapshot: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CoreTabSnapshot {
+        return
+            try CoreTabSnapshot(
+                id: FfiConverterOptionString.read(from: &buf), 
+                urlString: FfiConverterString.read(from: &buf), 
+                pinnedUrlString: FfiConverterOptionString.read(from: &buf), 
+                userTitleOverride: FfiConverterOptionString.read(from: &buf), 
+                placement: FfiConverterTypeCoreTabPlacement.read(from: &buf), 
+                spaceId: FfiConverterOptionString.read(from: &buf), 
+                pinnedFolderId: FfiConverterOptionString.read(from: &buf), 
+                pinnedSiblingRank: FfiConverterOptionDouble.read(from: &buf), 
+                lastActivityTimestamp: FfiConverterOptionDouble.read(from: &buf), 
+                pageTitle: FfiConverterOptionString.read(from: &buf), 
+                systemImageName: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: CoreTabSnapshot, into buf: inout [UInt8]) {
+        FfiConverterOptionString.write(value.id, into: &buf)
+        FfiConverterString.write(value.urlString, into: &buf)
+        FfiConverterOptionString.write(value.pinnedUrlString, into: &buf)
+        FfiConverterOptionString.write(value.userTitleOverride, into: &buf)
+        FfiConverterTypeCoreTabPlacement.write(value.placement, into: &buf)
+        FfiConverterOptionString.write(value.spaceId, into: &buf)
+        FfiConverterOptionString.write(value.pinnedFolderId, into: &buf)
+        FfiConverterOptionDouble.write(value.pinnedSiblingRank, into: &buf)
+        FfiConverterOptionDouble.write(value.lastActivityTimestamp, into: &buf)
+        FfiConverterOptionString.write(value.pageTitle, into: &buf)
+        FfiConverterOptionString.write(value.systemImageName, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCoreTabSnapshot_lift(_ buf: RustBuffer) throws -> CoreTabSnapshot {
+    return try FfiConverterTypeCoreTabSnapshot.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+@Sendable public func FfiConverterTypeCoreTabSnapshot_lower(_ value: CoreTabSnapshot) -> RustBuffer {
+    return FfiConverterTypeCoreTabSnapshot.lower(value)
+}
+
+
+/**
+ * A protocol version 4 operation.
+ */
+
+public enum CoreFolderOperation: Equatable, Hashable {
+    
+    case createSpace(id: String, data: CoreSyncSpaceCreate, before: CoreSyncEntityRef?, after: CoreSyncEntityRef?
+    )
+    case createTab(id: String, data: CoreSyncFolderTabCreate, before: CoreSyncEntityRef?, after: CoreSyncEntityRef?
+    )
+    case createFolder(id: String, data: CoreSyncFolderCreate, before: CoreSyncEntityRef?, after: CoreSyncEntityRef?
+    )
+    case patchSpace(id: String, fields: CoreSyncSpacePatch
+    )
+    case patchTab(id: String, fields: CoreSyncTabPatch
+    )
+    case patchFolder(id: String, fields: CoreSyncFolderPatch
+    )
+    case move(items: [CoreSyncEntityRef], destination: CoreSyncFolderDestination, before: CoreSyncEntityRef?, after: CoreSyncEntityRef?
+    )
+    case deleteSpace(id: String
+    )
+    case deleteTab(id: String
+    )
+    case deleteFolder(id: String
+    )
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension CoreFolderOperation: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCoreFolderOperation: FfiConverterRustBuffer {
+    typealias SwiftType = CoreFolderOperation
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CoreFolderOperation {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .createSpace(id: try FfiConverterString.read(from: &buf), data: try FfiConverterTypeCoreSyncSpaceCreate.read(from: &buf), before: try FfiConverterOptionTypeCoreSyncEntityRef.read(from: &buf), after: try FfiConverterOptionTypeCoreSyncEntityRef.read(from: &buf)
+        )
+        
+        case 2: return .createTab(id: try FfiConverterString.read(from: &buf), data: try FfiConverterTypeCoreSyncFolderTabCreate.read(from: &buf), before: try FfiConverterOptionTypeCoreSyncEntityRef.read(from: &buf), after: try FfiConverterOptionTypeCoreSyncEntityRef.read(from: &buf)
+        )
+        
+        case 3: return .createFolder(id: try FfiConverterString.read(from: &buf), data: try FfiConverterTypeCoreSyncFolderCreate.read(from: &buf), before: try FfiConverterOptionTypeCoreSyncEntityRef.read(from: &buf), after: try FfiConverterOptionTypeCoreSyncEntityRef.read(from: &buf)
+        )
+        
+        case 4: return .patchSpace(id: try FfiConverterString.read(from: &buf), fields: try FfiConverterTypeCoreSyncSpacePatch.read(from: &buf)
+        )
+        
+        case 5: return .patchTab(id: try FfiConverterString.read(from: &buf), fields: try FfiConverterTypeCoreSyncTabPatch.read(from: &buf)
+        )
+        
+        case 6: return .patchFolder(id: try FfiConverterString.read(from: &buf), fields: try FfiConverterTypeCoreSyncFolderPatch.read(from: &buf)
+        )
+        
+        case 7: return .move(items: try FfiConverterSequenceTypeCoreSyncEntityRef.read(from: &buf), destination: try FfiConverterTypeCoreSyncFolderDestination.read(from: &buf), before: try FfiConverterOptionTypeCoreSyncEntityRef.read(from: &buf), after: try FfiConverterOptionTypeCoreSyncEntityRef.read(from: &buf)
+        )
+        
+        case 8: return .deleteSpace(id: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 9: return .deleteTab(id: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 10: return .deleteFolder(id: try FfiConverterString.read(from: &buf)
+        )
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: CoreFolderOperation, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case let .createSpace(id,data,before,after):
+            writeInt(&buf, Int32(1))
+            FfiConverterString.write(id, into: &buf)
+            FfiConverterTypeCoreSyncSpaceCreate.write(data, into: &buf)
+            FfiConverterOptionTypeCoreSyncEntityRef.write(before, into: &buf)
+            FfiConverterOptionTypeCoreSyncEntityRef.write(after, into: &buf)
+            
+        
+        case let .createTab(id,data,before,after):
+            writeInt(&buf, Int32(2))
+            FfiConverterString.write(id, into: &buf)
+            FfiConverterTypeCoreSyncFolderTabCreate.write(data, into: &buf)
+            FfiConverterOptionTypeCoreSyncEntityRef.write(before, into: &buf)
+            FfiConverterOptionTypeCoreSyncEntityRef.write(after, into: &buf)
+            
+        
+        case let .createFolder(id,data,before,after):
+            writeInt(&buf, Int32(3))
+            FfiConverterString.write(id, into: &buf)
+            FfiConverterTypeCoreSyncFolderCreate.write(data, into: &buf)
+            FfiConverterOptionTypeCoreSyncEntityRef.write(before, into: &buf)
+            FfiConverterOptionTypeCoreSyncEntityRef.write(after, into: &buf)
+            
+        
+        case let .patchSpace(id,fields):
+            writeInt(&buf, Int32(4))
+            FfiConverterString.write(id, into: &buf)
+            FfiConverterTypeCoreSyncSpacePatch.write(fields, into: &buf)
+            
+        
+        case let .patchTab(id,fields):
+            writeInt(&buf, Int32(5))
+            FfiConverterString.write(id, into: &buf)
+            FfiConverterTypeCoreSyncTabPatch.write(fields, into: &buf)
+            
+        
+        case let .patchFolder(id,fields):
+            writeInt(&buf, Int32(6))
+            FfiConverterString.write(id, into: &buf)
+            FfiConverterTypeCoreSyncFolderPatch.write(fields, into: &buf)
+            
+        
+        case let .move(items,destination,before,after):
+            writeInt(&buf, Int32(7))
+            FfiConverterSequenceTypeCoreSyncEntityRef.write(items, into: &buf)
+            FfiConverterTypeCoreSyncFolderDestination.write(destination, into: &buf)
+            FfiConverterOptionTypeCoreSyncEntityRef.write(before, into: &buf)
+            FfiConverterOptionTypeCoreSyncEntityRef.write(after, into: &buf)
+            
+        
+        case let .deleteSpace(id):
+            writeInt(&buf, Int32(8))
+            FfiConverterString.write(id, into: &buf)
+            
+        
+        case let .deleteTab(id):
+            writeInt(&buf, Int32(9))
+            FfiConverterString.write(id, into: &buf)
+            
+        
+        case let .deleteFolder(id):
+            writeInt(&buf, Int32(10))
+            FfiConverterString.write(id, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCoreFolderOperation_lift(_ buf: RustBuffer) throws -> CoreFolderOperation {
+    return try FfiConverterTypeCoreFolderOperation.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+@Sendable public func FfiConverterTypeCoreFolderOperation_lower(_ value: CoreFolderOperation) -> RustBuffer {
+    return FfiConverterTypeCoreFolderOperation.lower(value)
+}
+
+
+
 
 public enum CoreNavigationKind: Equatable, Hashable {
     
@@ -851,6 +2995,189 @@ public func FfiConverterTypeCoreNavigationKind_lift(_ buf: RustBuffer) throws ->
 #endif
 @Sendable public func FfiConverterTypeCoreNavigationKind_lower(_ value: CoreNavigationKind) -> RustBuffer {
     return FfiConverterTypeCoreNavigationKind.lower(value)
+}
+
+
+
+/**
+ * A patch field: left out, set, or cleared with an explicit null.
+ */
+
+public enum CorePatch: Equatable, Hashable {
+    
+    case unchanged
+    case set(value: String
+    )
+    case clear
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension CorePatch: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCorePatch: FfiConverterRustBuffer {
+    typealias SwiftType = CorePatch
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CorePatch {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .unchanged
+        
+        case 2: return .set(value: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 3: return .clear
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: CorePatch, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .unchanged:
+            writeInt(&buf, Int32(1))
+        
+        
+        case let .set(value):
+            writeInt(&buf, Int32(2))
+            FfiConverterString.write(value, into: &buf)
+            
+        
+        case .clear:
+            writeInt(&buf, Int32(3))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCorePatch_lift(_ buf: RustBuffer) throws -> CorePatch {
+    return try FfiConverterTypeCorePatch.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+@Sendable public func FfiConverterTypeCorePatch_lower(_ value: CorePatch) -> RustBuffer {
+    return FfiConverterTypeCorePatch.lower(value)
+}
+
+
+
+/**
+ * A queued push row, as far as the projection replays it.
+ */
+
+public enum CoreQueuedMutation: Equatable, Hashable {
+    
+    /**
+     * Version 2: full records.
+     */
+    case legacy(changes: [CoreSyncChange]
+    )
+    /**
+     * Version 3.
+     */
+    case semantic(operations: [CoreSemanticOperation]
+    )
+    /**
+     * Version 4.
+     */
+    case folders(operations: [CoreFolderOperation]
+    )
+    /**
+     * Expiry, boost and mobile tab rows, which leave the Spaces alone.
+     */
+    case other
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension CoreQueuedMutation: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCoreQueuedMutation: FfiConverterRustBuffer {
+    typealias SwiftType = CoreQueuedMutation
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CoreQueuedMutation {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .legacy(changes: try FfiConverterSequenceTypeCoreSyncChange.read(from: &buf)
+        )
+        
+        case 2: return .semantic(operations: try FfiConverterSequenceTypeCoreSemanticOperation.read(from: &buf)
+        )
+        
+        case 3: return .folders(operations: try FfiConverterSequenceTypeCoreFolderOperation.read(from: &buf)
+        )
+        
+        case 4: return .other
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: CoreQueuedMutation, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case let .legacy(changes):
+            writeInt(&buf, Int32(1))
+            FfiConverterSequenceTypeCoreSyncChange.write(changes, into: &buf)
+            
+        
+        case let .semantic(operations):
+            writeInt(&buf, Int32(2))
+            FfiConverterSequenceTypeCoreSemanticOperation.write(operations, into: &buf)
+            
+        
+        case let .folders(operations):
+            writeInt(&buf, Int32(3))
+            FfiConverterSequenceTypeCoreFolderOperation.write(operations, into: &buf)
+            
+        
+        case .other:
+            writeInt(&buf, Int32(4))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCoreQueuedMutation_lift(_ buf: RustBuffer) throws -> CoreQueuedMutation {
+    return try FfiConverterTypeCoreQueuedMutation.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+@Sendable public func FfiConverterTypeCoreQueuedMutation_lower(_ value: CoreQueuedMutation) -> RustBuffer {
+    return FfiConverterTypeCoreQueuedMutation.lower(value)
 }
 
 
@@ -972,6 +3299,678 @@ public func FfiConverterTypeCoreSearchEngine_lift(_ buf: RustBuffer) throws -> C
 }
 
 
+
+/**
+ * A protocol version 3 operation.
+ */
+
+public enum CoreSemanticOperation: Equatable, Hashable {
+    
+    case createSpace(id: String, data: CoreSyncSpaceCreate, beforeId: String?, afterId: String?
+    )
+    case createTab(id: String, data: CoreSyncTabCreate, beforeId: String?, afterId: String?
+    )
+    case patchSpace(id: String, fields: CoreSyncSpacePatch
+    )
+    case patchTab(id: String, fields: CoreSyncTabPatch
+    )
+    case moveSpaces(ids: [String], beforeId: String?, afterId: String?
+    )
+    case moveTabs(ids: [String], destination: CoreSyncTabDestination, beforeId: String?, afterId: String?
+    )
+    case deleteSpace(id: String
+    )
+    case deleteTab(id: String
+    )
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension CoreSemanticOperation: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCoreSemanticOperation: FfiConverterRustBuffer {
+    typealias SwiftType = CoreSemanticOperation
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CoreSemanticOperation {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .createSpace(id: try FfiConverterString.read(from: &buf), data: try FfiConverterTypeCoreSyncSpaceCreate.read(from: &buf), beforeId: try FfiConverterOptionString.read(from: &buf), afterId: try FfiConverterOptionString.read(from: &buf)
+        )
+        
+        case 2: return .createTab(id: try FfiConverterString.read(from: &buf), data: try FfiConverterTypeCoreSyncTabCreate.read(from: &buf), beforeId: try FfiConverterOptionString.read(from: &buf), afterId: try FfiConverterOptionString.read(from: &buf)
+        )
+        
+        case 3: return .patchSpace(id: try FfiConverterString.read(from: &buf), fields: try FfiConverterTypeCoreSyncSpacePatch.read(from: &buf)
+        )
+        
+        case 4: return .patchTab(id: try FfiConverterString.read(from: &buf), fields: try FfiConverterTypeCoreSyncTabPatch.read(from: &buf)
+        )
+        
+        case 5: return .moveSpaces(ids: try FfiConverterSequenceString.read(from: &buf), beforeId: try FfiConverterOptionString.read(from: &buf), afterId: try FfiConverterOptionString.read(from: &buf)
+        )
+        
+        case 6: return .moveTabs(ids: try FfiConverterSequenceString.read(from: &buf), destination: try FfiConverterTypeCoreSyncTabDestination.read(from: &buf), beforeId: try FfiConverterOptionString.read(from: &buf), afterId: try FfiConverterOptionString.read(from: &buf)
+        )
+        
+        case 7: return .deleteSpace(id: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 8: return .deleteTab(id: try FfiConverterString.read(from: &buf)
+        )
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: CoreSemanticOperation, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case let .createSpace(id,data,beforeId,afterId):
+            writeInt(&buf, Int32(1))
+            FfiConverterString.write(id, into: &buf)
+            FfiConverterTypeCoreSyncSpaceCreate.write(data, into: &buf)
+            FfiConverterOptionString.write(beforeId, into: &buf)
+            FfiConverterOptionString.write(afterId, into: &buf)
+            
+        
+        case let .createTab(id,data,beforeId,afterId):
+            writeInt(&buf, Int32(2))
+            FfiConverterString.write(id, into: &buf)
+            FfiConverterTypeCoreSyncTabCreate.write(data, into: &buf)
+            FfiConverterOptionString.write(beforeId, into: &buf)
+            FfiConverterOptionString.write(afterId, into: &buf)
+            
+        
+        case let .patchSpace(id,fields):
+            writeInt(&buf, Int32(3))
+            FfiConverterString.write(id, into: &buf)
+            FfiConverterTypeCoreSyncSpacePatch.write(fields, into: &buf)
+            
+        
+        case let .patchTab(id,fields):
+            writeInt(&buf, Int32(4))
+            FfiConverterString.write(id, into: &buf)
+            FfiConverterTypeCoreSyncTabPatch.write(fields, into: &buf)
+            
+        
+        case let .moveSpaces(ids,beforeId,afterId):
+            writeInt(&buf, Int32(5))
+            FfiConverterSequenceString.write(ids, into: &buf)
+            FfiConverterOptionString.write(beforeId, into: &buf)
+            FfiConverterOptionString.write(afterId, into: &buf)
+            
+        
+        case let .moveTabs(ids,destination,beforeId,afterId):
+            writeInt(&buf, Int32(6))
+            FfiConverterSequenceString.write(ids, into: &buf)
+            FfiConverterTypeCoreSyncTabDestination.write(destination, into: &buf)
+            FfiConverterOptionString.write(beforeId, into: &buf)
+            FfiConverterOptionString.write(afterId, into: &buf)
+            
+        
+        case let .deleteSpace(id):
+            writeInt(&buf, Int32(7))
+            FfiConverterString.write(id, into: &buf)
+            
+        
+        case let .deleteTab(id):
+            writeInt(&buf, Int32(8))
+            FfiConverterString.write(id, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCoreSemanticOperation_lift(_ buf: RustBuffer) throws -> CoreSemanticOperation {
+    return try FfiConverterTypeCoreSemanticOperation.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+@Sendable public func FfiConverterTypeCoreSemanticOperation_lower(_ value: CoreSemanticOperation) -> RustBuffer {
+    return FfiConverterTypeCoreSemanticOperation.lower(value)
+}
+
+
+
+
+public enum CoreSyncEntityType: Equatable, Hashable {
+    
+    case space
+    case tab
+    case folder
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension CoreSyncEntityType: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCoreSyncEntityType: FfiConverterRustBuffer {
+    typealias SwiftType = CoreSyncEntityType
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CoreSyncEntityType {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .space
+        
+        case 2: return .tab
+        
+        case 3: return .folder
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: CoreSyncEntityType, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .space:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .tab:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .folder:
+            writeInt(&buf, Int32(3))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCoreSyncEntityType_lift(_ buf: RustBuffer) throws -> CoreSyncEntityType {
+    return try FfiConverterTypeCoreSyncEntityType.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+@Sendable public func FfiConverterTypeCoreSyncEntityType_lower(_ value: CoreSyncEntityType) -> RustBuffer {
+    return FfiConverterTypeCoreSyncEntityType.lower(value)
+}
+
+
+
+public 
+enum CoreSyncError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+
+    
+    
+    /**
+     * An event names an unknown entity or operation, or lacks a required field.
+     */
+    case InvalidEvent
+
+    
+
+    
+
+    
+    public var errorDescription: String? {
+        String(reflecting: self)
+    }
+    
+}
+
+#if compiler(>=6)
+extension CoreSyncError: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCoreSyncError: FfiConverterRustBuffer {
+    typealias SwiftType = CoreSyncError
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CoreSyncError {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+
+        
+
+        
+        case 1: return .InvalidEvent
+
+         default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: CoreSyncError, into buf: inout [UInt8]) {
+        switch value {
+
+        
+
+        
+        
+        case .InvalidEvent:
+            writeInt(&buf, Int32(1))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCoreSyncError_lift(_ buf: RustBuffer) throws -> CoreSyncError {
+    return try FfiConverterTypeCoreSyncError.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+@Sendable public func FfiConverterTypeCoreSyncError_lower(_ value: CoreSyncError) -> RustBuffer {
+    return FfiConverterTypeCoreSyncError.lower(value)
+}
+
+
+
+public enum CoreSyncEventData: Equatable, Hashable {
+    
+    case space(data: CoreSyncEventSpaceData
+    )
+    case tab(data: CoreSyncEventTabData
+    )
+    case folder(data: CoreSyncEventFolderData
+    )
+    /**
+     * A delete's data, a boost, or anything else.
+     */
+    case other
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension CoreSyncEventData: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCoreSyncEventData: FfiConverterRustBuffer {
+    typealias SwiftType = CoreSyncEventData
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CoreSyncEventData {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .space(data: try FfiConverterTypeCoreSyncEventSpaceData.read(from: &buf)
+        )
+        
+        case 2: return .tab(data: try FfiConverterTypeCoreSyncEventTabData.read(from: &buf)
+        )
+        
+        case 3: return .folder(data: try FfiConverterTypeCoreSyncEventFolderData.read(from: &buf)
+        )
+        
+        case 4: return .other
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: CoreSyncEventData, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case let .space(data):
+            writeInt(&buf, Int32(1))
+            FfiConverterTypeCoreSyncEventSpaceData.write(data, into: &buf)
+            
+        
+        case let .tab(data):
+            writeInt(&buf, Int32(2))
+            FfiConverterTypeCoreSyncEventTabData.write(data, into: &buf)
+            
+        
+        case let .folder(data):
+            writeInt(&buf, Int32(3))
+            FfiConverterTypeCoreSyncEventFolderData.write(data, into: &buf)
+            
+        
+        case .other:
+            writeInt(&buf, Int32(4))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCoreSyncEventData_lift(_ buf: RustBuffer) throws -> CoreSyncEventData {
+    return try FfiConverterTypeCoreSyncEventData.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+@Sendable public func FfiConverterTypeCoreSyncEventData_lower(_ value: CoreSyncEventData) -> RustBuffer {
+    return FfiConverterTypeCoreSyncEventData.lower(value)
+}
+
+
+
+/**
+ * Where a version 4 move puts its items: the Space list, or one tab list.
+ */
+
+public enum CoreSyncFolderDestination: Equatable, Hashable {
+    
+    case spaces
+    case tabs(spaceId: String, placement: CoreTabPlacement, pinnedFolderId: String?
+    )
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension CoreSyncFolderDestination: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCoreSyncFolderDestination: FfiConverterRustBuffer {
+    typealias SwiftType = CoreSyncFolderDestination
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CoreSyncFolderDestination {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .spaces
+        
+        case 2: return .tabs(spaceId: try FfiConverterString.read(from: &buf), placement: try FfiConverterTypeCoreTabPlacement.read(from: &buf), pinnedFolderId: try FfiConverterOptionString.read(from: &buf)
+        )
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: CoreSyncFolderDestination, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .spaces:
+            writeInt(&buf, Int32(1))
+        
+        
+        case let .tabs(spaceId,placement,pinnedFolderId):
+            writeInt(&buf, Int32(2))
+            FfiConverterString.write(spaceId, into: &buf)
+            FfiConverterTypeCoreTabPlacement.write(placement, into: &buf)
+            FfiConverterOptionString.write(pinnedFolderId, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCoreSyncFolderDestination_lift(_ buf: RustBuffer) throws -> CoreSyncFolderDestination {
+    return try FfiConverterTypeCoreSyncFolderDestination.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+@Sendable public func FfiConverterTypeCoreSyncFolderDestination_lower(_ value: CoreSyncFolderDestination) -> RustBuffer {
+    return FfiConverterTypeCoreSyncFolderDestination.lower(value)
+}
+
+
+
+
+public enum CoreSyncOp: Equatable, Hashable {
+    
+    case upsert
+    case delete
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension CoreSyncOp: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCoreSyncOp: FfiConverterRustBuffer {
+    typealias SwiftType = CoreSyncOp
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CoreSyncOp {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .upsert
+        
+        case 2: return .delete
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: CoreSyncOp, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .upsert:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .delete:
+            writeInt(&buf, Int32(2))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCoreSyncOp_lift(_ buf: RustBuffer) throws -> CoreSyncOp {
+    return try FfiConverterTypeCoreSyncOp.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+@Sendable public func FfiConverterTypeCoreSyncOp_lower(_ value: CoreSyncOp) -> RustBuffer {
+    return FfiConverterTypeCoreSyncOp.lower(value)
+}
+
+
+
+
+public enum CoreTabPlacement: Equatable, Hashable {
+    
+    case temporary
+    case spacePinned
+    case app
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension CoreTabPlacement: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCoreTabPlacement: FfiConverterRustBuffer {
+    typealias SwiftType = CoreTabPlacement
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CoreTabPlacement {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .temporary
+        
+        case 2: return .spacePinned
+        
+        case 3: return .app
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: CoreTabPlacement, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .temporary:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .spacePinned:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .app:
+            writeInt(&buf, Int32(3))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCoreTabPlacement_lift(_ buf: RustBuffer) throws -> CoreTabPlacement {
+    return try FfiConverterTypeCoreTabPlacement.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+@Sendable public func FfiConverterTypeCoreTabPlacement_lower(_ value: CoreTabPlacement) -> RustBuffer {
+    return FfiConverterTypeCoreTabPlacement.lower(value)
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionInt64: FfiConverterRustBuffer {
+    typealias SwiftType = Int64?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterInt64.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterInt64.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionDouble: FfiConverterRustBuffer {
+    typealias SwiftType = Double?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterDouble.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterDouble.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionBool: FfiConverterRustBuffer {
+    typealias SwiftType = Bool?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterBool.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterBool.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
@@ -991,6 +3990,30 @@ fileprivate struct FfiConverterOptionString: FfiConverterRustBuffer {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterString.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeCoreSyncReplayMemo: FfiConverterRustBuffer {
+    typealias SwiftType = CoreSyncReplayMemo?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeCoreSyncReplayMemo.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeCoreSyncReplayMemo.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -1047,6 +4070,270 @@ fileprivate struct FfiConverterOptionTypeCoreParsedHost: FfiConverterRustBuffer 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeCoreSessionSnapshot: FfiConverterRustBuffer {
+    typealias SwiftType = CoreSessionSnapshot?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeCoreSessionSnapshot.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeCoreSessionSnapshot.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeCoreSyncEntityRef: FfiConverterRustBuffer {
+    typealias SwiftType = CoreSyncEntityRef?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeCoreSyncEntityRef.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeCoreSyncEntityRef.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeCoreSyncFolderPayload: FfiConverterRustBuffer {
+    typealias SwiftType = CoreSyncFolderPayload?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeCoreSyncFolderPayload.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeCoreSyncFolderPayload.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeCoreSyncSpacePayload: FfiConverterRustBuffer {
+    typealias SwiftType = CoreSyncSpacePayload?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeCoreSyncSpacePayload.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeCoreSyncSpacePayload.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeCoreSyncTabPayload: FfiConverterRustBuffer {
+    typealias SwiftType = CoreSyncTabPayload?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeCoreSyncTabPayload.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeCoreSyncTabPayload.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeCoreTabPlacement: FfiConverterRustBuffer {
+    typealias SwiftType = CoreTabPlacement?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeCoreTabPlacement.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeCoreTabPlacement.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionSequenceString: FfiConverterRustBuffer {
+    typealias SwiftType = [String]?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterSequenceString.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterSequenceString.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionSequenceTypeCoreFolderSnapshot: FfiConverterRustBuffer {
+    typealias SwiftType = [CoreFolderSnapshot]?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterSequenceTypeCoreFolderSnapshot.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterSequenceTypeCoreFolderSnapshot.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionSequenceTypeCoreSpaceSnapshot: FfiConverterRustBuffer {
+    typealias SwiftType = [CoreSpaceSnapshot]?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterSequenceTypeCoreSpaceSnapshot.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterSequenceTypeCoreSpaceSnapshot.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionSequenceTypeCoreSyncEntityRef: FfiConverterRustBuffer {
+    typealias SwiftType = [CoreSyncEntityRef]?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterSequenceTypeCoreSyncEntityRef.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterSequenceTypeCoreSyncEntityRef.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionSequenceTypeCoreSyncQueuedRowIdentity: FfiConverterRustBuffer {
+    typealias SwiftType = [CoreSyncQueuedRowIdentity]?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterSequenceTypeCoreSyncQueuedRowIdentity.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterSequenceTypeCoreSyncQueuedRowIdentity.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceUInt32: FfiConverterRustBuffer {
     typealias SwiftType = [UInt32]
 
@@ -1068,6 +4355,333 @@ fileprivate struct FfiConverterSequenceUInt32: FfiConverterRustBuffer {
         return seq
     }
 }
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceString: FfiConverterRustBuffer {
+    typealias SwiftType = [String]
+
+    public static func write(_ value: [String], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterString.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [String] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [String]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterString.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeCoreFolderSnapshot: FfiConverterRustBuffer {
+    typealias SwiftType = [CoreFolderSnapshot]
+
+    public static func write(_ value: [CoreFolderSnapshot], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeCoreFolderSnapshot.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [CoreFolderSnapshot] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [CoreFolderSnapshot]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeCoreFolderSnapshot.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeCoreSpaceSnapshot: FfiConverterRustBuffer {
+    typealias SwiftType = [CoreSpaceSnapshot]
+
+    public static func write(_ value: [CoreSpaceSnapshot], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeCoreSpaceSnapshot.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [CoreSpaceSnapshot] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [CoreSpaceSnapshot]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeCoreSpaceSnapshot.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeCoreSyncChange: FfiConverterRustBuffer {
+    typealias SwiftType = [CoreSyncChange]
+
+    public static func write(_ value: [CoreSyncChange], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeCoreSyncChange.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [CoreSyncChange] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [CoreSyncChange]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeCoreSyncChange.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeCoreSyncEntityRef: FfiConverterRustBuffer {
+    typealias SwiftType = [CoreSyncEntityRef]
+
+    public static func write(_ value: [CoreSyncEntityRef], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeCoreSyncEntityRef.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [CoreSyncEntityRef] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [CoreSyncEntityRef]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeCoreSyncEntityRef.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeCoreSyncEvent: FfiConverterRustBuffer {
+    typealias SwiftType = [CoreSyncEvent]
+
+    public static func write(_ value: [CoreSyncEvent], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeCoreSyncEvent.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [CoreSyncEvent] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [CoreSyncEvent]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeCoreSyncEvent.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeCoreSyncQueuedRowIdentity: FfiConverterRustBuffer {
+    typealias SwiftType = [CoreSyncQueuedRowIdentity]
+
+    public static func write(_ value: [CoreSyncQueuedRowIdentity], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeCoreSyncQueuedRowIdentity.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [CoreSyncQueuedRowIdentity] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [CoreSyncQueuedRowIdentity]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeCoreSyncQueuedRowIdentity.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeCoreTabSnapshot: FfiConverterRustBuffer {
+    typealias SwiftType = [CoreTabSnapshot]
+
+    public static func write(_ value: [CoreTabSnapshot], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeCoreTabSnapshot.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [CoreTabSnapshot] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [CoreTabSnapshot]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeCoreTabSnapshot.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeCoreFolderOperation: FfiConverterRustBuffer {
+    typealias SwiftType = [CoreFolderOperation]
+
+    public static func write(_ value: [CoreFolderOperation], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeCoreFolderOperation.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [CoreFolderOperation] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [CoreFolderOperation]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeCoreFolderOperation.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeCoreQueuedMutation: FfiConverterRustBuffer {
+    typealias SwiftType = [CoreQueuedMutation]
+
+    public static func write(_ value: [CoreQueuedMutation], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeCoreQueuedMutation.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [CoreQueuedMutation] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [CoreQueuedMutation]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeCoreQueuedMutation.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeCoreSemanticOperation: FfiConverterRustBuffer {
+    typealias SwiftType = [CoreSemanticOperation]
+
+    public static func write(_ value: [CoreSemanticOperation], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeCoreSemanticOperation.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [CoreSemanticOperation] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [CoreSemanticOperation]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeCoreSemanticOperation.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterDictionaryStringTypeCoreSyncBaselineEntity: FfiConverterRustBuffer {
+    public static func write(_ value: [String: CoreSyncBaselineEntity], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for (key, value) in value {
+            FfiConverterString.write(key, into: &buf)
+            FfiConverterTypeCoreSyncBaselineEntity.write(value, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [String: CoreSyncBaselineEntity] {
+        let len: Int32 = try readInt(&buf)
+        var dict = [String: CoreSyncBaselineEntity]()
+        dict.reserveCapacity(Int(len))
+        for _ in 0..<len {
+            let key = try FfiConverterString.read(from: &buf)
+            let value = try FfiConverterTypeCoreSyncBaselineEntity.read(from: &buf)
+            dict[key] = value
+        }
+        return dict
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterDictionaryStringTypeCoreSyncChange: FfiConverterRustBuffer {
+    public static func write(_ value: [String: CoreSyncChange], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for (key, value) in value {
+            FfiConverterString.write(key, into: &buf)
+            FfiConverterTypeCoreSyncChange.write(value, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [String: CoreSyncChange] {
+        let len: Int32 = try readInt(&buf)
+        var dict = [String: CoreSyncChange]()
+        dict.reserveCapacity(Int(len))
+        for _ in 0..<len {
+            let key = try FfiConverterString.read(from: &buf)
+            let value = try FfiConverterTypeCoreSyncChange.read(from: &buf)
+            dict[key] = value
+        }
+        return dict
+    }
+}
 /**
  * Whether automatic expiry may use `seconds` as its inactivity interval.
  */
@@ -1079,10 +4693,271 @@ public func coreIsSyncExpiryInterval(seconds: Int64) -> Bool  {
     )
 })
 }
+/**
+ * What server events change in the baseline. `entities` holds the baseline's entities the events name;
+ * the result holds them as they end up, and the keys to add to the deleted keys.
+ */
+public func coreSyncBaselineUpdate(entities: [String: CoreSyncBaselineEntity], events: [CoreSyncEvent])throws  -> CoreSyncBaselineUpdate  {
+    return try  FfiConverterTypeCoreSyncBaselineUpdate_lift(try rustCallWithError(FfiConverterTypeCoreSyncError_lift) {
+        uniffiCallStatus in
+    uniffi_openarc_core_fn_func_core_sync_baseline_update(
+        FfiConverterDictionaryStringTypeCoreSyncBaselineEntity.lower(entities),
+        FfiConverterSequenceTypeCoreSyncEvent.lower(events),uniffiCallStatus
+    )
+})
+}
 public func coreSyncBoostLimits() -> CoreSyncBoostLimits  {
     return try!  FfiConverterTypeCoreSyncBoostLimits_lift(try! rustCall() {
         uniffiCallStatus in
     uniffi_openarc_core_fn_func_core_sync_boost_limits(uniffiCallStatus
+    )
+})
+}
+/**
+ * The canonical v2 entities of a session. Tabs without a Space go to the default Space, titled
+ * `default_space_title` in the app's language.
+ */
+public func coreSyncCanonicalChanges(snapshot: CoreSessionSnapshot, defaultSpaceTitle: String) -> [CoreSyncChange]  {
+    return try!  FfiConverterSequenceTypeCoreSyncChange.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_openarc_core_fn_func_core_sync_canonical_changes(
+        FfiConverterTypeCoreSessionSnapshot_lower(snapshot),
+        FfiConverterString.lower(defaultSpaceTitle),uniffiCallStatus
+    )
+})
+}
+/**
+ * The v2 changes from `previous` to `snapshot`.
+ */
+public func coreSyncChanges(previous: CoreSessionSnapshot?, snapshot: CoreSessionSnapshot, defaultSpaceTitle: String) -> [CoreSyncChange]  {
+    return try!  FfiConverterSequenceTypeCoreSyncChange.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_openarc_core_fn_func_core_sync_changes(
+        FfiConverterOptionTypeCoreSessionSnapshot.lower(previous),
+        FfiConverterTypeCoreSessionSnapshot_lower(snapshot),
+        FfiConverterString.lower(defaultSpaceTitle),uniffiCallStatus
+    )
+})
+}
+/**
+ * The live canonical entities: the baseline with the queue replayed over it.
+ */
+public func coreSyncEffectiveChanges(baseline: CoreSyncBaseline, pending: [CoreQueuedMutation]) -> [String: CoreSyncChange]  {
+    return try!  FfiConverterDictionaryStringTypeCoreSyncChange.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_openarc_core_fn_func_core_sync_effective_changes(
+        FfiConverterTypeCoreSyncBaseline_lower(baseline),
+        FfiConverterSequenceTypeCoreQueuedMutation.lower(pending),uniffiCallStatus
+    )
+})
+}
+/**
+ * `core_sync_effective_changes`, reusing `memo` when the queue only lost its head row since the last call.
+ */
+public func coreSyncEffectiveChangesReusing(baseline: CoreSyncBaseline, pending: [CoreQueuedMutation], rows: [CoreSyncQueuedRowIdentity], memo: CoreSyncReplayMemo) -> [String: CoreSyncChange]  {
+    return try!  FfiConverterDictionaryStringTypeCoreSyncChange.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_openarc_core_fn_func_core_sync_effective_changes_reusing(
+        FfiConverterTypeCoreSyncBaseline_lower(baseline),
+        FfiConverterSequenceTypeCoreQueuedMutation.lower(pending),
+        FfiConverterSequenceTypeCoreSyncQueuedRowIdentity.lower(rows),
+        FfiConverterTypeCoreSyncReplayMemo_lower(memo),uniffiCallStatus
+    )
+})
+}
+/**
+ * The operations that adopt this device's local folders into canonical state that lacks them.
+ */
+public func coreSyncFolderAdoptionOperations(local: CoreSessionSnapshot, values: [String: CoreSyncChange], deleted: [String], defaultSpaceTitle: String) -> [CoreFolderOperation]  {
+    return try!  FfiConverterSequenceTypeCoreFolderOperation.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_openarc_core_fn_func_core_sync_folder_adoption_operations(
+        FfiConverterTypeCoreSessionSnapshot_lower(local),
+        FfiConverterDictionaryStringTypeCoreSyncChange.lower(values),
+        FfiConverterSequenceString.lower(deleted),
+        FfiConverterString.lower(defaultSpaceTitle),uniffiCallStatus
+    )
+})
+}
+public func coreSyncFolderApply(operations: [CoreFolderOperation], state: CoreSyncReplayState) -> CoreSyncReplayState  {
+    return try!  FfiConverterTypeCoreSyncReplayState_lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_openarc_core_fn_func_core_sync_folder_apply(
+        FfiConverterSequenceTypeCoreFolderOperation.lower(operations),
+        FfiConverterTypeCoreSyncReplayState_lower(state),uniffiCallStatus
+    )
+})
+}
+/**
+ * Whether a v4 move would apply.
+ */
+public func coreSyncFolderCanMove(items: [CoreSyncEntityRef], destination: CoreSyncFolderDestination, values: [String: CoreSyncChange], deleted: [String]) -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_openarc_core_fn_func_core_sync_folder_can_move(
+        FfiConverterSequenceTypeCoreSyncEntityRef.lower(items),
+        FfiConverterTypeCoreSyncFolderDestination_lower(destination),
+        FfiConverterDictionaryStringTypeCoreSyncChange.lower(values),
+        FfiConverterSequenceString.lower(deleted),uniffiCallStatus
+    )
+})
+}
+/**
+ * The canonical v4 entities of a session, in sidebar order.
+ */
+public func coreSyncFolderCanonicalChanges(snapshot: CoreSessionSnapshot, defaultSpaceTitle: String) -> [CoreSyncChange]  {
+    return try!  FfiConverterSequenceTypeCoreSyncChange.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_openarc_core_fn_func_core_sync_folder_canonical_changes(
+        FfiConverterTypeCoreSessionSnapshot_lower(snapshot),
+        FfiConverterString.lower(defaultSpaceTitle),uniffiCallStatus
+    )
+})
+}
+/**
+ * The v4 operations from `previous` to `snapshot`. `move_items` names the roots a direct move acted on;
+ * pass an empty list when the sessions are equal.
+ */
+public func coreSyncFolderOperations(previous: CoreSessionSnapshot?, snapshot: CoreSessionSnapshot, moveItems: [CoreSyncEntityRef]?, defaultSpaceTitle: String) -> [CoreFolderOperation]  {
+    return try!  FfiConverterSequenceTypeCoreFolderOperation.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_openarc_core_fn_func_core_sync_folder_operations(
+        FfiConverterOptionTypeCoreSessionSnapshot.lower(previous),
+        FfiConverterTypeCoreSessionSnapshot_lower(snapshot),
+        FfiConverterOptionSequenceTypeCoreSyncEntityRef.lower(moveItems),
+        FfiConverterString.lower(defaultSpaceTitle),uniffiCallStatus
+    )
+})
+}
+/**
+ * The v4 session for canonical values.
+ */
+public func coreSyncFolderSnapshot(values: [String: CoreSyncChange], local: CoreSessionSnapshot?) -> CoreSessionSnapshot  {
+    return try!  FfiConverterTypeCoreSessionSnapshot_lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_openarc_core_fn_func_core_sync_folder_snapshot(
+        FfiConverterDictionaryStringTypeCoreSyncChange.lower(values),
+        FfiConverterOptionTypeCoreSessionSnapshot.lower(local),uniffiCallStatus
+    )
+})
+}
+/**
+ * The session the app shows for the baseline and the queue: the v2 and v3 projection, or the v4 one
+ * with folders. `rows` and `memo` let an ACK skip the replay of the rest of the queue. `None` means the
+ * projection is `local` to the byte, so it need not cross back.
+ */
+public func coreSyncProjectedSnapshot(baseline: CoreSyncBaseline, pending: [CoreQueuedMutation], local: CoreSessionSnapshot?, folderSyncEnabled: Bool, rows: [CoreSyncQueuedRowIdentity]?, memo: CoreSyncReplayMemo?) -> CoreSessionSnapshot?  {
+    return try!  FfiConverterOptionTypeCoreSessionSnapshot.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_openarc_core_fn_func_core_sync_projected_snapshot(
+        FfiConverterTypeCoreSyncBaseline_lower(baseline),
+        FfiConverterSequenceTypeCoreQueuedMutation.lower(pending),
+        FfiConverterOptionTypeCoreSessionSnapshot.lower(local),
+        FfiConverterBool.lower(folderSyncEnabled),
+        FfiConverterOptionSequenceTypeCoreSyncQueuedRowIdentity.lower(rows),
+        FfiConverterOptionTypeCoreSyncReplayMemo.lower(memo),uniffiCallStatus
+    )
+})
+}
+/**
+ * The v2 changes from `previous` to `snapshot`, ranked like the canonical state with the queue applied.
+ */
+public func coreSyncRebasedChanges(previous: CoreSessionSnapshot?, snapshot: CoreSessionSnapshot, baseline: CoreSyncBaseline, pending: [CoreQueuedMutation], defaultSpaceTitle: String) -> [CoreSyncChange]  {
+    return try!  FfiConverterSequenceTypeCoreSyncChange.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_openarc_core_fn_func_core_sync_rebased_changes(
+        FfiConverterOptionTypeCoreSessionSnapshot.lower(previous),
+        FfiConverterTypeCoreSessionSnapshot_lower(snapshot),
+        FfiConverterTypeCoreSyncBaseline_lower(baseline),
+        FfiConverterSequenceTypeCoreQueuedMutation.lower(pending),
+        FfiConverterString.lower(defaultSpaceTitle),uniffiCallStatus
+    )
+})
+}
+/**
+ * The positions of the session's entries the baseline's deleted keys take out.
+ */
+public func coreSyncRemovedEntities(snapshot: CoreSessionSnapshot, deletedKeys: [String]) -> CoreSyncRemovedEntities  {
+    return try!  FfiConverterTypeCoreSyncRemovedEntities_lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_openarc_core_fn_func_core_sync_removed_entities(
+        FfiConverterTypeCoreSessionSnapshot_lower(snapshot),
+        FfiConverterSequenceString.lower(deletedKeys),uniffiCallStatus
+    )
+})
+}
+public func coreSyncReplacingRank(change: CoreSyncChange, rank: Double?) -> CoreSyncChange  {
+    return try!  FfiConverterTypeCoreSyncChange_lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_openarc_core_fn_func_core_sync_replacing_rank(
+        FfiConverterTypeCoreSyncChange_lower(change),
+        FfiConverterOptionDouble.lower(rank),uniffiCallStatus
+    )
+})
+}
+/**
+ * The state with one queued row applied.
+ */
+public func coreSyncReplay(mutation: CoreQueuedMutation, state: CoreSyncReplayState) -> CoreSyncReplayState  {
+    return try!  FfiConverterTypeCoreSyncReplayState_lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_openarc_core_fn_func_core_sync_replay(
+        FfiConverterTypeCoreQueuedMutation_lower(mutation),
+        FfiConverterTypeCoreSyncReplayState_lower(state),uniffiCallStatus
+    )
+})
+}
+public func coreSyncReplayResult(state: CoreSyncReplayState, baseline: CoreSyncBaseline) -> [String: CoreSyncChange]  {
+    return try!  FfiConverterDictionaryStringTypeCoreSyncChange.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_openarc_core_fn_func_core_sync_replay_result(
+        FfiConverterTypeCoreSyncReplayState_lower(state),
+        FfiConverterTypeCoreSyncBaseline_lower(baseline),uniffiCallStatus
+    )
+})
+}
+public func coreSyncReplayStart(baseline: CoreSyncBaseline, pending: [CoreQueuedMutation]) -> CoreSyncReplayState  {
+    return try!  FfiConverterTypeCoreSyncReplayState_lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_openarc_core_fn_func_core_sync_replay_start(
+        FfiConverterTypeCoreSyncBaseline_lower(baseline),
+        FfiConverterSequenceTypeCoreQueuedMutation.lower(pending),uniffiCallStatus
+    )
+})
+}
+/**
+ * Whether two replay states are equal down to string bytes and rank bits.
+ */
+public func coreSyncReplayStatesIdentical(left: CoreSyncReplayState, right: CoreSyncReplayState) -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_openarc_core_fn_func_core_sync_replay_states_identical(
+        FfiConverterTypeCoreSyncReplayState_lower(left),
+        FfiConverterTypeCoreSyncReplayState_lower(right),uniffiCallStatus
+    )
+})
+}
+public func coreSyncSemanticApply(operations: [CoreSemanticOperation], state: CoreSyncReplayState) -> CoreSyncReplayState  {
+    return try!  FfiConverterTypeCoreSyncReplayState_lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_openarc_core_fn_func_core_sync_semantic_apply(
+        FfiConverterSequenceTypeCoreSemanticOperation.lower(operations),
+        FfiConverterTypeCoreSyncReplayState_lower(state),uniffiCallStatus
+    )
+})
+}
+/**
+ * The v3 operations from `previous` to `snapshot`. `move_tab_ids` names the tabs a direct move acted on;
+ * pass an empty list when the sessions are equal.
+ */
+public func coreSyncSemanticOperations(previous: CoreSessionSnapshot?, snapshot: CoreSessionSnapshot, moveTabIds: [String]?, defaultSpaceTitle: String) -> [CoreSemanticOperation]  {
+    return try!  FfiConverterSequenceTypeCoreSemanticOperation.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_openarc_core_fn_func_core_sync_semantic_operations(
+        FfiConverterOptionTypeCoreSessionSnapshot.lower(previous),
+        FfiConverterTypeCoreSessionSnapshot_lower(snapshot),
+        FfiConverterOptionSequenceString.lower(moveTabIds),
+        FfiConverterString.lower(defaultSpaceTitle),uniffiCallStatus
     )
 })
 }
@@ -1093,6 +4968,55 @@ public func coreSyncSupportedPushVersions() -> [UInt32]  {
     return try!  FfiConverterSequenceUInt32.lift(try! rustCall() {
         uniffiCallStatus in
     uniffi_openarc_core_fn_func_core_sync_supported_push_versions(uniffiCallStatus
+    )
+})
+}
+public func coreSyncFormatActivity(seconds: Double) -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_openarc_core_fn_func_core_sync_format_activity(
+        FfiConverterDouble.lower(seconds),uniffiCallStatus
+    )
+})
+}
+public func coreSyncLatestActivity(current: String?, incoming: String?) -> String?  {
+    return try!  FfiConverterOptionString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_openarc_core_fn_func_core_sync_latest_activity(
+        FfiConverterOptionString.lower(current),
+        FfiConverterOptionString.lower(incoming),uniffiCallStatus
+    )
+})
+}
+public func coreSyncProjectedActivity(incoming: String?, local: Double?) -> Double?  {
+    return try!  FfiConverterOptionDouble.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_openarc_core_fn_func_core_sync_projected_activity(
+        FfiConverterOptionString.lower(incoming),
+        FfiConverterOptionDouble.lower(local),uniffiCallStatus
+    )
+})
+}
+public func coreDefaultSpaceIcon() -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_openarc_core_fn_func_core_default_space_icon(uniffiCallStatus
+    )
+})
+}
+public func coreDefaultSpaceId() -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_openarc_core_fn_func_core_default_space_id(uniffiCallStatus
+    )
+})
+}
+public func coreSyncKey(entityType: CoreSyncEntityType, id: String) -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_openarc_core_fn_func_core_sync_key(
+        FfiConverterTypeCoreSyncEntityType_lower(entityType),
+        FfiConverterString.lower(id),uniffiCallStatus
     )
 })
 }
@@ -1279,10 +5203,91 @@ private let initializationResult: InitializationResult = {
     if (uniffi_openarc_core_checksum_func_core_is_sync_expiry_interval() != 30971) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_openarc_core_checksum_func_core_sync_baseline_update() != 53760) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_openarc_core_checksum_func_core_sync_boost_limits() != 60590) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_openarc_core_checksum_func_core_sync_canonical_changes() != 37271) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_openarc_core_checksum_func_core_sync_changes() != 35003) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_openarc_core_checksum_func_core_sync_effective_changes() != 53342) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_openarc_core_checksum_func_core_sync_effective_changes_reusing() != 32697) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_openarc_core_checksum_func_core_sync_folder_adoption_operations() != 60638) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_openarc_core_checksum_func_core_sync_folder_apply() != 16312) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_openarc_core_checksum_func_core_sync_folder_can_move() != 471) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_openarc_core_checksum_func_core_sync_folder_canonical_changes() != 34611) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_openarc_core_checksum_func_core_sync_folder_operations() != 44073) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_openarc_core_checksum_func_core_sync_folder_snapshot() != 3170) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_openarc_core_checksum_func_core_sync_projected_snapshot() != 5732) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_openarc_core_checksum_func_core_sync_rebased_changes() != 13728) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_openarc_core_checksum_func_core_sync_removed_entities() != 20433) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_openarc_core_checksum_func_core_sync_replacing_rank() != 990) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_openarc_core_checksum_func_core_sync_replay() != 47706) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_openarc_core_checksum_func_core_sync_replay_result() != 23638) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_openarc_core_checksum_func_core_sync_replay_start() != 26706) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_openarc_core_checksum_func_core_sync_replay_states_identical() != 57722) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_openarc_core_checksum_func_core_sync_semantic_apply() != 13316) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_openarc_core_checksum_func_core_sync_semantic_operations() != 53614) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_openarc_core_checksum_func_core_sync_supported_push_versions() != 25738) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_openarc_core_checksum_func_core_sync_format_activity() != 33788) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_openarc_core_checksum_func_core_sync_latest_activity() != 31354) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_openarc_core_checksum_func_core_sync_projected_activity() != 2587) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_openarc_core_checksum_func_core_default_space_icon() != 30404) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_openarc_core_checksum_func_core_default_space_id() != 34188) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_openarc_core_checksum_func_core_sync_key() != 481) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_openarc_core_checksum_func_core_host_display_string() != 18670) {
@@ -1325,6 +5330,12 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_openarc_core_checksum_func_core_remove_tracking_parameters() != 24395) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_openarc_core_checksum_method_coresyncreplaymemo_reuses() != 20915) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_openarc_core_checksum_constructor_coresyncreplaymemo_new() != 13712) {
         return InitializationResult.apiChecksumMismatch
     }
 
