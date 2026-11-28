@@ -193,6 +193,10 @@ final class BrowserMobilePhoneViewController: UIViewController {
     private var keyboardTop: CGFloat?
     /// The keyboard went down while search stayed open, so the panel sits at the bottom.
     private var isSearchKeyboardDismissed = false
+    /// What was typed for a new tab when search closed without opening
+    /// anything; the next search for a new tab starts with it selected, until
+    /// the app leaves the screen.
+    private var leftSearchText: String?
     /// Follows the keyboard's top, as it moves under a finger too.
     private let keyboardTracker = BrowserMobileKeyboardTracker()
     private var laidOutSize = CGSize.zero
@@ -343,6 +347,10 @@ final class BrowserMobilePhoneViewController: UIViewController {
         }
         NotificationCenter.default.addObserver(
             self, selector: #selector(sceneBecameActive(_:)), name: UIScene.didActivateNotification, object: nil,
+        )
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(sceneEnteredBackground(_:)), name: UIScene.didEnterBackgroundNotification,
+            object: nil,
         )
         render()
     }
@@ -1047,6 +1055,10 @@ final class BrowserMobilePhoneViewController: UIViewController {
         searchOverSwitcher = false
         if closingMode == .search {
             searchPanel.stopDictation()
+            if !searchReplacesPage {
+                let typed = searchPanel.field.typedText
+                leftSearchText = typed.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : typed
+            }
             searchPanel.field.resignFirstResponder()
         }
         if let catcher = dismissCatcher {
@@ -1379,7 +1391,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
         // Editing a private tab's address stays private.
         searchPanel.isIncognito = workspace.isIncognito || (replacesPage && workspace.selectedTab?.isPrivate == true)
         searchPanel.onIncognitoChange = { [weak self] isOn in self?.workspace.isIncognito = isOn }
-        searchPanel.prepare(text: text)
+        searchPanel.prepare(text: text.isEmpty && !replacesPage ? leftSearchText ?? "" : text)
         let top = searchPanelTop(keyboardTop: searchKeyboardTop)
         guard let surface = makeSurface(
             height: view.bounds.height - top, dark: true, content: searchPanel, revealsContent: true,
@@ -1667,6 +1679,7 @@ final class BrowserMobilePhoneViewController: UIViewController {
     private func closeSearchForPage() {
         let overSwitcher = searchOverSwitcher
         closePanel()
+        leftSearchText = nil
         if overSwitcher { closeSwitcherInstantly() }
     }
 
@@ -2279,6 +2292,11 @@ final class BrowserMobilePhoneViewController: UIViewController {
               mode == .search, surface != nil, searchPanel.isFieldExpanded, presentedViewController == nil,
               !searchPanel.field.isFirstResponder else { return }
         searchPanel.field.becomeFirstResponder()
+    }
+
+    @objc private func sceneEnteredBackground(_ notification: Notification) {
+        guard let scene = notification.object as? UIWindowScene, scene === view.window?.windowScene else { return }
+        leftSearchText = nil
     }
 
     @objc private func sceneBecameInactive(_ notification: Notification) {
