@@ -13,6 +13,7 @@ enum BrowserLibrarySection: String, CaseIterable {
     case spaces
     case boosts
     case archive
+    case mobile
 
     // MARK: Internal
 
@@ -24,6 +25,7 @@ enum BrowserLibrarySection: String, CaseIterable {
         case .spaces: BrowserStrings.librarySpaces
         case .boosts: BrowserStrings.libraryBoosts
         case .archive: BrowserStrings.libraryArchive
+        case .mobile: BrowserStrings.libraryMobile
         }
     }
 
@@ -35,6 +37,7 @@ enum BrowserLibrarySection: String, CaseIterable {
         case .spaces: "square.on.square"
         case .boosts: "paintbrush.pointed"
         case .archive: "archivebox"
+        case .mobile: "iphone"
         }
     }
 }
@@ -64,8 +67,9 @@ enum BrowserLibraryLayout {
 
 // MARK: - BrowserLibraryNSView
 
-/// Replaces the sidebar with sections of saved things: media, downloads, Spaces
-/// and archived tabs, beside the page. Spaces are as wide as their cards.
+/// Replaces the sidebar with sections of saved things: media, downloads, Spaces,
+/// archived tabs and the tabs open on phones and tablets, beside the page. Spaces
+/// are as wide as their cards.
 final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
     // MARK: Private
 
@@ -106,6 +110,7 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
     private(set) var hasDeferredRefresh = false
     /// How many times the list's row views were built, for tests.
     private(set) var documentBuildCount = 0
+
     /// Easel pictures by Easel, edit time and appearance.
     private var easelThumbnails = [String: NSImage?]()
 
@@ -231,10 +236,16 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
             model.objectWillChange.eraseToAnyPublisher(),
             model.downloadsModel.objectWillChange.eraseToAnyPublisher(),
             model.userPreferencesStore.objectWillChange.eraseToAnyPublisher(),
-            NotificationCenter.default.publisher(for: BrowserEaselStore.didChangeNotification)
-                .map { _ in () }.eraseToAnyPublisher(),
+            NotificationCenter.default
+                .publisher(for: BrowserEaselStore.didChangeNotification)
+                .map { _ in () }
+                .eraseToAnyPublisher(),
             NotificationCenter.default
                 .publisher(for: BrowserCaptureStore.didChangeNotification)
+                .map { _ in () }
+                .eraseToAnyPublisher(),
+            NotificationCenter.default
+                .publisher(for: BrowserMobileTabsFeed.didChange)
                 .map { _ in () }
                 .eraseToAnyPublisher(),
         ])
@@ -255,7 +266,12 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
         for (section, button) in sectionButtons {
             button.isHidden = !sections.contains(section)
         }
-        let group = CGFloat(sections.count) * BrowserLibraryLayout.sectionStride
+        // A short window packs the column closer, down to the buttons' own height.
+        let stride = min(
+            BrowserLibraryLayout.sectionStride,
+            max(BrowserLibraryLayout.sectionSize.height + 2, (height - 100) / CGFloat(max(sections.count, 1))),
+        )
+        let group = CGFloat(sections.count) * stride
         var y = (height - group) / 2
         for section in sections {
             sectionButtons[section]?.frame = NSRect(
@@ -264,7 +280,7 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
                 width: BrowserLibraryLayout.sectionSize.width,
                 height: BrowserLibraryLayout.sectionSize.height,
             )
-            y += BrowserLibraryLayout.sectionStride
+            y += stride
         }
         backButton.frame = NSRect(x: 8, y: height - 40, width: 32, height: 32)
         let controlsWidth = windowControls.intrinsicContentSize.width
@@ -415,6 +431,15 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
         return menu
     }
 
+    /// The tabs whose title or address holds the typed text, in the feed's order.
+    static func mobileTabs(_ tabs: [BrowserSyncMobileTabEntry], matching query: String) -> [BrowserSyncMobileTabEntry] {
+        guard !query.isEmpty else { return tabs }
+        return tabs.filter { tab in
+            (tab.record.title?.lowercased().contains(query) ?? false)
+                || tab.record.urlString.lowercased().contains(query)
+        }
+    }
+
     private static func matches(fileName: String, kind: String) -> Bool {
         let type = UTType(filenameExtension: (fileName as NSString).pathExtension)
         return switch kind {
@@ -494,6 +519,7 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
         case .spaces: show([])
         case .boosts: show(boostRows())
         case .easels: show(easelRows())
+        case .mobile: show(mobileTabRows())
         }
         updateEmptyState()
         needsLayout = true
@@ -751,6 +777,50 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
         }
     }
 
+    /// The account's phone and tablet tabs under the day each was last used, the latest
+    /// first. Opening one makes an ordinary tab here; the phone keeps its own.
+    private func mobileTabRows() -> [Row] {
+        let model = model
+        let tabs = Self.mobileTabs(BrowserMobileTabsFeed.current?.tabs ?? [], matching: query)
+        let icons = model.pageIcons(for: tabs.map(\.record.urlString))
+        var result = [Row]()
+        var lastHeader: String?
+        for tab in tabs {
+            let header = Self.dayHeader(for: tab.record.lastActivityAt ?? tab.record.createdAt)
+            if header != lastHeader {
+                result.append(.header(header))
+                lastHeader = header
+            }
+            let urlString = tab.record.urlString
+            let detail = Self.archiveDetail(for: urlString)
+            let open = { [weak model] in
+                guard let model, let url = URL(string: urlString), model.canCreateTab else { return }
+                model.openURLInNewTab(url)
+                model.closeLibrary()
+            }
+            result.append(.item(BrowserLibraryRowContent(
+                title: tab.record.title ?? detail,
+                detail: detail,
+                faviconPageURL: urlString,
+                faviconImage: archiveFavicon(for: urlString, data: icons[urlString]),
+                fileIcon: nil,
+                progress: nil,
+                onOpen: open,
+                menu: {
+                    let menu = BrowserNativeMenus.menu()
+                    BrowserNativeMenus.add(BrowserStrings.bookmarksOpenInNewTab, to: menu, action: open)
+                    BrowserNativeMenus.add(BrowserStrings.libraryCaptureCopyURL, to: menu) {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(urlString, forType: .string)
+                    }
+                    return menu
+                },
+                identity: "mobile.\(tab.id)",
+            )))
+        }
+        return result
+    }
+
     /// Pictures and videos in the download folder, newest first.
     private func mediaRows() -> [Row] {
         let preferences = model.userPreferencesStore
@@ -769,6 +839,7 @@ final class BrowserLibraryNSView: NSView, NSTextFieldDelegate {
             case .media: BrowserStrings.libraryEmptyMedia
             case .boosts: BrowserStrings.libraryEmptyBoosts
             case .easels: BrowserStrings.libraryEmptyEasels
+            case .mobile: BrowserStrings.libraryEmptyMobile
             default: BrowserStrings.libraryEmptyDetail
             }
         emptyState.configure(symbol: section.symbol, detail: detail)

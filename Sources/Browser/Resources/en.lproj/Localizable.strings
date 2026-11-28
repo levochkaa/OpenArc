@@ -741,6 +741,8 @@
 "browser.library.downloads" = "Downloads";
 "browser.library.spaces" = "Spaces";
 "browser.library.archive" = "Archived Tabs";
+"browser.library.mobile" = "Mobile";
+"browser.library.empty_mobile" = "Tabs you open on iPhone and iPad with this account show up here.";
 "browser.library.back" = "Exit Library";
 "browser.library.filter" = "Filter";
 "browser.library.filter_all" = "All";

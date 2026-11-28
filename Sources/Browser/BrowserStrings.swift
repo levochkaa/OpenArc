@@ -2214,6 +2214,16 @@ enum BrowserStrings {
         comment: "Library section with archived tabs.",
     )
 
+    static let libraryMobile = NSLocalizedString(
+        "browser.library.mobile",
+        comment: "Library section with the tabs open on the account's phones and tablets.",
+    )
+
+    static let libraryEmptyMobile = NSLocalizedString(
+        "browser.library.empty_mobile",
+        comment: "Detail of the empty Mobile section of the Library.",
+    )
+
     static let pinnedTabEditPageAction = NSLocalizedString(
         "browser.pinned_tab.edit_page",
         comment: "Pinned tab submenu.",
