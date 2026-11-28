@@ -3613,6 +3613,11 @@ enum BrowserStrings {
         comment: "Battery Saver setting title.",
     )
 
+    static let settingsSplitFocusRing = NSLocalizedString(
+        "browser.settings.general.split_focus_ring",
+        comment: "Setting title: outline the focused pane of a Split View.",
+    )
+
     static let settingsBatterySaverDetail = NSLocalizedString(
         "browser.settings.general.battery_saver.detail",
         comment: "Battery Saver setting description.",

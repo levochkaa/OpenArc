@@ -32,6 +32,11 @@ import AppKit
     /// Accent border drawn inside the focused pane while a split is shown.
     @objc static let focusRingWidth: CGFloat = 2
 
+    /// Settings ▸ General can turn the focused pane's border off. The engine
+    /// reads it here and lays the panes out again on the notification.
+    @objc static let showsFocusRingKey = "browser.settings.splitFocusRingEnabled"
+    @objc static let focusRingPreferenceDidChange = Notification.Name("BrowserSplitFocusRingPreferenceDidChange")
+
     // MARK: Pane bar
 
     /// Each pane shows its own bar above the page while a split is visible
@@ -60,6 +65,10 @@ import AppKit
 
     static let pageDropMaximumWidth: CGFloat = 80
     static let pageDropMaximumHeight: CGFloat = 50
+
+    @objc static var showsFocusRing: Bool {
+        UserDefaults.standard.object(forKey: showsFocusRingKey) as? Bool ?? true
+    }
 
     @objc static var focusRingCornerRadius: CGFloat { BrowserChromeLayout.leadingContentCornerRadius }
 

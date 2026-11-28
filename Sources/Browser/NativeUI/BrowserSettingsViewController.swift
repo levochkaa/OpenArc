@@ -61,6 +61,7 @@ struct BrowserSettingsIcon {
         "warn-before-quitting": .init("exclamationmark.triangle.fill", .systemOrange),
         "confirm-profile-moves": .init("person.2.fill", .systemTeal),
         "blurred-background": .init("camera.filters", .systemPurple),
+        "split-focus-ring": .init("rectangle.split.2x1", .systemTeal),
         "battery-saver": .init("battery.75percent", .systemGreen),
         "block-ads": .init("hand.raised.fill", .systemRed),
         "block-trackers": .init("eye.slash.fill", .systemBlue),
@@ -751,6 +752,12 @@ final class BrowserSettingsViewController: NSViewController, @MainActor Settings
                     BrowserStrings.settingsBlurredBackground,
                     get: { preferences.blurredChromeBackgroundEnabled },
                     set: { preferences.blurredChromeBackgroundEnabled = $0 },
+                ),
+                toggle(
+                    "split-focus-ring",
+                    BrowserStrings.settingsSplitFocusRing,
+                    get: { preferences.splitFocusRingEnabled },
+                    set: { preferences.splitFocusRingEnabled = $0 },
                 ),
                 toggle(
                     "battery-saver",

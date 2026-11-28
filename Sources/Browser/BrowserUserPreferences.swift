@@ -362,6 +362,14 @@ final class BrowserUserPreferencesStore: ObservableObject {
         didSet { userDefaults.set(blurredChromeBackgroundEnabled, forKey: Key.blurredChromeBackgroundEnabled) }
     }
 
+    /// Read by the engine through `BrowserSplitPaneLayout.showsFocusRing`.
+    @Published var splitFocusRingEnabled: Bool {
+        didSet {
+            userDefaults.set(splitFocusRingEnabled, forKey: BrowserSplitPaneLayout.showsFocusRingKey)
+            NotificationCenter.default.post(name: BrowserSplitPaneLayout.focusRingPreferenceDidChange, object: nil)
+        }
+    }
+
     @Published var batterySaverEnabled: Bool {
         didSet { userDefaults.set(batterySaverEnabled, forKey: Key.batterySaverEnabled) }
     }
@@ -532,6 +540,11 @@ final class BrowserUserPreferencesStore: ObservableObject {
             defaultValue: true,
         )
         self.batterySaverEnabled = Self.loadBool(userDefaults, key: Key.batterySaverEnabled, defaultValue: true)
+        self.splitFocusRingEnabled = Self.loadBool(
+            userDefaults,
+            key: BrowserSplitPaneLayout.showsFocusRingKey,
+            defaultValue: true,
+        )
         self.pinnedExtensionIDs = Self.loadStringArray(userDefaults, key: Key.pinnedExtensionIDs)
         self.downloadDirectoryPath = userDefaults.string(forKey: Self.downloadDirectoryKey).flatMap { $0.isEmpty
             ? nil

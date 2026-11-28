@@ -4651,6 +4651,7 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
   NSString *_profileCachePath;
   BOOL _usesEphemeralRequestContext;
   id _enginePolicyObserver;
+  id _focusRingPreferenceObserver;
   // Offers the page whose protected video Chromium refused in WebKit.
   BrowserProtectedVideoPromptView *_protectedVideoPrompt;
   NSString *_protectedVideoPromptTabID;
@@ -4685,6 +4686,13 @@ std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> &RunningDownloadCallbacks
                    queue:NSOperationQueue.mainQueue
               usingBlock:^(NSNotification *) {
                 [weakSelf reapplyEnginePolicy];
+              }];
+  _focusRingPreferenceObserver = [NSNotificationCenter.defaultCenter
+      addObserverForName:BrowserSplitPaneLayout.focusRingPreferenceDidChange
+                  object:nil
+                   queue:NSOperationQueue.mainQueue
+              usingBlock:^(NSNotification *) {
+                [weakSelf syncBrowserFrames];
               }];
   CenterPageModalWindowsOver(hostView);
   if (!BrowserUsesCEF()) {
@@ -5902,6 +5910,7 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
                           paneFrames:frames
                                 keys:keys];
   const std::string activeKey = ToStdString(_activeTabID);
+  const BOOL ringEnabled = BrowserSplitPaneLayout.showsFocusRing;
   BOOL showsFocusRing = NO;
   NSMutableArray<NSString *> *paneTabIDs = [NSMutableArray array];
   for (size_t index = 0; index < keys.size() && index < frames.count; index++) {
@@ -5916,7 +5925,7 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
       }
       SyncPageViewPaneFrame(PageViewForRecord(it->second), pane);
     }
-    if (keys[index] == activeKey) {
+    if (ringEnabled && keys[index] == activeKey) {
       [self showSplitFocusRingInHostView:hostView frame:frames[index].rectValue];
       showsFocusRing = YES;
     }
@@ -6241,7 +6250,7 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
     const NSRect paneFrame = pane->second;
     NSRect inHost = DockedDevToolsRectInPane(paneFrame, hostView.isFlipped);
     const CGFloat ring = BrowserSplitPaneLayout.focusRingWidth;
-    if (split && [tabID isEqualToString:_activeTabID]) {
+    if (split && [tabID isEqualToString:_activeTabID] && BrowserSplitPaneLayout.showsFocusRing) {
       inHost.size.width -= ring;
       inHost.size.height -= ring;
       if (!hostView.isFlipped) {
@@ -9076,6 +9085,10 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
   if (_enginePolicyObserver != nil) {
     [NSNotificationCenter.defaultCenter removeObserver:_enginePolicyObserver];
     _enginePolicyObserver = nil;
+  }
+  if (_focusRingPreferenceObserver != nil) {
+    [NSNotificationCenter.defaultCenter removeObserver:_focusRingPreferenceObserver];
+    _focusRingPreferenceObserver = nil;
   }
   [_splitFocusRing removeFromSuperview];
   _splitFocusRing = nil;

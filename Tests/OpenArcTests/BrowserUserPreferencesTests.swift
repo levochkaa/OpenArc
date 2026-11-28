@@ -25,6 +25,7 @@ import Testing
     #expect(!store.siteToolbarShowsFullURL)
     #expect(store.blurredChromeBackgroundEnabled)
     #expect(store.batterySaverEnabled)
+    #expect(store.splitFocusRingEnabled)
     #expect(store.pinnedExtensionIDs.isEmpty)
     #expect(BrowserSearchEngine.allCases == [
         .google,
@@ -54,6 +55,7 @@ import Testing
     store.siteToolbarShowsFullURL = true
     store.blurredChromeBackgroundEnabled = false
     store.batterySaverEnabled = false
+    store.splitFocusRingEnabled = false
     store.pinnedExtensionIDs = ["reader", "clipper"]
 
     let reloadedStore = BrowserUserPreferencesStore(userDefaults: userDefaults)
@@ -72,6 +74,7 @@ import Testing
     #expect(reloadedStore.siteToolbarShowsFullURL)
     #expect(!reloadedStore.blurredChromeBackgroundEnabled)
     #expect(!reloadedStore.batterySaverEnabled)
+    #expect(!reloadedStore.splitFocusRingEnabled)
     #expect(reloadedStore.pinnedExtensionIDs == ["reader", "clipper"])
 }
 

@@ -158,7 +158,12 @@ final class BrowserSplitPaneBarsView: NSView {
                 width: pane.width,
                 height: min(BrowserSplitPaneLayout.paneBarHeight, pane.height),
             )
-            bar.update(tab: tab, focused: model.selectedTabID == id, canReorder: ids.count > 1)
+            bar.update(
+                tab: tab,
+                focused: model.selectedTabID == id,
+                ringed: model.userPreferencesStore.splitFocusRingEnabled,
+                canReorder: ids.count > 1,
+            )
             bar.showsWindowControls = showsWindowControls && id == topLeadingID
         }
     }
@@ -325,6 +330,8 @@ final class BrowserSplitPaneBarView: NSView {
     var onGripDragEnd: (String, NSPoint) -> Void = { _, _ in }
     private(set) var tabID: String?
     private(set) var isFocused = false
+    /// The focused pane's accent border is on in Settings.
+    private(set) var isRinged = true
 
     let backButton = BrowserNativeChromeButton(
         symbol: "chevron.left",
@@ -453,7 +460,7 @@ final class BrowserSplitPaneBarView: NSView {
     /// The bar fills the pane's top with rounded top corners. On the focused
     /// pane it stays inside the accent ring the engine host draws around it.
     override func draw(_: NSRect) {
-        let ring = isFocused ? BrowserSplitPaneLayout.focusRingWidth : 0
+        let ring = isFocused && isRinged ? BrowserSplitPaneLayout.focusRingWidth : 0
         let rect = bounds.insetBy(dx: ring, dy: 0).divided(atDistance: ring, from: .minYEdge).remainder
         let radius = max(BrowserSplitPaneLayout.paneCornerRadius - ring, 0)
         let path = NSBezierPath()
@@ -478,12 +485,13 @@ final class BrowserSplitPaneBarView: NSView {
         path.fill()
     }
 
-    func update(tab: BrowserChromeModel.Tab, focused: Bool, canReorder: Bool = true) {
+    func update(tab: BrowserChromeModel.Tab, focused: Bool, ringed: Bool = true, canReorder: Bool = true) {
         tabID = tab.id
         // The drag grip shows on the focused pane only.
         grip.isHidden = !focused || !canReorder
-        if isFocused != focused {
+        if isFocused != focused || isRinged != ringed {
             isFocused = focused
+            isRinged = ringed
             needsDisplay = true
         }
         backButton.isEnabled = tab.canGoBack
