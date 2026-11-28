@@ -26,6 +26,16 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
         didSet { needsLayout = true }
     }
 
+    /// Where the standard bar centers itself, in this view's coordinates, in
+    /// place of the whole view: Add Split View's empty pane.
+    var placementFrame: CGRect? {
+        didSet {
+            if oldValue != placementFrame {
+                needsLayout = true
+            }
+        }
+    }
+
     // MARK: Private
 
     private let model: BrowserCommandBarModel
@@ -180,6 +190,7 @@ final class BrowserCommandBarNSView: NSView, NSTextFieldDelegate, NSTableViewDat
             suggestionCount: displayedSuggestions.count,
             extraWidth: siteSearchWidth(),
             widthLimit: panelWidthLimit,
+            placement: placementFrame,
         )
         panel.frame = geometry.panelFrame
         let outer = BrowserChromeLayout.commandBarOuterPadding

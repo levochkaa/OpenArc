@@ -42,6 +42,18 @@ import Testing
         )
         #expect(narrow.panelFrame.minX >= 0)
         #expect(narrow.panelFrame.maxX <= 320)
+        let pane = CGRect(x: 610, y: 10, width: 580, height: 780)
+        let inPane = BrowserCommandBarLayout(
+            availableSize: CGSize(width: 1200, height: 800),
+            style: .standard,
+            displayText: "",
+            suggestionCount: 0,
+            placement: pane,
+        )
+        #expect(inPane.panelFrame.midX == pane.midX, "Add Split View's bar centers on its empty pane")
+        #expect(inPane.panelFrame.minX >= pane.minX)
+        #expect(inPane.panelFrame.maxX <= pane.maxX)
+        #expect(inPane.panelFrame.minY > pane.minY)
     }
 
     @Test func nativeKeyboardNavigationPreviewsWithoutChangingCommittedQuery() async throws {

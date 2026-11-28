@@ -42,6 +42,8 @@ final class BrowserContentNSView: NSView {
     let viewport: BrowserViewportClipView
     let splitPaneBars = BrowserSplitPaneBarsView()
     var onRetryTabCreation: () -> Void = {}
+    /// Add Split View's empty pane in window coordinates, or nil.
+    var onSplitPlaceholderFrameChange: ((CGRect?) -> Void)?
 
     private(set) var areaCapture: BrowserAreaCaptureOverlay?
     private(set) var captureCard: BrowserCaptureCardPresenter?
@@ -119,6 +121,11 @@ final class BrowserContentNSView: NSView {
         addSubview(splitPaneBars)
         splitPaneBars.hostView = hostView
         splitPaneBars.onFocusedPaneFrameChange = { [weak self] in self?.updateSplitFocusGlow() }
+        splitPaneBars.onPlaceholderPaneFrameChange = { [weak self] in
+            guard let self else { return }
+            onSplitPlaceholderFrameChange?(splitPaneBars.placeholderPaneFrame
+                .map { splitPaneBars.convert($0, to: nil) })
+        }
         for overlay in [empty, loading, failure] {
             overlay.fillColor = BrowserChromeColors.contentBackground
             overlay.wantsLayer = true

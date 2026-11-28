@@ -330,6 +330,42 @@ import Testing
         #expect(f.store.savedSnapshots.last?.splitGroups?.first?.tabIDs == [f.syncID("x"), added.syncID])
     }
 
+    @Test func addSplitViewShowsAnEmptyPaneWhileItsCommandBarIsOpen() throws {
+        let f = SidebarDragFixture(temporary: ["w", "x", "y"])
+        let placeholder = BrowserSplitPaneLayout.placeholderTabID
+        f.model.selectTab(id: f.id("x"))
+        f.model.presentSplitViewCommandBar()
+        f.model.syncSplitLayout()
+        #expect(f.driver.visibleTabLayouts.last == BrowserTabVisibleLayout(
+            tabIDs: [f.id("x"), placeholder],
+            orientation: .horizontal,
+            fractions: nil,
+        ))
+        f.model.dismissCommandBar()
+        f.model.syncSplitLayout()
+        #expect(f.driver.visibleTabLayouts.last == .some(nil), "Closing the bar takes the empty pane away")
+
+        #expect(f.model.openInSplitView(tabID: f.id("y")))
+        let group = try #require(f.model.selectedSplitGroup)
+        #expect(f.model.setSplitOrientation(.vertical, groupID: group.id))
+        f.model.presentSplitViewCommandBar(insertion: .before)
+        f.model.syncSplitLayout()
+        #expect(f.driver.visibleTabLayouts.last == BrowserTabVisibleLayout(
+            tabIDs: [f.id("x"), placeholder, f.id("y")],
+            orientation: .vertical,
+            fractions: nil,
+        ), "Add Left Split puts it before the focused pane; the split keeps its orientation")
+        f.model.commandBarModel.query = "w.example"
+        let suggestion = try #require(f.model.commandBarModel.suggestions.first {
+            $0.kind == .openTab && $0.tabIDs == [f.id("w")]
+        })
+        f.model.commandBarModel.submitSuggestion(id: suggestion.id)
+        #expect(
+            f.driver.visibleTabLayouts.last??.tabIDs == [f.id("x"), f.id("w"), f.id("y")],
+            "The chosen tab takes the empty pane's place",
+        )
+    }
+
     @Test func addSplitViewWithAnOpenTabSuggestionJoinsThatTab() throws {
         let f = SidebarDragFixture(temporary: ["x", "y", "z"])
         f.model.selectTab(id: f.id("x"))

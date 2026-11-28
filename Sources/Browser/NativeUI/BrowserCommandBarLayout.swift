@@ -140,13 +140,16 @@ struct BrowserCommandBarLayout {
     var extraWidth: CGFloat = 0
     /// A narrower standard bar, as over a small window's page.
     var widthLimit: CGFloat?
+    /// Where a standard bar centers itself instead of the whole view, as in
+    /// the empty pane of Add Split View.
+    var placement: CGRect?
 
     var panelWidth: CGFloat {
         switch style {
         case .standard:
             return min(
                 widthLimit ?? BrowserChromeLayout.commandBarWidth,
-                max(availableSize.width - BrowserChromeLayout.sidebarOuterPadding * 2, 0),
+                max(standardArea.width - BrowserChromeLayout.sidebarOuterPadding * 2, 0),
             )
         case .compact(let anchor, let sidebarWidth, let matchesAnchorWidth):
             let padding = BrowserChromeLayout.compactCommandBarHorizontalViewportPadding
@@ -188,8 +191,8 @@ struct BrowserCommandBarLayout {
         switch style {
         case .standard:
             return CGPoint(
-                x: max((availableSize.width - panelWidth) / 2, 0),
-                y: standardTopInset,
+                x: standardArea.minX + max((standardArea.width - panelWidth) / 2, 0),
+                y: standardArea.minY + standardTopInset,
             )
         case .compact(let anchor, _, _):
             // A sidebar on the right anchors the bar at its trailing edge.
@@ -229,6 +232,8 @@ struct BrowserCommandBarLayout {
 
     // MARK: Private
 
+    private var standardArea: CGRect { placement ?? CGRect(origin: .zero, size: availableSize) }
+
     private var standardTopInset: CGFloat {
         let count = BrowserCommandBarModel.maximumVisibleSuggestions
         let estimated = BrowserChromeLayout.commandBarOuterPadding + style.fieldHeight + 1
@@ -236,9 +241,9 @@ struct BrowserCommandBarLayout {
             + CGFloat(count - 1) * BrowserChromeLayout.commandBarSuggestionSpacing
             + BrowserChromeLayout.commandBarSuggestionVerticalInset * 2
             + BrowserChromeLayout.commandBarSuggestionViewportAllowance
-        let centered = (availableSize.height - estimated) / 2
+        let centered = (standardArea.height - estimated) / 2
         let maximum = max(
-            availableSize.height - estimated - BrowserChromeLayout.commandBarTopInsetMinimum,
+            standardArea.height - estimated - BrowserChromeLayout.commandBarTopInsetMinimum,
             BrowserChromeLayout.sidebarOuterPadding,
         )
         return min(max(centered, BrowserChromeLayout.commandBarTopInsetMinimum), maximum)

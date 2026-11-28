@@ -5825,6 +5825,11 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
   }
   if ([_visibleLayoutTabIDs containsObject:_activeTabID]) {
     for (NSString *tabID in _visibleLayoutTabIDs) {
+      // Add Split View's empty pane: laid out, with no page in it.
+      if ([tabID isEqualToString:BrowserSplitPaneLayout.placeholderTabID]) {
+        keys.push_back(ToStdString(tabID));
+        continue;
+      }
       auto it = _tabRecords.find(ToStdString(tabID));
       if (it != _tabRecords.end() && !it->second.isClosing &&
           PageViewForRecord(it->second) != nil) {
@@ -5910,7 +5915,11 @@ NSMutableSet<NSString *> *ProtectedVideoSitesNotAskedAgain() {
   [self layoutSplitDividersInHostView:hostView
                           paneFrames:frames
                                 keys:keys];
-  const std::string activeKey = ToStdString(_activeTabID);
+  // The empty pane Add Split View shows is the focused one while it is open.
+  const std::string placeholderKey = ToStdString(BrowserSplitPaneLayout.placeholderTabID);
+  const std::string activeKey =
+      std::find(keys.begin(), keys.end(), placeholderKey) != keys.end() ? placeholderKey
+                                                                         : ToStdString(_activeTabID);
   const BOOL ringEnabled = BrowserSplitPaneLayout.showsFocusRing;
   BOOL showsFocusRing = NO;
   NSMutableArray<NSString *> *paneTabIDs = [NSMutableArray array];

@@ -62,6 +62,19 @@ final class BrowserSplitPaneBarsView: NSView {
 
     var onFocusedPaneFrameChange: (() -> Void)?
 
+    /// Add Split View's empty pane, in this view's coordinates, while its
+    /// command bar is open. The bar centers itself on it.
+    private(set) var placeholderPaneFrame: CGRect? {
+        didSet {
+            if oldValue != placeholderPaneFrame {
+                needsDisplay = true
+                onPlaceholderPaneFrameChange?()
+            }
+        }
+    }
+
+    var onPlaceholderPaneFrameChange: (() -> Void)?
+
     /// The page's frame before it moved aside, so the drop zones hold still.
     private var restingPageFrame: CGRect?
 
@@ -95,6 +108,12 @@ final class BrowserSplitPaneBarsView: NSView {
     /// The landing pane is outlined while a pane is dragged by its grip, and
     /// the new pane's place while a sidebar tab is dragged over the page.
     override func draw(_: NSRect) {
+        if let placeholder = placeholderPaneFrame {
+            // The empty pane is a blank page under the command bar.
+            let radius = BrowserSplitPaneLayout.paneCornerRadius
+            BrowserChromeColors.contentBackground.setFill()
+            NSBezierPath(roundedRect: placeholder, xRadius: radius, yRadius: radius).fill()
+        }
         if let place = pageAsideDropPlace {
             // With the page aside, the place it left is outlined, light and empty.
             let ring: CGFloat = 1.5
@@ -145,6 +164,7 @@ final class BrowserSplitPaneBarsView: NSView {
         guard let model, let hostView, hostView.window === window || window == nil else {
             removeBars(keeping: [])
             focusedPaneFrame = nil
+            placeholderPaneFrame = nil
             return
         }
         let ids = model.splitPaneLayoutTabIDs
@@ -173,14 +193,16 @@ final class BrowserSplitPaneBarsView: NSView {
             )
             bar.update(
                 tab: tab,
-                focused: model.selectedTabID == id,
+                // Add Split View's empty pane holds focus while it shows.
+                focused: model.selectedTabID == id && paneRects[BrowserSplitPaneLayout.placeholderTabID] == nil,
                 ringed: model.userPreferencesStore.splitFocusRingEnabled,
                 canReorder: ids.count > 1,
             )
             bar.showsWindowControls = showsWindowControls && id == topLeadingID
         }
+        placeholderPaneFrame = paneRects[BrowserSplitPaneLayout.placeholderTabID]
         focusedPaneFrame = ids.count > 1 && model.userPreferencesStore.splitFocusRingEnabled
-            ? model.selectedTabID.flatMap { paneRects[$0] }
+            ? placeholderPaneFrame ?? model.selectedTabID.flatMap { paneRects[$0] }
             : nil
     }
 

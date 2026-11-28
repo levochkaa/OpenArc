@@ -310,6 +310,11 @@ enum BrowserWindowMode: Equatable {
         model.backgroundSubmitHandler = { [weak self] resolvedURLString in
             self?.createTab(withURLString: resolvedURLString, makeActive: false, placesAtTop: true)
         }
+        // After `isPresented` changes and after `presentSplitViewCommandBar()` sets its anchor.
+        commandBarPresentationObservation = model.$isPresented
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.syncSplitLayout() }
         // Option-Return opens the page beside the one on screen.
         model.splitSubmitHandler = { [weak self] resolvedURLString in
             guard let self else { return }
@@ -349,6 +354,9 @@ enum BrowserWindowMode: Equatable {
     /// Where the pending pane goes relative to its anchor (Add Left/Right Split).
     var pendingSplitInsertion = SplitInsertion.end
     var pendingSplitOrientation = BrowserTabSplitOrientation.horizontal
+    /// Lays the split out again when the command bar opens or closes, so the
+    /// pane Add Split View fills shows while the bar is open.
+    var commandBarPresentationObservation: AnyCancellable?
     /// UI-only: the visible split's pane frames in the engine host view, in pane
     /// order, as the engine last laid them out. Not published: it changes on
     /// every frame of a divider drag, and pane bars listen through

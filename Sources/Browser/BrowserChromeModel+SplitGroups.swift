@@ -155,6 +155,12 @@ extension BrowserChromeModel {
     /// The window shows every pane of the selected tab's split, or only the
     /// selected tab. Identical layouts are not resent to the engine.
     func syncSplitLayout() {
+        if let layout = splitPlaceholderLayout {
+            guard layout != appliedSplitLayout else { return }
+            appliedSplitLayout = layout
+            sendVisibleTabLayout(layout)
+            return
+        }
         if expandedSplitPaneTabID != nil, expandedSplitPaneTabID != selectedTabID || selectedSplitGroup == nil {
             // Expansion lasts until focus moves; resetting it syncs again.
             expandedSplitPaneTabID = nil
@@ -347,9 +353,9 @@ extension BrowserChromeModel {
         return splitPaneTabIDs(forTabID: selectedTabID).count < Self.maximumSplitPaneCount
     }
 
-    /// Opens the command bar; the page or tab chosen there becomes a new pane,
-    /// after the selected split's last pane or, for Add Left/Right Split,
-    /// next to the focused pane.
+    /// Opens the command bar in a new empty pane; the page or tab chosen there
+    /// takes that pane, after the selected split's last pane or, for Add
+    /// Left/Right Split, next to the focused pane.
     func presentSplitViewCommandBar(
         insertion: SplitInsertion = .end,
         orientation: BrowserTabSplitOrientation = .horizontal,
@@ -359,6 +365,28 @@ extension BrowserChromeModel {
         pendingSplitAnchorTabID = commandBarModel.isPresented ? selectedTabID : nil
         pendingSplitInsertion = insertion
         pendingSplitOrientation = orientation
+    }
+
+    /// While Add Split View's command bar is open, the split already shows with
+    /// an empty pane where the chosen page will go, with equal pane sizes.
+    var splitPlaceholderLayout: BrowserTabVisibleLayout? {
+        guard commandBarModel.isPresented, let anchorID = pendingSplitAnchorTabID, anchorID == selectedTabID
+        else { return nil }
+        let group = splitGroup(containingTabID: anchorID)
+        var tabIDs = group.map { splitPaneTabIDs(of: $0) } ?? [anchorID]
+        guard tabIDs.count < Self.maximumSplitPaneCount else { return nil }
+        let anchorIndex = tabIDs.firstIndex(of: anchorID) ?? tabIDs.count - 1
+        let placeholder = BrowserSplitPaneLayout.placeholderTabID
+        switch pendingSplitInsertion {
+        case .end: tabIDs.append(placeholder)
+        case .before: tabIDs.insert(placeholder, at: anchorIndex)
+        case .after: tabIDs.insert(placeholder, at: anchorIndex + 1)
+        }
+        return BrowserTabVisibleLayout(
+            tabIDs: tabIDs,
+            orientation: group?.orientation ?? pendingSplitOrientation,
+            fractions: nil,
+        )
     }
 
     /// Consumes the split anchor left by `presentSplitViewCommandBar()`.

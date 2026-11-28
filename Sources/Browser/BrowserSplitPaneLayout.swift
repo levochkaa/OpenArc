@@ -37,6 +37,10 @@ import AppKit
     static let focusGlowRadius: CGFloat = 7
     static let focusGlowOpacity: Float = 0.33
 
+    /// The empty pane Add Split View shows at once while its command bar is
+    /// open. The engine lays it out like a tab's pane but has no page for it.
+    @objc static let placeholderTabID = "openarc.split.placeholder"
+
     /// Settings ▸ General can turn the focused pane's border and glow off. The
     /// engine reads it here and lays the panes out again on the notification.
     @objc static let showsFocusRingKey = "browser.settings.splitFocusRingEnabled"

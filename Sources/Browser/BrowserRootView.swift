@@ -304,6 +304,11 @@ final class BrowserRootView: NSView {
         bindLibrarySwipes()
         find.bind(to: model)
         content.bindTabCreation(to: model)
+        // Add Split View's command bar sits in the empty pane it fills.
+        content.onSplitPlaceholderFrameChange = { [weak self] frame in
+            guard let self else { return }
+            command.placementFrame = frame.map { command.convert($0, from: nil) }
+        }
         let beginCapture = model.onBeginAreaCapture
         model.onBeginAreaCapture = { [weak self] in
             let began = beginCapture?() ?? false
